@@ -1,1 +1,19 @@
-{"name":"green-county-berkshire","version":"0.1.0","private":true,"scripts":{"android":"cap add android && cap sync android"},"dependencies":{"@capacitor/android":"7.4.3","@capacitor/core":"7.4.3"},"devDependencies":{"@capacitor/cli":"7.4.3"}}
+{
+ "name": "green-county-berkshire",
+ "version": "0.6.0",
+ "private": true,
+ "scripts": {
+  "build": "node tools/build.mjs",
+  "dev": "node tools/build.mjs --dev --watch",
+  "serve": "python3 -m http.server 8080 --directory www",
+  "world": "python3 tools/pipeline/build_world.py data www/world && python3 tools/pipeline/fit_ll.py www/world && python3 tools/pipeline/canopies.py data www/world",
+  "apk": "bash tools/android/build.sh",
+  "acceptance": "node tools/test/acceptance.js docs/captures"
+ },
+ "devDependencies": {
+  "esbuild": "0.25.10"
+ },
+ "dependencies": {
+  "three": "0.186.1"
+ }
+}

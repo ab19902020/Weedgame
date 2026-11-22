@@ -1,0 +1,6 @@
+<!doctype html><meta charset="utf-8"><body style="background:#20262b;color:#eee;font:16px sans-serif">Updating…
+<script>
+// Runs once on the old file:// origin: hand the prototype's save to the native side.
+var s = null; try { s = localStorage.getItem('greenCounty'); } catch (e) {}
+GCNative.storeLegacy(s || '');
+</script>

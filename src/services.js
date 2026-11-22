@@ -1,0 +1,103 @@
+// Parked cars from tile parking slots (stable ids), the brothers' own cars, and bus services
+// that run the OSM bus-route relations with stops and dwell times.
+import { MODELS, PAINTS } from './vehicles.js';
+import { mulberry } from './traffic.js';
+
+export class Parking {
+  constructor(G) {
+    this.G = G;
+    G.tiles.listeners.push((ev, t) => ev === 'load' ? this.onLoad(t) : this.onUnload(t));
+  }
+  onLoad(t) {
+    if (t.lod !== 0 || !t.data.slots) return;
+    const G = this.G, S = t.data.slots, K = t.data.slotKind;
+    t.parked = [];
+    for (let i = 0; i < S.length / 4; i++) {
+      const id = `p:${t.key}:${i}`;
+      if (G.save.taken.has(id) || G.traffic.byId.has(id)) continue;
+      const r = mulberry(hashStr(id))();
+      const occ = K[i] ? 0.6 : 0.75;      // car parks / kerbside
+      if (r > occ) continue;
+      const r2 = mulberry(hashStr(id) ^ 0x5bd1e995);
+      const m = r2(); const model = m < 0.4 ? 'hatch' : m < 0.62 ? 'saloon' : m < 0.78 ? 'estate' : m < 0.93 ? 'suv' : 'van';
+      const x = S[i * 4] + t.data.ox, z = S[i * 4 + 2] + t.data.oz;
+      if (this.blocked(x, z)) continue;
+      const v = G.traffic.add({ id, kind: 'parked', model, paint: PAINTS[Math.floor(r2() * PAINTS.length)], x, y: S[i * 4 + 1], z, heading: S[i * 4 + 3], parked: true, v: 0 });
+      v.y = G.tiles.ground(x, z) ?? v.y;
+      t.parked.push(v);
+    }
+  }
+  blocked(x, z) {
+    for (const v of this.G.traffic.list) if (v.parked && Math.abs(v.x - x) < 3 && Math.abs(v.z - z) < 3) return true;
+    return false;
+  }
+  onUnload(t) {
+    if (!t.parked) return;
+    for (const v of t.parked) if (!v.free && !v.player && v.parked) this.G.traffic.remove(v);
+    t.parked = null;
+  }
+}
+export function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+
+export class Buses {
+  constructor(G) {
+    this.G = G; this.timer = 2; this.rand = mulberry(31);
+    const net = G.net;
+    this.routes = net.routes.map((r, i) => {
+      const hs = r.seq.map(([e, d]) => e * 2 + (d === 1 ? 0 : 1));
+      const cum = [0]; for (const h of hs) cum.push(cum[cum.length - 1] + net.len[h >> 1]);
+      // stop positions -> route distance (fallback: snap bus_stop nodes near the path)
+      let stops = r.stops.map(([si, d]) => ({ si, d }));
+      return { i, ref: r.ref, name: r.name, colour: parseColour(r.colour), hs, cum, stops, len: cum[cum.length - 1] };
+    }).filter(r => r.hs.length > 5 && r.len > 600);
+  }
+  update(dt, focus, info) {
+    this.timer -= dt; if (this.timer > 0) return; this.timer = 6;
+    const G = this.G, net = G.net;
+    const buses = G.traffic.list.filter(v => v.kind === 'bus');
+    for (const b of buses) if (b.ri >= b.route.length - 1 && b.v < 0.1 && !info.visible(b.x, b.y, b.z, 4)) G.traffic.remove(b);
+    if (buses.length >= 14) return;
+    for (const r of this.routes) {
+      if (buses.some(b => b.busRoute === r.i && Math.hypot(b.x - focus.x, b.z - focus.z) < 900)) continue;
+      // find route points near the focus; spawn ~350-550 m upstream, out of view
+      let best = null;
+      for (let k = 0; k < r.hs.length; k++) {
+        net.at(r.hs[k], 0, this._t || (this._t = [0, 0, 0, 0, 0]));
+        const d = Math.hypot(this._t[0] - focus.x, this._t[2] - focus.z);
+        if (d > 320 && d < 620 && !info.visible(this._t[0], this._t[1], this._t[2], 5)) {
+          // only if the route later passes near the focus
+          let passes = false;
+          for (let j = k; j < Math.min(r.hs.length, k + 40); j++) { net.at(r.hs[j], 0, this._t); if (Math.hypot(this._t[0] - focus.x, this._t[2] - focus.z) < 200) { passes = true; break; } }
+          if (passes) { best = k; break; }
+        }
+      }
+      if (best == null) continue;
+      const deck = /^(1[0-9]|2|3|4|5|9|17)$/.test(r.ref) ? 'bus' : (this.rand() < 0.5 ? 'bus' : 'busS');
+      const v = G.traffic.spawnAt(r.hs[best], 1, { kind: 'bus', model: deck, paint: r.colour, route: r.hs, ri: best });
+      v.fixedRoute = true; v.busRoute = r.i; v.ref = r.ref; v.persistent = true; v.v0f = 0.85;
+      v.nextStop = r.stops.findIndex(s => s.d > r.cum[best] + 5);
+      v.busData = r;
+      if (buses.length + 1 >= 14) break;
+    }
+  }
+  // called from traffic.drive through stopAtFn
+  stopFor(v) {
+    const r = v.busData; if (!r || v.nextStop == null || v.nextStop < 0 || v.nextStop >= r.stops.length) return 1e9;
+    const pos = r.cum[v.ri] + v.s, st = r.stops[v.nextStop];
+    const d = st.d - pos;
+    if (d < -3) { v.nextStop++; return 1e9; }
+    if (d < 1.2 && v.v < 0.3) {
+      v.dwell = (v.dwell || 0) + this.G.dt;
+      if (!v.served) { v.served = true; const n = this.G.peds.board(st.si, v); v.dwellFor = 8 + n * 2.5; }
+      if (v.dwell > (v.dwellFor || 10)) { v.nextStop++; v.dwell = 0; v.served = false; return 1e9; }
+      return 0.01;
+    }
+    return d < 60 ? d : 1e9;
+  }
+}
+function parseColour(c) {
+  if (!c) return 0x6b2a8a;
+  const m = /^#?([0-9a-f]{6})$/i.exec(c.trim()); if (m) return parseInt(m[1], 16);
+  const named = { purple: 0x6b2a8a, red: 0xb3202a, blue: 0x1e4fa3, green: 0x2a7a3a, yellow: 0xd8b400, orange: 0xe07a10, pink: 0xd0508a, brown: 0x7a4a2a, grey: 0x777777, gray: 0x777777, black: 0x222222, white: 0xeeeeee, lime: 0x80c020, navy: 0x1a2a5a, maroon: 0x6a1a2a, teal: 0x1a7a7a, gold: 0xc8a030 };
+  return named[c.toLowerCase()] ?? 0x6b2a8a;
+}

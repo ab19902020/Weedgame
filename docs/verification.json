@@ -1,0 +1,218 @@
+{
+ "frame": {
+  "crs": "EPSG:27700",
+  "transform": "OSTN15 (pyproj)",
+  "E0": 479000.0,
+  "N0": 171000.0,
+  "K": 0.999677,
+  "tile": 256.0,
+  "axes": "x=east, z=south, y=up (m above ODN)"
+ },
+ "landmarks": [
+  {
+   "name": "Cemetery Arch (Cemetery Junction)",
+   "lon": -0.948116,
+   "lat": 51.452953,
+   "world_x": -5816.13,
+   "world_z": -2188.49,
+   "roundTripErrorM": 0.0
+  },
+  {
+   "name": "Woodley Library (precinct)",
+   "lon": -0.903919,
+   "lat": 51.452747,
+   "world_x": -2743.74,
+   "world_z": -2210.59,
+   "roundTripErrorM": 0.0
+  },
+  {
+   "name": "Woodley Post Office (precinct)",
+   "lon": -0.905991,
+   "lat": 51.453208,
+   "world_x": -2888.48,
+   "world_z": -2259.69,
+   "roundTripErrorM": 0.0
+  },
+  {
+   "name": "Reading Town Hall",
+   "lon": -0.969687,
+   "lat": 51.456839,
+   "world_x": -7321.56,
+   "world_z": -2599.41,
+   "roundTripErrorM": 0.0
+  },
+  {
+   "name": "Reading Museum",
+   "lon": -0.969726,
+   "lat": 51.457153,
+   "world_x": -7324.8,
+   "world_z": -2634.29,
+   "roundTripErrorM": 0.0
+  },
+  {
+   "name": "Wokingham Town Hall",
+   "lon": -0.833793,
+   "lat": 51.410222,
+   "world_x": 2205.81,
+   "world_z": 2444.82,
+   "roundTripErrorM": 0.0
+  }
+ ],
+ "distances": [
+  {
+   "from": "Cemetery Arch (Cemetery Junction)",
+   "to": "Woodley Library (precinct)",
+   "geodesicM": 3072.32,
+   "worldM": 3072.47,
+   "diffM": 0.15,
+   "diffPct": 0.0048
+  },
+  {
+   "from": "Cemetery Arch (Cemetery Junction)",
+   "to": "Woodley Post Office (precinct)",
+   "geodesicM": 2928.38,
+   "worldM": 2928.52,
+   "diffM": 0.14,
+   "diffPct": 0.0048
+  },
+  {
+   "from": "Cemetery Arch (Cemetery Junction)",
+   "to": "Reading Town Hall",
+   "geodesicM": 1560.43,
+   "worldM": 1560.5,
+   "diffM": 0.08,
+   "diffPct": 0.0048
+  },
+  {
+   "from": "Cemetery Arch (Cemetery Junction)",
+   "to": "Reading Museum",
+   "geodesicM": 1573.08,
+   "worldM": 1573.15,
+   "diffM": 0.07,
+   "diffPct": 0.0047
+  },
+  {
+   "from": "Cemetery Arch (Cemetery Junction)",
+   "to": "Wokingham Town Hall",
+   "geodesicM": 9263.55,
+   "worldM": 9263.86,
+   "diffM": 0.31,
+   "diffPct": 0.0034
+  },
+  {
+   "from": "Woodley Library (precinct)",
+   "to": "Woodley Post Office (precinct)",
+   "geodesicM": 152.83,
+   "worldM": 152.84,
+   "diffM": 0.01,
+   "diffPct": 0.0041
+  },
+  {
+   "from": "Woodley Library (precinct)",
+   "to": "Reading Town Hall",
+   "geodesicM": 4594.07,
+   "worldM": 4594.3,
+   "diffM": 0.23,
+   "diffPct": 0.005
+  },
+  {
+   "from": "Woodley Library (precinct)",
+   "to": "Reading Museum",
+   "geodesicM": 4600.38,
+   "worldM": 4600.6,
+   "diffM": 0.23,
+   "diffPct": 0.005
+  },
+  {
+   "from": "Woodley Library (precinct)",
+   "to": "Wokingham Town Hall",
+   "geodesicM": 6794.76,
+   "worldM": 6794.92,
+   "diffM": 0.16,
+   "diffPct": 0.0023
+  },
+  {
+   "from": "Woodley Post Office (precinct)",
+   "to": "Reading Town Hall",
+   "geodesicM": 4445.86,
+   "worldM": 4446.08,
+   "diffM": 0.22,
+   "diffPct": 0.005
+  },
+  {
+   "from": "Woodley Post Office (precinct)",
+   "to": "Reading Museum",
+   "geodesicM": 4451.88,
+   "worldM": 4452.1,
+   "diffM": 0.22,
+   "diffPct": 0.005
+  },
+  {
+   "from": "Woodley Post Office (precinct)",
+   "to": "Wokingham Town Hall",
+   "geodesicM": 6934.11,
+   "worldM": 6934.28,
+   "diffM": 0.16,
+   "diffPct": 0.0024
+  },
+  {
+   "from": "Reading Town Hall",
+   "to": "Reading Museum",
+   "geodesicM": 35.04,
+   "worldM": 35.04,
+   "diffM": -0.0,
+   "diffPct": -0.0007
+  },
+  {
+   "from": "Reading Town Hall",
+   "to": "Wokingham Town Hall",
+   "geodesicM": 10779.93,
+   "worldM": 10780.31,
+   "diffM": 0.38,
+   "diffPct": 0.0035
+  },
+  {
+   "from": "Reading Museum",
+   "to": "Wokingham Town Hall",
+   "geodesicM": 10799.15,
+   "worldM": 10799.53,
+   "diffM": 0.38,
+   "diffPct": 0.0035
+  }
+ ],
+ "routes": {
+  "A329": {
+   "ways": 505,
+   "geodesicKm": 32.089,
+   "worldKm": 32.09,
+   "diffPct": 0.0032,
+   "note": "all carriageways of the route between Reading town centre and Bracknell (dual carriageways counted twice)"
+  },
+  "A329(M)": {
+   "ways": 41,
+   "geodesicKm": 17.176,
+   "worldKm": 17.177,
+   "diffPct": 0.0043,
+   "note": "all carriageways of the route between Reading town centre and Bracknell (dual carriageways counted twice)"
+  }
+ },
+ "buildings": {
+  "count": 48144,
+  "worldAreaKm2": 5.9862,
+  "ellipsoidAreaKm2": 5.9858,
+  "areaRatio": {
+   "mean": 1.00005,
+   "p01": 0.99998,
+   "p99": 1.00012
+  }
+ },
+ "signals": {
+  "osmTrafficSignalNodes": 593,
+  "withinAController": 591,
+  "controllers": 253,
+  "approaches": 1383,
+  "pedestrianCrossingHeads": 707,
+  "documentedTimings": 0,
+  "timingSource": "simulated (UK-typical intergreens; no published phase data imported)"
+ }
+}

@@ -4,3 +4,7 @@ local.properties
 *.jks
 *.keystore
 .env
+build/
+www/test/
+__pycache__/
+*.pyc

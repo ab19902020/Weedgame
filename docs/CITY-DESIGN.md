@@ -1,3 +1,5 @@
+> **Superseded.** This note describes the v0.5 prototype (now in `legacy/`). For v0.6, see `README.md`, `docs/COVERAGE.md` and `docs/SOURCES.md`.
+
 # Berkshire city design · v0.5
 
 GTA IV used Rockstar’s RAGE engine. Contemporary demonstrations describe moving traffic, pedestrians, textured streets, lighting and a navigation display. Rockstar’s designers also discussed building relationships between the protagonist and the people who call him. Green County uses these ideas in service of the brothers’ business: navigating to a buyer, choosing who takes the car, and recognising the district where a deal happens.
