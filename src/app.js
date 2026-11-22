@@ -81,10 +81,14 @@ function kerbPlace(x, z, filter) {
   const off = G.net.width[n.e] / 2 - 1.0;
   return { x: n.x + n.dz * off, z: n.z - n.dx * off, heading: Math.atan2(n.dz, n.dx), e: n.e };
 }
-G.teleport = (x, z) => {
+G.teleport = (x, z, heading) => {
   const B = G.brothers, me = B.me, v = B.vehicleOf(me);
   const p = kerbPlace(x, z, e => G.net.walkable(e) || (G.net.flags[e] & 16));
-  if (v) { v.x = p.x; v.z = p.z; v.heading = p.heading; v.y = 0; v.sp = 0; me.x = p.x; me.z = p.z; }
+  if (heading != null && Math.cos(p.heading - heading) < 0) {   // face the requested way on a two-way road (keep to the left)
+    p.heading += Math.PI; const w = G.net.width[p.e] / 2 - 1.0;
+    const n = G.net.nearest(x, z, 200, e => e === p.e); if (n) { p.x = n.x - n.dz * w; p.z = n.z + n.dx * w; }
+  }
+  if (v) { v.x = p.x; v.z = p.z; v.heading = p.heading; v.y = 0; v.sp = 0; me.x = p.x; me.z = p.z; B.cam.yaw = p.heading + Math.PI; }
   else { me.x = p.x + Math.sin(p.heading) * 2; me.z = p.z - Math.cos(p.heading) * 2; }
   me.y = 0; G._needGround = true;
   G.hud.fade(G.districtName(x, z));
@@ -99,7 +103,8 @@ for (const sv of G.save.vehicles) {
   if (sv.id.startsWith('p:')) G.save.taken.add(sv.id);
 }
 if (!G.traffic.byId.has('cal-car')) {
-  const a = kerbPlace(START.x + 25, START.z + 115), b = kerbPlace(START.x + 35, START.z + 120);
+  // both cars on the service road at the north end of the precinct, in view from the start
+  const a = kerbPlace(START.x, START.z - 33), b = kerbPlace(START.x - 6, START.z - 33);
   G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'hatch', paint: G.save.legacy?.business?.paint ?? 0x812f42, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
   G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'estate', paint: 0x223e69, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
 }
@@ -148,7 +153,7 @@ function step(dt, render) {
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3) {
-    for (const h of G.signalRenderer.heads) if (h.ped && Math.abs(h.x - me.x) < 3 && Math.abs(h.z - me.z) < 3) {
+    for (const h of G.signalRenderer.heads) if (h.ped && Math.hypot(h.x - me.x, h.z - me.z) < 5) {
       if (!G.signals.ctl[h.ci].demand && G.signals.ped(h.ci) === 'wait') { G.signals.press(h.ci); if (G._pressT !== h.ci) G.hud.toast('Pressed the crossing button · wait for the green man'); G._pressT = h.ci; }
       break;
     }
@@ -166,7 +171,11 @@ function step(dt, render) {
   G.atmos.updateLights(me.x, me.z);
   G.atmos.updateNearLights(G.camera.position);
   G.landmarks.update();
-  G.treesNear = 0;
+  if ((G._treeT = (G._treeT || 0) - dt) <= 0) {
+    G._treeT = 1; let n = 0;
+    for (const t of G.tiles.tiles.values()) if (t.trees && Math.abs(t.data.ox + 128 - me.x) < 300 && Math.abs(t.data.oz + 128 - me.z) < 300) for (const [x, z] of t.trees) if (Math.abs(x - me.x) < 25 && Math.abs(z - me.z) < 25) n++;
+    G.treesNear = Math.min(1, n / 8);
+  }
   if (!render) return;
   // draw dynamic actors
   const cam = G.camera.position;
@@ -181,6 +190,18 @@ function step(dt, render) {
   G.tiles.signAtlas.flush();
   G.save.tick();
   G.perf.frame(dt);
+  // dynamic resolution: hold ~30 fps on unknown phones (pixel ratio 0.7 .. cap)
+  if (!G.Q.get('fixedres')) {
+    const ms = dt * 1000; G._ema = G._ema ? G._ema * 0.95 + ms * 0.05 : ms;
+    G._resT = (G._resT || 0) + dt;
+    if (G._resT > 4) {
+      G._resT = 0;
+      const cap = Math.min(devicePixelRatio, G.quality === 'high' ? 1.5 : 1.35), pr = G.renderer.getPixelRatio();
+      let next = pr;
+      if (G._ema > 38) next = Math.max(0.7, pr - 0.15); else if (G._ema < 26) next = Math.min(cap, pr + 0.1);
+      if (Math.abs(next - pr) > 0.01) { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth, innerHeight); }
+    }
+  }
   G.renderer.render(G.scene, G.camera);
   G.frame++;
 }

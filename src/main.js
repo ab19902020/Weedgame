@@ -22,7 +22,7 @@ export async function boot(extra = {}) {
   const renderer = new THREE.WebGPURenderer({ antialias: quality !== 'low', forceWebGL, powerPreference: 'high-performance' });
   await renderer.init();
   const backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2';
-  renderer.setPixelRatio(Math.min(devicePixelRatio, quality === 'high' ? 1.5 : 1.0));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, quality === 'high' ? 1.5 : 1.15));
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.shadowMap.enabled = quality !== 'low' && Q.get('shadows') !== '0';

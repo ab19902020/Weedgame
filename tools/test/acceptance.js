@@ -19,11 +19,33 @@ async function launch(video) {
     b, ctx, p, cdp, errors,
     touch: (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y, id]) => ({ x, y, id: id ?? 1, radiusX: 6, radiusY: 6, force: 1 })) }),
     frames: async n => { const f0 = await p.evaluate(() => GC.frame); await p.waitForFunction(k => GC.frame >= k, f0 + n, { timeout: 0, polling: 100 }); },
-    stickHold: async (sx, sy) => { const ox = 140, oy = 300; await T.touch('touchStart', [[ox, oy, 1]]); await T.touch('touchMove', [[ox + sx * 30, oy + sy * 30, 1]]); await T.touch('touchMove', [[ox + sx * 55, oy + sy * 55, 1]]); },
-    stickMove: async (sx, sy) => T.touch('touchMove', [[140 + sx * 55, 300 + sy * 55, 1]]),
+    runPt: null,
+    stickHold: async (sx, sy, run) => {
+      const ox = 140, oy = 300;
+      let extra = [];
+      if (run) { const r = await p.locator('#bRun').boundingBox(); T.runPt = [r.x + r.width / 2, r.y + r.height / 2, 4]; extra = [T.runPt]; } else T.runPt = null;
+      await T.touch('touchStart', [[ox, oy, 1], ...extra]); await T.touch('touchMove', [[ox + sx * 30, oy + sy * 30, 1], ...extra]); await T.touch('touchMove', [[ox + sx * 55, oy + sy * 55, 1], ...extra]);
+    },
+    stickMove: async (sx, sy) => T.touch('touchMove', [[140 + sx * 55, 300 + sy * 55, 1], ...(T.runPt ? [T.runPt] : [])]),
     stickRelease: async () => T.touch('touchEnd', []),
-    stick: async (sx, sy, n) => { await T.stickHold(sx, sy); await T.frames(n); await T.stickRelease(); },
+    stick: async (sx, sy, n, run) => { await T.stickHold(sx, sy, run); await T.frames(n); await T.stickRelease(); T.runPt = null; },
     look: async (dx, dy = 0) => { const x = 620, y = 200; await T.touch('touchStart', [[x, y, 2]]); for (let k = 1; k <= 6; k++) await T.touch('touchMove', [[x + dx * k / 6, y + dy * k / 6, 2]]); await T.frames(1); await T.touch('touchEnd', []); },
+    // hold the Brake (Run) button until the vehicle has stopped
+    stopVehicle: async () => {
+      const r = await p.locator('#bRun').boundingBox(); const pt = [r.x + r.width / 2, r.y + r.height / 2, 5];
+      await T.touch('touchStart', [pt]);
+      for (let i = 0; i < 60; i++) { const sp = await p.evaluate(() => Math.abs(GC.brothers.vehicleOf(GC.brothers.me)?.sp || 0)); if (sp < 0.3) break; await T.frames(1); }
+      await T.touch('touchEnd', []); await T.frames(1);
+    },
+    // turn the camera (right-side touch drag) so it looks towards a world point
+    face: async (x, z) => {
+      for (let k = 0; k < 3; k++) {
+        const d = await p.evaluate(([x, z]) => { const c = GC.brothers.cam, me = GC.brothers.me; const want = Math.atan2(me.z - z, me.x - x); let e = want - c.yaw; while (e > Math.PI) e -= 2 * Math.PI; while (e < -Math.PI) e += 2 * Math.PI; return e; }, [x, z]);
+        if (Math.abs(d) < 0.08) break;
+        const px = Math.max(-280, Math.min(280, d / 0.0062));
+        await T.look(px, 0);
+      }
+    },
     tapAt: async (x, y) => { await T.touch('touchStart', [[x, y, 3]]); await T.touch('touchEnd', []); },
     tap: async sel => { const r = await p.locator(sel).first().boundingBox(); if (!r) throw new Error('no ' + sel); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(2); },
     dev: async (...labels) => { // open the developer panel and tap buttons by label
@@ -34,7 +56,7 @@ async function launch(video) {
         const r = await loc.boundingBox(); if (!r) throw new Error('no dev button ' + label);
         await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(2);
       }
-      if (!(await p.locator('#dev').isHidden())) { const c = p.locator('#dev button', { hasText: 'Close' }).last(); const r = await c.boundingBox(); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(1); }
+      if (!(await p.locator('#dev').isHidden())) { const r = await p.locator('#devX').boundingBox(); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(1); }
     },
     state: () => p.evaluate(() => { const B = GC.brothers, me = B.me, v = B.vehicleOf(me); return { brother: me.short, x: +me.x.toFixed(1), y: +me.y.toFixed(2), z: +me.z.toFixed(1), heading: +me.heading.toFixed(2), vehicle: me.vehicle, speed: +(B.speedNow || 0).toFixed(2), road: GC.roadName(me.x, me.z), district: GC.districtName(me.x, me.z), time: new Date(GC.world.time * 1000).toISOString(), hour: +GC.world.hours().toFixed(2), weather: GC.world.stateName(), rain: +GC.world.cur.rain.toFixed(2), cover: +GC.world.cur.cover.toFixed(2), wet: +GC.world.s.wet.toFixed(3), puddle: +GC.world.s.puddle.toFixed(3), police: GC.police.player.state, fps: GC.perf.samples.at(-1)?.fps ?? null, backend: GC.backend, frame: GC.frame }; }),
     shot: async name => { await p.screenshot({ path: path.join(OUT, name + '.png') }); return name + '.png'; },
@@ -44,7 +66,7 @@ async function launch(video) {
       for (let i = 0; i < (opts.bursts || 30); i++) {
         const s = await p.evaluate(([x, z]) => { const B = GC.brothers, me = B.me, yaw = B.cam.yaw; const wx = x - me.x, wz = z - me.z, d = Math.hypot(wx, wz); const fx = -Math.cos(yaw), fz = -Math.sin(yaw); const ux = wx / d, uz = wz / d; return { d, sx: -ux * fz + uz * fx, sy: -(ux * fx + uz * fz) }; }, [x, z]);
         if (s.d < (opts.within || 1.5)) return s.d;
-        await T.stick(s.sx, s.sy, Math.min(opts.frames || 6, Math.ceil(s.d / (opts.run ? 1.2 : 0.4))));
+        await T.stick(s.sx, s.sy, Math.min(opts.frames || 6, Math.ceil(s.d / (opts.run ? 1.2 : 0.4))), opts.run && s.d > 6);
       }
       return -1;
     },
@@ -55,6 +77,7 @@ async function launch(video) {
         for (let i = 0; i < 400; i++) {
           const s = await p.evaluate(([x, z]) => { const B = GC.brothers, me = B.me, v = B.vehicleOf(me); const d = Math.hypot(x - v.x, z - v.z); let err = Math.atan2(z - v.z, x - v.x) - v.heading; while (err > Math.PI) err -= 2 * Math.PI; while (err < -Math.PI) err += 2 * Math.PI; const decks = GC.net.decks(v.x, v.z, []); return { d, err, sp: v.sp, x: v.x, y: v.y, z: v.z, road: GC.roadName(v.x, v.z), district: GC.districtName(v.x, v.z), overhead: decks.filter(h => h > v.y + 3).map(h => +h.toFixed(1)) }; }, [x, z]);
           trace.push(s);
+          if (s.overhead.length && !T._underShot) { T._underShot = true; await T.shot('14a-beneath-the-a3290'); }
           if (s.d < 8) break;
           const thr = s.sp > (opts.maxSpeed || 11) ? 0 : -0.75;
           await T.stickMove(Math.max(-1, Math.min(1, s.err * 1.6)), thr);
@@ -67,7 +90,9 @@ async function launch(video) {
   };
   return T;
 }
+const ONLY = process.env.ONLY ? process.env.ONLY.split(',') : null;
 async function step(name, fn) {
+  if (ONLY && !name.startsWith('Launch') && !ONLY.some(k => name.toLowerCase().includes(k))) return;
   const t0 = Date.now(); const rec = { name, ok: true, notes: [], shots: [] };
   console.log('== ' + name);
   try { await fn(rec); rec.ok = rec.fail == null; } catch (e) { rec.ok = false; rec.error = String(e.stack || e).slice(0, 800); console.log('   ERROR', rec.error); }
@@ -81,7 +106,7 @@ async function step(name, fn) {
   const { p } = T;
   await p.goto(BASE + '?backend=webgl');
   await p.evaluate(() => localStorage.clear());
-  await p.goto(BASE + '?backend=webgl&sim=2');
+  await p.goto(BASE + '?backend=webgl&sim=2&fixedres=1');
   await p.waitForFunction(() => window.GC && GC.frame > 3 && document.getElementById('boot').textContent === '', null, { timeout: 0, polling: 500 });
   await T.frames(8);
   log.environment = await p.evaluate(() => ({ userAgent: navigator.userAgent, backend: GC.backend, quality: GC.quality, gl: (() => { try { const c = document.createElement('canvas').getContext('webgl2'); const e = c.getExtension('WEBGL_debug_renderer_info'); return c.getParameter(e.UNMASKED_RENDERER_WEBGL); } catch { return null; } })(), viewport: [innerWidth, innerHeight] }));
@@ -117,7 +142,10 @@ async function step(name, fn) {
     await T.dev('Woodley signal crossing'); await T.frames(12);
     const info = await p.evaluate(() => { const me = GC.brothers.me; let best = null, bd = 1e9; for (const h of GC.signalRenderer.heads) if (h.ped) { const d = Math.hypot(h.x - me.x, h.z - me.z); if (d < bd) { bd = d; best = h; } } const pair = GC.signalRenderer.heads.filter(h => h.ped && h.ci === best.ci); let far = pair.filter(h => h !== best).sort((a, b) => Math.hypot(a.x - best.x, a.z - best.z) - Math.hypot(b.x - best.x, b.z - best.z)).find(h => Math.hypot(h.x - best.x, h.z - best.z) > 4) || pair[1]; return { ci: best.ci, a: [best.x, best.z], b: [far.x, far.z] }; });
     rec.notes.push(`controller ${info.ci}: kerb A ${info.a.map(v => v.toFixed(1))}, kerb B ${info.b.map(v => v.toFixed(1))}`);
-    await T.walkTo(info.a[0], info.a[1], { within: 1.2, bursts: 20 });
+    for (let k = 0; k < 3; k++) { const d = await T.walkTo(info.a[0], info.a[1], { within: 1.2, bursts: 20 }); if (d >= 0) break; }
+    const dA = await p.evaluate(a => Math.hypot(GC.brothers.me.x - a[0], GC.brothers.me.z - a[1]), info.a);
+    rec.notes.push(`standing ${dA.toFixed(1)} m from the crossing post`);
+    await T.frames(4);
     const timeline = [];
     let walk = false;
     for (let i = 0; i < 160 && !walk; i++) {
@@ -140,7 +168,7 @@ async function step(name, fn) {
 
   await step('Watch a pedestrian and a bus complete a junction (Cemetery Junction)', async rec => {
     await T.dev('Cemetery Junction', '×8'); await T.frames(15);
-    await T.look(140); await T.frames(2);
+    await T.face(-5816, -2188); await T.frames(2);
     rec.shots.push(await T.shot('07-cemetery-junction-arch'));
     const J = { x: -5845.7, z: -2188.9 };
     let bus = null, busTrack = [], pedTrack = [], ped = null;
@@ -177,8 +205,7 @@ async function step(name, fn) {
     await T.tap('#bUse'); await T.frames(4);
     let s = await T.state(); if (s.vehicle !== 'cal-car') { rec.fail = 'could not get into Cal\'s car'; return; }
     rec.shots.push(await T.shot('09-cal-in-car'));
-    await T.stick(0, -0.8, 25); await T.stick(0, 0.9, 10);
-    await T.frames(6);
+    await T.stick(0, -0.8, 16); await T.stopVehicle();
     await T.tap('#bUse'); await T.frames(4);
     parked = await p.evaluate(() => { const v = GC.traffic.byId.get('cal-car'); return { x: +v.x.toFixed(2), z: +v.z.toFixed(2), heading: +v.heading.toFixed(3), road: GC.roadName(v.x, v.z) }; });
     rec.notes.push(`Cal parked at ${parked.x}, ${parked.z} on ${parked.road}`);
@@ -189,12 +216,13 @@ async function step(name, fn) {
     await T.walkTo(lcar[0], lcar[1], { within: 3.2, bursts: 40, frames: 10, run: true });
     await T.tap('#bUse'); await T.frames(3);
     s = await T.state(); if (s.vehicle !== 'leon-car') { rec.fail = 'Leon could not get into his car'; return; }
-    await T.stick(0, -0.8, 20);
-    rec.notes.push('Leon drove off; the Woodley-to-Reading run is shortened with the Dev "Go to" teleport (software rendering runs ~1 fps here)');
+    await T.stick(0, 0.8, 14); await T.stopVehicle();   // reverse away: Leon's car is parked behind Cal's
+    rec.notes.push('Leon reversed out; the Woodley-to-Reading run is shortened with the Dev "Go to" teleport (software rendering runs ~1 fps here)');
     await T.dev('Reading town centre'); await T.frames(15);
-    await T.stick(0, -0.7, 20); await T.stick(0, 0.9, 8); await T.frames(5);
+    await T.stick(0, -0.7, 16); await T.stopVehicle();
     await T.tap('#bUse'); await T.frames(3);
     s = await T.state(); rec.notes.push(`Leon parked in ${s.district} on ${s.road}`);
+    await T.face(-7323, -2601); await T.frames(2);
     rec.shots.push(await T.shot('11-leon-in-reading'));
     await T.tap('#bSwap'); await T.frames(15);
     s = await T.state();
@@ -205,19 +233,20 @@ async function step(name, fn) {
     await T.tap('#bMap'); await T.frames(3); rec.shots.push(await T.shot('13-map-both-brothers')); await T.tap('#mClose');
   });
 
-  await step('Drive across a town boundary and beneath a flyover (Culver Lane under the A3290)', async rec => {
+  await step('Drive across a town boundary and beneath a flyover (Suttons Park Avenue under the A3290)', async rec => {
     const car = await p.evaluate(() => { const v = GC.traffic.byId.get('cal-car'); return [v.x, v.z]; });
     await T.walkTo(car[0], car[1], { within: 3.2, bursts: 20, frames: 6 });
     await T.tap('#bUse'); await T.frames(3);
-    await T.dev('Culver Lane (north of A3290)'); await T.frames(15);
-    // follow Culver Lane south through the underpass
-    const pts = await p.evaluate(() => { const net = GC.net, me = GC.brothers.me; const n = net.nearest(me.x, me.z, 60, e => net.roadName(e) === 'Culver Lane'); const out = []; let e = n.e; const s = net.pstart[e], c = net.pcount[e]; const fwd = net.pts[(s + c - 1) * 3 + 2] > net.pts[s * 3 + 2]; let x = n.x, z = n.z; for (let k = 0; k < 14; k++) { z += 25; const m = net.nearest(x, z, 40, f => net.roadName(f) === 'Culver Lane'); if (!m) break; x = m.x; z = m.z; out.push([x, z]); } return out; });
+    if (!(await T.state()).vehicle) { rec.fail = 'could not get into the car'; return; }
+    await T.dev('Suttons Park Ave (A3290 flyover)'); await T.frames(15);
+    // waypoints along Suttons Park Avenue, west (East Reading) to east (Earley), through the underpass
+    const pts = await p.evaluate(() => { const net = GC.net, raw = []; for (let e = 0; e < net.nEdges; e++) { if (net.roadName(e) !== 'Suttons Park Avenue') continue; const s = net.pstart[e], n = net.pcount[e]; for (let i = 0; i < n; i++) { const x = net.pts[(s + i) * 3], z = net.pts[(s + i) * 3 + 2]; if (x > -5365 && x < -4960 && z > -2730 && z < -2670) raw.push([x, z]); } } raw.sort((a, b) => a[0] - b[0]); const out = []; for (const p of raw) if (!out.length || Math.hypot(p[0] - out.at(-1)[0], p[1] - out.at(-1)[1]) > 22) out.push(p); return out; });
     rec.notes.push(`route points: ${pts.length}`);
-    const trace = await T.driveAlong(pts.slice(0, 12), { maxSpeed: 9 });
+    const trace = await T.driveAlong(pts, { maxSpeed: 10 });
     const districts = [...new Set(trace.map(t => t.district))], under = trace.filter(t => t.overhead.length);
-    rec.notes.push(`districts passed: ${districts.join(' -> ')}; samples beneath a deck: ${under.length} (deck heights ${[...new Set(under.flatMap(t => t.overhead))].slice(0, 3).join(', ')} m vs car ${under[0]?.y?.toFixed(1)} m)`);
-    rec.trace = trace.filter((_, k) => k % 4 === 0).map(t => [+t.x.toFixed(1), +t.y.toFixed(1), +t.z.toFixed(1), t.road, t.district, t.overhead]);
-    for (let k = 0; k < trace.length; k++) if (trace[k].overhead.length) { break; }
+    rec.notes.push(`districts passed: ${districts.join(' -> ')}; samples beneath a deck: ${under.length} (deck ${[...new Set(under.flatMap(t => t.overhead))].slice(0, 2).join(', ')} m above datum, car at ${under[0]?.y?.toFixed(1)} m)`);
+    rec.trace = trace.filter((_, k) => k % 3 === 0).map(t => [+t.x.toFixed(1), +t.y.toFixed(1), +t.z.toFixed(1), t.road, t.district, t.overhead]);
+    await T.stopVehicle();
     rec.shots.push(await T.shot('14-after-underpass'));
     if (districts.length < 2) rec.fail = 'did not cross a district boundary';
     if (!under.length) rec.fail = (rec.fail ? rec.fail + '; ' : '') + 'never passed beneath a bridge deck';
@@ -240,6 +269,7 @@ async function step(name, fn) {
     await T.dev('rain');
     for (let i = 0; i < 30; i++) { await T.frames(4); const s = await T.state(); series.push([s.hour, s.weather, s.rain, s.wet, s.puddle]); }
     rec.shots.push(await T.shot('18-heavy-rain-wet-road'));
+    if ((await T.state()).vehicle) { await T.stopVehicle(); await T.tap('#bUse'); await T.frames(3); }
     // stand under the shop canopy: rain is kept out and sound changes
     const can = await p.evaluate(() => { const me = GC.brothers.me; let best = null, bd = 1e9; for (const c of GC.canopies) if (c.kind === 0) { const d = Math.hypot(c.x - me.x, c.z - me.z); if (d < bd) { bd = d; best = c; } } return [best.x, best.z]; });
     await T.walkTo(can[0], can[1], { within: 0.8, bursts: 20, frames: 5 });
@@ -254,18 +284,19 @@ async function step(name, fn) {
     rec.notes.push(`wetness peaked at ${peak} and fell to ${end} after the shower (puddles ${series.at(-1)[4]})`);
     if (!(peak > 0.6 && end < peak - 0.2)) rec.fail = 'wetness did not build and dry';
     if (!under.sheltered) rec.fail = (rec.fail ? rec.fail + '; ' : '') + 'canopy did not shelter';
-    await T.dev('30×', '19');
+    await T.dev('30×', '18:30');
     await T.frames(6); rec.shots.push(await T.shot('22-dusk-lights'));
   });
 
   await step('Police response to a witnessed collision, and its resolution', async rec => {
     await T.dev('Cemetery Junction', '×8', '12'); await T.frames(10);
+    const before = await p.evaluate(() => GC.police.nextInc);
     await T.dev('Stage collision nearby'); await T.frames(3);
     const timeline = [];
     for (let i = 0; i < 500; i++) {
-      const s = await p.evaluate(() => GC.police.incidents.map(i => ({ id: i.id, label: i.label, status: i.status, unit: i.unit?.id, d: i.unit ? Math.round(Math.hypot(i.unit.x - i.x, i.unit.z - i.z)) : null, siren: !!i.unit?.siren, witnesses: i.witnesses.length })));
+      const s = await p.evaluate(first => GC.police.incidents.filter(i => i.id >= first).map(i => ({ id: i.id, label: i.label, status: i.status, x: i.x, z: i.z, unit: i.unit?.id, d: i.unit ? Math.round(Math.hypot(i.unit.x - i.x, i.unit.z - i.z)) : null, siren: !!i.unit?.siren, witnesses: i.witnesses.length })), before);
       const inc = s[0]; if (!inc) break;
-      if (!timeline.length || timeline.at(-1).status !== inc.status) { timeline.push({ ...inc, t: await p.evaluate(() => +GC.time.toFixed(1)) }); if (inc.status === 'responding' || inc.status === 'onscene') rec.shots.push(await T.shot('23-police-' + inc.status)); }
+      if (!timeline.length || timeline.at(-1).status !== inc.status) { timeline.push({ ...inc, t: await p.evaluate(() => +GC.time.toFixed(1)) }); if (inc.status === 'responding' || inc.status === 'onscene') { await T.face(inc.x !== undefined ? inc.x : 0, inc.z); rec.shots.push(await T.shot('23-police-' + inc.status)); } }
       if (inc.status === 'cleared') break;
       await T.frames(2);
     }
@@ -281,12 +312,13 @@ async function step(name, fn) {
 
   await step('Player disturbance: stop state and clean resolution', async rec => {
     await T.dev('Woodley precinct'); await T.frames(10);
-    // stand next to the foot patrol and take a parked car in view of the officers
-    const tgt = await p.evaluate(() => { const o = GC.police.officers[0]; let best = null, bd = 1e9; for (const v of GC.traffic.list) if (v.parked && !v.free) { const d = Math.hypot(v.x - o.x, v.z - o.z); if (d < bd) { bd = d; best = v; } } return best ? { x: best.x, z: best.z, d: bd, id: best.id } : null; });
-    rec.notes.push(`nearest parked car to the foot patrol: ${tgt && tgt.id} (${tgt && tgt.d.toFixed(0)} m)`);
+    // go to the nearest foot patrol (setup via the dev API), then take a parked car in view of the officers
+    const off = await p.evaluate(() => { const me = GC.brothers.me; let best = null, bd = 1e9; for (const o of GC.police.officers) { const d = Math.hypot(o.x - me.x, o.z - me.z); if (d < bd) { bd = d; best = o; } } return { x: best.x, z: best.z, id: best.id }; });
+    await p.evaluate(o => GC.teleport(o.x + 6, o.z + 6), off); await T.frames(20);
+    const tgt = await p.evaluate(id => { const o = GC.police.officers.find(q => q.id === id); let best = null, bd = 1e9; for (const v of GC.traffic.list) if (v.parked && !v.free) { const d = Math.hypot(v.x - o.x, v.z - o.z); if (d < bd) { bd = d; best = v; } } return best ? { x: best.x, z: best.z, d: bd, id: best.id } : null; }, off.id);
+    rec.notes.push(`foot patrol ${off.id}; nearest parked car ${tgt && tgt.id} (${tgt && tgt.d.toFixed(0)} m from the officers)`);
     if (!tgt) { rec.fail = 'no parked car'; return; }
-    await p.evaluate(t => GC.teleport(t.x + 4, t.z + 4), tgt); await T.frames(10);
-    await T.walkTo(tgt.x, tgt.z, { within: 3, bursts: 15, frames: 6 });
+    await T.walkTo(tgt.x, tgt.z, { within: 3, bursts: 25, frames: 6, run: true });
     await T.tap('#bUse'); await T.frames(4);
     const states = [];
     for (let i = 0; i < 80; i++) { const s = await p.evaluate(() => ({ st: GC.police.player.state, msg: document.getElementById('banner').textContent })); if (!states.length || states.at(-1).st !== s.st) { states.push(s); if (s.st !== 'none') rec.shots.push(await T.shot('25-police-' + s.st)); } if (s.st === 'none' && states.length > 1) break; await T.frames(2); }

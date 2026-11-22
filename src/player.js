@@ -71,7 +71,9 @@ export class Brothers {
     a.t += dt;
     a.pose = G.world.cur.rain > 0.35 && !a.running && !G.shelteredAt(me.x, me.y, me.z) ? 'umbrella' : 'walk';
     this.speedNow = sp;
-    this.followCam(dt, me.x, me.y + 1.55, me.z, 4.3, sp > 0.5 ? me.heading : null);
+    // on foot, only re-centre behind the brother while the stick is pushed mostly forward
+    const forward = ax.y < -0.55 && Math.abs(ax.x) < 0.35;
+    this.followCam(dt, me.x, me.y + 1.55, me.z, 4.3, sp > 0.5 && forward ? me.heading : null, 0.7);
   }
   collideCircle(x, z, r, y) {
     const G = this.G;
@@ -154,9 +156,9 @@ export class Brothers {
     const big = v.model.startsWith('bus') ? 13 : v.model === 'van' ? 8.5 : 7.2;
     this.followCam(dt, v.x, v.y + (v.model.startsWith('bus') ? 3 : 1.5), v.z, big, Math.abs(v.sp) > 1 ? (v.sp > 0 ? v.heading : v.heading + Math.PI) : null);
   }
-  followCam(dt, tx, ty, tz, dist, moveHeading) {
+  followCam(dt, tx, ty, tz, dist, moveHeading, rate = 1.6) {
     const c = this.cam, G = this.G;
-    if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * 1.6));
+    if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate));
     c.dist += (dist - c.dist) * Math.min(1, dt * 3);
     const cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
     let d = c.dist;

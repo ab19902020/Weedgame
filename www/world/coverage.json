@@ -1,5 +1,5 @@
 {
- "built": "2026-11-22T21:20:29Z",
+ "built": "2026-11-22T22:02:40Z",
  "coverageAreaKm2": 52.02,
  "tiles": 1067,
  "buildings": {
@@ -212,6 +212,6 @@
  },
  "shopSigns": 1048,
  "barriers": 1285,
- "parkingSlots": 36884,
- "tileBytes": 17360250
+ "parkingSlots": 35730,
+ "tileBytes": 17347225
 }

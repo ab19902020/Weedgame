@@ -46,13 +46,13 @@ export class World {
   force(state) {
     const seg = this.s.seg;
     const blendNow = this.mix();
-    seg.prev = 'custom'; this._custom = blendNow;
+    seg.prev = 'custom'; seg.prevMix = blendNow;
     seg.state = state; seg.start = this.s.t; seg.len = 90 * 60; seg.i++;
   }
   setHour(h) { const d = new Date(this.s.t * 1000); d.setHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0); this.s.t = d.getTime() / 1000; this.s.seg.start = Math.min(this.s.seg.start, this.s.t); }
   mix() {
     const seg = this.s.seg;
-    const a = seg.prev === 'custom' ? this._custom || STATES.broken : STATES[seg.prev], b = STATES[seg.state];
+    const a = seg.prev === 'custom' ? seg.prevMix || STATES.broken : STATES[seg.prev], b = STATES[seg.state];
     const k = Math.max(0, Math.min(1, (this.s.t - seg.start) / BLEND));
     const e = k * k * (3 - 2 * k);
     const out = {};

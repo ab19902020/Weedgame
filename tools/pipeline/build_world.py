@@ -1044,6 +1044,14 @@ for wid, ll, t in barriers:
     barrier_lines.append((LineString(xs), kind, hgt))
 bartree = shapely.STRtree([l for l, _, _ in barrier_lines]) if barrier_lines else None
 
+# no kerbside parking on crossing zig-zags (20 m) or close to junctions (12 m)
+no_park, no_park_r = [], []
+for c in crossings:
+    no_park.append(Point(c[3], c[4])); no_park_r.append(20.0)
+for n, es in deg.items():
+    if len(es) >= 3:
+        no_park.append(Point(node_xyz[n, 0], node_xyz[n, 2])); no_park_r.append(12.0)
+no_park_tree = shapely.STRtree(no_park)
 GRID = 32.0   # surface polygon clipping cell (keeps triangles small so they follow terrain)
 RAS = 2.0     # landcover raster resolution
 NR = int(TILE / RAS)
@@ -1343,6 +1351,9 @@ def build_tile(ix, iz):
         if l.length < 30:
             continue
         for s in np.arange(12, l.length - 12, 6.2):
+            pp = l.interpolate(s)
+            if len(no_park_tree.query(pp.buffer(20))) and any(no_park[j].distance(pp) < no_park_r[j] for j in no_park_tree.query(pp.buffer(20))):
+                continue
             if rng.random() > 0.33:
                 continue
             p0 = l.interpolate(s); p1 = l.interpolate(min(l.length, s + 1))

@@ -180,6 +180,14 @@ export class Traffic {
       v.stuck += dt;
       if (v.stuck > 4) this.tryPass(v, occ);
     } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing && gap > 25) { v.passing = false; v.latT = 0; } }
+    // responding police: pull up ~10 m short of the scene when it lies ahead on this road
+    if (v.target && v.status === 'responding') {
+      for (let k = 0; k <= 90; k += 6) {
+        const t = this.net.at(v.h, Math.min(L, v.s + k), this.tmp2 || (this.tmp2 = [0, 0, 0, 0, 0]));
+        if (Math.hypot(t[0] - v.target.x, t[2] - v.target.z) < 16) { stopAt = Math.min(stopAt, Math.max(0.5, k - 10)); break; }
+        if (v.s + k >= L) break;
+      }
+    }
     // bus stops
     if (v.busData && this.busStop) stopAt = Math.min(stopAt, this.busStop(v));
     // player vehicle / people standing in the carriageway ahead

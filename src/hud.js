@@ -3,8 +3,8 @@ import { STATES } from './weather.js';
 
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 export const TESTSPOTS = [
-  ['Woodley precinct', -2869, -2192], ['Woodley signal crossing', -2790, -2318], ['Cemetery Junction', -5832, -2196],
-  ['Reading Town Hall', -7300, -2540], ['Culver Lane (north of A3290)', -4772, -2080], ['M4 over Reading Road', -289, 790],
+  ['Woodley precinct', -2869, -2192], ['Woodley signal crossing', -2790, -2318], ['Cemetery Junction', -5862, -2186],
+  ['Reading Town Hall', -7300, -2540], ['Suttons Park Ave (A3290 flyover)', -5372, -2681, 0], ['M4 over Reading Road', -289, 790],
 ];
 export class Hud {
   constructor(G) {
@@ -199,7 +199,8 @@ export class Hud {
     const d = this.el('dev'); d.hidden = !d.hidden; if (d.hidden) return;
     const G = this.G, w = G.world;
     const btn = (label, fn) => { const b = document.createElement('button'); b.textContent = label; b.onclick = e => { e.stopPropagation(); fn(); this.toggleDev(); this.toggleDev(); }; return b; };
-    d.innerHTML = '<h3>Developer</h3>';
+    d.innerHTML = '<button class="x" id="devX">×</button><h3>Developer</h3>';
+    d.querySelector('#devX').onclick = e => { e.stopPropagation(); d.hidden = true; };
     const row = (title, items) => { const r = document.createElement('div'); r.className = 'row'; r.innerHTML = `<b>${title}</b>`; for (const it of items) r.append(it); d.append(r); };
     row('Time', [6, 8, 12, 16, 18.5, 21, 0].map(h => btn(String(h).replace('.5', ':30'), () => w.setHour(h))));
     row('Speed', [1, 30, 120, 600].map(s => btn(s + '×' + (w.s.scale === s ? ' ✓' : ''), () => w.s.scale = s)));
@@ -210,7 +211,7 @@ export class Hud {
       btn(G.backend === 'WebGPU' ? 'Use WebGL2' : 'Retry WebGPU', () => G.backend === 'WebGPU' ? G.useWebGL() : G.retryWebGPU())]);
     row('Sim', [1, 2, 4, 8].map(k => btn('×' + k + (G.simSteps === k ? ' ✓' : ''), () => G.simSteps = k)));
     row('Go to', G.manifest.districts.map(di => btn(di.name, () => G.teleport(di.x, di.z))));
-    row('Test spots', TESTSPOTS.map(([n, x, z]) => btn(n, () => G.teleport(x, z))));
+    row('Test spots', TESTSPOTS.map(([n, x, z, h]) => btn(n, () => G.teleport(x, z, h))));
     const info = document.createElement('p'); info.textContent = `Renderer ${G.backend} · quality ${G.quality} · weather seed ${w.s.seed} · sandbox mode (no missions)`; d.append(info);
     d.append(btn('Close', () => {}));
     d.lastChild.onclick = () => d.hidden = true;

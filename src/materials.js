@@ -247,6 +247,8 @@ export function buildingMaterial() {
   const chim = brickTone.mul(0.9);
   let albedo = wallCol.mul(isWall);
   albedo = mix(albedo, vec3(0.92, 0.92, 0.9), frame.mul(isHouse).add(frame.mul(0.6)).min(1));
+  const sill = step(abs(cu.sub(0.5)), ww.mul(0.5).add(0.06)).mul(step(winBot.sub(0.05), fv)).mul(step(fv, winBot)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(isDoor)).mul(step(0, u.y));
+  albedo = mix(albedo, vec3(0.62, 0.6, 0.55), sill.mul(float(1).sub(aa.mul(0.6))));
   albedo = mix(albedo, glassCol, glass);
   albedo = mix(albedo, doorRGB, isDoor);
   albedo = albedo.add(roofCol.mul(isRoof)).add(flatCol.mul(isFlat)).add(chim.mul(isChim));

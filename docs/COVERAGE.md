@@ -1,6 +1,6 @@
 # Green County · world coverage report (v0.6.0)
 
-Built 2026-11-22T21:20:29Z from the OpenStreetMap South East England extract (2026-11-19T02:11:32Z) and the Environment Agency LIDAR Composite DTM 1m (WCS, resampled to 4 m), Open Government Licence v3.0. Every number below is a count taken from the build or a computed comparison against those inputs. Nothing here is an accuracy estimate.
+Built 2026-11-22T22:02:40Z from the OpenStreetMap South East England extract (2026-11-19T02:11:32Z) and the Environment Agency LIDAR Composite DTM 1m (WCS, resampled to 4 m), Open Government Licence v3.0. Every number below is a count taken from the build or a computed comparison against those inputs. Nothing here is an accuracy estimate.
 
 ## Coverage area
 
@@ -27,7 +27,7 @@ Built 2026-11-22T21:20:29Z from the OpenStreetMap South East England extract (20
 
 *Footprints* are measured geometry (OSM, mostly traced from Ordnance Survey OpenData / aerial imagery by mappers). Each one becomes its own closed mesh with courtyards (inner rings) kept. *Heights* fall back to type-based storey heights when untagged (house 2 storeys × 2.75 m, terrace and semi the same, bungalow 1, garage 2.5 m, town-centre cores 3–5 storeys, retail sheds 6.5 m, industrial 8–11 m). *Pitched roofs* go on houses whose footprint fills its minimum rectangle, or whose largest inscribed rectangle covers at least 45% of it; rear extensions then get flat roofs. Gabled versus hipped is a deterministic per-building choice unless `roof:shape` is tagged.
 
-**Façades are procedural, not photographed.** No façade photography was imported. Brick, render, pebbledash, cladding, window rhythm, doors (on the side facing the nearest road), shopfronts and lit windows at night are generated per building from its type and a stable seed. Shop fascia names come from OSM `shop`/`amenity` nodes (1048 signs).
+**Façades are procedural, not photographed.** No façade photography was imported. Brick, render, pebbledash, cladding, window rhythm, stone sills, doors (on the side facing the nearest road), shopfronts (any building containing an OSM shop or amenity point; frontage on the side facing the street or pedestrian precinct) and lit windows at night are generated per building from its type and a stable seed. Shop fascia names come from OSM `shop`/`amenity` nodes (1048 signs).
 
 ## Roads, junctions and street furniture
 
@@ -39,8 +39,9 @@ Built 2026-11-22T21:20:29Z from the OpenStreetMap South East England extract (20
 * Buses: 136 of 136 OSM bus-route relations reconstructed onto the graph (longest continuous run inside the area); 645 stops, 207 tagged with shelters (only those get shelter models). Routes: 1, 10, 108, 11, 126, 127, 128, 129, 13, 14, 143, 15, 156, 16, 17, 171, 172, 18, 194, 19a, 19b, 19c, 2, 200, 201, 202, 21, 21a, 22, 23, 24, 25, 26, 27, 28, 28a, 29, 2a, 3, 33, 3b, 4, 400, 401, 403, 444, 4a, 5, 50, 507, 508, 509, 50a, 6, 702, 703, 8, 850, 9, 9a.
 * Street lamps: 97 mapped in OSM; 14824 **inferred** (placed every 30–36 m on urban roads where none are mapped).
 * Trees: 1936 mapped individually; 283304 **scattered** by landcover density (woodland, parks, gardens, cemeteries).
-* Boundary walls, fences, hedges and guard rails: 1285 mapped lines are modelled with collision. Garden boundaries and driveways that aren't mapped are **not** generated yet.
-* Parking: 36884 slots, **inferred** (car-park polygons on a 2.6 × 7.5 m grid; kerbside on residential roads). Occupancy is stable per slot ID.
+* Boundary walls, fences, hedges and guard rails: 1285 mapped lines are modelled with collision.
+* Front gardens (**inferred**): every house whose frontage wall sits at least 1.6 m behind the back of the pavement gets a boundary. That is a hedge (40%), a low brick wall (42%) or an open frontage, with collision, plus a gap holding either a 3 m driveway (block paving or tarmac) or a flagged front path to the house. Mapped boundaries take precedence visually but are not de-duplicated against the inferred ones.
+* Parking: 35730 slots, **inferred** (car-park polygons on a 2.6 × 7.5 m grid; kerbside on residential roads). Occupancy is stable per slot ID.
 
 ## Terrain
 
@@ -74,7 +75,7 @@ Recomputed by `tools/pipeline/verify.py`, which writes `docs/verification.json`.
 * **Hardware performance is unmeasured.** Nothing has run on an Honor Magic 6 Pro or any phone. Frame time, memory and stall figures exist only from software rendering in this container, which says nothing about device performance. The APK writes a performance log from the Dev panel (Save perf log).
 * **WebGPU rendering is unverified.** The renderer starts on WebGPU where `navigator.gpu` exists and switches itself to WebGL2 (remembered per version) on device loss or pipeline errors. In this container WebGPU failed (SwiftShader/lavapipe), so every capture uses WebGL2. Whether Android WebView exposes WebGPU on the target phone still has to be checked.
 * Façade photography, shopfront detail and per-building materials (OSM `building:colour`/`building:material` are read but not yet used).
-* Gardens, driveways, front walls and hedges that OSM doesn’t map; bay windows; porches; garages attached to houses.
+* Front gardens and driveways are inferred, not surveyed; there are no bay windows, porches, gutters or attached garages yet, and no rear gardens or fences between plots.
 * Signal timings: no published phase data (Reading Borough Council / Bracknell Forest UTC) has been imported; all timings are simulated.
 * Lane-level junction geometry: no turn lanes or slip-lane markings from `turn:lanes`; vehicles keep lane counts but don’t pick lanes for turns; roundabout markings are minimal.
 * Underpasses and tunnels cut into terrain (OSM `tunnel=*`) are not carved out of the terrain mesh.

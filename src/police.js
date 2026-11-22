@@ -136,7 +136,10 @@ export class Police {
   dispatch(v, x, z, why) {
     const net = this.G.net;
     const n = net.nearest(x, z, 200, e => net.flags[e] & 16); if (!n) return false;
-    v.status = 'responding'; v.siren = true; v.dest = net.ea[n.e];
+    // aim for the end of the scene's road segment nearest the unit, then stop short of the scene
+    const a = net.ea[n.e], b = net.eb[n.e], N = net.nodes;
+    const da = Math.hypot(N[a * 3] - v.x, N[a * 3 + 2] - v.z), db = Math.hypot(N[b * 3] - v.x, N[b * 3 + 2] - v.z);
+    v.status = 'responding'; v.siren = true; v.dest = da < db ? a : b; v.sceneEdge = n.e;
     v.route = [v.h]; v.ri = 0; // force re-route next edge
     v.target = { x, z }; v.why = why;
     return true;
@@ -152,6 +155,10 @@ export class Police {
     if (inc.status === 'reported' && inc.t % 10 < dt) { const u = this.nearestUnit(inc.x, inc.z); if (u && this.dispatch(u, inc.x, inc.z, inc.label)) { inc.unit = u; inc.status = 'responding'; u.incident = inc; } }
     if (inc.status === 'responding') {
       const u = inc.unit, d = Math.hypot(u.x - inc.x, u.z - inc.z);
+      // overshot or reached the routing node without seeing the scene: route to the other end
+      if ((u._rr = (u._rr || 0) - dt) <= 0 && d > 60 && u.dest != null && G.net.endNode(u.h) === u.dest) {
+        u._rr = 8; const e = u.sceneEdge; if (e != null) { u.dest = u.dest === G.net.ea[e] ? G.net.eb[e] : G.net.ea[e]; u.route = [u.h]; u.ri = 0; }
+      }
       if (d < 35 || (d < 60 && u.wait > 4)) {
         // arrive: pull over, officers attend
         u.status = 'onscene'; u.parked = true; u.v = 0; u.siren = false; u.lightsOnly = true; inc.status = 'onscene'; inc.arrived = inc.t;

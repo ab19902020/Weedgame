@@ -121,7 +121,7 @@ function build(header, A, lod) {
   out.terrain = { position: tp, normal: tnor, index: tidx };
 
   // ---------------- buildings (both LODs)
-  out.buildings = buildBuildings(header, A, lod, hAt, ox, oz);
+  out.buildings = buildBuildings(header, A, lod, hAt, ox, oz, lcAt);
   if (lod) return out;
 
   // ---------------- surfaces
@@ -178,6 +178,7 @@ function build(header, A, lod) {
     }
   }
   // ---------------- walls / fences / hedges
+  const wallCol = [];
   {
     const C = A.wlC, M = A.wlM; let ci = 0;
     for (let k = 0; k < M.length; k += 3) {
@@ -188,7 +189,34 @@ function build(header, A, lod) {
       const th = kind === 2 ? 0.8 : kind === 1 ? 0.06 : kind === 5 ? 0.1 : 0.25;
       const id = kind === 2 ? 3 : kind === 1 ? 2 : kind === 5 ? 4 : 1;
       wall(S, pts, th, h, hAt, id);
+      for (let q = 0; q < pts.length - 1; q++) wallCol.push(pts[q][0], pts[q][1], pts[q + 1][0], pts[q + 1][1], h);
     }
+  }
+  // ---------------- front gardens: boundary hedge / low wall with a driveway or path gap (inferred)
+  for (const [x0, z0, x1, z1, nx, nz, t, seed, cls] of out.buildings.gardens || []) {
+    const r = (seed * 7919) % 100 / 100, style = r < 0.4 ? 'hedge' : r < 0.82 ? 'wall' : 'open';
+    const l = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / l, uz = (z1 - z0) / l;
+    const drive = t > 4.5 && l > 6 && seed % 2 === 0;
+    const gw = drive ? 3.0 : 1.1;
+    const gs = drive ? (seed % 3 === 0 ? 0.3 : l - gw - 0.3) : (seed % 4 < 2 ? l * 0.3 : l * 0.62);
+    const P = (s_, o) => [x0 + ux * s_ + nx * o, z0 + uz * s_ + nz * o];
+    if (style !== 'open') {
+      const h = style === 'hedge' ? 0.95 + r * 0.5 : 0.62, th = style === 'hedge' ? 0.6 : 0.24, id = style === 'hedge' ? 3 : 1;
+      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) { const A0 = P(a, t), B0 = P(b, t); wall(S, [A0, B0], th, h, hAt, id); wallCol.push(A0[0], A0[1], B0[0], B0[1], h); }
+    }
+    // driveway (block paving or tarmac) or front path (flags) from the gap to the house
+    const surfId = drive ? (seed % 5 < 3 ? 4 : 0) : 1, lift = drive ? 0.08 : 0.09;
+    const a = P(gs, t + 0.3), b = P(gs + gw, t + 0.3), c = P(gs + gw, 0.05), d = P(gs, 0.05);
+    const q = [a, b, c, d].map(([x, z]) => [x, hAt(x, z) + lift, z]);
+    quad(G, q[0], q[1], q[2], q[3], [0, 1, 0], null, [surfId]);
+  }
+  if (wallCol.length) {
+    const B = out.buildings, col = Array.from(B.col), pts = Array.from(B.colPts);
+    for (let k = 0; k < wallCol.length; k += 5) {
+      const x0 = wallCol[k], z0 = wallCol[k + 1], x1 = wallCol[k + 2], z1 = wallCol[k + 3], base = Math.min(hAt(x0, z0), hAt(x1, z1));
+      col.push(pts.length / 2, 2, base + wallCol[k + 4], base); pts.push(x0 + ox, z0 + oz, x1 + ox, z1 + oz);
+    }
+    B.col = new Float32Array(col); B.colPts = new Float32Array(pts);
   }
   out.ground = G.pack();
   out.struct = S.pack();
@@ -286,7 +314,7 @@ function ribbonDeck(G, S, pts, w, kind, hAt) {
 }
 
 // ------------------------------------------------------------------ buildings
-function buildBuildings(header, A, lod, hAt, ox, oz) {
+function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   const B = new Buf(4);
   const C = A.bC, R = A.bR, P = A.bP, M = A.bM, hmin = header.hmin;
   const NM = 16;
@@ -298,20 +326,22 @@ function buildBuildings(header, A, lod, hAt, ox, oz) {
     const cn = NET.classes[NET.cls[e]];
     if (!drive && !/pedestrian|footway/.test(cn)) continue;
     const s = NET.pstart[e], n = NET.pcount[e], dst = drive ? segs : walkSegs;
-    for (let i = 0; i < n - 1; i++) { const a = (s + i) * 3, b = a + 3; dst.push(NET.pts[a] - ox, NET.pts[a + 2] - oz, NET.pts[b] - ox, NET.pts[b + 2] - oz); }
+    for (let i = 0; i < n - 1; i++) { const a = (s + i) * 3, b = a + 3; dst.push(NET.pts[a] - ox, NET.pts[a + 2] - oz, NET.pts[b] - ox, NET.pts[b + 2] - oz, NET.width[e] / 2); }
   }
-  const segDist = (x, z, list = segs) => {
+  // distance to the nearest centreline (edge=false) or carriageway edge (edge=true)
+  const segDist = (x, z, list = segs, edge = false) => {
     let best = 1e9;
-    const segs = list;
-    for (let k = 0; k < segs.length; k += 4) {
-      const ax = segs[k], az = segs[k + 1], vx = segs[k + 2] - ax, vz = segs[k + 3] - az, L2 = vx * vx + vz * vz || 1;
+    for (let k = 0; k < list.length; k += 5) {
+      const ax = list[k], az = list[k + 1], vx = list[k + 2] - ax, vz = list[k + 3] - az, L2 = vx * vx + vz * vz || 1;
       let t = ((x - ax) * vx + (z - az) * vz) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
-      const d = (ax + vx * t - x) ** 2 + (az + vz * t - z) ** 2; if (d < best) best = d;
+      let d = Math.hypot(ax + vx * t - x, az + vz * t - z); if (edge) d -= list[k + 4];
+      if (d < best) best = d;
     }
-    return Math.sqrt(best);
+    return best;
   };
   const col = []; // collision: per building [ringStart, ringLen, top, base]
   const landmarks = [];
+  const gardens = [];
   const colPts = [];
   let ci = 0, ri = 0;
   for (let bi = 0; bi < P.length; bi++) {
@@ -343,13 +373,25 @@ function buildBuildings(header, A, lod, hAt, ox, oz) {
       for (let q = 0; q < outer.length; q++) {
         const [x0, z0] = outer[q], [x1, z1] = outer[(q + 1) % outer.length];
         if (Math.hypot(x1 - x0, z1 - z0) < 2.5) continue;
-        let d = segDist((x0 + x1) / 2, (z0 + z1) / 2);
-        if (shop && walkSegs.length) d = Math.min(d, segDist((x0 + x1) / 2, (z0 + z1) / 2, walkSegs) - 2);
+        const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, L = Math.hypot(x1 - x0, z1 - z0);
+        const px = mx + (z1 - z0) / L * 2.2, pz = mz - (x1 - x0) / L * 2.2;   // 2.2 m outside the wall
+        const c = lcAt(Math.floor(px), Math.floor(pz));
+        let d = segDist(mx, mz);
+        if (shop && walkSegs.length) d = Math.min(d, segDist(mx, mz, walkSegs) - 8);
+        if (shop && (c === 12 || c === 2)) d -= 15;     // shopfronts face the pavement / precinct
+        if (c === 3) d += 50;                           // never a party wall
         if (d < bd) { bd = d; front = q; }
       }
       if (bd > 40) front = -1;
     }
     const clsCode = cls + (shop ? 32 : 0);
+    if (front >= 0 && (cls === 1 || cls === 2)) {
+      const [x0, z0] = outer[front], [x1, z1] = outer[(front + 1) % outer.length];
+      const l = Math.hypot(x1 - x0, z1 - z0), nx = (z1 - z0) / l, nz = -(x1 - x0) / l;
+      const ce = segDist((x0 + x1) / 2, (z0 + z1) / 2, segs, true);
+      const t = ce - 2.1;
+      if (t >= 1.6 && t <= 14 && l >= 4) gardens.push([x0, z0, x1, z1, nx, nz, t, seed, cls]);
+    }
     // walls
     rings.forEach((ring, k) => {
       let u = 0;
@@ -380,7 +422,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz) {
     for (const [x, z] of outer) colPts.push(x + ox, z + oz);
   }
   const g = B.pack();
-  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.landmarks = landmarks;
+  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.landmarks = landmarks; g.gardens = gardens;
   return g;
 }
 
