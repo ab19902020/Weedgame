@@ -39,3 +39,10 @@ overview.onclick=()=>{map=!map;panel.hidden=true;maptools.hidden=!map};
 world.onpointerdown=e=>{if(!map)return;drag={x:e.clientX,y:e.clientY,c:[...mapCentre]};world.setPointerCapture(e.pointerId)};
 world.onpointermove=e=>{if(!drag)return;mapCentre=[drag.c[0]-(e.clientX-drag.x)/mapScale(),drag.c[1]-(e.clientY-drag.y)/mapScale()]};
 world.onpointerup=e=>{if(!drag)return;if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<7){waypoint=[mapCentre[0]+(e.clientX-innerWidth/2)/mapScale(),mapCentre[1]+(e.clientY-innerHeight/2)/mapScale()];msg('Custom waypoint set')}drag=null};world.onpointercancel=()=>drag=null;
+b.wardrobe??=[{jacket:0,skin:0,hair:0},{jacket:1,skin:1,hair:0}];
+function wardrobe(){let u=sheet(names[b.active]+' · Wardrobe'),set=b.wardrobe[b.active];for(let [key,choices] of Object.entries({jacket:['Slate','Tobacco','Forest','Claret'],skin:['Warm','Deep','Light'],hair:['Short','Shaved']})){u.line(key);choices.forEach((name,i)=>u.button((set[key]===i?'✓ ':'')+name,()=>{set[key]=i;wardrobe()}))}}
+
+let viewYaw=0,orbit=null;
+world.addEventListener('pointerdown',e=>{if(map||!panel.hidden)return;orbit=e.clientX;world.setPointerCapture(e.pointerId)});
+world.addEventListener('pointermove',e=>{if(orbit===null||map)return;viewYaw-=(e.clientX-orbit)*.008;orbit=e.clientX});
+world.addEventListener('lostpointercapture',()=>orbit=null);

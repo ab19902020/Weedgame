@@ -1,0 +1,1 @@
+Lee Perry-Smith head scan and colour texture by Infinite-Realities, distributed via three.js examples/models/gltf/LeePerrySmith. Creative Commons Attribution 3.0. Mesh attributes repacked for local Android WebView loading. https://www.ir-ltd.net/ and https://creativecommons.org/licenses/by/3.0/
