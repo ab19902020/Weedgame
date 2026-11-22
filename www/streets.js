@@ -30,15 +30,20 @@ function buildStreetView(){
  const body=auto.children[0];const plate=box(auto,-2.31,.82,0,.04,.25,.77,0xfac849);
  for(let side of [-1,1])box(auto,2.32,.86,side*.7,.06,.25,.42,0xffe6aa);
  const updateDetails=detailWorld(T,scene,home,person,people,auto,box);
+ const updateCity=cityScene(T,scene,box);
+ const facadeTexture=new T.TextureLoader().load('assets/facades.jpg');facadeTexture.colorSpace=T.SRGBColorSpace;
  const pin=new T.Mesh(new T.OctahedronGeometry(2),new T.MeshBasicMaterial({color:0xffcb74}));scene.add(pin);
- let chunk=null,cell='',lastSize='';
+ let walls=null,chunk=null,cell='',lastSize='';
  function refresh(ix,iy){if(chunk){scene.remove(chunk);chunk.geometry.dispose();chunk.material.dispose()}
+ if(walls){scene.remove(walls);walls.geometry.dispose();walls.material.dispose()}let wallPos=[],wallUV=[];
+ function facade(x,z,u,v,height,tile){let len=Math.hypot(u-x,v-z);if(len<1)return;let cols=Math.max(1,Math.round(len/8)),rows=Math.max(1,Math.round(height/6)),tu=(tile%4)/4,tv=tile<4?.5:0;for(let col=0;col<cols;col++)for(let row=0;row<rows;row++){let l=col/cols,r=(col+1)/cols,lo=row/rows*height,hi=(row+1)/rows*height,a=[x+(u-x)*l,lo,z+(v-z)*l],b=[x+(u-x)*r,lo,z+(v-z)*r],c=[b[0],hi,b[2]],d=[a[0],hi,a[2]];wallPos.push(...a,...b,...c,...a,...c,...d);wallUV.push(tu,tv,tu+.25,tv,tu+.25,tv+.5,tu,tv,tu+.25,tv+.5,tu,tv+.5)}}
  let positions=[],colors=[];function tri(a,b,c,col){positions.push(...a,...b,...c);let shade=new T.Color(col);for(let j=0;j<3;j++)colors.push(shade.r,shade.g,shade.b)}
  let items=new Set();for(let x=ix-1;x<=ix+1;x++)for(let y=iy-1;y<=iy+1;y++)for(const f of grid.get(x+','+y)||[])items.add(f);
- for(const [kind,p] of items){if(kind==='b'){if(p.some(([x,y])=>Math.abs(x-start[2])<19&&Math.abs(y-start[3])<18))continue;let ox=p[0][0],oz=p[0][1],height=4+Math.abs(ox%7),color=[0x967463,0xad8976,0x96877b][Math.abs(ox)%3];
- for(let i=1;i<p.length;i++){let [x,z]=p[i-1],[u,v]=p[i];tri([x,0,z],[u,0,v],[u,height,v],color);tri([x,0,z],[u,height,v],[x,height,z],color);tri([ox,height+.9,oz],[x,height,z],[u,height,v],0x564e4a);
- let len=Math.hypot(x-u,z-v);if(len>4&&len<45){for(let j=2;j<len-1;j+=4){let l=j/len,r=(j+1.2)/len,ex=(v-z)/len*.06,ez=(x-u)/len*.06;for(let sign of [-1,1]){let a=x+(u-x)*l+sign*ex,b=z+(v-z)*l+sign*ez,c=x+(u-x)*r+sign*ex,d=z+(v-z)*r+sign*ez;tri([a,2,b],[c,2,d],[c,3.3,d],0x46575a);tri([a,2,b],[c,3.3,d],[a,3.3,b],0x46575a)}}}}
+ for(const [kind,p,label,usage] of items){if(kind==='b'){if(label==='Reading Town Hall'||label==='Cemetery Arch')continue;if(p.some(([x,y])=>Math.abs(x-start[2])<19&&Math.abs(y-start[3])<18))continue;let ox=p[0][0],oz=p[0][1],height=4+Math.abs(ox%7),color=[0x967463,0xad8976,0x96877b][Math.abs(ox)%3];
+ for(let i=1;i<p.length;i++){let [x,z]=p[i-1],[u,v]=p[i];facade(x,z,u,v,height,/retail|commercial/.test(usage)?5+Math.abs(ox)%3:Math.abs(ox)%5);tri([ox,height+.9,oz],[x,height,z],[u,height,v],0x564e4a);
+ }
  }else for(let i=1;i<p.length;i++){let [x,z]=p[i-1],[u,v]=p[i],len=Math.hypot(u-x,v-z)||1,w=/motorway|primary|trunk/.test(kind)?5.8:3.1,n=(v-z)*w/len,m=(x-u)*w/len;tri([x-n,.1,z-m],[x+n,.1,z+m],[u+n,.1,v+m],0x55595a);tri([x-n,.1,z-m],[u+n,.1,v+m],[u-n,.1,v-m],0x55595a)}}
+ let facadeGeo=new T.BufferGeometry();facadeGeo.setAttribute("position",new T.Float32BufferAttribute(wallPos,3));facadeGeo.setAttribute("uv",new T.Float32BufferAttribute(wallUV,2));walls=new T.Mesh(facadeGeo,new T.MeshBasicMaterial({map:facadeTexture,side:T.DoubleSide}));scene.add(walls);
  let geo=new T.BufferGeometry();geo.setAttribute('position',new T.Float32BufferAttribute(positions,3));geo.setAttribute('color',new T.Float32BufferAttribute(colors,3));geo.computeVertexNormals();chunk=new T.Mesh(geo,new T.MeshLambertMaterial({vertexColors:true,side:T.DoubleSide}));scene.add(chunk)}
  return function(){canvas.style.display=map?'none':'block';if(map)return;let ix=Math.floor(g.x/500),iy=Math.floor(g.y/500),k=ix+','+iy;if(k!==cell){refresh(ix,iy);cell=k}
  let size=innerWidth+','+innerHeight;if(size!==lastSize){renderer.setSize(innerWidth,innerHeight);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();lastSize=size}
@@ -46,6 +51,6 @@ function buildStreetView(){
  body.material.color.setHex(b.paint);updateDetails();
  for(let i=0;i<2;i++){let npc=people[i],following=b.friends[i];npc.visible=!following||!g.drive;let x=following?g.x+(i?2:-2):start[2]+i*2,y=following?g.y+2:start[3]-4;if(Math.hypot(npc.position.x-x,npc.position.z-y)>45)npc.position.set(x,.15,y);npc.position.lerp(new T.Vector3(x,.15,y),.09)}
  people[2].visible=!!b.rival;if(b.rival)people[2].position.set(b.rival.x,.15,b.rival.y);let other=b.positions[1-b.active];people[3].position.set(other[0],.15,other[1]);
- let distance=g.drive?11:5.8,cs=Math.cos(viewYaw),sn=Math.sin(viewYaw);camera.position.set(g.x+sn*distance+1.2*cs,g.drive?4.8:2.8,g.y+cs*distance-1.2*sn);camera.lookAt(g.x-3*sn,1.52,g.y-3*cs);sky.position.copy(camera.position);renderer.render(scene,camera)}
+ let distance=g.drive?11:5.8,cs=Math.cos(viewYaw),sn=Math.sin(viewYaw);camera.position.set(g.x+sn*distance+1.2*cs,g.drive?4.8:2.8,g.y+cs*distance-1.2*sn);camera.lookAt(g.x-3*sn,1.52,g.y-3*cs);updateCity(performance.now());sky.position.copy(camera.position);renderer.render(scene,camera)}
 }
 let drawStreets;try{drawStreets=buildStreetView()}catch(e){console.warn(e)}

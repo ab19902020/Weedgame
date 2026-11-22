@@ -10,11 +10,13 @@ def get(p):
     t={k.get('k'):k.get('v') for k in w.findall('tag')}; h=t.get('highway','')
     if h in 'motorway motorway_link trunk trunk_link primary primary_link secondary tertiary residential unclassified service living_street'.split() or 'building' in t:
      a=[nodes[n.get('ref')] for n in w.findall('nd') if n.get('ref') in nodes]
-     if len(a)>1:ways[w.get('id')]=[h or 'b',a]
+     if len(a)>1:ways[w.get('id')]=[h or 'b',a,t.get('name') or t.get('ref') or '',t.get('building','')]
    if ways:return ways
   except Exception:pass
  return {}
 allways={}
 with concurrent.futures.ThreadPoolExecutor(4) as e:
- for w in e.map(get,places):allways.update(w);print(len(w),flush=True)
+ for w in e.map(get,places):
+  if not w:raise RuntimeError('Missing Berkshire extract')
+  allways.update(w);print(len(w),flush=True)
 open('www/map.js','w').write('const features='+json.dumps(list(allways.values()),separators=(',',':'))+';')
