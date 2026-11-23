@@ -65,6 +65,7 @@ export async function boot(extra = {}) {
   scene.add(hemi, sun, sun.target);
   // ---------------------------------------------------------------- world
   const tiles = new Tiles(scene, manifest, net, {
+    renderer,
     shadows: renderer.shadowMap.enabled, r0: Number(Q.get('r0')) || budget.r0, r1: Number(Q.get('r1')) || budget.r1,
     workers: Math.min(3, Math.max(1, (navigator.hardwareConcurrency || 4) - 2)),
   });

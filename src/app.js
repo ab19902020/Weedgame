@@ -6,7 +6,7 @@ import { Hud } from './hud.js';
 import { Brothers } from './player.js';
 import { Traffic } from './traffic.js';
 import { Signals, SignalRenderer } from './signals.js';
-import { VehicleRenderer } from './vehicles.js';
+import { VehicleRenderer, MODELS } from './vehicles.js';
 import { People } from './characters.js';
 import { Peds } from './peds.js';
 import { Police } from './police.js';
@@ -140,6 +140,7 @@ function frame() {
   for (let k = 1; k < G.simSteps; k++) step(dt, false);
   step(dt, true);
 }
+const _fwd = new THREE.Vector3();
 function step(dt, render) {
   G.dt = dt; G.time += dt;
   const B = G.brothers, me = B.me;
@@ -166,7 +167,12 @@ function step(dt, render) {
       break;
     }
   }
-  G.tiles.update(me.x, me.z);
+  { // streaming look-ahead: camera forward and travel velocity
+    const fwd = G.camera.getWorldDirection(_fwd), v = G.brothers.vehicleOf(me);
+    const sp = v ? (v.sp || 0) : (G.brothers.speedNow || 0), hd = v ? v.heading : me.heading;
+    const fl = Math.hypot(fwd.x, fwd.z) || 1;
+    G.tiles.update(me.x, me.z, { x: fwd.x / fl, z: fwd.z / fl, vx: Math.cos(hd) * sp, vz: Math.sin(hd) * sp });
+  }
   G.signals.update(dt);
   // player as an obstacle for NPC traffic
   const pv = B.vehicleOf(me);
@@ -209,13 +215,26 @@ function step(dt, render) {
       G._resT = 0;
       const [minPr, , maxPr] = G.budget.pixelRatio, cap = Math.min(devicePixelRatio, maxPr), pr = G.renderer.getPixelRatio();
       let next = pr;
-      if (G._ema > 38) next = Math.max(minPr, pr - 0.15); else if (G._ema < 26) next = Math.min(cap, pr + 0.1);
+      // hold the target frame rate (60 by default, ?fps=30 to relax): drop resolution above ~115% of the frame
+      // budget, raise it again below ~80%
+      const T = 1000 / (Number(G.Q.get('fps')) || G.budget.targetFps || 60);
+      if (G._ema > T * 1.15) next = Math.max(minPr, pr - 0.15); else if (G._ema < T * 0.8) next = Math.min(cap, pr + 0.1);
       if (Math.abs(next - pr) > 0.01) { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth, innerHeight); }
     }
   }
+  // first time the world is in: let tiles copy landcover blocks straight to the GPU, and compile every
+  // material (all car models, both people LODs, trees, grass, post) up front instead of mid-play
+  if (!G._warm && !G._needGround && G.tiles.pending.size === 0 && G.frame > 3) { G._warm = true; G.tiles.gpuReady = true; warmup(); }
   G.ibl?.update(dt);
   G.grass?.update(G.camera.position);
   if (G.post) G.post.render(); else G.renderer.render(G.scene, G.camera);
   G.frame++;
+}
+async function warmup() {
+  const c = G.camera.position, models = Object.keys(MODELS);
+  G.vehicleRenderer.draw(models.map((model, i) => ({ model, x: c.x + 2 * i, y: c.y - 30, z: c.z, heading: 0, paint: 0x808080, spin: 0 })), c, 1e6);
+  const P = G.people.constructor;
+  G.people.draw([0, 1].map(k => ({ x: c.x + k * 80, y: c.y - 30, z: c.z, heading: 0, visible: true, look: P.randomLook(), pose: 'umbrella', speed: 1, phase: 0, t: 0 })), c, 1e6);
+  try { await G.renderer.compileAsync(G.scene, G.camera); } catch (e) { console.warn('precompile', e); }
 }
 G.renderer.setAnimationLoop(frame);

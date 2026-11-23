@@ -40,32 +40,57 @@ export class Atmos {
     this.coverAt = { x: 1e9, z: 1e9 };
     this.lightAt = { x: 1e9, z: 1e9 };
     this.lightsDirty = true;
-    G.tiles.listeners.push((ev, t) => { this.coverAt.x = 1e9; this.lightsDirty = true; });
+    G.tiles.listeners.push((ev, t) => { this._coverDirty = true; this.lightsDirty = true; });
   }
   // rebuild the shelter raster (1 m texels, 256 m window) when we move far enough
+  // Rain-shelter raster (1 m cells around the player). Rebuilt when the player crosses into a new 32 m
+  // cell, by scanline-filling building footprints into a back buffer a few milliseconds per frame; the
+  // previous raster stays valid until the new one is complete, so driving no longer stalls.
   updateCover(x, z) {
     const ox = Math.floor(x / 32) * 32 - COVER_N / 2, oz = Math.floor(z / 32) * 32 - COVER_N / 2;
-    if (ox === this.coverAt.x && oz === this.coverAt.z) return;
-    this.coverAt = { x: ox, z: oz };
-    coverData.fill(-1000);
-    const G = this.G;
-    G.tiles.buildingsNear(ox + COVER_N / 2, oz + COVER_N / 2, COVER_N / 2 + 20, (P, s, n, top) => {
-      let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
-      for (let k = 0; k < n; k++) { const px = P[(s + k) * 2], pz = P[(s + k) * 2 + 1]; x0 = Math.min(x0, px); x1 = Math.max(x1, px); z0 = Math.min(z0, pz); z1 = Math.max(z1, pz); }
-      for (let zz = Math.max(oz, Math.floor(z0)); zz <= Math.min(oz + COVER_N - 1, Math.ceil(z1)); zz++)
-        for (let xx = Math.max(ox, Math.floor(x0)); xx <= Math.min(ox + COVER_N - 1, Math.ceil(x1)); xx++)
-          if (pointInRing(P, s, n, xx + 0.5, zz + 0.5)) coverData[(zz - oz) * COVER_N + (xx - ox)] = top;
-    });
-    // canopies: bus shelters and hand-authored canopies (landmarks)
-    for (const c of G.canopies) {
-      const cs = Math.cos(c.h), sn = Math.sin(c.h);
-      for (let u = -c.l / 2; u <= c.l / 2; u += 0.5) for (let v = -c.w / 2; v <= c.w / 2; v += 0.5) {
-        const xx = Math.floor(c.x + u * cs - v * sn - ox), zz = Math.floor(c.z + u * sn + v * cs - oz);
-        if (xx >= 0 && zz >= 0 && xx < COVER_N && zz < COVER_N) coverData[zz * COVER_N + xx] = Math.max(coverData[zz * COVER_N + xx], c.y);
+    const moved = ox !== this.coverAt.x || oz !== this.coverAt.z;
+    if ((moved && (!this._cov || this._cov.ox !== ox || this._cov.oz !== oz)) || (this._coverDirty && !this._cov)) {
+      this._coverDirty = false;
+      const list = [];
+      this.G.tiles.buildingsNear(ox + COVER_N / 2, oz + COVER_N / 2, COVER_N / 2 + 20, (P, s, n, top) => list.push([P, s, n, top]));
+      this._cov = { ox, oz, list, i: 0, buf: this._covBuf || (this._covBuf = new Float32Array(coverData.length)) };
+      this._cov.buf.fill(-1000);
+      if (Math.abs(this.coverAt.x - ox) > COVER_N / 3 || Math.abs(this.coverAt.z - oz) > COVER_N / 3) this._cov.urgent = true;  // first build or teleport: finish now
+    }
+    const job = this._cov; if (!job) return;
+    const t0 = performance.now(), buf = job.buf, xs = [];
+    while (job.i < job.list.length && (job.urgent || performance.now() - t0 < 1.5)) {
+      const [P, s, n, top] = job.list[job.i++];
+      let z0 = 1e9, z1 = -1e9; for (let k = 0; k < n; k++) { const pz = P[(s + k) * 2 + 1]; if (pz < z0) z0 = pz; if (pz > z1) z1 = pz; }
+      for (let zz = Math.max(job.oz, Math.floor(z0)); zz <= Math.min(job.oz + COVER_N - 1, Math.ceil(z1)); zz++) {
+        const zc = zz + 0.5; xs.length = 0;
+        for (let k = 0, j = n - 1; k < n; j = k++) {
+          const ax = P[(s + j) * 2], az = P[(s + j) * 2 + 1], bx = P[(s + k) * 2], bz = P[(s + k) * 2 + 1];
+          if ((az <= zc && bz > zc) || (bz <= zc && az > zc)) xs.push(ax + (zc - az) / (bz - az) * (bx - ax));
+        }
+        xs.sort((a, b) => a - b);
+        const row = (zz - job.oz) * COVER_N;
+        for (let q = 0; q + 1 < xs.length; q += 2) {
+          const a = Math.max(job.ox, Math.ceil(xs[q] - 0.5)), b = Math.min(job.ox + COVER_N - 1, Math.floor(xs[q + 1] - 0.5));
+          for (let xx = a; xx <= b; xx++) buf[row + xx - job.ox] = top;
+        }
       }
     }
+    if (job.i < job.list.length) return;
+    // canopies: bus shelters and hand-authored canopies (landmarks)
+    const { ox: cx0, oz: cz0 } = job;
+    for (const c of this.G.canopies) {
+      const cs = Math.cos(c.h), sn = Math.sin(c.h);
+      for (let u = -c.l / 2; u <= c.l / 2; u += 0.5) for (let v = -c.w / 2; v <= c.w / 2; v += 0.5) {
+        const xx = Math.floor(c.x + u * cs - v * sn - cx0), zz = Math.floor(c.z + u * sn + v * cs - cz0);
+        if (xx >= 0 && zz >= 0 && xx < COVER_N && zz < COVER_N) buf[zz * COVER_N + xx] = Math.max(buf[zz * COVER_N + xx], c.y);
+      }
+    }
+    coverData.set(buf);
+    this.coverAt = { x: cx0, z: cz0 };
     coverTex.needsUpdate = true;
-    U.coverOrigin.value.set(ox, oz);
+    U.coverOrigin.value.set(cx0, cz0);
+    this._cov = null;
   }
   sheltered(x, y, z) {
     const xx = Math.floor(x - this.coverAt.x), zz = Math.floor(z - this.coverAt.z);
@@ -81,8 +106,9 @@ export class Atmos {
   // night light pools: lamps + shop windows painted into a 384 m window
   updateLights(x, z) {
     const ox = Math.floor(x / 48) * 48 - LIGHT_N * LIGHT_RES / 2, oz = Math.floor(z / 48) * 48 - LIGHT_N * LIGHT_RES / 2;
-    if (ox === this.lightAt.x && oz === this.lightAt.z && !this.lightsDirty) return;
-    this.lightAt = { x: ox, z: oz }; this.lightsDirty = false;
+    const now = performance.now();
+    if (ox === this.lightAt.x && oz === this.lightAt.z && (!this.lightsDirty || now - (this._lightT || 0) < 700)) return;   // tile arrivals: at most ~1.4x/s
+    this.lightAt = { x: ox, z: oz }; this.lightsDirty = false; this._lightT = now;
     lightData.fill(0);
     const paint = (px, pz, rad, r, g, b) => {
       const cx = (px - ox) / LIGHT_RES, cz = (pz - oz) / LIGHT_RES, rr = rad / LIGHT_RES;

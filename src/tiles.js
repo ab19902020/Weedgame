@@ -9,7 +9,7 @@ const TILE = 256, NT = 65;
 
 export class Tiles {
   constructor(scene, manifest, net, opts = {}) {
-    this.scene = scene; this.manifest = manifest; this.net = net;
+    this.scene = scene; this.manifest = manifest; this.net = net; this.renderer = opts.renderer || null; this.gpuReady = false;
     this.R0 = opts.r0 ?? 400; this.R1 = opts.r1 ?? 1150;
     this.exists = new Set(manifest.tiles);
     this.tiles = new Map();      // key -> {lod, group, data, slot}
@@ -57,7 +57,8 @@ export class Tiles {
     this.lampGeo = mergeGeos(parts);
   }
   key(ix, iz) { return ix + '_' + iz; }
-  update(fx, fz) {
+  // look: optional { x, z } camera forward (unit) and { vx, vz } travel velocity (m/s) for look-ahead priority
+  update(fx, fz, look = null) {
     this.fx = fx; this.fz = fz;
     const want = new Map();
     const r = Math.ceil(this.R1 / TILE) + 1, cx = Math.floor(fx / TILE), cz = Math.floor(fz / TILE);
@@ -71,9 +72,16 @@ export class Tiles {
     }
     // unload
     for (const [k, t] of this.tiles) if (!want.has(k)) this.unload(k);
-    // request (nearest first)
+    // request order: the near ring first, then tiles in front of the camera and along the direction of travel
+    // (projected ~4 s ahead), tiles behind last
+    const ax = fx + (look?.vx || 0) * 4, az = fz + (look?.vz || 0) * 4, lx = look?.x || 0, lz = look?.z || 0;
+    const score = (k, d) => {
+      const [ix, iz] = k.split('_').map(Number), tx = (ix + 0.5) * TILE, tz = (iz + 0.5) * TILE;
+      const da = Math.hypot(tx - ax, tz - az), cos = d > 1 ? ((tx - fx) * lx + (tz - fz) * lz) / d : 1;
+      return Math.min(d, da) * (1.25 - 0.45 * cos) - (d < 300 ? 1e5 : 0);
+    };
     const todo = [...want].filter(([k, [lod]]) => { const t = this.tiles.get(k); return (!t || t.lod !== lod) && this.pending.get(k) !== lod; })
-      .sort((a, b) => a[1][1] - b[1][1]);
+      .map(e => [e[0], e[1], score(e[0], e[1][1])]).sort((a, b) => a[2] - b[2]);
     for (const [k, [lod]] of todo) {
       if (this.inflight >= this.maxInflight) break;
       this.pending.set(k, lod); this.inflight++;
@@ -97,7 +105,12 @@ export class Tiles {
     // landcover into atlas
     const sx = (slot % 16) * 128, sy = Math.floor(slot / 16) * 128;
     for (let r = 0; r < 128; r++) atlasData.set(d.lc.subarray(r * 128, r * 128 + 128), (sy + r) * ATLAS_N + sx);
-    atlasTex.needsUpdate = true;
+    // upload only this tile's 128x128 block once the atlas is on the GPU (re-uploading all 4 MB per tile caused hitches)
+    if (this.renderer && this.gpuReady) {
+      const sc = this._lcScratch || (this._lcScratch = Object.assign(new THREE.DataTexture(new Uint8Array(128 * 128), 128, 128, THREE.RedFormat), { magFilter: THREE.NearestFilter, minFilter: THREE.NearestFilter }));
+      sc.image.data.set(d.lc); sc.needsUpdate = true;
+      try { this.renderer.initTexture(sc); this.renderer.copyTextureToTexture(sc, atlasTex, null, new THREE.Vector2(sx, sy)); } catch (e) { atlasTex.needsUpdate = true; }
+    } else atlasTex.needsUpdate = true;
     // terrain
     const tg = new THREE.BufferGeometry();
     tg.setAttribute('position', new THREE.BufferAttribute(d.terrain.position, 3));
