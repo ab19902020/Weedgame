@@ -16,6 +16,7 @@ import { Landmarks } from './landmarks.js';
 import { Audio } from './audio.js';
 import { Save } from './save.js';
 import { Perf } from './perf.js';
+import { Trains } from './trains.js';
 
 class Events { constructor() { this.h = {}; } on(n, f) { (this.h[n] ||= []).push(f); } emit(n, e) { for (const f of this.h[n] || []) f(e); } }
 
@@ -62,6 +63,7 @@ G.police = new Police(G);
 G.parking = new Parking(G);
 G.buses = new Buses(G);
 G.traffic.busStop = v => G.buses.stopFor(v);
+G.trains = new Trains(G);
 G.landmarks = new Landmarks(G);
 G.atmos = new Atmos(G);
 G.shelteredAt = (x, y, z) => G.atmos.sheltered(x, y, z);
@@ -173,6 +175,7 @@ function step(dt, render) {
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
   G.police.update(dt);
+  G.trains.update(dt);
   G.atmos.updateCover(me.x, me.z);
   G.atmos.updateLights(me.x, me.z);
   G.atmos.updateNearLights(G.camera.position);
@@ -186,6 +189,7 @@ function step(dt, render) {
   // draw dynamic actors
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.budget.vehicleDist);
+  G.trains.draw(cam, Math.max(600, G.budget.vehicleDist * 2));
   const actors = [B.actor[B.active]]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
   G.peds.draw(G.people, actors, cam);
   G.signalRenderer.draw(cam, (x, z) => G.tiles.ground(x, z), G.time);

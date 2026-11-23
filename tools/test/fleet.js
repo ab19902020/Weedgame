@@ -7,13 +7,17 @@ const R = 200;
 async function idsNear(p) {
   return p.evaluate(R => GC.brothers.b.map(b => GC.traffic.list.filter(v => !v.parked && !v.player && (v.kind === 'traffic' || v.kind === 'bus') && Math.hypot(v.x - b.x, v.z - b.z) < R).map(v => v.id)), R);
 }
+// wait (bounded) until the simulated traffic around the active brother has built up
+async function warm(p, min = 4, ms = 150000) {
+  await p.waitForFunction(([R, min]) => { const me = GC.brothers.me; return GC.traffic.list.filter(v => !v.parked && !v.player && (v.kind === 'traffic' || v.kind === 'bus') && Math.hypot(v.x - me.x, v.z - me.z) < R * 0.8).length >= min; }, [R, min], { timeout: ms, polling: 1000 }).catch(() => {});
+}
 const overlap = (a, b) => a.length ? a.filter(id => b.includes(id)).length / a.length : 1;
 async function run(T) {
   const { p, tap, ready } = T, out = { steps: [] };
   // put Leon somewhere else (Earley) so the two fleets are separate, then come back to Cal
   await tap('#bSwap'); await ready();
-  await p.evaluate(() => { const d = GC.manifest.districts.find(d => d.name === 'Earley'); GC.teleport(d.x, d.z); }); await ready(); await p.waitForTimeout(6000);
-  await tap('#bSwap'); await ready(); await p.waitForTimeout(6000);
+  await p.evaluate(() => { const d = GC.manifest.districts.find(d => d.name === 'Earley'); GC.teleport(d.x, d.z); }); await ready(); await warm(p);
+  await tap('#bSwap'); await ready(); await warm(p);
   const before = await idsNear(p);
   const size = await p.evaluate(() => { GC.save.now(); return localStorage.getItem('greenCounty.sandbox.v1').length; });
   const fleetN = await p.evaluate(() => JSON.parse(localStorage.getItem('greenCounty.sandbox.v1')).fleet.cars.length);

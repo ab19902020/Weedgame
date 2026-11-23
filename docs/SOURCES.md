@@ -30,6 +30,7 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 * **Audio**: everything (rain, wind, traffic, footsteps, murmur, horn, two-tone siren, crossing beeps, crashes) is synthesised with WebAudio at runtime in `src/audio.js`; no samples.
 * **Shop fascia text**: rendered at runtime from OSM `name` tags in plain type. These are factual street names and shop names, not logos. Brand marks are never reproduced.
 * **Launcher icon**: drawn by `tools/android/icon.py`.
+* **Railway stations and train paths** (`www/world/rail.json`, built by `tools/rail/build_rail.mjs`): track centre lines are the OSM `railway=rail` lines already in the tiles (ODbL). Station positions are the WGS84 coordinates on the English Wikipedia articles (Reading, Reading West, Earley, Winnersh Triangle, Winnersh, Wokingham, Bracknell, Martins Heron; fetched via the MediaWiki `prop=coordinates` API, Nov 2026), snapped to the nearest track (1–59 m). `manifest.stations` replaces them when the world data provides it. There is no timetable: trains run evenly spaced.
 
 ## Legacy prototype assets (kept in `legacy/`, not shipped in v0.6)
 
