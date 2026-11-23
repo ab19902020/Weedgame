@@ -1,6 +1,7 @@
 // Instanced low-poly people. Every person (brothers, pedestrians, police) is drawn by the
 // same nine instanced part meshes, so a crowd costs nine draw calls.
 import * as THREE from 'three/webgpu';
+import { RiggedPeople } from './riggedPeople.js';
 import { mergeGeos } from './tiles.js';
 
 const MAX = 260;
@@ -29,7 +30,7 @@ const PARTS = ['torso', 'head', 'hair', 'legL', 'legR', 'armL', 'armR', 'handL',
 
 export class People {
   constructor(scene, shadows) {
-    this.list = [];
+    this.rigs = new RiggedPeople(scene);
     const geos = { torso: partGeo('torso'), head: partGeo('head'), hair: partGeo('hair'), leg: partGeo('leg'), arm: partGeo('arm'), hand: partGeo('hand'), hat: partGeo('hat'), umbrella: partGeo('umbrella'), bag: partGeo('bag') };
     const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.85 });
     const umat = new THREE.MeshStandardNodeMaterial({ roughness: 0.4, side: THREE.DoubleSide });
@@ -56,11 +57,12 @@ export class People {
     return { skin: pick(skins), hair: pick(hairs), top: pick(tops), legs: pick(legs), bald: r() < 0.08, bag: r() < 0.25, umbrella: [0x1a1a1a, 0x283a75, 0x8a1f2b, 0x2a5a3a, 0xd9c37a][Math.floor(r() * 5)], h: 0.94 + r() * 0.12 };
   }
   // Begin frame; returns writer
-  draw(actors, camPos, maxDist = 160) {
+  draw(actors, camPos, maxDist = 160, dt = 0) {
     let n = 0;
     const M = this.meshes;
+    const detailed = this.rigs.update(actors, camPos, dt);
     for (const a of actors) {
-      if (!a.visible) continue;
+      if (!a.visible || detailed.has(a.id)) continue;
       const dx = a.x - camPos.x, dz = a.z - camPos.z;
       if (dx * dx + dz * dz > maxDist * maxDist) continue;
       if (n >= MAX) break;
@@ -68,7 +70,7 @@ export class People {
       n++;
     }
     for (const p of PARTS) { M[p].count = n; M[p].instanceMatrix.needsUpdate = true; M[p].instanceColor.needsUpdate = true; }
-    return n;
+    return n + detailed.size;
   }
   set(part, i, local, color) {
     const m = this.meshes[part];

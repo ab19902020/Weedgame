@@ -183,7 +183,14 @@ function step(dt, render) {
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.quality === 'low' ? 450 : 700);
   const actors = [B.actor[B.active]]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
-  G.peds.draw(G.people, actors, cam);
+  const rigs = G.people.rigs;
+  if (rigs.previewRole) {
+    const heading = B.cam.yaw;
+    actors.push({ id:'rig-preview', previewRole:rigs.previewRole, previewClip:rigs.previewClip,
+      x:me.x - 1.7*Math.sin(heading), z:me.z + 1.7*Math.cos(heading), y:me.y, heading, visible:true,
+      look:B.actor[B.active].look });
+  }
+  G.peds.draw(G.people, actors, cam, dt);
   G.signalRenderer.draw(cam, (x, z) => G.tiles.ground(x, z), G.time);
   G.hud.update(dt);
   G.audio.update(dt, G);
