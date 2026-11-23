@@ -1,6 +1,6 @@
 // Parked cars from tile parking slots (stable ids), the brothers' own cars, and bus services
 // that run the OSM bus-route relations with stops and dwell times.
-import { MODELS, PAINTS } from './vehicles.js';
+import { MODELS, PAINTS, randomModel, paintFor } from './vehicles.js';
 import { mulberry } from './traffic.js';
 
 export class Parking {
@@ -23,10 +23,10 @@ export class Parking {
       const occ = K[i] ? 0.6 : 0.75;      // car parks / kerbside
       if (r > occ) continue;
       const r2 = mulberry(hashStr(id) ^ 0x5bd1e995);
-      const m = r2(); const model = m < 0.4 ? 'hatch' : m < 0.62 ? 'saloon' : m < 0.78 ? 'estate' : m < 0.93 ? 'suv' : 'van';
+      const model = randomModel(r2());
       const x = S[i * 4] + t.data.ox, z = S[i * 4 + 2] + t.data.oz;
       if (this.blocked(x, z)) continue;
-      const v = G.traffic.add({ id, kind: 'parked', model, paint: PAINTS[Math.floor(r2() * PAINTS.length)], x, y: S[i * 4 + 1], z, heading: S[i * 4 + 3], parked: true, v: 0 });
+      const v = G.traffic.add({ id, kind: 'parked', model, paint: paintFor(model, r2()), x, y: S[i * 4 + 1], z, heading: S[i * 4 + 3], parked: true, v: 0 });
       v.y = G.tiles.ground(x, z) ?? v.y;
       t.parked.push(v);
     }

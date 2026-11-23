@@ -4,7 +4,7 @@ import { Fn, attribute, vec2, vec3, float, int, mix, step, sin, fract, floor, po
 import { U } from './env.js';
 import { mergeGeos } from './tiles.js';
 import { lightPool } from './materials.js';
-import { loftBody, wheelGeometry, wheelMaterial } from './carModel.js';
+import { buildCar, vehicleMaterial, wheelGeometry, wheelMaterial, CAR_SPECS } from './carModel.js';
 import { positionWorld } from 'three/tsl';
 
 export const MODELS = {
@@ -14,6 +14,9 @@ export const MODELS = {
   suv: { L: 4.45, W: 1.85, H: 1.66, wb: 2.65, wr: 0.36, prof: 'suv', max: 100, mass: 1700 },
   van: { L: 5.3, W: 2.02, H: 2.35, wb: 3.3, wr: 0.34, prof: 'van', max: 60, mass: 2200 },
   police: { L: 4.75, W: 1.8, H: 1.5, wb: 2.8, wr: 0.32, prof: 'estate', max: 16, mass: 1550, livery: 1 },
+  hothatch: { L: 4.28, W: 1.79, H: 1.45, wb: 2.63, wr: 0.33, prof: 'hatch', max: 40, mass: 1350 },
+  coupe: { L: 4.64, W: 1.83, H: 1.38, wb: 2.81, wr: 0.34, prof: 'saloon', max: 30, mass: 1550 },
+  sports: { L: 4.52, W: 1.95, H: 1.2, wb: 2.62, wr: 0.35, prof: 'saloon', max: 12, mass: 1450 },
   bus: { L: 10.6, W: 2.55, H: 4.3, wb: 5.6, wr: 0.5, prof: 'decker', max: 30, mass: 12000 },
   busS: { L: 11.2, W: 2.5, H: 3.05, wb: 5.9, wr: 0.5, prof: 'single', max: 20, mass: 10000 },
 };
@@ -31,7 +34,18 @@ function profile(kind, L, H) {
   }
 }
 
-function buildModel(def) {
+// wheel x offset per model (front-engined cars sit their wheels forward of the body centre)
+for (const [k, d] of Object.entries(MODELS)) d.wx = CAR_SPECS[k] ? (CAR_SPECS[k].wheelX || 0) * d.L / 2 : 0;
+const MODEL_LIST = Object.entries(MODELS);
+// traffic mix (UK-ish), and paints: sports models get brighter colours
+export function randomModel(r) {
+  return r < 0.31 ? 'hatch' : r < 0.52 ? 'saloon' : r < 0.65 ? 'estate' : r < 0.8 ? 'suv' : r < 0.9 ? 'van' : r < 0.95 ? 'hothatch' : r < 0.985 ? 'coupe' : 'sports';
+}
+const SPORT_PAINTS = [0xb5121b, 0xe8e8e8, 0x111111, 0x1446a0, 0xf2b705, 0xe25a12, 0x2f6d3a, 0x7d8085];
+export function paintFor(model, r) { return (model === 'sports' || model === 'coupe' || model === 'hothatch') ? SPORT_PAINTS[Math.floor(r * SPORT_PAINTS.length)] : PAINTS[Math.floor(r * PAINTS.length)]; }
+
+function buildModel(def, key) {
+  if (CAR_SPECS[key]) return mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1).parts);
   const { L, W, H, prof } = def;
   const isBus = prof === 'decker' || prof === 'single';
   const belt = isBus ? 1.25 : prof === 'van' ? 1.2 : 0.98;
@@ -60,7 +74,7 @@ function buildModel(def) {
     }
     for (let k = 0; k < 3; k++) {
       const v = t + k;
-      if (glass) { col[v * 3] = 0.05; col[v * 3 + 1] = 0.07; col[v * 3 + 2] = 0.09; paint[v] = 0; }
+      if (glass) { col[v * 3] = 0.05; col[v * 3 + 1] = 0.07; col[v * 3 + 2] = 0.09; paint[v] = 0; lit[v] = 14; }
       else if (cy < (isBus ? 0.42 : def.prof === 'suv' ? 0.5 : 0.36)) { col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = 0.05; paint[v] = 0; }
       else { paint[v] = 1; col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = 1; liv[v] = def.livery && Math.abs(nz) > 0.5 && cy < belt && cy > 0.45 ? 1 : 0; }
     }
@@ -100,45 +114,17 @@ function buildModel(def) {
 export class VehicleRenderer {
   constructor(scene, shadows) {
     this.meshes = {}; this.idx = {};
-    const mat = new THREE.MeshPhysicalNodeMaterial({ roughness: 0.35, metalness: 0.25, vertexColors: true, clearcoat: 1, clearcoatRoughness: 0.06 });
-    const vd = attribute('vdat', 'vec4'), vc = attribute('color', 'vec3'), paint = vd.x, lit = vd.y, liv = vd.z;
-    const ic = attribute('iPaint', 'vec3');
-    const st = attribute('iState', 'vec4'); // x brake, y lights, z siren, w indicator
-    // Battenburg: alternating yellow / blue blocks on the side panels
-    const lp = positionGeometry;   // raw model-space position (positionLocal is already instance-transformed in the fragment)
-    const checker = step(0.5, fract(lp.x.div(0.62).add(step(0.72, lp.y).mul(0.5))));
-    const batten = mix(vec3(0.85, 0.82, 0.05), vec3(0.04, 0.1, 0.55), checker);
-    // wheel-arch liners cut per pixel: (half wheelbase, wheel radius, half width) per model, 0 = none
-    const ap = uniformArray([new THREE.Vector3(), ...Object.values(MODELS).map(d => new THREE.Vector3(d.wb / 2, d.wr, d.W / 2))], 'vec3').element(int(vd.w.add(0.5)));
-    const archD = length(vec2(abs(lp.x).sub(ap.x), lp.y.sub(ap.y)));
-    const archM = step(0.01, ap.x).mul(step(ap.z.sub(0.3), abs(lp.z))).mul(smoothstep(ap.y.add(0.085), ap.y.add(0.07), archD));
-    const paintE = paint.mul(float(1).sub(archM));
-    let base = mix(vc, ic, paint);
-    base = mix(base, batten, liv);
-    base = mix(base, vec3(0.02), archM);
-    mat.colorNode = base;
-    const glassish = step(vc.b, 0.12).mul(step(0.07, vc.b)).mul(float(1).sub(paint));   // glass colour (0.05, 0.07, 0.09)
-    mat.roughnessNode = mix(mix(mix(float(0.55), float(0.03), glassish), float(0.42), paint), float(0.8), archM);
-    mat.metalnessNode = paintE.mul(0.45);
-    mat.clearcoatNode = paintE;
-    const head = step(0.5, lit).mul(step(lit, 1.5));
-    const tail = step(1.5, lit).mul(step(lit, 2.5));
-    const bar = step(2.5, lit).mul(step(lit, 3.5));
-    const blind = step(3.5, lit);
-    const flash = step(0.5, fract(U.t.mul(2.6).add(step(0, lp.z).mul(0.5))));
-    mat.emissiveNode = vec3(1, 0.95, 0.85).mul(head).mul(st.y).mul(4)
-      .add(vec3(1, 0.05, 0.02).mul(tail).mul(st.y.mul(0.8).add(st.x.mul(3)).add(0.15)))
-      .add(mix(vec3(0.05, 0.2, 1), vec3(0.05, 0.2, 1), flash).mul(bar).mul(st.z).mul(flash).mul(8))
-      .add(vec3(1, 0.65, 0.05).mul(blind).mul(1.5))
-      .add(lightPool(positionWorld).mul(base));
+    const mat = vehicleMaterial(MODEL_LIST);
     this.mat = mat;
     const wheelGeo = wheelGeometry();
+    this.iWheel = new THREE.InstancedBufferAttribute(new Float32Array(1500 * 4), 4); this.iWheel.setUsage(THREE.DynamicDrawUsage);
+    wheelGeo.setAttribute('iWheel', this.iWheel);
     const wm = wheelMaterial();
     this.wheels = new THREE.InstancedMesh(wheelGeo, wm, 1500);
     this.wheels.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.wheels.frustumCulled = false; this.wheels.count = 0; scene.add(this.wheels);
     for (const [name, def] of Object.entries(MODELS)) {
-      const g = buildModel(def);
+      const g = buildModel(def, name);
       const st = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 4), 4); st.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute('iState', st);
       const pa = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 3), 3); pa.setUsage(THREE.DynamicDrawUsage);
@@ -166,11 +152,13 @@ export class VehicleRenderer {
       mesh.setMatrixAt(i, this._m);
       this._c.setHex(v.paint).toArray(mesh.geometry.attributes.iPaint.array, i * 3);
       const st = mesh.geometry.attributes.iState;
-      st.array[i * 4] = v.brake ? 1 : 0; st.array[i * 4 + 1] = v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = 0;
+      st.array[i * 4] = v.brake ? 1 : 0; st.array[i * 4 + 1] = v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
       // wheels
       if (dx * dx + dz * dz < 160 * 160 && wn < 1496) {
-        const r = def.wr, hw = def.W / 2 - 0.12, a = def.wb / 2;
-        for (const [wx, wz, steer] of [[a, hw, 1], [a, -hw, 1], [-a, hw, 0], [-a, -hw, 0]]) {
+        const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.12 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
+        const wsty = sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
+        for (const [wx, wz, steer] of [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]]) {
+          this.iWheel.array.set(wsty, wn * 4);
           this._w.makeRotationZ(-(v.spin || 0));
           if (steer && v.steer) this._w.premultiply(new THREE.Matrix4().makeRotationY(-v.steer));
           this._w.scale(this._v.set(r, r, 0.22)).setPosition(wx, r, wz);
@@ -182,7 +170,7 @@ export class VehicleRenderer {
       const m = this.meshes[k]; m.count = counts[k]; m.visible = counts[k] > 0;   // empty instanced meshes cost a draw call
       m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true;
     }
-    this.wheels.count = wn; this.wheels.visible = wn > 0; this.wheels.instanceMatrix.needsUpdate = true;
+    this.wheels.count = wn; this.wheels.visible = wn > 0; this.wheels.instanceMatrix.needsUpdate = true; this.iWheel.needsUpdate = true;
   }
 }
 export const PAINTS = [0xe8e8e8, 0x1a1a1a, 0x9a9da0, 0x3a3d42, 0x6e7378, 0x8a1c1c, 0x1d3d7a, 0x234a33, 0xb8b3a6, 0x3d2b23, 0xc9c9c4, 0x0f2240, 0x5b6770, 0xd4d0c8, 0x7a1f2e, 0x2f2f33];

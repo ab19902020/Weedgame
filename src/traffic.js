@@ -2,7 +2,7 @@
 // Near the focus they run full car-following (IDM) with lanes, signals and give-way rules;
 // further away they keep moving along their routes at reduced cost, so nothing pops or U-turns
 // at a streaming boundary.
-import { MODELS, PAINTS } from './vehicles.js';
+import { MODELS, PAINTS, randomModel, paintFor } from './vehicles.js';
 import { F_ONEWAY, F_ROUNDABOUT, F_BRIDGE, F_DRIVE } from './network.js';
 
 const FULL_R = 480, BUBBLE_R = 650, KILL_R = 820;
@@ -36,8 +36,7 @@ export class Traffic {
   }
   remove(v) { const i = this.list.indexOf(v); if (i >= 0) this.list.splice(i, 1); this.byId.delete(v.id); v.dead = true; }
   randomModel() {
-    const r = this.rand();
-    return r < 0.36 ? 'hatch' : r < 0.6 ? 'saloon' : r < 0.74 ? 'estate' : r < 0.88 ? 'suv' : 'van';
+    return randomModel(this.rand());
   }
   driver(v) {
     const r = this.rand();
@@ -46,7 +45,7 @@ export class Traffic {
   }
   spawnAt(h, s, opts = {}) {
     const model = opts.model || this.randomModel();
-    const v = this.add({ kind: opts.kind || 'traffic', model, paint: opts.paint ?? PAINTS[Math.floor(this.rand() * PAINTS.length)], h, s, lane: 0, route: [h], ri: 0, v: opts.v ?? Math.min(12, this.net.speed[h >> 1] / 3.6 * 0.8) });
+    const v = this.add({ kind: opts.kind || 'traffic', model, paint: opts.paint ?? paintFor(model, this.rand()), h, s, lane: 0, route: [h], ri: 0, v: opts.v ?? Math.min(12, this.net.speed[h >> 1] / 3.6 * 0.8) });
     this.driver(v);
     if (opts.route) { v.route = opts.route; v.ri = opts.ri || 0; v.h = v.route[v.ri]; }
     v.lane = Math.floor(this.rand() * this.net.laneCount(v.h));
