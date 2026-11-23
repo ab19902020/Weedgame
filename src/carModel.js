@@ -27,6 +27,10 @@ export function loftBody(def, pts, belt) {
   const NS = 34;
   for (let i = 0; i <= NS; i++) xs.add(+(-l * Math.cos(Math.PI * i / NS)).toFixed(4));
   for (const [x] of pts) if (x > -l + 0.01 && x < l - 0.01) xs.add(+x.toFixed(4));
+  // dense stations across each wheel arch so the liner reads as a round arch, not a block
+  for (const c of [-def.wb / 2, def.wb / 2]) for (let k = -6; k <= 6; k++) {
+    const x = c + k / 6 * (def.wr + 0.12); if (x > -l + 0.02 && x < l - 0.02) xs.add(+x.toFixed(4));
+  }
   const X = [...xs].sort((a, b) => a - b);
   const rP = 0.34;
   const ring = x => {
@@ -40,7 +44,9 @@ export function loftBody(def, pts, belt) {
     const half = [
       [bot + 0.02, hw * 0.9],
       [bot + 0.09, hw],
-      [lerp(bot, yb, 0.45), hw * 1.012],
+      [lerp(bot, yb, 0.2), hw * 1.006],
+      [lerp(bot, yb, 0.42), hw * 1.012],
+      [lerp(bot, yb, 0.65), hw * 1.008],
       [yb - 0.05, hw * 1.0],
       [yb - endDrop, hw * 0.975],
       [yb + 0.025 * gh, hw * (0.965 - 0.03 * gh)],
@@ -55,7 +61,7 @@ export function loftBody(def, pts, belt) {
     return r;
   };
   const P = [], I = [], tri = [];   // tri: per triangle [ring segment k, station s]
-  const R = ring(0).length, KH = 10;
+  const R = ring(0).length, KH = 12;   // KH: points per half-section
   const GH = X.map(x => clamp01((topAt(pts, x) - belt) / 0.25));
   for (const x of X) for (const [a, b, c] of ring(x)) P.push(a, b, c);
   for (let s = 0; s < X.length - 1; s++) {
@@ -81,7 +87,7 @@ export function loftBody(def, pts, belt) {
   g.setIndex(I);
   g.computeVertexNormals();
   g = g.toNonIndexed();
-  // glass by panel, not by triangle: side windows are ring segment 5 (and its mirror), screens are
+  // glass by panel, not by triangle: side windows are ring segment 7 (and its mirror), screens are
   // the roof-side segments where the surface slopes along the car; whole quads, so edges are clean
   const pos = g.attributes.position, gl = new Float32Array(pos.count);
   const mirror = k => (k >= KH ? 2 * (KH - 1) - k : k);       // left-side segment -> right-side index
@@ -95,8 +101,8 @@ export function loftBody(def, pts, belt) {
     let glass = false;
     if (s >= 0) {
       const gh = Math.min(GH[s], GH[s + 1]);
-      if (h === 5 && gh > 0.3) glass = true;         // side windows
-      if (h >= 6 && h <= 8 && Math.abs(n.x) > 0.42 && cy > belt + 0.02) glass = true;            // wind / rear screens
+      if (h === 7 && gh > 0.3) glass = true;         // side windows
+      if (h >= 8 && h <= 10 && Math.abs(n.x) > 0.42 && cy > belt + 0.02) glass = true;            // wind / rear screens
     } else if (cy > belt + 0.03 && Math.abs(n.y) < 0.8) glass = true;                            // tail glass on the end cap
     if (glass) gl[t * 3] = gl[t * 3 + 1] = gl[t * 3 + 2] = 1;
   }

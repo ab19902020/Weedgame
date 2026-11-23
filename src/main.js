@@ -28,7 +28,8 @@ export async function boot(extra = {}) {
   const backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2';
   renderer.setPixelRatio(Math.min(devicePixelRatio, quality === 'high' ? 1.5 : 1.15));
   renderer.setSize(innerWidth, innerHeight);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // AgX: filmic highlight roll-off without ACES's hue shifts and over-saturation (?tm=aces to compare)
+  renderer.toneMapping = Q.get('tm') === 'aces' ? THREE.ACESFilmicToneMapping : THREE.AgXToneMapping;
   renderer.shadowMap.enabled = quality !== 'low' && Q.get('shadows') !== '0';
   renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.prepend(renderer.domElement);
@@ -77,7 +78,7 @@ export async function boot(extra = {}) {
     if (G.ibl) { scene.environmentIntensity = 0.35 + world.skyIntensity * 0.75; G.ibl.groundLum.value = 0.08 + world.day * 0.6; }
     hemi.color.copy(U.zenith.value).lerp(new THREE.Color(0.75, 0.8, 0.9), 0.55);
     hemi.groundColor.setRGB(0.22, 0.22, 0.18).multiplyScalar(0.25 + world.day * 0.75);
-    renderer.toneMappingExposure = 0.85 + U.night.value * 0.9 + U.cover.value * 0.25;
+    renderer.toneMappingExposure = (0.85 + U.night.value * 0.9 + U.cover.value * 0.25) * (renderer.toneMapping === THREE.AgXToneMapping ? 1.12 : 1);
   };
   G.placeSun = (fx, fy, fz) => {
     const d = U.sunDir.value;

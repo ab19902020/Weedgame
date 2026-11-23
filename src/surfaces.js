@@ -4,6 +4,9 @@
 // Layers are listed in www/assets/tex/library.json (built by tools/assets/fetch_textures.py).
 import * as THREE from 'three/webgpu';
 import { texture, vec2, vec3, vec4, float, int, uniformArray, normalize, cross, select, abs, sqrt, max, mix, dot, cameraViewMatrix } from 'three/tsl';
+// branch-free select: plain select() compiles to if/else blocks, which breaks texture sampling
+// (WGSL uniformity) and leaks block-scoped vars (GLSL). Both sides are cheap or already computed.
+const sel = (c, a, b) => select(c, a, b).uniformFlow().toVar();   // own variable: GLSL emits the ternary unparenthesised
 
 export const L = {
   asphalt: 0, flags: 1, blocks: 2, concrete: 3, grass: 4, brick_red: 5, brick_dark: 6, brick_buff: 7, render: 8,
@@ -63,7 +66,7 @@ export const worldToView = (n) => normalize(cameraViewMatrix.mul(vec4(n, 0)).xyz
 // codegen); perturb returns the VIEW normal for material.normalNode.
 export const perturbW = (nW, d, strength) => {
   const flat = abs(nW.y).greaterThan(0.95);
-  const t = normalize(select(flat, vec3(1, 0, 0), cross(vec3(0, 1, 0), nW)));
+  const t = normalize(sel(flat, vec3(1, 0, 0), cross(vec3(0, 1, 0), nW)));
   const b = normalize(cross(nW, t));
   const xy = d.rg.mul(2).sub(1).mul(strength);
   const z = sqrt(max(float(1).sub(dot(xy, xy)), 0.04));

@@ -138,7 +138,7 @@ export function treeMaterials() {
   const dist = length(cameraPosition.sub(p));
   const alpha = lt.a.mul(mix(float(1), float(2.3), smoothstep(25, 160, dist)));
   // species / health tint per tree
-  const tint = mix(vec3(0.62, 0.78, 0.6), vec3(0.85, 0.82, 0.5), tid).mul(tid.mul(0.3).add(0.7));
+  const tint = mix(vec3(0.5, 0.62, 0.45), vec3(0.7, 0.68, 0.38), tid).mul(tid.mul(0.3).add(0.62));
   let col = lt.rgb.mul(tint).mul(mix(float(1), float(0.78), U.wet));
   // ambient occlusion towards the crown's core and underside
   const r = length(positionLocal);

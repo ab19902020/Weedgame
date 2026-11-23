@@ -8,6 +8,9 @@ import {
 } from 'three/tsl';
 import { U, noiseTex, cloudTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL } from './env.js';
 import { L, sAlbedo, sDetail, sAlbedoAT, perturb, perturbW, groundUV, worldToView } from './surfaces.js';
+// branch-free select: plain select() compiles to if/else blocks, which breaks texture sampling
+// (WGSL uniformity) and leaks block-scoped vars (GLSL). Both sides are cheap or already computed.
+const sel = (c, a, b) => select(c, a, b).uniformFlow().toVar();   // own variable: GLSL emits the ternary unparenthesised
 
 const h1 = Fn(([x]) => fract(sin(x.mul(12.9898)).mul(43758.5453)));
 const h3 = Fn(([v]) => fract(sin(dot(v, vec3(12.9898, 78.233, 37.719))).mul(43758.5453)));
@@ -79,7 +82,7 @@ const LAYER_OF = [L.grass, L.asphalt, L.flags, L.concrete, L.soil, L.forest, L.s
   L.gravel, L.grass, L.blocks, L.grass, L.soil, L.forest, L.grass, L.asphalt, L.soil, L.gravel];
 const classLayer = (c) => {
   let n = int(LAYER_OF[19]);
-  for (let i = 18; i >= 0; i--) n = select(c.lessThan(i + 0.5), int(LAYER_OF[i]), n);
+  for (let i = 18; i >= 0; i--) n = sel(c.lessThan(i + 0.5), int(LAYER_OF[i]), n);
   return n;
 };
 const luma = (c) => dot(c, vec3(0.2126, 0.7152, 0.0722));
@@ -144,14 +147,14 @@ export function groundMaterial() {
   const big = nz(p.xz, 1 / 37).a, patch = nz(p.xz, 1 / 23).g;
   // UK pavements: concrete flags, or tarmac where the large-scale noise says so
   const tarmacPave = isPave.mul(step(0.58, big)).mul(step(s, 1.5));
-  const layer = select(isRoad.add(tarmacPave).greaterThan(0.5), int(L.asphalt), select(isPave.greaterThan(0.5), int(L.flags), select(isKerb.greaterThan(0.5), int(L.concrete),
-    select(isPath.greaterThan(0.5), int(L.asphalt), select(isPlaza.greaterThan(0.5), int(L.blocks), int(L.gravel))))));
-  const uvm = groundUV(p).mul(select(isPath.greaterThan(0.5), float(1.6), float(1)));
+  const layer = sel(isRoad.add(tarmacPave).greaterThan(0.5), int(L.asphalt), sel(isPave.greaterThan(0.5), int(L.flags), sel(isKerb.greaterThan(0.5), int(L.concrete),
+    sel(isPath.greaterThan(0.5), int(L.asphalt), sel(isPlaza.greaterThan(0.5), int(L.blocks), int(L.gravel))))));
+  const uvm = groundUV(p).mul(sel(isPath.greaterThan(0.5), float(1.6), float(1)));
   const tex = sAlbedoAT(layer, uvm, smoothstep(0.3, 0.7, nz(p.xz, 1 / 11).g));
   // colour casts: darker A-road asphalt, repair patches, warm block paving, lighter tarmac pavements
   const roadTone = vec3(0.78).mul(smoothstep(0.62, 0.66, patch).mul(-0.18).add(1.04)).mul(big.mul(0.2).add(0.9));
-  const tone = select(isRoad.greaterThan(0.5), roadTone, select(tarmacPave.greaterThan(0.5), vec3(0.95), select(isPlaza.greaterThan(0.5), vec3(1.18, 0.92, 0.8),
-    select(isPath.greaterThan(0.5), vec3(0.82, 0.78, 0.72), select(isBallast.greaterThan(0.5), vec3(0.8, 0.72, 0.66), vec3(1))))));
+  const tone = sel(isRoad.greaterThan(0.5), roadTone, sel(tarmacPave.greaterThan(0.5), vec3(0.95), sel(isPlaza.greaterThan(0.5), vec3(1.18, 0.92, 0.8),
+    sel(isPath.greaterThan(0.5), vec3(0.82, 0.78, 0.72), sel(isBallast.greaterThan(0.5), vec3(0.8, 0.72, 0.66), vec3(1))))));
   let albedo = tex.mul(tone);
   // wetness & puddles (not under shelter)
   const sh = shelter(p);
@@ -193,18 +196,18 @@ export function structMaterial() {
   const s = attribute('surf', 'float');
   const p = positionWorld;
   const u = uv();
-  const layer = select(s.lessThan(0.5), int(L.concrete_wall), select(s.lessThan(1.5), int(L.brick_red), select(s.lessThan(2.5), int(L.bark), select(s.lessThan(3.5), int(L.grass), int(L.cladding)))));
-  const uvm = select(s.lessThan(0.5), vec2(u.x, u.y.add(p.y)), u.mul(select(s.lessThan(3.5).and(s.greaterThan(2.5)), float(2.5), float(1))));
+  const layer = sel(s.lessThan(0.5), int(L.concrete_wall), sel(s.lessThan(1.5), int(L.brick_red), sel(s.lessThan(2.5), int(L.bark), sel(s.lessThan(3.5), int(L.grass), int(L.cladding)))));
+  const uvm = sel(s.lessThan(0.5), vec2(u.x, u.y.add(p.y)), u.mul(sel(s.lessThan(3.5).and(s.greaterThan(2.5)), float(2.5), float(1))));
   const tex = sAlbedo(layer, uvm);
   const fence = vec3(0.42, 0.32, 0.24).mul(step(0.1, fract(u.x.div(0.15))).mul(0.3).add(0.7));
   const hedgeLeaf = vec3(0.16, 0.3, 0.09).mul(nz(p.xz.add(p.y), 1 / 0.35).r.mul(0.9).add(0.45));
-  const albedo = select(s.lessThan(1.5), tex, select(s.lessThan(2.5), tex.mul(fence).mul(2.2), select(s.lessThan(3.5), hedgeLeaf.mul(tex.g.mul(1.6).add(0.4)), vec3(0.46, 0.47, 0.48))));
+  const albedo = sel(s.lessThan(1.5), tex, sel(s.lessThan(2.5), tex.mul(fence).mul(2.2), sel(s.lessThan(3.5), hedgeLeaf.mul(tex.g.mul(1.6).add(0.4)), vec3(0.46, 0.47, 0.48))));
   const wet = U.wet.mul(float(1).sub(shelter(p)));
   const d = sDetail(layer, uvm);
   m.colorNode = albedo.mul(mix(float(1), float(0.7), wet)).mul(cloudShadow(p));
-  m.roughnessNode = select(s.greaterThan(4.5), float(0.35), mix(d.b.mul(0.3).add(0.62), float(0.45), wet));
-  m.metalnessNode = select(s.greaterThan(4.5), float(0.6), float(0));
-  m.normalNode = perturb(normalWorld, d, select(s.greaterThan(2.5).and(s.lessThan(3.5)), float(1.6), float(0.9)));
+  m.roughnessNode = sel(s.greaterThan(4.5), float(0.35), mix(d.b.mul(0.3).add(0.62), float(0.45), wet));
+  m.metalnessNode = sel(s.greaterThan(4.5), float(0.6), float(0));
+  m.normalNode = perturb(normalWorld, d, sel(s.greaterThan(2.5).and(s.lessThan(3.5)), float(1.6), float(0.9)));
   m.emissiveNode = lightPool(p).mul(albedo);
   return m;
 }
@@ -228,32 +231,32 @@ export function buildingMaterial() {
   const isInd = step(7.5, cls).mul(step(cls, 8.5));
   const isOffice = step(5.5, cls).mul(step(cls, 6.5));
   // ---- wall surface: photographic brick / render / pebbledash / cladding / stone
-  const houseLayer = select(r0.lessThan(mix(float(0.4), float(0.2), isTerrace)), int(L.brick_red), select(r0.lessThan(mix(float(0.55), float(0.62), isTerrace)), int(L.brick_dark),
-    select(r0.lessThan(0.8), int(L.render), select(r0.lessThan(0.92), int(L.pebbledash), int(L.brick_buff)))));
-  const otherLayer = select(isInd.greaterThan(0.5), int(L.cladding), select(isOffice.greaterThan(0.5), select(r0.lessThan(0.45), int(L.concrete_wall), select(r0.lessThan(0.75), int(L.brick_red), int(L.render))),
-    select(cls.equal(9), int(L.stone), select(r0.lessThan(0.4), int(L.brick_red), select(r0.lessThan(0.6), int(L.brick_dark), int(L.render))))));
-  const wallLayer = select(isHouse.greaterThan(0.5), houseLayer, otherLayer);
-  const roofLayer = select(isFlat.greaterThan(0.5), int(L.felt), select(r3.lessThan(mix(float(0.45), float(0.85), isTerrace)), int(L.roof_slate), int(L.roof_clay)));
-  const layer = select(isWall.greaterThan(0.5), wallLayer, select(isChim.greaterThan(0.5), int(L.brick_red), roofLayer));
+  const houseLayer = sel(r0.lessThan(mix(float(0.4), float(0.2), isTerrace)), int(L.brick_red), sel(r0.lessThan(mix(float(0.55), float(0.62), isTerrace)), int(L.brick_dark),
+    sel(r0.lessThan(0.8), int(L.render), sel(r0.lessThan(0.92), int(L.pebbledash), int(L.brick_buff)))));
+  const otherLayer = sel(isInd.greaterThan(0.5), int(L.cladding), sel(isOffice.greaterThan(0.5), sel(r0.lessThan(0.45), int(L.concrete_wall), sel(r0.lessThan(0.75), int(L.brick_red), int(L.render))),
+    sel(cls.equal(9), int(L.stone), sel(r0.lessThan(0.4), int(L.brick_red), sel(r0.lessThan(0.6), int(L.brick_dark), int(L.render))))));
+  const wallLayer = sel(isHouse.greaterThan(0.5), houseLayer, otherLayer);
+  const roofLayer = sel(isFlat.greaterThan(0.5), int(L.felt), sel(r3.lessThan(mix(float(0.45), float(0.85), isTerrace)), int(L.roof_slate), int(L.roof_clay)));
+  const layer = sel(isWall.greaterThan(0.5), wallLayer, sel(isChim.greaterThan(0.5), int(L.brick_red), roofLayer));
   const uvm = vec2(u.x, u.y);
   const wallTex = sAlbedo(layer, uvm);
-  const isRender = wallLayer.equal(int(L.render)).select(float(1), float(0)).mul(isWall);
-  const isPeb = wallLayer.equal(int(L.pebbledash)).select(float(1), float(0)).mul(isWall);
+  const isRender = sel(wallLayer.equal(int(L.render)), float(1), float(0)).mul(isWall);
+  const isPeb = sel(wallLayer.equal(int(L.pebbledash)), float(1), float(0)).mul(isWall);
   // render paint colours: magnolia, white, cream, pale grey, the odd pastel
-  const paint = select(r1.lessThan(0.35), vec3(1.25, 1.2, 1.05), select(r1.lessThan(0.6), vec3(1.4, 1.4, 1.36), select(r1.lessThan(0.8), vec3(1.3, 1.22, 1.0), select(r1.lessThan(0.93), vec3(1.1, 1.12, 1.12), vec3(1.15, 1.25, 1.3)))));
+  const paint = sel(r1.lessThan(0.35), vec3(1.25, 1.2, 1.05), sel(r1.lessThan(0.6), vec3(1.4, 1.4, 1.36), sel(r1.lessThan(0.8), vec3(1.3, 1.22, 1.0), sel(r1.lessThan(0.93), vec3(1.1, 1.12, 1.12), vec3(1.15, 1.25, 1.3)))));
   const cladTint = mix(vec3(0.75, 0.8, 0.85), vec3(0.45, 0.55, 0.7), r1);
-  let wallCol = wallTex.mul(mix(vec3(1), paint, isRender)).mul(mix(vec3(1), vec3(1.5), isPeb)).mul(mix(vec3(1), cladTint.mul(1.3), wallLayer.equal(int(L.cladding)).select(float(1), float(0))));
+  let wallCol = wallTex.mul(mix(vec3(1), paint, isRender)).mul(mix(vec3(1), vec3(1.5), isPeb)).mul(mix(vec3(1), cladTint.mul(1.3), sel(wallLayer.equal(int(L.cladding)), float(1), float(0))));
   wallCol = wallCol.mul(h1(seed.add(2.2)).mul(0.18).add(0.91));   // per-building weathering / batch variation
   // ---- windows / doors / shopfronts
   const fh = max(floorH, 2.4);
   const fi = floor(max(u.y, 0).div(fh));
   const fv = fract(max(u.y, 0).div(fh));
-  const sp = select(isHouse.greaterThan(0.5), mix(float(2.4), float(3.2), r2), select(isOffice.greaterThan(0.5), mix(float(1.5), float(3.0), r2), mix(float(2.6), float(4), r2)));
+  const sp = sel(isHouse.greaterThan(0.5), mix(float(2.4), float(3.2), r2), sel(isOffice.greaterThan(0.5), mix(float(1.5), float(3.0), r2), mix(float(2.6), float(4), r2)));
   const ci = floor(u.x.div(sp));
   const cu = fract(u.x.div(sp));
-  const ww = select(isOffice.greaterThan(0.5), mix(float(0.55), float(0.85), r1), select(isInd.greaterThan(0.5), float(0.25), float(0.45)));
-  const winTop = select(isInd.greaterThan(0.5), float(0.92), float(0.8));
-  const winBot = select(isInd.greaterThan(0.5), float(0.75), float(0.33));
+  const ww = sel(isOffice.greaterThan(0.5), mix(float(0.55), float(0.85), r1), sel(isInd.greaterThan(0.5), float(0.25), float(0.45)));
+  const winTop = sel(isInd.greaterThan(0.5), float(0.92), float(0.8));
+  const winBot = sel(isInd.greaterThan(0.5), float(0.75), float(0.33));
   // view ray in façade space; u direction from screen derivatives so it always matches the uv
   const nW = normalWorld;
   const dp1 = dFdx(p), dp2 = dFdy(p), du1 = dFdx(u.x), du2 = dFdy(u.x);
@@ -277,29 +280,29 @@ export function buildingMaterial() {
   const front = step(0.5, part).mul(step(part, 1.5));
   const shopFront = shop.mul(front).mul(step(fi, 0.5)).mul(step(0.06, fv)).mul(step(fv, 0.82)).mul(step(0.04, fract(u.x.div(2.6))));
   const doorCol = h1(seed.add(5.5)).mul(5).floor();
-  const isDoor = isHouse.mul(front).mul(step(fi, 0.5)).mul(ci.equal(floor(r2.mul(2))).select(float(1), float(0))).mul(step(abs(cu.sub(0.5)), 0.2)).mul(step(fv, 0.78));
-  const doorRGB = select(doorCol.lessThan(1), vec3(0.04, 0.06, 0.16), select(doorCol.lessThan(2), vec3(0.32, 0.04, 0.05), select(doorCol.lessThan(3), vec3(0.02, 0.02, 0.02),
-    select(doorCol.lessThan(4), vec3(0.06, 0.16, 0.08), vec3(0.82, 0.82, 0.8)))));
+  const isDoor = isHouse.mul(front).mul(step(fi, 0.5)).mul(sel(ci.equal(floor(r2.mul(2))), float(1), float(0))).mul(step(abs(cu.sub(0.5)), 0.2)).mul(step(fv, 0.78));
+  const doorRGB = sel(doorCol.lessThan(1), vec3(0.04, 0.06, 0.16), sel(doorCol.lessThan(2), vec3(0.32, 0.04, 0.05), sel(doorCol.lessThan(3), vec3(0.02, 0.02, 0.02),
+    sel(doorCol.lessThan(4), vec3(0.06, 0.16, 0.08), vec3(0.82, 0.82, 0.8)))));
   const glass = max(inWin.mul(inner).mul(float(1).sub(bar)), shopFront).mul(float(1).sub(isDoor));
   // ---- room interiors behind the glass (parallax box: back wall, side walls, floor, ceiling)
-  const depth = select(shopFront.greaterThan(0.5), float(6), float(3.2));
+  const depth = sel(shopFront.greaterThan(0.5), float(6), float(3.2));
   const halfW = sp.mul(0.5);
   const x0 = cuS.sub(0.5).mul(sp), y0 = fvS.mul(fh);
   const tBack = depth.div(rz);
-  const tSide = select(rx.greaterThan(0), halfW.sub(x0), halfW.add(x0)).div(abs(rx).max(1e-3));
-  const tFloor = select(ry.lessThan(0), y0.div(ry.negate().max(1e-3)), float(1e4));
-  const tCeil = select(ry.greaterThan(0), fh.sub(y0).div(ry.max(1e-3)), float(1e4));
+  const tSide = sel(rx.greaterThan(0), halfW.sub(x0), halfW.add(x0)).div(abs(rx).max(1e-3));
+  const tFloor = sel(ry.lessThan(0), y0.div(ry.negate().max(1e-3)), float(1e4));
+  const tCeil = sel(ry.greaterThan(0), fh.sub(y0).div(ry.max(1e-3)), float(1e4));
   const tHit = min(min(tBack, tSide), min(tFloor, tCeil));
   const hitBack = step(tBack, tHit.add(1e-4)), hitSide = step(tSide, tHit.add(1e-4)).mul(float(1).sub(hitBack));
   const hitFloor = step(tFloor, tHit.add(1e-4)).mul(float(1).sub(hitBack)).mul(float(1).sub(hitSide));
   const roomSeed = h3(vec3(seed, fi, ci));
   const wallpaper = mix(vec3(0.55, 0.5, 0.42), vec3(0.42, 0.48, 0.5), h1(roomSeed.mul(91)));
-  const room = select(hitBack.greaterThan(0.5), wallpaper, select(hitSide.greaterThan(0.5), wallpaper.mul(0.75), select(hitFloor.greaterThan(0.5), vec3(0.22, 0.16, 0.12), vec3(0.75, 0.74, 0.7))));
+  const room = sel(hitBack.greaterThan(0.5), wallpaper, sel(hitSide.greaterThan(0.5), wallpaper.mul(0.75), sel(hitFloor.greaterThan(0.5), vec3(0.22, 0.16, 0.12), vec3(0.75, 0.74, 0.7))));
   // furniture silhouettes in homes; shelving with stock in shops
   const hy = y0.add(ry.mul(tHit)), hx = x0.add(rx.mul(tHit)), hz = rz.mul(tHit);
   const furniture = hitBack.mul(step(hy, mix(float(0.7), float(1.1), roomSeed))).mul(step(abs(hx.sub(roomSeed.sub(0.5).mul(sp))), sp.mul(0.25))).mul(0.6);
   const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.1));
-  const along = select(hitBack.greaterThan(0.5), hx, hz);
+  const along = sel(hitBack.greaterThan(0.5), hx, hz);
   const cell = h3(vec3(floor(along.div(0.28)), floor(hy.div(0.42)), roomSeed.mul(53)));
   const stock = mix(vec3(0.5), mix(vec3(0.7, 0.3, 0.22), vec3(0.3, 0.4, 0.62), cell), 0.45).mul(cell.mul(0.5).add(0.55));
   const shelfEdge = step(fract(hy.div(0.42)), 0.09);
@@ -318,9 +321,9 @@ export function buildingMaterial() {
   // ---- roofs: photographic clay / slate / felt with moss and weathering
   const moss = nz(p.xz, 1 / 3.1).g;
   const roofCol = wallTex.mul(mix(vec3(1), vec3(0.75, 0.85, 0.55), smoothstep(0.62, 0.8, moss).mul(0.35))).mul(h1(seed.add(9.9)).mul(0.2).add(0.9));
-  const flatCol = wallTex.mul(select(step(3.5, cls).mul(step(0.5, r1)).greaterThan(0.5), vec3(1.5), vec3(0.85)));
+  const flatCol = wallTex.mul(sel(step(3.5, cls).mul(step(0.5, r1)).greaterThan(0.5), vec3(1.5), vec3(0.85)));
   let albedo = wallCol.mul(isWall);
-  const frameCol = select(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), select(r3.lessThan(0.85), vec3(0.9, 0.9, 0.88), vec3(0.15, 0.12, 0.1)));
+  const frameCol = sel(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), sel(r3.lessThan(0.85), vec3(0.9, 0.9, 0.88), vec3(0.15, 0.12, 0.1)));
   albedo = mix(albedo, frameCol, frame);
   albedo = mix(albedo, wallCol.mul(mix(float(0.55), float(0.8), step(0, ry))), reveal.mul(float(1).sub(shopFront)));
   const sill = step(abs(cu.sub(0.5)), ww.mul(0.5).add(0.06)).mul(step(winBot.sub(0.05), fv)).mul(step(fv, winBot)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(isDoor)).mul(step(0, u.y));

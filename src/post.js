@@ -23,7 +23,7 @@ export function createPost(G) {
   const normal = scenePass.getTextureNode('normal');
   const aoPass = ao(depth, normal, camera);
   aoPass.resolutionScale = high ? 0.5 : 0.4;
-  aoPass.samples.value = high ? 12 : 8;
+  aoPass.samples.value = high ? 12 : 6;
   aoPass.radius.value = 1.1;          // metres: contact shadows at kerbs, eaves, window reveals, under cars
   aoPass.distanceExponent.value = 1.4;
   aoPass.thickness.value = 1.2;
@@ -36,7 +36,9 @@ export function createPost(G) {
   c = c.add(bl.rgb);
   const pipe = new THREE.RenderPipeline(renderer);
   pipe.outputColorTransform = false;
-  pipe.outputNode = fxaa(renderOutput(vec4(c, 1)));
+  // subtle lens vignette after tone mapping
+  const vig = float(1).sub(smoothstep(0.55, 1.05, screenUV.sub(0.5).mul(vec3(1.25, 1, 0).xy).length().mul(1.45)).mul(0.16));
+  pipe.outputNode = fxaa(renderOutput(vec4(c, 1)).mul(vec4(vig, vig, vig, 1)));
   return {
     pipe, aoPass, strength,
     render() { pipe.render(); },
