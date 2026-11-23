@@ -87,7 +87,7 @@ export class Peds {
     if (!this._ef || Math.hypot(this._ef.x - focus.x, this._ef.z - focus.z) > 40) { this._edges = this.pickWalkEdge(focus); this._ef = { x: focus.x, z: focus.z }; }
     if (this.timer <= 0) {
       this.timer = 0.3;
-      const target = Math.min(170, this.density(focus.x, focus.z) * (G.quality === 'low' ? 0.5 : 1));
+      const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z) * (G.quality === 'low' ? 0.5 : 1));
       if (this.list.length < target) for (let i = 0; i < 3; i++) this.spawn(focus, info, this.list.length < target * 0.3);
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
@@ -284,6 +284,6 @@ export class Peds {
   near(x, z, r) { return this.list.filter(p => Math.hypot(p.x - x, p.z - z) < r && !(p.fallT > 0)); }
   draw(people, extra, cam) {
     const arr = this.list.concat(extra);
-    return people.draw(arr, cam, 170);
+    return people.draw(arr, cam, this.G.budget?.peopleDist || 170);
   }
 }

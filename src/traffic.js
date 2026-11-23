@@ -295,7 +295,7 @@ export class Traffic {
     }
     const hr = info.hour;
     const tod = hr < 5 ? 0.12 : hr < 6.5 ? 0.3 : hr < 9.5 ? 1.15 : hr < 16 ? 0.85 : hr < 18.5 ? 1.15 : hr < 22 ? 0.55 : 0.25;
-    const target = Math.min(260, this._edgeCache.target * tod * this.density);
+    const target = Math.min(this.maxVehicles || 260, this._edgeCache.target * tod * this.density);
     let count = 0;
     for (const v of this.list) if (!v.parked && Math.hypot(v.x - focus.x, v.z - focus.z) < BUBBLE_R) count++;
     let tries = 6;

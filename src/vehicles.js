@@ -161,10 +161,10 @@ export class VehicleRenderer {
       }
     }
     for (const k in MODELS) {
-      const m = this.meshes[k]; m.count = counts[k];
+      const m = this.meshes[k]; m.count = counts[k]; m.visible = counts[k] > 0;   // empty instanced meshes cost a draw call
       m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true;
     }
-    this.wheels.count = wn; this.wheels.instanceMatrix.needsUpdate = true;
+    this.wheels.count = wn; this.wheels.visible = wn > 0; this.wheels.instanceMatrix.needsUpdate = true;
   }
 }
 export const PAINTS = [0xe8e8e8, 0x1a1a1a, 0x9a9da0, 0x3a3d42, 0x6e7378, 0x8a1c1c, 0x1d3d7a, 0x234a33, 0xb8b3a6, 0x3d2b23, 0xc9c9c4, 0x0f2240, 0x5b6770, 0xd4d0c8, 0x7a1f2e, 0x2f2f33];

@@ -67,7 +67,7 @@ export class People {
       this.pose(n, a);
       n++;
     }
-    for (const p of PARTS) { M[p].count = n; M[p].instanceMatrix.needsUpdate = true; M[p].instanceColor.needsUpdate = true; }
+    for (const p of PARTS) { M[p].count = n; M[p].visible = n > 0; M[p].instanceMatrix.needsUpdate = true; M[p].instanceColor.needsUpdate = true; }
     return n;
   }
   set(part, i, local, color) {

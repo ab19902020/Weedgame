@@ -8,6 +8,7 @@ import { U, lightPos, lightCol, NL } from './env.js';
 import { createSky } from './sky.js';
 import { World } from './weather.js';
 import { SignAtlas } from './signs.js';
+import { budgetFor } from './perf.js';
 
 const Q = new URLSearchParams(location.search);
 const status = t => { const el = document.getElementById('boot'); if (el) el.textContent = t; };
@@ -19,37 +20,40 @@ export async function boot(extra = {}) {
   // ---------------------------------------------------------------- renderer
   const forceWebGL = Q.get('backend') === 'webgl' || !navigator.gpu;
   const quality = Q.get('quality') || (matchMedia('(pointer:coarse)').matches ? 'medium' : 'high');
-  const renderer = new THREE.WebGPURenderer({ antialias: quality !== 'low', forceWebGL, powerPreference: 'high-performance' });
+  const budget = budgetFor(quality);   // explicit low / medium / high budgets (perf.js)
+  const renderer = new THREE.WebGPURenderer({ antialias: budget.antialias, forceWebGL, powerPreference: 'high-performance' });
   await renderer.init();
   const backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2';
-  renderer.setPixelRatio(Math.min(devicePixelRatio, quality === 'high' ? 1.5 : 1.15));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, budget.pixelRatio[1]));
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.shadowMap.enabled = quality !== 'low' && Q.get('shadows') !== '0';
+  renderer.shadowMap.enabled = budget.shadow.size > 0 && Q.get('shadows') !== '0';
   renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.prepend(renderer.domElement);
   renderer.domElement.id = 'view';
   const scene = new THREE.Scene();
   scene.fogNode = fog(vec3(U.fogCol), densityFogFactor(U.fogDensity));
   const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.4, 2600);
-  const sky = createSky(quality === 'high' ? 12 : quality === 'medium' ? 8 : 4);
+  const sky = createSky(budget.cloudSteps);
   sky.scale.setScalar(0.45);
   scene.add(sky);
   const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x3a4030, 1);
   const sun = new THREE.DirectionalLight(0xffffff, 3);
   sun.castShadow = renderer.shadowMap.enabled;
-  sun.shadow.mapSize.set(quality === 'high' ? 2048 : 1024, quality === 'high' ? 2048 : 1024);
-  const sc = sun.shadow.camera; sc.left = -90; sc.right = 90; sc.top = 90; sc.bottom = -90; sc.near = 10; sc.far = 600;
+  // shadow distance and resolution are capped per preset
+  const S = budget.shadow.size || 512, E = budget.shadow.extent || 60;
+  sun.shadow.mapSize.set(S, S);
+  const sc = sun.shadow.camera; sc.left = -E; sc.right = E; sc.top = E; sc.bottom = -E; sc.near = 10; sc.far = budget.shadow.far || 450;
   sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.6;
   scene.add(hemi, sun, sun.target);
   // ---------------------------------------------------------------- world
   const tiles = new Tiles(scene, manifest, net, {
-    shadows: renderer.shadowMap.enabled, r0: Number(Q.get('r0')) || (quality === 'high' ? 420 : 360), r1: Number(Q.get('r1')) || (quality === 'low' ? 800 : 1150),
+    shadows: renderer.shadowMap.enabled, r0: Number(Q.get('r0')) || budget.r0, r1: Number(Q.get('r1')) || budget.r1,
     workers: Math.min(3, Math.max(1, (navigator.hardwareConcurrency || 4) - 2)),
   });
   tiles.signAtlas = new SignAtlas();
   const world = new World(extra.weather);
-  const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, Q, U, lightPos, lightCol, NL, frame: 0 };
+  const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, budget, Q, U, lightPos, lightCol, NL, frame: 0 };
   window.GC = G;
   G.updateLighting = () => {
     sun.intensity = 3.2 * world.sunIntensity + 0.12 * U.night.value;

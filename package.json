@@ -11,7 +11,8 @@
   "acceptance": "node tools/test/acceptance.js docs/captures"
  },
  "devDependencies": {
-  "esbuild": "0.25.10"
+  "esbuild": "0.25.10",
+  "playwright": "^1.65.1"
  },
  "dependencies": {
   "three": "0.186.1"
