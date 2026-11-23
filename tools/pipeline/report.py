@@ -92,6 +92,25 @@ if acc:
     w('')
     for r in acc.get('reruns', []):
         w(f"Re-run {r['started']}: {r['reason']}\n")
+perfdir = os.path.join(ROOT, 'docs/perf')
+probes = [json.load(open(os.path.join(perfdir, f))) for f in sorted(os.listdir(perfdir)) if f.startswith('probe-') and f.endswith('.json')] if os.path.isdir(perfdir) else []
+flys = [(f, json.load(open(os.path.join(perfdir, f)))) for f in sorted(os.listdir(perfdir)) if f.startswith('perf-flythrough') and f.endswith('.json')] if os.path.isdir(perfdir) else []
+if probes or flys:
+    w('## Performance (budgets, draw calls, flythrough)\n')
+    w('Quality budgets (`src/perf.js` `BUDGETS`): low / medium / high cap draw calls at 120 / 220 / 320, triangles at 300k / 600k / 900k, moving vehicles at 120 / 220 / 260 and people at 60 / 120 / 170, with shadow maps off / 1024 / 2048. '
+      'Draw-call and triangle counts depend only on the scene and budget, so they carry over to phones. **Frame times below come from software rendering in this container (the renderer string is given) and say nothing about phone performance.** '
+      'Phone figures have to come from the APK flythrough (`docs/PERF-CHECKLIST.md`).\n')
+    if probes:
+        w('| Quality | Spot | Draw calls | Triangles | Tiles | Renderer |')
+        w('|---|---|---:|---:|---:|---|')
+        for pr in probes:
+            for name, r in pr['spots'].items():
+                w(f"| {pr['quality']} | {name} | {r['calls']} | {r['tris']} | {r['tiles']} | {pr.get('gl', '')[:70]} |")
+        w('')
+    for f, j in flys:
+        s_ = j.get('summary', {})
+        w(f"Flythrough `{f}` ({j.get('route', '')}, {j.get('distanceKm')} of {j.get('routeKm')} km at {j.get('speedMps')} m/s, quality {j.get('quality')}, backend {j.get('backend')}, renderer {str(j.get('gpu', ''))[:70]}): completed {j.get('completed')}, "
+          f"{s_.get('fps')} fps average, frame p50 {s_.get('p50')} ms / p95 {s_.get('p95')} ms, {s_.get('stalls')} stalls, draw calls p50 {s_.get('drawCallsP50')} / p95 {s_.get('drawCallsP95')}, triangles p95 {s_.get('trisP95')}, JS heap {s_.get('heapMinMB')}–{s_.get('heapMaxMB')} MB. Software renderer: not a phone measurement.\n")
 capdir = os.path.join(ROOT, 'docs/captures')
 if os.path.isdir(capdir):
     w('## Captures\n')
@@ -99,7 +118,7 @@ if os.path.isdir(capdir):
     w(', '.join(f'`{f}`' for f in sorted(os.listdir(capdir)) if f.endswith(('.png', '.mp4'))) + '\n')
 w('## Still to do, by area and system\n')
 for item in [
-    '**Hardware performance is unmeasured.** Nothing has run on an Honor Magic 6 Pro or any phone. Frame time, memory and stall figures exist only from software rendering in this container, which says nothing about device performance. The APK writes a performance log from the Dev panel (Save perf log).',
+    '**Hardware performance is unmeasured.** Nothing has run on an Honor Magic 6 Pro or any phone. Frame time, memory and stall figures exist only from software rendering in this container, which says nothing about device performance. The APK writes `perf-<time>.json` from the Dev panel (Perf flythrough or Save perf log); `docs/PERF-CHECKLIST.md` gives the steps and targets.',
     '**WebGPU rendering is unverified.** The renderer starts on WebGPU where `navigator.gpu` exists and switches itself to WebGL2 (remembered per version) on device loss or pipeline errors. In this container WebGPU failed (SwiftShader/lavapipe), so every capture uses WebGL2. Whether Android WebView exposes WebGPU on the target phone still has to be checked.',
     'Façade photography, shopfront detail and per-building materials (OSM `building:colour`/`building:material` are read but not yet used).',
     'Front gardens and driveways are inferred, not surveyed; there are no bay windows, porches, gutters or attached garages yet, and no rear gardens or fences between plots.',

@@ -49,12 +49,13 @@ async function launch(video) {
     },
     tapAt: async (x, y) => { await T.touch('touchStart', [[x, y, 3]]); await T.touch('touchEnd', []); },
     tap: async sel => { const r = await p.locator(sel).first().boundingBox(); if (!r) throw new Error('no ' + sel); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(2); },
-    dev: async (...labels) => { // open the developer panel and tap buttons by label
-      for (const label of labels) {
+    dev: async (...acts) => { // open the developer panel and tap buttons by their stable data-act id
+      for (const act of acts) {
         if (await p.locator('#dev').isHidden()) await T.tap('#bDev');
-        const loc = p.locator('#dev button', { hasText: label }).first();
+        const loc = p.locator(`#dev button[data-act="${act}"]`).first();
+        if (!(await loc.count())) throw new Error('no dev button with data-act=' + act);
         await loc.scrollIntoViewIfNeeded();
-        const r = await loc.boundingBox(); if (!r) throw new Error('no dev button ' + label);
+        const r = await loc.boundingBox(); if (!r) throw new Error('dev button not visible: ' + act);
         await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(2);
       }
       if (!(await p.locator('#dev').isHidden())) { const r = await p.locator('#devX').boundingBox(); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(1); }
@@ -63,13 +64,28 @@ async function launch(video) {
     shot: async name => { await p.screenshot({ path: path.join(OUT, name + '.png') }); return name + '.png'; },
     text: () => p.evaluate(() => document.body.innerText),
     // drive the stick so the brother/vehicle heads to a world point (re-evaluated every burst)
-    walkTo: async (x, z, opts = {}) => {
+    // straight-line stick steering towards a world point (re-evaluated every burst)
+    walkStraight: async (x, z, opts = {}) => {
       for (let i = 0; i < (opts.bursts || 30); i++) {
         const s = await p.evaluate(([x, z]) => { const B = GC.brothers, me = B.me, yaw = B.cam.yaw; const wx = x - me.x, wz = z - me.z, d = Math.hypot(wx, wz); const fx = -Math.cos(yaw), fz = -Math.sin(yaw); const ux = wx / d, uz = wz / d; return { d, sx: -ux * fz + uz * fx, sy: -(ux * fx + uz * fz) }; }, [x, z]);
         if (s.d < (opts.within || 1.5)) return s.d;
         await T.stick(s.sx, s.sy, Math.min(opts.frames || 6, Math.ceil(s.d / (opts.run ? 1.2 : 0.4))), opts.run && s.d > 6);
       }
       return -1;
+    },
+    // walk to a world point along the walk graph (pavements, footways, links), still only via the stick.
+    // straight: true keeps the old straight-line behaviour (collision and crossing steps need it).
+    walkTo: async (x, z, opts = {}) => {
+      if (opts.straight) return T.walkStraight(x, z, opts);
+      const plan = await p.evaluate(([x, z]) => { const me = GC.brothers.me, d = Math.hypot(x - me.x, z - me.z); if (d < 25 || !GC.walkGraph) return null; const r = GC.walkGraph.path(me.x, me.z, x, z); if (!r || r.length > d * 3 + 150) return null;
+        const out = []; let acc = 0; for (let i = 1; i < r.pts.length - 1; i++) { acc += Math.hypot(r.pts[i][0] - r.pts[i - 1][0], r.pts[i][1] - r.pts[i - 1][1]); if (acc > 10) { out.push(r.pts[i]); acc = 0; } } return out; }, [x, z]);
+      T.lastPlan = plan ? plan.length : 0;
+      if (plan) for (const [wx, wz] of plan) {
+        const left = await p.evaluate(([x, z]) => Math.hypot(x - GC.brothers.me.x, z - GC.brothers.me.z), [x, z]);
+        if (left < 12) break;
+        await T.walkStraight(wx, wz, { ...opts, within: 3, bursts: 6 });
+      }
+      return T.walkStraight(x, z, opts);
     },
     driveAlong: async (targets, opts = {}) => { // steer a vehicle through world points
       const trace = [];
@@ -125,13 +141,13 @@ async function step(name, fn) {
     const a = await T.state();
     // head west into the shop row: the wall should stop us
     const r = await p.evaluate(() => { const me = GC.brothers.me; let hit = null; GC.tiles.buildingsNear(me.x, me.z, 30, (P, s, n) => { if (!hit) hit = [P[s * 2], P[s * 2 + 1]]; }); return hit; });
-    await T.walkTo(a.x - 30, a.z, { bursts: 8, frames: 8, within: 0.5 });
+    await T.walkTo(a.x - 30, a.z, { bursts: 8, frames: 8, within: 0.5, straight: true });
     const b = await T.state();
     const inside = await p.evaluate(() => !!GC.tiles.insideBuilding(GC.brothers.me.x, GC.brothers.me.z, GC.brothers.me.y));
     rec.shots.push(await T.shot('02-against-shop-wall'));
     rec.notes.push(`tried to walk 30 m west from x=${a.x}; stopped at x=${b.x} (moved ${(a.x - b.x).toFixed(1)} m), inside building: ${inside}`);
     // slide north along the wall, then east around the end of the row
-    await T.walkTo(b.x - 5, b.z - 40, { bursts: 6, frames: 8 });
+    await T.walkTo(b.x - 5, b.z - 40, { bursts: 6, frames: 8, straight: true });
     const c = await T.state();
     rec.notes.push(`slid along the facade to z=${c.z}`);
     if (inside) rec.fail = 'ended inside a building';
@@ -140,10 +156,10 @@ async function step(name, fn) {
   });
 
   await step('Cross at a working signal (Woodley)', async rec => {
-    await T.dev('Woodley signal crossing'); await T.frames(12);
+    await T.dev('spot-woodley-signal-crossing'); await T.frames(12);
     const info = await p.evaluate(() => { const me = GC.brothers.me; let best = null, bd = 1e9; for (const h of GC.signalRenderer.heads) if (h.ped) { const d = Math.hypot(h.x - me.x, h.z - me.z); if (d < bd) { bd = d; best = h; } } const pair = GC.signalRenderer.heads.filter(h => h.ped && h.ci === best.ci); let far = pair.filter(h => h !== best).sort((a, b) => Math.hypot(a.x - best.x, a.z - best.z) - Math.hypot(b.x - best.x, b.z - best.z)).find(h => Math.hypot(h.x - best.x, h.z - best.z) > 4) || pair[1]; return { ci: best.ci, a: [best.x, best.z], b: [far.x, far.z] }; });
     rec.notes.push(`controller ${info.ci}: kerb A ${info.a.map(v => v.toFixed(1))}, kerb B ${info.b.map(v => v.toFixed(1))}`);
-    for (let k = 0; k < 3; k++) { const d = await T.walkTo(info.a[0], info.a[1], { within: 1.2, bursts: 20 }); if (d >= 0) break; }
+    for (let k = 0; k < 3; k++) { const d = await T.walkTo(info.a[0], info.a[1], { within: 1.2, bursts: 20, straight: true }); if (d >= 0) break; }
     const dA = await p.evaluate(a => Math.hypot(GC.brothers.me.x - a[0], GC.brothers.me.z - a[1]), info.a);
     rec.notes.push(`standing ${dA.toFixed(1)} m from the crossing post`);
     await T.frames(4);
@@ -160,7 +176,7 @@ async function step(name, fn) {
     if (!walk) { rec.fail = 'green man never appeared'; return; }
     rec.shots.push(await T.shot('05-green-man'));
     const before = await T.state();
-    await T.walkTo(info.b[0], info.b[1], { within: 1.5, bursts: 12, frames: 5 });
+    await T.walkTo(info.b[0], info.b[1], { within: 1.5, bursts: 12, frames: 5, straight: true });
     const after = await T.state();
     rec.shots.push(await T.shot('06-crossed'));
     const vehDuring = await p.evaluate(ci => GC.signals.ctl[ci].stages.map((s) => s.kind === 'veh' ? GC.signals.aspect(ci, s.g) : 'P').join(''), info.ci);
@@ -168,7 +184,7 @@ async function step(name, fn) {
   });
 
   await step('Watch a pedestrian and a bus complete a junction (Cemetery Junction)', async rec => {
-    await T.dev('Cemetery Junction arch', '×8'); await T.frames(15);
+    await T.dev('spot-cemetery-junction-arch', 'sim-8'); await T.frames(15);
     await T.face(-5816, -2188); await T.frames(2);
     rec.shots.push(await T.shot('07-cemetery-junction-arch'));
     const J = { x: -5845.7, z: -2188.9 };
@@ -195,12 +211,12 @@ async function step(name, fn) {
     rec.notes.push(`pedestrian ${ped} crossing states: ${rec.ped.modes.join(' -> ')}`);
     if (!bus || !(minD < 30) || !(busTrack.at(-1)[2] > 40)) rec.fail = 'no bus completed the junction in the time allowed';
     if (!ped) rec.fail = (rec.fail ? rec.fail + '; ' : '') + 'no pedestrian crossing observed';
-    await T.dev('×2');
+    await T.dev('sim-2');
   });
 
   let parked = null;
   await step('Park, switch brothers, drive to Reading, return and find the car', async rec => {
-    await T.dev('Woodley precinct'); await T.frames(12);
+    await T.dev('spot-woodley-precinct'); await T.frames(12);
     const car = await p.evaluate(() => { const v = GC.traffic.byId.get('cal-car'); return [v.x, v.z]; });
     await T.walkTo(car[0], car[1], { within: 3.2, bursts: 40, frames: 10, run: true });
     await T.tap('#bUse'); await T.frames(4);
@@ -219,7 +235,7 @@ async function step(name, fn) {
     s = await T.state(); if (s.vehicle !== 'leon-car') { rec.fail = 'Leon could not get into his car'; return; }
     await T.stick(0, 0.8, 14); await T.stopVehicle();   // reverse away: Leon's car is parked behind Cal's
     rec.notes.push('Leon reversed out; the Woodley-to-Reading run is shortened with the Dev "Go to" teleport (software rendering runs ~1 fps here)');
-    await T.dev('Reading town centre'); await T.frames(15);
+    await T.dev('goto-reading-town-centre'); await T.frames(15);
     await T.stick(0, -0.7, 16); await T.stopVehicle();
     await T.tap('#bUse'); await T.frames(3);
     s = await T.state(); rec.notes.push(`Leon parked in ${s.district} on ${s.road}`);
@@ -239,7 +255,7 @@ async function step(name, fn) {
     await T.walkTo(car[0], car[1], { within: 3.2, bursts: 20, frames: 6 });
     await T.tap('#bUse'); await T.frames(3);
     if (!(await T.state()).vehicle) { rec.fail = 'could not get into the car'; return; }
-    await T.dev('Suttons Park Ave (A3290 flyover)'); await T.frames(15);
+    await T.dev('spot-suttons-park-ave-a3290-flyover'); await T.frames(15);
     // waypoints along Suttons Park Avenue, west (East Reading) to east (Earley), through the underpass
     const pts = await p.evaluate(() => { const net = GC.net, raw = []; for (let e = 0; e < net.nEdges; e++) { if (net.roadName(e) !== 'Suttons Park Avenue') continue; const s = net.pstart[e], n = net.pcount[e]; for (let i = 0; i < n; i++) { const x = net.pts[(s + i) * 3], z = net.pts[(s + i) * 3 + 2]; if (x > -5365 && x < -4960 && z > -2730 && z < -2670) raw.push([x, z]); } } raw.sort((a, b) => a[0] - b[0]); const out = []; for (const p of raw) if (!out.length || Math.hypot(p[0] - out.at(-1)[0], p[1] - out.at(-1)[1]) > 22) out.push(p); return out; });
     rec.notes.push(`route points: ${pts.length}`);
@@ -255,19 +271,19 @@ async function step(name, fn) {
   });
 
   await step('Clouds move, rain starts, roads get wet, then dry (Woodley precinct canopy)', async rec => {
-    await T.dev('Woodley precinct', 'clear', '12', 'Dry'); await T.frames(10);
+    await T.dev('spot-woodley-precinct', 'weather-clear', 'time-12', 'dry'); await T.frames(10);
     await T.look(0, -60); await T.frames(2);
     const c0 = await p.evaluate(() => [...GC.world.s.cloudOff]);
     rec.shots.push(await T.shot('15-clear-midday'));
-    await T.dev('120×'); await T.frames(20);
+    await T.dev('speed-120'); await T.frames(20);
     const c1 = await p.evaluate(() => [...GC.world.s.cloudOff]);
     rec.notes.push(`cloud field advected ${Math.hypot(c1[0] - c0[0], c1[1] - c0[1]).toFixed(0)} m with the wind`);
     rec.shots.push(await T.shot('16-clouds-moved'));
     await T.look(0, 60);
     const series = [];
-    await T.dev('drizzle');
+    await T.dev('weather-drizzle');
     for (let i = 0; i < 30; i++) { await T.frames(4); const s = await T.state(); series.push([s.hour, s.weather, s.rain, s.wet, s.puddle]); if (i === 12) rec.shots.push(await T.shot('17-drizzle')); }
-    await T.dev('rain');
+    await T.dev('weather-rain');
     for (let i = 0; i < 30; i++) { await T.frames(4); const s = await T.state(); series.push([s.hour, s.weather, s.rain, s.wet, s.puddle]); }
     rec.shots.push(await T.shot('18-heavy-rain-wet-road'));
     if ((await T.state()).vehicle) { await T.stopVehicle(); await T.tap('#bUse'); await T.frames(3); }
@@ -277,7 +293,7 @@ async function step(name, fn) {
     const under = await p.evaluate(() => { const me = GC.brothers.me, A = GC.audio; return { sheltered: GC.shelteredAt(me.x, me.y + 1.2, me.z), rainGain: A.on ? +A.rain.g.gain.value.toFixed(3) : null, patterGain: A.on ? +A.rainHi.g.gain.value.toFixed(3) : null, lowpassHz: A.on ? Math.round(A.rain.f.frequency.value) : null }; });
     rec.notes.push(`under canopy: sheltered=${under.sheltered}, rain bed gain ${under.rainGain}, overhead patter gain ${under.patterGain}, rain low-pass ${under.lowpassHz} Hz`);
     rec.shots.push(await T.shot('19-under-canopy-in-rain'));
-    await T.dev('clearing', '600×');
+    await T.dev('weather-clearing', 'speed-600');
     for (let i = 0; i < 40; i++) { await T.frames(4); const s = await T.state(); series.push([s.hour, s.weather, s.rain, s.wet, s.puddle]); if (i === 6) rec.shots.push(await T.shot('20-shower-passing')); }
     rec.shots.push(await T.shot('21-drying'));
     rec.series = series;
@@ -285,14 +301,14 @@ async function step(name, fn) {
     rec.notes.push(`wetness peaked at ${peak} and fell to ${end} after the shower (puddles ${series.at(-1)[4]})`);
     if (!(peak > 0.6 && end < peak - 0.2)) rec.fail = 'wetness did not build and dry';
     if (!under.sheltered) rec.fail = (rec.fail ? rec.fail + '; ' : '') + 'canopy did not shelter';
-    await T.dev('30×', '18:30');
+    await T.dev('speed-30', 'time-18.5');
     await T.frames(6); rec.shots.push(await T.shot('22-dusk-lights'));
   });
 
   await step('Police response to a witnessed collision, and its resolution', async rec => {
-    await T.dev('Cemetery Junction arch', '×8', '12'); await T.frames(10);
+    await T.dev('spot-cemetery-junction-arch', 'sim-8', 'time-12'); await T.frames(10);
     const before = await p.evaluate(() => GC.police.nextInc);
-    await T.dev('Stage collision nearby'); await T.frames(3);
+    await T.dev('stage-collision-nearby'); await T.frames(3);
     const timeline = [];
     for (let i = 0; i < 500; i++) {
       const s = await p.evaluate(first => GC.police.incidents.filter(i => i.id >= first).map(i => ({ id: i.id, label: i.label, status: i.status, x: i.x, z: i.z, unit: i.unit?.id, d: i.unit ? Math.round(Math.hypot(i.unit.x - i.x, i.unit.z - i.z)) : null, siren: !!i.unit?.siren, witnesses: i.witnesses.length })), before);
@@ -308,11 +324,11 @@ async function step(name, fn) {
     const after = await p.evaluate(() => GC.police.units.map(u => u.id + ':' + u.status));
     rec.notes.push('units after: ' + after.join(', '));
     rec.shots.push(await T.shot('24-scene-cleared'));
-    await T.dev('×2');
+    await T.dev('sim-2');
   });
 
   await step('Player disturbance: stop state and clean resolution', async rec => {
-    await T.dev('Cemetery Junction arch'); await T.frames(10);
+    await T.dev('spot-cemetery-junction-arch'); await T.frames(10);
     // go to the nearest foot patrol (setup via the dev API), then take a parked car in view of the officers
     const off = await p.evaluate(() => { const me = GC.brothers.me; let best = null, bd = 1e9; for (const o of GC.police.officers) { const d = Math.hypot(o.x - me.x, o.z - me.z); if (d < bd) { bd = d; best = o; } } return { x: best.x, z: best.z, id: best.id }; });
     await p.evaluate(o => GC.teleport(o.x + 6, o.z + 6), off); await T.frames(20);
@@ -349,6 +365,29 @@ async function step(name, fn) {
     const found = MISSION.test(txt) ? txt.match(MISSION)[0] : null;
     rec.notes.push(found ? 'found: ' + found : 'no mission, objective, delivery, phone-call or sales text in the HUD');
     if (found) rec.fail = 'mission text visible';
+  });
+
+  await step('Perf flythrough from the Dev panel (short check, then stopped)', async rec => {
+    const before = await p.evaluate(() => ({ x: GC.brothers.me.x, z: GC.brothers.me.z }));
+    await T.dev('perf-flythrough');
+    await p.waitForFunction(() => GC.perf.fly.active, null, { timeout: 60000 });
+    const t0 = Date.now(); while (Date.now() - t0 < 40000) await p.waitForTimeout(2000);
+    const mid = await p.evaluate(() => ({ progress: +GC.perf.fly.progress().toFixed(3), km: +(GC.perf.fly.path.length / 1000).toFixed(2) }));
+    rec.shots.push(await T.shot('28-perf-flythrough'));
+    await T.dev('perf-flythrough');                                        // the same button reads "Stop flythrough"
+    await p.waitForFunction(() => !GC.perf.fly.active && !GC._needGround, null, { timeout: 0, polling: 300 });
+    const after = await p.evaluate(() => ({ x: GC.brothers.me.x, z: GC.brothers.me.z, perfCar: GC.traffic.byId.has('perf-car'), last: (() => { try { const l = JSON.parse(localStorage.getItem('greenCounty.perf.last')); return l && { kind: l.kind, completed: l.completed, frames: l.summary?.frames, drawCallsP50: l.summary?.drawCallsP50 }; } catch { return null; } })() }));
+    const restored = Math.hypot(after.x - before.x, after.z - before.z) < 1 && !after.perfCar;
+    rec.result = { ...mid, restored, log: after.last };
+    rec.notes.push(`flythrough ${(mid.progress * 100).toFixed(1)}% of ${mid.km} km in 40 s, stopped; brother restored: ${restored}; log saved: ${!!after.last}`);
+    if (!(mid.progress > 0) || !restored || !after.last) rec.fail = 'flythrough did not run, restore or save its log';
+  });
+
+  await step('Traffic persists across save, reload and brother swap (same ids within 200 m of each brother)', async rec => {
+    const ready = async () => { await p.waitForFunction(() => window.GC && GC.frame > 3 && document.getElementById('boot').textContent === '' && !GC._needGround, null, { timeout: 0, polling: 300 }); await T.frames(3); };
+    const r = await require('./fleet.js').run({ p, tap: T.tap, ready });
+    rec.result = r; rec.notes.push(JSON.stringify(r.steps));
+    if (!r.ok) rec.fail = 'fleet not kept';
   });
 
   log.errors = T.errors.slice(0, 40);

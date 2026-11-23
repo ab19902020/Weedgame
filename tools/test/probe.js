@@ -1,5 +1,5 @@
 // Draw-call / triangle / frame-time probe at fixed spots (dev tool, not part of acceptance).
-// Usage: xvfb-run -a node tools/test/probe.js [quality] [spots...]   (needs `npm run serve`)
+// Usage: [OUT=file.json] xvfb-run -a node tools/test/probe.js [quality] [spots...]   (needs `npm run serve`)
 const { chromium } = require('playwright');
 const BASE = process.env.BASE || 'http://localhost:8080/index.html';
 const quality = process.argv[2] || 'medium';
@@ -32,5 +32,6 @@ const SPOTS = { woodley: [-2869, -2192, -1.57], cemetery: [-5890, -2190, 0], rea
     out.spots[name] = r; console.log(name, JSON.stringify(r));
   }
   console.log(JSON.stringify(out));
+  if (process.env.OUT) require('fs').writeFileSync(process.env.OUT, JSON.stringify(out, null, 1));
   await b.close();
 })();

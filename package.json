@@ -8,7 +8,10 @@
   "serve": "python3 -m http.server 8080 --directory www",
   "world": "python3 tools/pipeline/build_world.py data www/world && python3 tools/pipeline/fit_ll.py www/world && python3 tools/pipeline/canopies.py data www/world",
   "apk": "bash tools/android/build.sh",
-  "acceptance": "node tools/test/acceptance.js docs/captures"
+  "acceptance": "node tools/test/acceptance.js docs/captures",
+  "test": "node --no-warnings --test 'tools/test/unit/*.test.mjs'",
+  "acceptance:quick": "ONLY=${ONLY:-collision,signal,flythrough,traffic persists,mission} xvfb-run -a node tools/test/acceptance.js ${QUICK_OUT:-/tmp/acceptance-quick}",
+  "test:police": "xvfb-run -a node tools/test/police.js"
  },
  "devDependencies": {
   "esbuild": "0.25.10",
