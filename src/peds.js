@@ -2,6 +2,27 @@
 import { People } from './characters.js';
 import { mulberry, lerpAngle } from './traffic.js';
 import { F_DRIVE } from './network.js';
+import { WalkGraph } from './walkgraph.js';
+
+// Hourly footfall profiles (0..1, index = hour). Town centres peak on Saturday afternoons; residential
+// streets are near-empty at dawn and busiest around the school run and early evening. Simulated, not counted.
+export const PROFILES = {
+  centre: {
+    weekday: [.04, .02, .01, .01, .01, .02, .05, .15, .45, .55, .65, .75, .9, .85, .75, .75, .8, .85, .6, .45, .35, .3, .2, .1],
+    saturday: [.08, .05, .03, .02, .01, .02, .04, .08, .2, .45, .75, .95, 1, 1, 1, 1, .95, .8, .55, .45, .45, .4, .3, .15],
+    sunday: [.06, .04, .02, .01, .01, .01, .03, .05, .1, .25, .45, .6, .7, .7, .7, .65, .5, .35, .25, .2, .15, .1, .06, .04],
+  },
+  local: {
+    weekday: [.02, .01, .005, .005, .01, .03, .12, .35, .6, .35, .3, .3, .35, .35, .3, .55, .6, .55, .45, .35, .25, .15, .08, .04],
+    saturday: [.03, .02, .01, .005, .005, .01, .04, .1, .25, .4, .5, .55, .55, .5, .5, .5, .45, .4, .35, .3, .2, .15, .08, .05],
+    sunday: [.03, .02, .01, .005, .005, .01, .03, .06, .15, .3, .45, .5, .5, .45, .45, .4, .35, .3, .25, .2, .15, .1, .06, .04],
+  },
+};
+export function footfall(kind, dow, hour) {
+  const P = PROFILES[kind] || PROFILES.local, day = dow === 6 ? P.saturday : dow === 0 ? P.sunday : P.weekday;
+  const h0 = Math.floor(((hour % 24) + 24) % 24), f = hour - Math.floor(hour), h1 = (h0 + 1) % 24;
+  return day[h0] * (1 - f) + day[h1] * f;
+}
 
 const R = 190, KILL = 240;
 const CORES = []; // filled from manifest districts (town centres are busier)
@@ -14,6 +35,7 @@ export class Peds {
     this.timer = 0;
     this.walkEdges = null;
     this.events = [];
+    this.graph = G.walkGraph = new WalkGraph(G.net);
     G.events.on('horn', e => this.horn(e));
     G.events.on('vehicleSweep', e => this.sweep(e));
     G.events.on('impact', e => this.disturb(e.x, e.z, 45, 'crash'));
@@ -25,10 +47,9 @@ export class Peds {
     const d = G.districtAt(x, z);
     const core = d && d.core ? Math.max(0, 1 - Math.hypot(x - d.x, z - d.z) / d.coreR) : 0;
     const dow = new Date(G.world.time * 1000).getDay();
-    const sat = dow === 6 && hr > 11 && hr < 17.5 ? 1.5 : 1;
-    const tod = hr < 5.5 ? 0.05 : hr < 7 ? 0.25 : hr < 9.5 ? 0.85 : hr < 17 ? 1 : hr < 19.5 ? 0.8 : hr < 23 ? 0.35 : 0.1;
     const wet = 1 - G.world.cur.rain * 0.55;
-    return (6 + core * 70 * sat) * tod * wet;
+    // e.g. Broad Street on a Saturday at 14:00 -> ~110; a Woodley close at 06:00 on a weekday -> ~0.2
+    return (10 * footfall('local', dow, hr) + core * 110 * footfall('centre', dow, hr)) * wet;
   }
   pickWalkEdge(focus) {
     // collect walkable edges in range
@@ -36,11 +57,16 @@ export class Peds {
     for (let cx = Math.floor((focus.x - R) / 50); cx <= Math.floor((focus.x + R) / 50); cx++)
       for (let cz = Math.floor((focus.z - R) / 50); cz <= Math.floor((focus.z + R) / 50); cz++) {
         const l = net.grid.get(cx * 65536 + cz); if (!l) continue;
-        for (let k = 0; k < l.length; k += 2) if (net.walkable(l[k])) out.push(l[k]);
+        for (let k = 0; k < l.length; k += 2) {
+          const e = l[k]; if (!net.walkable(e)) continue;
+          if (this.graph && this.graph.hasMappedSidewalk(e)) continue;     // the mapped footway alongside is used instead
+          out.push(e); if (net.cls[e] === this._pedCls) out.push(e, e);     // pedestrianised streets are busier
+        }
       }
     return out;
   }
   side(e) { return this.net.walkCls.has(this.net.cls[e]) ? 0 : 1; }
+  get _pedCls() { return this.__pc ?? (this.__pc = this.net.classes.indexOf('pedestrian')); }
   pos(p) {
     const net = this.net, t = net.at(p.h, p.s, this.tmp), e = p.h >> 1;
     const off = this.side(e) ? (net.width[e] / 2 + 1.05 + p.lane * 0.6) : p.lane * 0.5;
@@ -67,6 +93,7 @@ export class Peds {
     this.list.push(p);
     // routines: some go to the bus stop, some chat, some walk in pairs
     const r = this.rand();
+    if (r > 0.86) this.toDoor(p);
     if (r < 0.12) this.toBusStop(p);
     else if (r < 0.2 && this.list.length < 120) {
       const q = { ...p, id: 'p' + this.nextId++, look: People.randomLook(this.rand), lane: p.lane + 0.5, leader: p, phase: p.phase + 1 };
@@ -82,13 +109,13 @@ export class Peds {
     p.goal = { kind: 'stop', i: best, x: stops[best][0], z: stops[best][1] };
   }
   update(dt, focus, info) {
-    const G = this.G, net = this.net;
+    const G = this.G, net = this.net; this.info = info;
     this.timer -= dt;
     if (!this._ef || Math.hypot(this._ef.x - focus.x, this._ef.z - focus.z) > 40) { this._edges = this.pickWalkEdge(focus); this._ef = { x: focus.x, z: focus.z }; }
     if (this.timer <= 0) {
       this.timer = 0.3;
-      const target = Math.min(170, this.density(focus.x, focus.z) * (G.quality === 'low' ? 0.5 : 1));
-      if (this.list.length < target) for (let i = 0; i < 3; i++) this.spawn(focus, info, this.list.length < target * 0.3);
+      const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z) * (G.quality === 'low' ? 0.5 : 1));
+      if (this.list.length < target) for (let i = 0; i < 3; i++) { if (this.rand() < 0.18) this.spawnAtDoor(focus, info); else this.spawn(focus, info, this.list.length < target * 0.3); }
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
         const d = Math.hypot(p.x - focus.x, p.z - focus.z);
@@ -108,6 +135,9 @@ export class Peds {
       if (p.mode === 'cross') { this.cross(p, dt); continue; }
       if (p.mode === 'waitCross') { this.waitCross(p, dt); continue; }
       if (p.mode === 'scene') { this.atScene(p, dt); continue; }
+      if (p.mode === 'chase') continue;    // moved by police.js (foot chase)
+      if (p.mode === 'toDoor' || p.mode === 'atDoor' || p.mode === 'fromDoor' || p.mode === 'link') { this.doorWalk(p, dt); continue; }
+      if (p.corner) { this.corner(p, dt, rain); continue; }
       if (p.leader && !p.leader.gone && p.leader.mode === 'walk') { this.follow(p, dt); continue; }
       this.walk(p, dt, rain);
     }
@@ -137,14 +167,15 @@ export class Peds {
     }
     p.crossCool = Math.max(0, (p.crossCool || 0) - dt);
     p.s += sp * dt;
+    // choose the next edge a little before the junction so the corner can be rounded
+    const off = this.side(e) ? net.width[e] / 2 + 1.05 : 0, cr = this.side(e) ? Math.min(off + 1.5, L * 0.45) : 0;
+    if (p.s >= L - cr && p.nextH == null) p.nextH = this.chooseNext(p);
+    if (p.nextH != null && p.nextH.link != null) { if (p.s >= L) { p.mode = 'link'; p.door = { ...p.nextH }; p.nextH = null; } }
+    else if (p.nextH != null && cr > 0 && p.s >= L - cr && this.side(p.nextH >> 1) && this.startCorner(p, p.nextH, cr)) { p.nextH = null; return; }
     if (p.s >= L) {
-      const end = net.endNode(p.h);
-      const outs = net.outW[end].filter(h => (h >> 1) !== e);
-      let next = outs.length ? outs[Math.floor(this.rand() * outs.length)] : (p.h ^ 1);
-      if (p.goal) { // bias towards the goal
-        let bd = 1e9; for (const h of outs) { net.at(h, Math.min(net.len[h >> 1], 30), this.tmp); const d = Math.hypot(this.tmp[0] - p.goal.x, this.tmp[2] - p.goal.z); if (d < bd) { bd = d; next = h; } }
-      }
-      p.s -= L; p.h = next;
+      const next = p.nextH != null && p.nextH.link == null ? p.nextH : this.chooseNext(p); p.nextH = null;
+      if (next && next.link != null) { p.mode = 'link'; p.door = { ...next }; p.s = L; return; }
+      p.s = Math.max(0, p.s - L); p.h = next;
       if (!net.walkable(p.h >> 1)) { p.h = p.h ^ 1; p.s = 0; }
       // the pavement side flips sign relative to travel when reversing direction
     }
@@ -156,7 +187,8 @@ export class Peds {
     p.pose = p.umb === 1 ? 'umbrella' : 'walk';
     if (p.goal) {
       const gd = Math.hypot(p.goal.x - p.x, p.goal.z - p.z);
-      if (gd < 6) {
+      if (gd < (p.goal.kind === 'door' ? 14 : 6)) {
+        if (p.goal.kind === 'door') { p.mode = 'toDoor'; return; }
         if (p.goal.kind === 'stop') this.joinQueue(p);
         else if (p.goal.kind === 'shelter') { p.mode = 'shelter'; p.shelterUntil = p.t + 60 + this.rand() * 60; p.x = p.goal.x + (this.rand() - 0.5) * 1.5; p.z = p.goal.z + (this.rand() - 0.5) * 1.5; }
         p.goal = null;
@@ -164,6 +196,109 @@ export class Peds {
     }
   }
   wantsOtherSide(p) { return p.goal && this.rand() < 0.6; }
+  // next half-edge at the end of p.h: mapped footways beat pavements that duplicate them, links join
+  // dangling footway ends to the pavement network, goals bias the choice
+  chooseNext(p) {
+    const net = this.net, e = p.h >> 1, end = net.endNode(p.h), W = this.graph;
+    let outs = net.outW[end].filter(h => (h >> 1) !== e);
+    const pref = outs.filter(h => !W.hasMappedSidewalk(h >> 1)); if (pref.length) outs = pref;
+    const links = W.links.get(end) || [];
+    if (links.length && (!outs.length || this.rand() < 0.3)) { const [to] = links[Math.floor(this.rand() * links.length)]; const [x, z] = W.nodeXZ(to); return { link: to, x, z }; }
+    let next = outs.length ? outs[Math.floor(this.rand() * outs.length)] : (p.h ^ 1);
+    if (p.goal) { let bd = 1e9; for (const h of outs) { net.at(h, Math.min(net.len[h >> 1], 30), this.tmp); const d = Math.hypot(this.tmp[0] - p.goal.x, this.tmp[2] - p.goal.z); if (d < bd) { bd = d; next = h; } } }
+    return next;
+  }
+  // round the pavement corner at a junction mouth: quadratic curve through the kerb corner (mitre point)
+  startCorner(p, nh, cr) {
+    const net = this.net, h = p.h, L = net.len[h >> 1];
+    const a = net.at(h, L, [0, 0, 0, 0, 0]), b = net.at(nh, 0, [0, 0, 0, 0, 0]);
+    const ss = p.sideSign, n1x = a[4] * ss, n1z = -a[3] * ss, n2x = b[4] * ss, n2z = -b[3] * ss, k = 1 + n1x * n2x + n1z * n2z;
+    if (k < 0.35 || (h >> 1) === (nh >> 1)) return false;                     // too sharp: just walk it
+    const o1 = net.width[h >> 1] / 2 + 1.05 + p.lane * 0.6, o2 = net.width[nh >> 1] / 2 + 1.05 + p.lane * 0.6, o = (o1 + o2) / 2;
+    const cx = a[0] + (n1x + n2x) * o / k, cz = a[2] + (n1z + n2z) * o / k;
+    const r2 = Math.min(o2 + 1.5, net.len[nh >> 1] * 0.45), bb = net.at(nh, r2, [0, 0, 0, 0, 0]);
+    const B = [bb[0] + bb[4] * o2 * ss, bb[2] - bb[3] * o2 * ss], A = [p.x, p.z];
+    const len = (Math.hypot(cx - A[0], cz - A[1]) + Math.hypot(B[0] - cx, B[1] - cz) + Math.hypot(B[0] - A[0], B[1] - A[1])) / 2;
+    if (len > 40) return false;
+    p.corner = { A, C: [cx, cz], B, t: 0, len: Math.max(0.5, len), nh, s2: r2 };
+    return true;
+  }
+  corner(p, dt, rain) {
+    const c = p.corner, sp = p.speed * (rain > 0.3 ? 1.35 : 1);
+    c.t = Math.min(1, c.t + sp * dt / c.len);
+    const t = c.t, u = 1 - t;
+    const x = u * u * c.A[0] + 2 * u * t * c.C[0] + t * t * c.B[0], z = u * u * c.A[1] + 2 * u * t * c.C[1] + t * t * c.B[1];
+    const hd = Math.atan2(z - p.z, x - p.x); if (Math.hypot(x - p.x, z - p.z) > 1e-4) p.heading = lerpAngle(p.heading, hd, Math.min(1, dt * 8));
+    p.x = x; p.z = z; this.ground(p);
+    p.speedNow = sp; p.phase = (p.phase + sp * dt * 3.6) % 6.283; p.pose = p.umb === 1 ? 'umbrella' : 'walk';
+    if (t >= 1) { p.h = c.nh; p.s = c.s2; p.corner = null; }
+  }
+  // ---------------- buildings: doors (Astra's tile doors when present, else the frontage midpoint)
+  doorsNear(x, z, r = 80) {
+    const G = this.G, out = [], t = G.tiles.tileAt(x, z);
+    const D = t && t.data && t.data.doors;
+    if (D && D.length >= 4) {
+      for (let i = 0; i + 3 < D.length; i += 4) {
+        let dx = D[i], dz = D[i + 1]; if (Math.abs(dx) < 400 && Math.abs(dz) < 400) { dx += t.data.ox; dz += t.data.oz; }   // tile-local -> world
+        if (Math.hypot(dx - x, dz - z) < r) out.push({ x: dx, z: dz, shop: !!D[i + 3] });
+      }
+      if (out.length) return out;
+    }
+    let n = 0;
+    G.tiles.buildingsNear(x, z, r, (P, s, cnt) => {
+      if (n++ > 10) return false;
+      let best = null, bd = 1e9;
+      for (let i = 0, j = cnt - 1; i < cnt; j = i++) {
+        const ax = P[(s + j) * 2], az = P[(s + j) * 2 + 1], bx = P[(s + i) * 2], bz = P[(s + i) * 2 + 1], l = Math.hypot(bx - ax, bz - az);
+        if (l < 3) continue;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2, hit = this.net.nearest(mx, mz, 30, e => this.net.walkable(e));
+        if (hit && hit.d < bd) { bd = hit.d; const nx = -(bz - az) / l, nz = (bx - ax) / l, sgn = Math.sign((hit.x - mx) * nx + (hit.z - mz) * nz) || 1; best = { x: mx + nx * sgn * 0.6, z: mz + nz * sgn * 0.6 }; }
+      }
+      if (best) out.push(best);
+    });
+    return out;
+  }
+  toDoor(p) {
+    const d = this.doorsNear(p.x, p.z); if (!d.length) return;
+    const door = d[Math.floor(this.rand() * d.length)];
+    p.goal = { kind: 'door', x: door.x, z: door.z };
+  }
+  // someone comes out of a building (out of view) and joins the pavement
+  spawnAtDoor(focus, info) {
+    const a = this.rand() * 6.283, r = 40 + this.rand() * (R - 50);
+    const d = this.doorsNear(focus.x + Math.cos(a) * r, focus.z + Math.sin(a) * r, 40);
+    if (!d.length) return;
+    const door = d[Math.floor(this.rand() * d.length)];
+    if (info.visible(door.x, 1, door.z, 1.5)) return;
+    const hit = this.net.nearest(door.x, door.z, 40, e => this.net.walkable(e) && !this.graph.hasMappedSidewalk(e)); if (!hit) return;
+    const gy = this.G.tiles.ground(door.x, door.z); if (gy == null) return;
+    const h = hit.e * 2 + (this.rand() < 0.5 ? 1 : 0), s = (h & 1) ? this.net.len[hit.e] - hit.s : hit.s;
+    const p = { id: 'p' + this.nextId++, h, s, sideSign: hit.side >= 0 ? ((h & 1) ? -1 : 1) : ((h & 1) ? 1 : -1), lane: this.rand() * 0.8 - 0.4, look: People.randomLook(this.rand),
+      speed: 1.15 + this.rand() * 0.45, mode: 'fromDoor', t: 0, phase: this.rand() * 6, heading: 0, x: door.x, y: gy, z: door.z, visible: true, alpha: 0 };
+    const [tx, tz] = this.pos(p); p.door = { x: tx, z: tz };
+    this.list.push(p);
+  }
+  doorWalk(p, dt) {
+    const tgt = p.mode === 'atDoor' ? null : p.mode === 'toDoor' ? p.goal : p.door;
+    if (p.mode === 'atDoor') {
+      // go in once nobody is looking; give up and walk on after a while
+      p.speedNow = 0; p.pose = 'idle'; p.doorT = (p.doorT || 0) + dt;
+      if (!this.info.visible(p.x, p.y + 1, p.z, 1)) { p.gone = true; this.entered = (this.entered || 0) + 1; }
+      else if (p.doorT > 25) { p.mode = 'walk'; p.goal = null; p.doorT = 0; }
+      return;
+    }
+    if (!tgt) { p.mode = 'walk'; return; }
+    const dx = tgt.x - p.x, dz = tgt.z - p.z, d = Math.hypot(dx, dz), sp = p.speed;
+    if (d < 0.4) {
+      if (p.mode === 'toDoor') { p.mode = 'atDoor'; p.goal = null; return; }
+      if (p.mode === 'link') { p.mode = 'walk'; const W = this.graph, outs = this.net.outW[p.door.link] || []; if (outs.length) { p.h = outs[Math.floor(this.rand() * outs.length)]; p.s = 0; } p.door = null; return; }
+      p.mode = 'walk'; p.door = null; return;
+    }
+    const k = Math.min(d, sp * dt); p.x += dx / d * k; p.z += dz / d * k;
+    p.heading = lerpAngle(p.heading, Math.atan2(dz, dx), Math.min(1, dt * 8));
+    p.speedNow = sp; p.phase = (p.phase + sp * dt * 3.6) % 6.283; p.pose = p.umb === 1 ? 'umbrella' : 'walk';
+    this.ground(p);
+  }
   follow(p, dt) {
     const l = p.leader;
     const tx = l.x + Math.cos(l.heading + Math.PI / 2) * 0.7, tz = l.z + Math.sin(l.heading + Math.PI / 2) * 0.7;
@@ -284,6 +419,6 @@ export class Peds {
   near(x, z, r) { return this.list.filter(p => Math.hypot(p.x - x, p.z - z) < r && !(p.fallT > 0)); }
   draw(people, extra, cam) {
     const arr = this.list.concat(extra);
-    return people.draw(arr, cam, 170);
+    return people.draw(arr, cam, this.G.budget?.peopleDist || 170);
   }
 }

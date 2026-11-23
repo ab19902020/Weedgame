@@ -1,4 +1,4 @@
-# Green County · Berkshire sandbox (v0.6.0)
+# Green County · Berkshire sandbox (v0.8.0)
 
 A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Earley, Woodley, Winnersh, Wokingham and Bracknell, joined by the A329 and A329(M). It starts in **sandbox mode**: you control Cal or Leon Ward and can explore indefinitely. There are no missions, objectives, phone calls, deliveries or sales. The cannabis-empire layer from the v0.3–v0.5 prototype will sit on this world later; its save data is carried along untouched.
 
@@ -7,11 +7,13 @@ A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Ear
 * `docs/SOURCES.md`: asset and source register (licences, dates, signing key).
 * `docs/verification.json`: computed comparisons of the world against its inputs.
 * `docs/captures/`: gameplay captures, `acceptance-run-8x.mp4` (the whole touch-driven run at 8× speed; software rendering here ran at ~1 fps), `acceptance.json` (step log) and landmark views (`L*.png`).
-* `builds/Green-County-0.7.0-dev.apk`: signed development APK (v0.7: photographic surfaces, leaf-card trees, rounded cars, post-processing).
+* `builds/Green-County-0.8.0-dev.apk`: signed development APK. v0.7 added the visual overhaul (photographic surfaces, leaf-card trees, rounded cars, post-processing); v0.8 adds Grok's simulation and performance work (quality budgets, perf flythrough, persistent traffic, actuated signals, walk graph, police incidents, trains).
+* `docs/PERF-CHECKLIST.md`: how to record real frame times on a phone with the perf flythrough.
+* `docs/handoff/grok.md` and `docs/briefs/visual-overhaul-notes.md`: hand-off notes for the simulation/performance and visual work.
 
 ## Play
 
-* **Android**: install `builds/Green-County-0.7.0-dev.apk`. It uses the same development key as v0.6.0, so it installs over v0.6.0; builds older than v0.6 must be uninstalled first. Landscape only.
+* **Android**: install `builds/Green-County-0.8.0-dev.apk`. It uses the same development key as v0.6.0 and v0.7.0, so it installs over them; builds older than v0.6 must be uninstalled first. Landscape only.
 * **Browser**: `npm run serve`, then open http://localhost:8080. Chrome or Edge recommended; WebGPU is used when available, otherwise WebGL2.
 
 Touch controls (landscape): drag on the **left side** to move (a floating stick appears under your thumb). Drag on the **right side** to orbit the camera. **Run** (on foot) doubles as **Brake** in a vehicle. **Get in / Exit** works on any parked car. **Horn** appears while driving. **Swap** switches between Cal and Leon wherever each is. **Map** opens the full map, **Dev** the developer panel.
@@ -19,7 +21,7 @@ Keyboard: WASD or arrows, Shift run, F get in/out, Space brake, H horn, Tab swap
 
 The developer panel can set the hour and clock speed, force any weather (clear, broken, overcast, drizzle, rain, mist, clearing), soak or dry the roads, stage a collision for the police to attend, run extra simulation steps, teleport to districts and test spots, show the performance overlay, save a performance log (written to app storage on Android), and switch between WebGPU and WebGL2.
 
-URL options (browser): `?backend=webgl|webgpu`, `?quality=low|medium|high`, `?perf` (overlay), `?time=17.5`, `?weather=rain`, `?scale=120`, `?sim=4`, `?r0=…&r1=…` (streaming radii).
+URL options (browser): `?backend=webgl|webgpu`, `?quality=low|medium|high`, `?perf` (overlay), `?time=17.5`, `?weather=rain`, `?scale=120`, `?sim=4`, `?r0=…&r1=…` (streaming radii), `?post=0`, `?ao=0`, `?ibl=0`, `?grass=0|1`, `?tm=aces` (look A/B), `?nobatch` (render batching off).
 
 ## What runs
 
@@ -38,6 +40,8 @@ npm install                 # three 0.186.1, esbuild
 npm run build               # src/ -> www/app.js + www/worker.js
 npm run serve               # http://localhost:8080
 npm run apk                 # signed dev APK -> builds/ (needs JDK 17+ and Android SDK 35; see tools/android/build.sh)
+npm run test                # unit tests (node --test, tools/test/unit)
+bash tools/shadercheck/run.sh   # every material on WebGL2 (GLSL errors) and WebGPU (WGSL validated with naga, vertex-buffer limits)
 ```
 
 ### Rebuilding the world data

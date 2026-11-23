@@ -1,0 +1,146 @@
+{
+ "quality": "low",
+ "gl": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+ "spots": {
+  "woodley": {
+   "tally": {
+    "MeshBasicNodeMaterial": 3,
+    "lamp": 4,
+    "crown": 4,
+    "trunk": 4,
+    "mark": 4,
+    "building": 4,
+    "ground": 4,
+    "terrain": 13,
+    "canopyBatch": 4,
+    "struct": 3,
+    "lod1batch": 2,
+    "signs": 1,
+    "inst:MeshStandardNodeMaterial": 20,
+    "inst:MeshBasicNodeMaterial": 2,
+    "?": 1
+   },
+   "rb": {
+    "lod1Batches": 4,
+    "lod1Tiles": 23,
+    "canopyMeshes": 186,
+    "canopyBatches": 7,
+    "mergeMs": 1.7
+   },
+   "calls": 79,
+   "tris": 217450,
+   "msPerFrame": 280,
+   "meshes": 129,
+   "tiles": 28,
+   "lod0": 5,
+   "pr": 0.9,
+   "vehicles": 211,
+   "peds": 4
+  },
+  "cemetery": {
+   "tally": {
+    "MeshBasicNodeMaterial": 6,
+    "lamp": 6,
+    "crown": 6,
+    "trunk": 6,
+    "building": 6,
+    "mark": 6,
+    "terrain": 24,
+    "ground": 6,
+    "struct": 6,
+    "canopyBatch": 18,
+    "sub:MeshStandardNodeMaterial": 4,
+    "signs": 2,
+    "lod1batch": 4,
+    "inst:MeshStandardNodeMaterial": 40,
+    "inst:MeshBasicNodeMaterial": 2,
+    "?": 2
+   },
+   "rb": {
+    "lod1Batches": 4,
+    "lod1Tiles": 22,
+    "canopyMeshes": 231,
+    "canopyBatches": 20,
+    "mergeMs": 1.4
+   },
+   "calls": 80,
+   "tris": 205603,
+   "msPerFrame": 360,
+   "meshes": 132,
+   "tiles": 26,
+   "lod0": 4,
+   "pr": 0.9,
+   "vehicles": 150,
+   "peds": 4
+  },
+  "reading": {
+   "tally": {
+    "MeshBasicNodeMaterial": 3,
+    "inst:MeshStandardNodeMaterial": 21,
+    "inst:MeshBasicNodeMaterial": 1,
+    "lod1batch": 3,
+    "mark": 4,
+    "building": 3,
+    "terrain": 14,
+    "ground": 3,
+    "lamp": 3,
+    "struct": 2,
+    "signs": 2,
+    "sub:MeshStandardNodeMaterial": 17,
+    "trunk": 2,
+    "crown": 2,
+    "canopyBatch": 11,
+    "?": 1
+   },
+   "rb": {
+    "lod1Batches": 5,
+    "lod1Tiles": 26,
+    "canopyMeshes": 438,
+    "canopyBatches": 40,
+    "mergeMs": 0.4
+   },
+   "calls": 161,
+   "tris": 153274,
+   "msPerFrame": 312,
+   "meshes": 181,
+   "tiles": 30,
+   "lod0": 4,
+   "pr": 0.9,
+   "vehicles": 111,
+   "peds": 20
+  },
+  "a3290": {
+   "tally": {
+    "MeshBasicNodeMaterial": 6,
+    "lod1batch": 4,
+    "lamp": 6,
+    "building": 8,
+    "ground": 8,
+    "terrain": 22,
+    "mark": 8,
+    "crown": 4,
+    "trunk": 4,
+    "struct": 6,
+    "canopyBatch": 18,
+    "inst:MeshStandardNodeMaterial": 36,
+    "?": 2
+   },
+   "rb": {
+    "lod1Batches": 2,
+    "lod1Tiles": 19,
+    "canopyMeshes": 453,
+    "canopyBatches": 44,
+    "mergeMs": 3.1
+   },
+   "calls": 69,
+   "tris": 201430,
+   "msPerFrame": 291,
+   "meshes": 170,
+   "tiles": 25,
+   "lod0": 6,
+   "pr": 0.9,
+   "vehicles": 313,
+   "peds": 4
+  }
+ }
+}

@@ -6,6 +6,7 @@ import { MODELS, PAINTS } from './vehicles.js';
 import { F_ONEWAY, F_ROUNDABOUT, F_BRIDGE, F_DRIVE } from './network.js';
 
 const FULL_R = 480, BUBBLE_R = 650, KILL_R = 820;
+export const KEEP_R = 250;        // the fleet within this radius of either brother is kept (frozen while he is inactive) and saved
 const RANK = { motorway: 10, trunk: 9, primary: 8, secondary: 7, tertiary: 6, motorway_link: 8, trunk_link: 7, primary_link: 7, secondary_link: 6, tertiary_link: 5, unclassified: 4, residential: 3, living_street: 2, service: 1, busway: 3 };
 const DENS = { motorway: 1 / 60, trunk: 1 / 70, primary: 1 / 55, secondary: 1 / 80, tertiary: 1 / 110, motorway_link: 1 / 150, trunk_link: 1 / 150, primary_link: 1 / 120, secondary_link: 1 / 150, tertiary_link: 1 / 200, unclassified: 1 / 260, residential: 1 / 520, living_street: 1 / 900 };
 
@@ -92,6 +93,95 @@ export class Traffic {
     let r = this.rand() * tot, pick = outs[0];
     for (let i = 0; i < outs.length; i++) { r -= w[i]; if (r <= 0) { pick = outs[i]; break; } }
     v.route = [v.h, pick]; v.ri = 0;
+    // entering a roundabout: choose the exit now so the approach lane can match it
+    if ((this.net.flags[pick >> 1] & F_ROUNDABOUT) && !(this.net.flags[v.h >> 1] & F_ROUNDABOUT)) this.planRoundabout(v);
+  }
+  planRoundabout(v) {
+    const net = this.net; let h = v.route[v.route.length - 1];
+    for (let k = 0; k < 12; k++) {
+      const end = net.endNode(h), outs = net.outD[end].filter(o => (o >> 1) !== (h >> 1));
+      const ring = outs.find(o => net.flags[o >> 1] & F_ROUNDABOUT), exits = outs.filter(o => !(net.flags[o >> 1] & F_ROUNDABOUT) && this.rank[o >> 1] > 1);
+      if (exits.length && (!ring || this.rand() < 0.45)) { v.route.push(exits[Math.floor(this.rand() * exits.length)]); return; }
+      if (!ring) return;
+      v.route.push(ring); h = ring;
+    }
+  }
+  // turn at the end of half-edge h into nh: 'left' | 'right' | 'through' (UK: left is nearside)
+  turnOf(h, nh) {
+    const net = this.net, a = net.at(h, net.len[h >> 1] - 0.5, this.tmpT || (this.tmpT = [0, 0, 0, 0, 0])), dx = a[3], dz = a[4];
+    const b = net.at(nh, Math.min(net.len[nh >> 1], 6), this.tmpT2 || (this.tmpT2 = [0, 0, 0, 0, 0]));
+    const ex = b[0] - a[0], ez = b[2] - a[2], l = Math.hypot(ex, ez) || 1;
+    const left = (ex * dz - ez * dx) / l;   // component along (dz,-dx), the left of travel
+    if ((h >> 1) === (nh >> 1)) return 'right';   // U-turn
+    return left > 0.5 ? 'left' : left < -0.5 ? 'right' : 'through';
+  }
+  // exit direction for a planned route through a roundabout (relative to the approach)
+  roundaboutTurn(v) {
+    const net = this.net; let i = v.ri + 1;
+    while (i < v.route.length && (net.flags[v.route[i] >> 1] & F_ROUNDABOUT)) i++;
+    if (i >= v.route.length) return null;
+    const a = net.at(v.h, net.len[v.h >> 1] - 0.5, [0, 0, 0, 0, 0]), b = net.at(v.route[i], 2, [0, 0, 0, 0, 0]);
+    // component of the exit direction along the approach's left (dz,-dx), as in turnOf
+    return { exitIndex: i, left: b[3] * a[4] - b[4] * a[3], dot: a[3] * b[3] + a[4] * b[4] };
+  }
+  // lane wanted for the coming manoeuvre on a multi-lane approach, or null for no preference
+  wantedLane(v) {
+    const net = this.net, h = v.h, e = h >> 1, nl = net.laneCount(h), nh = v.route[v.ri + 1];
+    const psv = net.psv && net.psv[e] && nl > 1;
+    if (v.kind === 'bus' && psv) return 0;                      // buses keep to the nearside bus lane
+    if (nl < 2 || nh == null) return psv ? Math.max(1, Math.min(v.lane, nl - 1)) : null;
+    let turn;
+    if ((net.flags[nh >> 1] & F_ROUNDABOUT) && !(net.flags[e] & F_ROUNDABOUT)) {
+      const r = this.roundaboutTurn(v);
+      // UK: left or straight ahead (up to 12 o'clock) from the left lane, further round from the right lane
+      turn = !r ? null : (r.left > 0.3 ? 'left' : r.dot > 0.5 ? 'through' : 'right');
+      if (turn === 'through') return 0;
+    } else if (net.flags[e] & F_ROUNDABOUT) {
+      // on the ring: move to the outer (left) lane before taking the exit
+      return !(net.flags[nh >> 1] & F_ROUNDABOUT) ? 0 : null;
+    } else turn = this.turnOf(h, nh);
+    const tl = this.turnLanesOf(h);
+    if (tl) {
+      const ok = tl.map((t, i) => [t, i]).filter(([t]) => turn === 'left' ? /left/.test(t) : turn === 'right' ? /right/.test(t) : /through|^none$|^$/.test(t)).map(([, i]) => i);
+      if (ok.length) return ok.includes(v.lane) ? v.lane : ok.reduce((a, b) => Math.abs(b - v.lane) < Math.abs(a - v.lane) ? b : a);
+    }
+    if (turn === 'left') return 0;
+    if (turn === 'right') return nl - 1;                        // UK: right turns from the offside lane
+    if (psv && v.lane === 0) return 1;                          // others stay out of the bus lane
+    return null;
+  }
+  // OSM turn:lanes for half-edge h, left to right (lane 0 is the nearside), when Astra's data has it
+  turnLanesOf(h) {
+    const net = this.net; if (!net.turnLanes) return null;
+    const k = net.turnLanes[h]; if (k == null || k < 0) return null;
+    const c = this._tl || (this._tl = new Map()); if (c.has(k)) return c.get(k);
+    const str = net.names[k]; const arr = typeof str === 'string' && str.length ? str.split('|').map(x => x.trim()) : null;
+    const res = arr && arr.length === net.laneCount(h) ? arr : null; c.set(k, res); return res;
+  }
+  // move into lane `to` if there is room; the lateral offset eases across instead of snapping
+  changeLane(v, to, occ) {
+    if (to === v.lane) return true;
+    const l = occ.get(v.h) || [];
+    if (l.some(o => o !== v && o.lane === to && o.s > v.s - 10 && o.s < v.s + 8)) return false;
+    const before = this.laneOffset(v.h, v.lane);
+    v.lane = to; v.lat += before - this.laneOffset(v.h, to);
+    return true;
+  }
+  // right turns give way to oncoming traffic going ahead or turning left (not at signals with a red for them)
+  oncoming(v, node, occ) {
+    const net = this.net, a = net.at(v.h, net.len[v.h >> 1] - 0.5, this.tmpO || (this.tmpO = [0, 0, 0, 0, 0])), dx = a[3], dz = a[4];
+    for (const h of net.inD[node]) {
+      if (h === v.h || (h >> 1) === (v.h >> 1)) continue;
+      const L = net.len[h >> 1], b = net.at(h, L - 0.5, this.tmpO2 || (this.tmpO2 = [0, 0, 0, 0, 0]));
+      if (b[3] * dx + b[4] * dz > -0.7) continue;             // not opposing
+      const l = occ.get(h); if (!l) continue;
+      for (let i = l.length - 1; i >= 0; i--) {
+        const o = l[i], d = L - o.s;
+        if (d > 45) break;
+        if (o.v > 1.2 && d / Math.max(o.v, 1) < 4.5) { const onh = o.route[o.ri + 1]; if (onh == null || this.turnOf(h, onh) !== 'right') return true; }
+      }
+    }
+    return false;
   }
   // ----------------------------------------------------------------- main update
   update(dt, focus, camInfo) {
@@ -110,7 +200,10 @@ export class Traffic {
       if (v.parked || v.player || v.h == null) continue;
       const dx = v.x - focus.x, dz = v.z - focus.z, d2 = dx * dx + dz * dz;
       v.near = d2 < R2;
-      if (v.crashed) { v.v = 0; v.brake = true; v.hazard = true; continue; }
+      // traffic around the inactive brother waits where it is until he is played again
+      v.frozen = v.kind !== 'police' && d2 > BUBBLE_R * BUBBLE_R && this.nearAnchor(v);
+      if (v.frozen || v.offroad) continue;     // off-road police are moved by police.js
+      if (v.crashed || v.brokenDown) { v.v = 0; v.brake = true; v.hazard = true; continue; }
       if (v.near || (v.tick = (v.tick || 0) + dt) > 0.4) { this.drive(v, v.near ? dt : v.tick, occ); v.tick = 0; }
       else { v.s += v.v * dt; if (v.s < net.len[v.h >> 1]) this.place(v); }
       v.spin = (v.spin + v.v * dt / v.def.wr) % (Math.PI * 2);
@@ -126,7 +219,9 @@ export class Traffic {
     const l = occ.get(v.h);
     if (l) for (const o of l) {
       if (o === v || o.s <= v.s) continue;
+      if (v.siren && o.yieldTo > 0 && o.v < 6) continue;        // blue lights squeeze past cars pulling over
       if (o.lane !== v.lane && Math.abs(o.lat - v.lat) < 1.2 && net.laneCount(v.h) > 1) continue;
+      if (v.passing && Math.abs((o.lat || 0) - (v.lat || 0)) > 1.6) continue;   // overtaking in the opposing lane
       const g = o.s - v.s - o.len / 2 - v.len / 2;
       if (g < gap) { gap = g; lv = o.v; }
       break;
@@ -163,6 +258,16 @@ export class Traffic {
       if (this.conflict(v, end, occ)) stopAt = Math.min(stopAt, rem - 1.5);
     }
     if (rem > 30) v.stopped = false;
+    // lane choice for the next turn (turn:lanes, else UK rules), roundabout lanes and bus lanes
+    if (rem < 90 && rem > 6 && !v.passing) { const wl = this.wantedLane(v); if (wl != null && wl !== v.lane) this.changeLane(v, wl, occ); }
+    // right turns give way to oncoming traffic (patience runs out after ~20 s, then they nose through a gap)
+    const nhT = v.route[v.ri + 1];
+    if (nhT != null && rem < 22 && !v.siren && !(net.flags[e] & F_ROUNDABOUT) && net.inD[net.endNode(v.h)].length > 2 && this.turnOf(v.h, nhT) === 'right') {
+      v.rtWait = v.v < 0.5 ? (v.rtWait || 0) + dt : (v.rtWait || 0);
+      if (this.oncoming(v, net.endNode(v.h), occ) && v.rtWait < 20) stopAt = Math.min(stopAt, rem - 2);
+    } else if (rem > 30) v.rtWait = 0;
+    // demand-actuated signals: approaching vehicles register on the detector
+    if (sa && sa[2] - v.s < 60 && sa[2] - v.s > -2 && this.sig.detect) this.sig.detect(sa[0], sa[1]);
     // don't block the junction: next half-edge jammed at its entry
     const nh = v.route[v.ri + 1];
     if (nh != null && rem < 25) {
@@ -176,10 +281,10 @@ export class Traffic {
       if (d > 0 && d < 30 && this.zebraBusy.has(e + ':' + Math.round(c.s))) stopAt = Math.min(stopAt, d - 3);
     }
     // overtake / change lane when blocked by a stationary obstacle
-    if (gap < 14 && lv < 0.5 && stopAt > gap + 2) {
+    if (gap < 14 && lv < (v.siren ? 3 : 0.5) && stopAt > gap + 2) {
       v.stuck += dt;
-      if (v.stuck > 4) this.tryPass(v, occ);
-    } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing && gap > 25) { v.passing = false; v.latT = 0; } }
+      if (v.stuck > (v.siren ? 1 : 4)) this.tryPass(v, occ);
+    } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing && gap > 25 && v.s > (v.passUntil ?? -1e9)) { v.passing = false; v.latT = 0; } }
     // responding police: pull up ~10 m short of the scene when it lies ahead on this road
     if (v.target && v.status === 'responding') {
       for (let k = 0; k <= 90; k += 6) {
@@ -258,13 +363,60 @@ export class Traffic {
     if (nl > 1) { // change lane within the same direction
       const target = v.lane === 0 ? 1 : v.lane - 1;
       const l = occ.get(v.h) || [];
-      if (!l.some(o => o !== v && o.lane === target && Math.abs(o.s - v.s) < 12)) { v.lane = target; v.stuck = 0; return; }
+      if (!l.some(o => o !== v && o.lane === target && Math.abs(o.s - v.s) < 12)) { const b0 = this.laneOffset(v.h, v.lane); v.lane = target; v.lat += b0 - this.laneOffset(v.h, target); v.stuck = 0; return; }
     }
     if (!(net.flags[e] & F_ONEWAY)) { // overtake into the opposing lane when it is clear
       const opp = occ.get(v.h ^ 1) || [];
       const L = net.len[e], myOpp = L - v.s;
-      if (!opp.some(o => Math.abs(o.s - myOpp) < 55)) { v.latT = -this.net.width[e] * 0.5; v.passing = true; v.stuck = 0; }
+      if (!opp.some(o => Math.abs(o.s - myOpp) < 55)) { v.latT = -this.net.width[e] * 0.5; v.passing = true; v.stuck = 0; const l = occ.get(v.h) || []; const ahead = l.filter(o => o !== v && o.s > v.s && o.s - v.s < 45); v.passUntil = ahead.length ? Math.max(...ahead.map(o => o.s + o.len)) + 4 : v.s + 20; }
     }
+  }
+  // ----------------------------------------------------------------- persistence
+  // anchors: positions to keep traffic around (both brothers). Set by the app every frame.
+  nearAnchor(v, r = KEEP_R) {
+    const A = this.anchors; if (!A) return false;
+    for (const a of A) { const dx = v.x - a.x, dz = v.z - a.z; if (dx * dx + dz * dz < r * r) return true; }
+    return false;
+  }
+  // compact record of one simulated vehicle (ids, route, edge and position)
+  fleetRecord(v) {
+    const r = { id: v.id, k: v.kind, m: v.model, p: v.paint, h: v.h, s: +v.s.toFixed(1), l: v.lane, v: +(v.v || 0).toFixed(1) };
+    if (v.kind === 'bus' && v.busRoute != null && v.fixedRoute) { r.br = v.busRoute; r.ri = v.ri; r.ns = v.nextStop; r.ref = v.ref; }
+    else { r.r = v.route.slice(v.ri, v.ri + 12); if (v.dest != null) r.d = v.dest; if (v.notInService) r.nis = 1; if (v.ref) r.ref = v.ref; }
+    return r;
+  }
+  // the moving fleet within r of any anchor, nearest first, capped (a record is ~150 bytes)
+  snapshotFleet(anchors = this.anchors || [], r = KEEP_R, max = 600) {
+    const out = [];
+    for (const v of this.list) {
+      if (v.parked || v.player || v.crashed || v.h == null || v.dead || v.free || v.owner) continue;
+      if (v.kind !== 'traffic' && v.kind !== 'bus') continue;
+      let d = 1e9; for (const a of anchors) d = Math.min(d, Math.hypot(v.x - a.x, v.z - a.z));
+      if (d < r) out.push([d, v]);
+    }
+    out.sort((a, b) => a[0] - b[0]);
+    return { v: 1, nextId: this.nextId, cars: out.slice(0, max).map(([, v]) => this.fleetRecord(v)) };
+  }
+  // recreate saved vehicles with their ids; busRoute(i) resolves a bus route index to its data
+  restoreFleet(fleet, busRoute = null) {
+    if (!fleet || !Array.isArray(fleet.cars)) return 0;
+    const net = this.net; let n = 0;
+    for (const r of fleet.cars) {
+      if (this.byId.has(r.id) || !MODELS[r.m] || r.h == null || r.h >> 1 >= net.nEdges) continue;
+      const v = this.add({ id: r.id, kind: r.k, model: r.m, paint: r.p, h: r.h, s: Math.min(r.s, net.len[r.h >> 1]), lane: Math.min(r.l || 0, net.laneCount(r.h) - 1), route: [r.h], ri: 0, v: r.v || 0 });
+      this.driver(v);
+      const bd = r.br != null && busRoute ? busRoute(r.br) : null;
+      if (bd && bd.hs[r.ri] === r.h) { v.route = bd.hs; v.ri = r.ri; v.fixedRoute = true; v.busRoute = r.br; v.ref = r.ref; v.persistent = true; v.v0f = 0.85; v.nextStop = r.ns; v.busData = bd; }
+      else {
+        if (Array.isArray(r.r) && r.r[0] === r.h) v.route = r.r.filter(h => h >> 1 < net.nEdges);
+        if (r.d != null) v.dest = r.d; if (r.nis) v.notInService = true; if (r.ref) v.ref = r.ref;
+        if (r.k === 'bus') v.notInService = true;
+      }
+      this.place(v); n++;
+      const m = /^v(\d+)$/.exec(r.id); if (m) this.nextId = Math.max(this.nextId, +m[1] + 1);
+    }
+    if (fleet.nextId) this.nextId = Math.max(this.nextId, fleet.nextId);
+    return n;
   }
   // ----------------------------------------------------------------- density bubble
   maintain(focus, info) {
@@ -272,7 +424,7 @@ export class Traffic {
     // remove far ordinary traffic that nobody can see
     for (let i = this.list.length - 1; i >= 0; i--) {
       const v = this.list[i];
-      if (v.kind !== 'traffic' || v.parked || v.player || v.crashed) continue;
+      if (v.kind !== 'traffic' || v.parked || v.player || v.crashed || v.brokenDown || v.frozen || v.towing) continue;
       const d = Math.hypot(v.x - focus.x, v.z - focus.z);
       if (d > KILL_R && !info.visible(v.x, v.y, v.z, 0.6)) this.remove(v);
     }
@@ -295,7 +447,7 @@ export class Traffic {
     }
     const hr = info.hour;
     const tod = hr < 5 ? 0.12 : hr < 6.5 ? 0.3 : hr < 9.5 ? 1.15 : hr < 16 ? 0.85 : hr < 18.5 ? 1.15 : hr < 22 ? 0.55 : 0.25;
-    const target = Math.min(260, this._edgeCache.target * tod * this.density);
+    const target = Math.min(this.maxVehicles || 260, this._edgeCache.target * tod * this.density);
     let count = 0;
     for (const v of this.list) if (!v.parked && Math.hypot(v.x - focus.x, v.z - focus.z) < BUBBLE_R) count++;
     let tries = 6;

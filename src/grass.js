@@ -3,7 +3,7 @@
 // metres, using the streamed landcover and terrain; height fades out towards the edge so there is
 // no visible border. Blades sway with the wind and darken when wet.
 import * as THREE from 'three/webgpu';
-import { float, vec3, mix, sin, uv, positionLocal, positionWorld, cameraPosition, length, smoothstep, instanceIndex, fract, normalize, vec4 } from 'three/tsl';
+import { float, vec3, mix, sin, uv, positionLocal, positionGeometry, positionWorld, cameraPosition, length, smoothstep, instanceIndex, fract, normalize, vec4 } from 'three/tsl';
 import { U, cloudShadow } from './env.js';
 import { worldToView } from './surfaces.js';
 
@@ -39,7 +39,8 @@ function clumpGeometry(blades = 7) {
 
 export function createGrass(G) {
   const want = G.Q.get('grass');
-  if (want === '0' || (G.quality !== 'high' && want !== '1')) return null;
+  const on = G.budget ? G.budget.grass : G.quality === 'high';
+  if (want === '0' || (!on && want !== '1')) return null;
   const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.7, side: THREE.DoubleSide });
   const f = uv().y;
   const rnd = fract(sin(float(instanceIndex).mul(78.233)).mul(43758.5453));
@@ -47,7 +48,8 @@ export function createGrass(G) {
   const fade = smoothstep(R, R * 0.55, dist);
   const wind = length(U.wind);
   const sway = sin(U.t.mul(2.1).add(positionWorld.x.mul(0.7)).add(positionWorld.z.mul(0.5))).mul(0.5).add(0.5).mul(wind.mul(0.006).add(0.004)).mul(f.mul(f));
-  m.positionNode = vec3(positionLocal.x.add(sway.mul(U.wind.x.sign())), positionLocal.y.mul(fade), positionLocal.z.add(sway.mul(0.6)));
+  // positionLocal is already instance-transformed here; shorten the blade by its own height to fade
+  m.positionNode = vec3(positionLocal.x.add(sway.mul(U.wind.x.sign())), positionLocal.y.sub(positionGeometry.y.mul(float(1).sub(fade))), positionLocal.z.add(sway.mul(0.6)));
   const root = vec3(0.045, 0.075, 0.02), tip = vec3(0.13, 0.2, 0.055);
   let col = mix(root, tip, f).mul(rnd.mul(0.4).add(0.8)).mul(mix(vec3(1), vec3(1.15, 1.05, 0.7), rnd.mul(rnd)));
   col = col.mul(mix(float(1), float(0.75), U.wet));

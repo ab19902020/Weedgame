@@ -1,6 +1,6 @@
 // Procedural, instanced vehicles. Simulation owns vehicle state; this module only draws.
 import * as THREE from 'three/webgpu';
-import { Fn, attribute, vec3, float, mix, step, sin, fract, floor, positionLocal, instanceIndex, select, abs } from 'three/tsl';
+import { Fn, attribute, vec2, vec3, float, int, mix, step, sin, fract, floor, positionLocal, positionGeometry, instanceIndex, select, abs, length, smoothstep, uniformArray } from 'three/tsl';
 import { U } from './env.js';
 import { mergeGeos } from './tiles.js';
 import { lightPool } from './materials.js';
@@ -48,8 +48,6 @@ function buildModel(def) {
   for (let t = 0; t < n; t += 3) {
     let cy = 0, cx = 0, cz = 0, ny = 0, nx = 0, nz = 0;
     for (let k = 0; k < 3; k++) { cy += pos.getY(t + k) / 3; cx += pos.getX(t + k) / 3; cz += pos.getZ(t + k) / 3; ny += nor.getY(t + k) / 3; nx += nor.getX(t + k) / 3; nz += nor.getZ(t + k) / 3; }
-    // wheel arches: dark liner around each wheel on the body sides
-    const arch = Math.abs(cz) > W / 2 - 0.3 && Math.hypot(Math.abs(cx) - def.wb / 2, cy - def.wr) < def.wr + 0.07;
     let glass = false;
     if (isBus) {
       const bands = prof === 'decker' ? [[1.3, 2.05], [2.55, 3.85]] : [[1.25, 2.55]];
@@ -63,22 +61,22 @@ function buildModel(def) {
     for (let k = 0; k < 3; k++) {
       const v = t + k;
       if (glass) { col[v * 3] = 0.05; col[v * 3 + 1] = 0.07; col[v * 3 + 2] = 0.09; paint[v] = 0; }
-      else if (cy < (isBus ? 0.42 : def.prof === 'suv' ? 0.5 : 0.36) || arch) { col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = arch ? 0.02 : 0.05; paint[v] = 0; }
+      else if (cy < (isBus ? 0.42 : def.prof === 'suv' ? 0.5 : 0.36)) { col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = 0.05; paint[v] = 0; }
       else { paint[v] = 1; col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = 1; liv[v] = def.livery && Math.abs(nz) > 0.5 && cy < belt && cy > 0.45 ? 1 : 0; }
     }
   }
+  // per-vertex flags packed into one vec4 (paint, lit, livery, model index + 1): WebGPU allows only
+  // 8 vertex buffers per pipeline and instancing already takes three (matrix, iState, iPaint)
+  const vdat = new Float32Array(n * 4), mi = isBus ? 0 : Object.values(MODELS).indexOf(def) + 1;
+  for (let v = 0; v < n; v++) { vdat[v * 4] = paint[v]; vdat[v * 4 + 1] = lit[v]; vdat[v * 4 + 2] = liv[v]; vdat[v * 4 + 3] = mi; }
   body.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  body.setAttribute('paint', new THREE.BufferAttribute(paint, 1));
-  body.setAttribute('lit', new THREE.BufferAttribute(lit, 1));
-  body.setAttribute('livery', new THREE.BufferAttribute(liv, 1));
+  body.setAttribute('vdat', new THREE.BufferAttribute(vdat, 4));
   body.deleteAttribute('glassQ');
   const parts = [body];
   const add = (g, rgb, p, l, lv = 0) => {
     g = g.toNonIndexed(); const c = g.attributes.position.count;
     g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(c * 3).map((_, i) => rgb[i % 3]), 3));
-    g.setAttribute('paint', new THREE.BufferAttribute(new Float32Array(c).fill(p), 1));
-    g.setAttribute('lit', new THREE.BufferAttribute(new Float32Array(c).fill(l), 1));
-    g.setAttribute('livery', new THREE.BufferAttribute(new Float32Array(c).fill(lv), 1));
+    g.setAttribute('vdat', new THREE.BufferAttribute(new Float32Array(c * 4).map((_, i) => [p, l, lv, 0][i % 4]), 4));
     parts.push(g);
   };
   const l = L / 2, hy = isBus ? 0.75 : prof === 'van' ? 0.95 : 0.78;
@@ -103,20 +101,26 @@ export class VehicleRenderer {
   constructor(scene, shadows) {
     this.meshes = {}; this.idx = {};
     const mat = new THREE.MeshPhysicalNodeMaterial({ roughness: 0.35, metalness: 0.25, vertexColors: true, clearcoat: 1, clearcoatRoughness: 0.06 });
-    const vc = attribute('color', 'vec3'), paint = attribute('paint', 'float'), lit = attribute('lit', 'float'), liv = attribute('livery', 'float');
+    const vd = attribute('vdat', 'vec4'), vc = attribute('color', 'vec3'), paint = vd.x, lit = vd.y, liv = vd.z;
     const ic = attribute('iPaint', 'vec3');
     const st = attribute('iState', 'vec4'); // x brake, y lights, z siren, w indicator
     // Battenburg: alternating yellow / blue blocks on the side panels
-    const lp = positionLocal;
+    const lp = positionGeometry;   // raw model-space position (positionLocal is already instance-transformed in the fragment)
     const checker = step(0.5, fract(lp.x.div(0.62).add(step(0.72, lp.y).mul(0.5))));
     const batten = mix(vec3(0.85, 0.82, 0.05), vec3(0.04, 0.1, 0.55), checker);
+    // wheel-arch liners cut per pixel: (half wheelbase, wheel radius, half width) per model, 0 = none
+    const ap = uniformArray([new THREE.Vector3(), ...Object.values(MODELS).map(d => new THREE.Vector3(d.wb / 2, d.wr, d.W / 2))], 'vec3').element(int(vd.w.add(0.5)));
+    const archD = length(vec2(abs(lp.x).sub(ap.x), lp.y.sub(ap.y)));
+    const archM = step(0.01, ap.x).mul(step(ap.z.sub(0.3), abs(lp.z))).mul(smoothstep(ap.y.add(0.085), ap.y.add(0.07), archD));
+    const paintE = paint.mul(float(1).sub(archM));
     let base = mix(vc, ic, paint);
     base = mix(base, batten, liv);
+    base = mix(base, vec3(0.02), archM);
     mat.colorNode = base;
     const glassish = step(vc.b, 0.12).mul(step(0.07, vc.b)).mul(float(1).sub(paint));   // glass colour (0.05, 0.07, 0.09)
-    mat.roughnessNode = mix(mix(float(0.55), float(0.03), glassish), float(0.42), paint);
-    mat.metalnessNode = paint.mul(0.45);
-    mat.clearcoatNode = paint;
+    mat.roughnessNode = mix(mix(mix(float(0.55), float(0.03), glassish), float(0.42), paint), float(0.8), archM);
+    mat.metalnessNode = paintE.mul(0.45);
+    mat.clearcoatNode = paintE;
     const head = step(0.5, lit).mul(step(lit, 1.5));
     const tail = step(1.5, lit).mul(step(lit, 2.5));
     const bar = step(2.5, lit).mul(step(lit, 3.5));
@@ -175,10 +179,10 @@ export class VehicleRenderer {
       }
     }
     for (const k in MODELS) {
-      const m = this.meshes[k]; m.count = counts[k];
+      const m = this.meshes[k]; m.count = counts[k]; m.visible = counts[k] > 0;   // empty instanced meshes cost a draw call
       m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true;
     }
-    this.wheels.count = wn; this.wheels.instanceMatrix.needsUpdate = true;
+    this.wheels.count = wn; this.wheels.visible = wn > 0; this.wheels.instanceMatrix.needsUpdate = true;
   }
 }
 export const PAINTS = [0xe8e8e8, 0x1a1a1a, 0x9a9da0, 0x3a3d42, 0x6e7378, 0x8a1c1c, 0x1d3d7a, 0x234a33, 0xb8b3a6, 0x3d2b23, 0xc9c9c4, 0x0f2240, 0x5b6770, 0xd4d0c8, 0x7a1f2e, 0x2f2f33];

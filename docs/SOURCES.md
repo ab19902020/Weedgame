@@ -59,6 +59,7 @@ The leaf-cluster texture for tree crowns is drawn procedurally on a canvas at st
 * **Audio**: everything (rain, wind, traffic, footsteps, murmur, horn, two-tone siren, crossing beeps, crashes) is synthesised with WebAudio at runtime in `src/audio.js`; no samples.
 * **Shop fascia text**: rendered at runtime from OSM `name` tags in plain type. These are factual street names and shop names, not logos. Brand marks are never reproduced.
 * **Launcher icon**: drawn by `tools/android/icon.py`.
+* **Railway stations and train paths** (`www/world/rail.json`, built by `tools/rail/build_rail.mjs`): track centre lines are the OSM `railway=rail` lines already in the tiles (ODbL). Station positions are the WGS84 coordinates on the English Wikipedia articles (Reading, Reading West, Earley, Winnersh Triangle, Winnersh, Wokingham, Bracknell, Martins Heron; fetched via the MediaWiki `prop=coordinates` API, Nov 2026), snapped to the nearest track (1–59 m). `manifest.stations` replaces them when the world data provides it. There is no timetable: trains run evenly spaced.
 
 ## Legacy prototype assets (kept in `legacy/`, not shipped in v0.6)
 
@@ -70,4 +71,4 @@ The leaf-cluster texture for tree crowns is drawn procedurally on a canvas at st
 
 ## Signing
 
-`builds/Green-County-0.7.0-dev.apk` (and v0.6.0 before it) is signed with a **development key** generated in the build container (`CN=Green County Development`, SHA-256 `2e65a803dd6285bca94a1d76cb7ae7dd8ab4475b6d847c957a09bb8c4e2f7ff3`). The key isn't committed (`*.keystore` is git-ignored) and the container is ephemeral, so later builds will have a different key. Android won't install a differently-signed update over the top: uninstall first. The previous v0.5 APK used another key, so v0.6 needs a fresh install too. Prototype saves held by the old file:// WebView origin are handed over by `migrate.html` only when that data is still on the device.
+`builds/Green-County-0.8.0-dev.apk` (and v0.6.0 and v0.7.0 before it) is signed with a **development key** generated in the build container (`CN=Green County Development`, SHA-256 `2e65a803dd6285bca94a1d76cb7ae7dd8ab4475b6d847c957a09bb8c4e2f7ff3`). The key isn't committed (`*.keystore` is git-ignored) and the container is ephemeral, so later builds will have a different key. Android won't install a differently-signed update over the top: uninstall first. The previous v0.5 APK used another key, so v0.6 needs a fresh install too. Prototype saves held by the old file:// WebView origin are handed over by `migrate.html` only when that data is still on the device.

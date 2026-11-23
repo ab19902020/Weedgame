@@ -37,6 +37,13 @@ window.onerror = e => log('ERR', e);
     const grass = createGrass(G);
     const ibl = createIBL(G); ibl.update(1, true);
     const post = createPost(G);
+    // WebGPU allows 8 vertex buffers per pipeline (maxVertexBuffers on phones too): count every
+    // attribute a mesh carries plus its instancing buffers (an upper bound on what gets bound)
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      const n = Object.keys(o.geometry.attributes).length + (o.isInstancedMesh ? 1 + (o.instanceColor ? 1 : 0) : 0);
+      if (n > 8) log('VBLIMIT', o.name || o.material.type, n, Object.keys(o.geometry.attributes).join(','));
+    });
     await r.compileAsync(scene, cam);
     log('compiled');
     for (let i = 0; i < 3; i++) post.render();

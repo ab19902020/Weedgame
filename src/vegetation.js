@@ -3,7 +3,7 @@
 // The crown geometry is unit radius, so the existing instancing in tiles.js scales it per tree.
 import * as THREE from 'three/webgpu';
 import {
-  float, vec2, vec3, vec4, positionLocal, positionWorld, normalWorld, cameraPosition, uv, texture, int,
+  float, vec2, vec3, vec4, positionLocal, positionGeometry, positionWorld, normalWorld, cameraPosition, uv, texture, int,
   mix, sin, length, max, dot, normalize, pow, smoothstep, fract, instanceIndex,
 } from 'three/tsl';
 import { U, cloudShadow } from './env.js';
@@ -129,9 +129,12 @@ export function treeMaterials() {
   // wind sway: whole crown leans, leaves flutter
   const wind = length(U.wind);
   const gust = sin(U.t.mul(0.9).add(tid.mul(30))).mul(0.5).add(0.5);
-  const sway = sin(U.t.mul(1.6).add(tid.mul(17)).add(positionLocal.x.mul(1.3))).mul(wind.mul(0.006).mul(gust.mul(0.7).add(0.3)));
-  const flutter = sin(U.t.mul(9).add(positionLocal.x.mul(23)).add(positionLocal.z.mul(17))).mul(wind.mul(0.0025));
-  const lift = positionLocal.y.add(1).max(0);
+  // positionLocal is already instance-transformed here (three applies instancing before positionNode),
+  // so shape-dependent terms use positionGeometry (unit crown space)
+  const g0 = positionGeometry;
+  const sway = sin(U.t.mul(1.6).add(tid.mul(17)).add(g0.x.mul(1.3))).mul(wind.mul(0.006).mul(gust.mul(0.7).add(0.3)));
+  const flutter = sin(U.t.mul(9).add(g0.x.mul(23)).add(g0.z.mul(17))).mul(wind.mul(0.0025));
+  const lift = g0.y.add(1).max(0).mul(4);   // crown radius is ~3-5 m once instanced
   crown.positionNode = positionLocal.add(vec3(sway.mul(lift).add(flutter), flutter.mul(0.6), sway.mul(lift).mul(0.6)));
   const lt = texture(leafTex, uv());
   // distant crowns: keep coverage as mips average the alpha down
@@ -142,8 +145,9 @@ export function treeMaterials() {
   let col = lt.rgb.mul(tint).mul(mix(float(1), float(0.78), U.wet));
   col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 0.72).mul(vec3(1.0, 0.95, 1.25));   // real foliage is less saturated
   // ambient occlusion towards the crown's core and underside
-  const r = length(positionLocal);
-  const ao = smoothstep(0.25, 0.95, r).mul(0.55).add(0.45).mul(positionLocal.y.mul(0.25).add(0.85));
+  const pg = positionGeometry;   // crown space (positionLocal is instance-transformed in the fragment)
+  const r = length(pg);
+  const ao = smoothstep(0.25, 0.95, r).mul(0.55).add(0.45).mul(pg.y.mul(0.25).add(0.85));
   col = col.mul(ao);
   crown.colorNode = vec4(col.mul(cloudShadow(p)), alpha);
   // translucency: light through leaves when looking towards the sun

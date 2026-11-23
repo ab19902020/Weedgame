@@ -1,0 +1,47 @@
+{
+ "dispatch": {
+  "ok": true,
+  "respondingAfter": 2,
+  "unit": "police-5",
+  "dist": 3556,
+  "routeLen": 4548,
+  "routed": 1,
+  "fails": 0,
+  "arrivedAfterSimS": 173,
+  "statusOnArrival": "onscene",
+  "clearedAfter": 174
+ },
+ "breakdown": {
+  "ok": true,
+  "onsceneAfter": 91,
+  "truckAfter": 5,
+  "clearedAfter": 0,
+  "how": "towed",
+  "carStillThere": false,
+  "unitStatus": "patrol"
+ },
+ "foot": {
+  "ok": true,
+  "states": [
+   "stop",
+   "footchase",
+   "detained",
+   "none"
+  ],
+  "final": "none"
+ },
+ "offroad": {
+  "ok": true,
+  "wentOffroad": true,
+  "closestM": 27,
+  "states": [
+   "pursuit",
+   "footchase",
+   "detained",
+   "none"
+  ],
+  "final": "none",
+  "unitBackOnRoad": true
+ },
+ "errors": []
+}

@@ -16,6 +16,7 @@ import { Landmarks } from './landmarks.js';
 import { Audio } from './audio.js';
 import { Save } from './save.js';
 import { Perf } from './perf.js';
+import { Trains } from './trains.js';
 
 class Events { constructor() { this.h = {}; } on(n, f) { (this.h[n] ||= []).push(f); } emit(n, e) { for (const f of this.h[n] || []) f(e); } }
 
@@ -53,6 +54,7 @@ if (G.Q.get('scale')) G.world.s.scale = Number(G.Q.get('scale'));
 G.input = new Input(document.body);
 G.signals = new Signals(G.net);
 G.traffic = new Traffic(G.net, G.signals, { seed: (Math.random() * 1e9) | 0 });
+G.traffic.maxVehicles = G.budget.vehicles;
 G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled);
 G.people = new People(G.scene, G.renderer.shadowMap.enabled);
 G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
@@ -61,6 +63,7 @@ G.police = new Police(G);
 G.parking = new Parking(G);
 G.buses = new Buses(G);
 G.traffic.busStop = v => G.buses.stopFor(v);
+G.trains = new Trains(G);
 G.landmarks = new Landmarks(G);
 G.atmos = new Atmos(G);
 G.shelteredAt = (x, y, z) => G.atmos.sheltered(x, y, z);
@@ -110,6 +113,9 @@ if (!G.traffic.byId.has('cal-car')) {
   G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'hatch', paint: G.save.legacy?.business?.paint ?? 0x812f42, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
   G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'estate', paint: 0x223e69, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
 }
+// the simulated fleet that was around both brothers comes back with the same ids
+G.traffic.anchors = G.brothers.b;
+G.traffic.restoreFleet(G.save.fleet, i => G.buses.routes.find(r => r.i === i));
 // brothers who were driving when the game closed sit in their (parked) car
 for (const b of G.brothers.b) { const v = G.brothers.vehicleOf(b); if (v) { v.parked = b !== G.brothers.me; v.player = b === G.brothers.me; } }
 G._needGround = true;
@@ -151,7 +157,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) B.update(dt, G.input);
+  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else B.update(dt, G.input); }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3) {
@@ -169,6 +175,7 @@ function step(dt, render) {
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
   G.police.update(dt);
+  G.trains.update(dt);
   G.atmos.updateCover(me.x, me.z);
   G.atmos.updateLights(me.x, me.z);
   G.atmos.updateNearLights(G.camera.position);
@@ -181,7 +188,8 @@ function step(dt, render) {
   if (!render) return;
   // draw dynamic actors
   const cam = G.camera.position;
-  G.vehicleRenderer.draw(G.traffic.list, cam, G.quality === 'low' ? 450 : 700);
+  G.vehicleRenderer.draw(G.traffic.list, cam, G.budget.vehicleDist);
+  G.trains.draw(cam, Math.max(600, G.budget.vehicleDist * 2));
   const actors = [B.actor[B.active]]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
   G.peds.draw(G.people, actors, cam);
   G.signalRenderer.draw(cam, (x, z) => G.tiles.ground(x, z), G.time);
@@ -192,15 +200,16 @@ function step(dt, render) {
   G.tiles.signAtlas.flush();
   G.save.tick();
   G.perf.frame(dt);
+  G.perf.render.update();   // batching + distance culling within the quality budget
   // dynamic resolution: hold ~30 fps on unknown phones (pixel ratio 0.7 .. cap)
   if (!G.Q.get('fixedres')) {
     const ms = dt * 1000; G._ema = G._ema ? G._ema * 0.95 + ms * 0.05 : ms;
     G._resT = (G._resT || 0) + dt;
     if (G._resT > 4) {
       G._resT = 0;
-      const cap = Math.min(devicePixelRatio, G.quality === 'high' ? 1.5 : 1.35), pr = G.renderer.getPixelRatio();
+      const [minPr, , maxPr] = G.budget.pixelRatio, cap = Math.min(devicePixelRatio, maxPr), pr = G.renderer.getPixelRatio();
       let next = pr;
-      if (G._ema > 38) next = Math.max(0.7, pr - 0.15); else if (G._ema < 26) next = Math.min(cap, pr + 0.1);
+      if (G._ema > 38) next = Math.max(minPr, pr - 0.15); else if (G._ema < 26) next = Math.min(cap, pr + 0.1);
       if (Math.abs(next - pr) > 0.01) { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth, innerHeight); }
     }
   }

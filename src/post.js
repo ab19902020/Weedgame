@@ -13,27 +13,28 @@ import { createSky } from './sky.js';
 import { U } from './env.js';
 
 export function createPost(G) {
-  if (G.quality === 'low' || G.Q.get('post') === '0') return null;
+  const B = G.budget || { post: G.quality !== 'low', ao: { scale: G.quality === 'high' ? 0.5 : 0.4, samples: G.quality === 'high' ? 12 : 6 }, bloom: G.quality === 'high' ? 0.3 : 0.22 };
+  if (!B.post || G.Q.get('post') === '0') return null;
   const { renderer, scene, camera } = G;
-  const high = G.quality === 'high';
   const scenePass = pass(scene, camera);
   scenePass.setMRT(mrt({ output, normal: normalView }));
   const colour = scenePass.getTextureNode('output');
   const depth = scenePass.getTextureNode('depth');
   const normal = scenePass.getTextureNode('normal');
-  const aoPass = ao(depth, normal, camera);
-  aoPass.resolutionScale = high ? 0.5 : 0.4;
-  aoPass.samples.value = high ? 12 : 6;
+  const useAO = B.ao.scale > 0 && G.Q.get('ao') !== '0';
+  const aoPass = useAO ? ao(depth, normal, camera) : null;
+  if (aoPass) {
+  aoPass.resolutionScale = B.ao.scale;
+  aoPass.samples.value = B.ao.samples;
   aoPass.radius.value = 1.1;          // metres: contact shadows at kerbs, eaves, window reveals, under cars
   aoPass.distanceExponent.value = 1.4;
   aoPass.thickness.value = 1.2;
   aoPass.scale.value = 1.15;
-  const aoTerm = aoPass.getTextureNode().sample(screenUV).r;
+  }
   const strength = uniform(0.9);
-  let c = colour.rgb.mul(mix(float(1), aoTerm, strength));
+  let c = aoPass ? colour.rgb.mul(mix(float(1), aoPass.getTextureNode().sample(screenUV).r, strength)) : colour.rgb;
   // HDR bloom: lamps, headlights, lit shopfronts, sun glints on wet roads
-  const bl = bloom(vec4(c, 1), high ? 0.3 : 0.22, 0.45, 1.6);
-  c = c.add(bl.rgb);
+  if (B.bloom > 0) c = c.add(bloom(vec4(c, 1), B.bloom, 0.45, 1.6).rgb);
   const pipe = new THREE.RenderPipeline(renderer);
   pipe.outputColorTransform = false;
   // subtle lens vignette after tone mapping
@@ -51,7 +52,8 @@ export function createPost(G) {
 }
 
 export function createIBL(G) {
-  if (G.quality === 'low' || G.Q.get('ibl') === '0') return null;
+  const cube = G.budget ? G.budget.ibl : (G.quality === 'high' ? 128 : G.quality === 'medium' ? 64 : 0);
+  if (!cube || G.Q.get('ibl') === '0') return null;
   const { renderer, scene } = G;
   const envScene = new THREE.Scene();
   const sky = createSky(4);
@@ -70,7 +72,7 @@ export function createIBL(G) {
   ground.renderOrder = 1;
   envScene.add(ground);
   const pmrem = new THREE.PMREMGenerator(renderer);
-  const size = G.quality === 'high' ? 128 : 64;
+  const size = cube;
   let rt = null, t = 0;
   const pos = new THREE.Vector3();
   scene.environmentIntensity = 1;

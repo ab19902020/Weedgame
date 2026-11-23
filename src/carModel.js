@@ -2,7 +2,7 @@
 // vehicles.js profile(); here it is swept through rounded cross-sections (tumblehome glasshouse,
 // shoulder line, tucked sills) and rounded in plan at the corners, with smooth normals.
 import * as THREE from 'three/webgpu';
-import { float, vec3, mix, step, positionLocal, length, atan, fract, abs, smoothstep, attribute } from 'three/tsl';
+import { float, vec3, mix, step, positionGeometry, length, atan, fract, abs, smoothstep, attribute } from 'three/tsl';
 
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = v => Math.max(0, Math.min(1, v));
@@ -123,7 +123,7 @@ export function wheelGeometry() {
 }
 export function wheelMaterial() {
   const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.85 });
-  const p = positionLocal;
+  const p = positionGeometry;   // model space; positionLocal is instance-transformed in the fragment
   const r = length(p.xy);
   const rim = step(r, 0.63);
   // five-spoke alloy: dark gaps between spokes, darker hub recess

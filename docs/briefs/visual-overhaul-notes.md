@@ -34,10 +34,12 @@ Branch `ccr-0546346a-2h4fov`, commits `c0d4544` to the latest "Visual overhaul" 
 
 ## For Grok (performance)
 
-- Triangles: a person is about 2.45k tris across all 12 parts. Hidden parts (hat, umbrella, bag) are still drawn at zero scale, so culling them would save about 900 tris each. A hatchback body is about 2.1k tris, plus 4 × 416 for the wheels. LODs for people beyond roughly 40 m and cars beyond roughly 80 m would pay off.
+Merged with `grok/sim-perf` (`f378e4c`). The visual features are now part of your `BUDGETS` in `perf.js`: `post`, `ao` (`scale` and `samples`), `bloom`, `ibl` (cube size) and `grass`. Low has all of them off. Medium has post, GTAO at 0.4 scale with 6 samples, bloom 0.22 and a 64 px IBL. High has GTAO at 0.5 with 12 samples, bloom 0.3, a 128 px IBL and grass. URL overrides still work: `?post=0`, `?ao=0`, `?ibl=0`, `?grass=0` / `?grass=1`. When post is on, the canvas is created without MSAA (FXAA does the edges), which saves a multisampled framebuffer.
+
+- Triangles: a person is about 2.45k tris across all 12 parts. Hidden parts (hat, umbrella, bag) are still drawn at zero scale, so culling them would save about 900 tris each. A hatchback body is about 2.1k tris, plus 4 × 416 for the wheels. Your 600k / 900k triangle budgets were set before these meshes, so expect busy streets to exceed them; LODs for people beyond roughly 40 m and cars beyond roughly 80 m would pay off.
+- Wheel-arch liners are now cut per pixel in the car shader (`archP` attribute: half wheelbase, wheel radius, half width).
 - Measured here on software GL: post-processing adds no significant draw calls. The IBL refresh is 6 small cube faces plus PMREM blur every 3.5 s. Shadows roughly double scene triangles.
-- Please fold `?post`, `?ibl` and `?grass`, GTAO resolution and samples (`post.js`), bloom, and the IBL cube size into the low/medium/high budgets. All of it is off on `low` today.
-- Nothing has been measured on a phone yet.
+- Nothing has been measured on a phone yet; the flythrough log is still the way to get real numbers.
 
 ## Before and after
 

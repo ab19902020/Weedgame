@@ -4,6 +4,9 @@ import * as THREE from 'three/webgpu';
 import { mergeGeos } from './tiles.js';
 
 const AMBER = 3, ALLRED = 2, REDAMBER = 2, PED_GREEN = 7, PED_FLASH = 5;
+// Demand-actuated (vehicle-actuated) control, simulated: approach detectors ~60 m back from each stop line
+// extend the green up to a maximum and stages with nobody waiting are skipped. Timings are simulated.
+export const MIN_GREEN = 7, GAP = 3, MAX_GREEN_K = 1.6, DEMAND_MEMORY = 4;
 
 export class Signals {
   constructor(net) {
@@ -12,8 +15,21 @@ export class Signals {
       const stages = [];
       for (let g = 0; g < c.groups; g++) stages.push({ kind: 'veh', g, green: c.green[g] || 25 });
       if (c.peds.length && !c.standalone) stages.push({ kind: 'ped' });
-      return { ...c, i, stages, stage: 0, phase: 'G', timer: (i * 7.3) % 20, demand: false, standaloneGreen: 0 };
+      return { ...c, i, stages, stage: 0, phase: 'G', timer: (i * 7.3) % 20, demand: false, standaloneGreen: 0, det: new Float64Array(Math.max(1, c.groups || 1)).fill(-1e9) };
     });
+    this.actuated = true;
+  }
+  // a vehicle is on the approach detector of controller ci, signal group g
+  detect(ci, g) { const c = this.ctl[ci]; if (c && c.det && g < c.det.length) c.det[g] = this.t; }
+  wanted(c, g) { return this.t - c.det[g] < DEMAND_MEMORY; }
+  // does any stage other than the current one have demand?
+  otherDemand(c) {
+    for (let k = 0; k < c.stages.length; k++) {
+      if (k === c.stage) continue;
+      const st = c.stages[k];
+      if (st.kind === 'ped' ? c.demand : this.wanted(c, st.g)) return true;
+    }
+    return false;
   }
   update(dt) {
     this.t += dt;
@@ -34,6 +50,12 @@ export class Signals {
       const st = c.stages[c.stage];
       if (st.kind === 'veh') {
         if (c.phase === 'RA' && c.timer > REDAMBER) { c.phase = 'G'; c.timer = 0; }
+        else if (c.phase === 'G' && this.actuated) {
+          // hold the green while vehicles keep arriving (up to the max); gap out when the detector is
+          // quiet and someone else is waiting; rest on green when nobody else wants the junction
+          const gapOut = c.timer > MIN_GREEN && this.t - c.det[st.g] > GAP, maxOut = c.timer > st.green * MAX_GREEN_K;
+          if ((gapOut || maxOut) && this.otherDemand(c)) { c.phase = 'A'; c.timer = 0; }
+        }
         else if (c.phase === 'G' && c.timer > st.green) { c.phase = 'A'; c.timer = 0; }
         else if (c.phase === 'A' && c.timer > AMBER) { c.phase = 'X'; c.timer = 0; }
         else if (c.phase === 'X' && c.timer > ALLRED) this.next(c);
@@ -45,9 +67,17 @@ export class Signals {
     }
   }
   next(c) {
+    const from = c.stage;
     c.stage = (c.stage + 1) % c.stages.length;
-    // skip pedestrian stage when nobody is waiting (demand-dependent, like a real MOVA/UTC junction)
-    if (c.stages[c.stage].kind === 'ped' && !c.demand) c.stage = (c.stage + 1) % c.stages.length;
+    // skip stages nobody is waiting for (pedestrian stage without a button press; with actuation, vehicle
+    // stages with a quiet detector). If nobody at all is waiting, take the next vehicle stage.
+    for (let k = 0; k < c.stages.length; k++) {
+      const st = c.stages[c.stage];
+      const want = st.kind === 'ped' ? c.demand : (!this.actuated || this.wanted(c, st.g));
+      if (want) break;
+      c.stage = (c.stage + 1) % c.stages.length;
+    }
+    if (c.stages[c.stage].kind === 'ped' && !c.demand) { c.stage = (from + 1) % c.stages.length; if (c.stages[c.stage].kind === 'ped') c.stage = (c.stage + 1) % c.stages.length; }
     if (c.stages[c.stage].kind === 'ped') c.demand = false;
     c.phase = c.stages[c.stage].kind === 'veh' ? 'RA' : 'W'; c.timer = 0;
   }
