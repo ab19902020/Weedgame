@@ -21,12 +21,14 @@ const SPOTS = { cemetery: [-5890, -2190], woodley: [-2869, -2192], reading: [-71
       await new Promise(r => setTimeout(r, 250));
       for (const c of S.ctl) { const k = c.i; const prev = stages.get(k); if (prev && prev.s !== c.stage) prev.n++; stages.set(k, { s: c.stage, n: prev ? prev.n : 0 }); }
       for (const v of T.list) { if (v.parked || v.player) continue; const l = lanes.get(v.id); if (l != null && l[0] === v.h && l[1] !== v.lane) laneCh++; lanes.set(v.id, [v.h, v.lane]); if (v.rtWait > 0.5) rtw++; }
-      const mv = T.list.filter(v => !v.parked && !v.player && v.near);
+      GC.peds._seenCorner = (GC.peds._seenCorner || 0) + GC.peds.list.filter(q => q.corner).length; const mv = T.list.filter(v => !v.parked && !v.player && v.near);
       samples.push({ n: mv.length, moving: mv.filter(v => v.v > 1).length, stuck60: mv.filter(v => v.wait > 60).length, avgV: mv.length ? mv.reduce((a, v) => a + v.v, 0) / mv.length : 0 });
     }
+    const modes = {}; let corners = 0; for (const q of GC.peds.list) { modes[q.mode] = (modes[q.mode] || 0) + 1; if (q.corner) corners++; }
+    const peds = { count: GC.peds.list.length, modes, cornering: corners, cornerSamples: GC.peds._seenCorner, enteredBuildings: GC.peds.entered || 0, links: GC.walkGraph?.linkCount };
     const last = samples.at(-1), avg = k => +(samples.reduce((a, s) => a + s[k], 0) / samples.length).toFixed(2);
     let changes = 0, active = 0; for (const v of stages.values()) { changes += v.n; if (v.n) active++; }
-    return { simSeconds: +(GC.time - t0).toFixed(0), nearVehicles: avg('n'), movingAvg: avg('moving'), avgSpeed: avg('avgV'), stuckOver60sAtEnd: last.stuck60, laneChanges: laneCh, rightTurnWaitSamples: rtw, signalStageChanges: changes, signalsCycling: active };
+    return { simSeconds: +(GC.time - t0).toFixed(0), nearVehicles: avg('n'), movingAvg: avg('moving'), avgSpeed: avg('avgV'), stuckOver60sAtEnd: last.stuck60, laneChanges: laneCh, rightTurnWaitSamples: rtw, signalStageChanges: changes, signalsCycling: active, peds };
   }, Number(secs));
   console.log(JSON.stringify({ spot, ...r, errors }));
   await b.close();
