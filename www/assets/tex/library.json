@@ -1,0 +1,229 @@
+{
+ "size": 512,
+ "layers": [
+  {
+   "layer": 0,
+   "name": "asphalt",
+   "id": "asphalt_02",
+   "tileMetres": 3.0,
+   "url": "https://polyhaven.com/a/asphalt_02",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel"
+   ]
+  },
+  {
+   "layer": 1,
+   "name": "flags",
+   "id": "concrete_pavement",
+   "tileMetres": 1.8,
+   "url": "https://polyhaven.com/a/concrete_pavement",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Charlotte Baglioni"
+   ]
+  },
+  {
+   "layer": 2,
+   "name": "blocks",
+   "id": "herringbone_pavement",
+   "tileMetres": 2.0,
+   "url": "https://polyhaven.com/a/herringbone_pavement",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Charlotte Baglioni"
+   ]
+  },
+  {
+   "layer": 3,
+   "name": "concrete",
+   "id": "concrete",
+   "tileMetres": 4.0,
+   "url": "https://polyhaven.com/a/concrete",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel"
+   ]
+  },
+  {
+   "layer": 4,
+   "name": "grass",
+   "id": "leafy_grass",
+   "tileMetres": 2.0,
+   "url": "https://polyhaven.com/a/leafy_grass",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Charlotte Baglioni"
+   ]
+  },
+  {
+   "layer": 5,
+   "name": "brick_red",
+   "id": "red_brick_03",
+   "tileMetres": 1.0,
+   "url": "https://polyhaven.com/a/red_brick_03",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel"
+   ]
+  },
+  {
+   "layer": 6,
+   "name": "brick_dark",
+   "id": "brick_wall_001",
+   "tileMetres": 3.0,
+   "url": "https://polyhaven.com/a/brick_wall_001",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel",
+    "Dimitrios Savva"
+   ]
+  },
+  {
+   "layer": 7,
+   "name": "brick_buff",
+   "id": "brick_wall_02",
+   "tileMetres": 2.0,
+   "url": "https://polyhaven.com/a/brick_wall_02",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Dimitrios Savva"
+   ]
+  },
+  {
+   "layer": 8,
+   "name": "render",
+   "id": "painted_plaster_wall",
+   "tileMetres": 2.0,
+   "url": "https://polyhaven.com/a/painted_plaster_wall",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Amal Kumar"
+   ]
+  },
+  {
+   "layer": 9,
+   "name": "pebbledash",
+   "id": "pebble_embedded_concrete",
+   "tileMetres": 2.6,
+   "url": "https://polyhaven.com/a/pebble_embedded_concrete",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Charlotte Baglioni"
+   ]
+  },
+  {
+   "layer": 10,
+   "name": "roof_clay",
+   "id": "clay_roof_tiles",
+   "tileMetres": 4.0,
+   "url": "https://polyhaven.com/a/clay_roof_tiles",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Amal Kumar"
+   ]
+  },
+  {
+   "layer": 11,
+   "name": "roof_slate",
+   "id": "roof_slates_02",
+   "tileMetres": 3.0,
+   "url": "https://polyhaven.com/a/roof_slates_02",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel"
+   ]
+  },
+  {
+   "layer": 12,
+   "name": "felt",
+   "id": "asphalt_04",
+   "tileMetres": 4.04,
+   "url": "https://polyhaven.com/a/asphalt_04",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Jenelle van Heerden",
+    "Sergej Majboroda"
+   ]
+  },
+  {
+   "layer": 13,
+   "name": "cladding",
+   "id": "corrugated_iron_02",
+   "tileMetres": 2.7,
+   "url": "https://polyhaven.com/a/corrugated_iron_02",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Jenelle van Heerden",
+    "Sergej Majboroda"
+   ]
+  },
+  {
+   "layer": 14,
+   "name": "gravel",
+   "id": "gravel_floor",
+   "tileMetres": 2.25,
+   "url": "https://polyhaven.com/a/gravel_floor",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Jenelle van Heerden",
+    "Matterfield"
+   ]
+  },
+  {
+   "layer": 15,
+   "name": "bark",
+   "id": "bark_brown_02",
+   "tileMetres": 1.0,
+   "url": "https://polyhaven.com/a/bark_brown_02",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel"
+   ]
+  },
+  {
+   "layer": 16,
+   "name": "soil",
+   "id": "farm_soil",
+   "tileMetres": 2.0,
+   "url": "https://polyhaven.com/a/farm_soil",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Amal Kumar"
+   ]
+  },
+  {
+   "layer": 17,
+   "name": "stone",
+   "id": "sandstone_blocks_08",
+   "tileMetres": 3.0,
+   "url": "https://polyhaven.com/a/sandstone_blocks_08",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel"
+   ]
+  },
+  {
+   "layer": 18,
+   "name": "concrete_wall",
+   "id": "plaster_grey_04",
+   "tileMetres": 1.5,
+   "url": "https://polyhaven.com/a/plaster_grey_04",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel"
+   ]
+  },
+  {
+   "layer": 19,
+   "name": "forest",
+   "id": "forest_leaves_02",
+   "tileMetres": 3.001,
+   "url": "https://polyhaven.com/a/forest_leaves_02",
+   "licence": "CC0 1.0",
+   "authors": [
+    "Rob Tuytel"
+   ]
+  }
+ ]
+}

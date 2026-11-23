@@ -13,6 +13,35 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 | Historic England, list entry 1001641 (cited in the v0.5 hand-off, docs/CITY-DESIGN.md, as describing the two lodges and Bath-stone carriage arch) | Historic England list text | Not re-checked in this session | Cemetery Junction | Design reference for the arch/lodges model; no dimensions taken from it | Reference description only |
 | Reading Museum, “Our building history” (cited in docs/CITY-DESIGN.md) | Website text | Not re-checked in this session | Reading Town Hall | Design reference: Waterhouse clock tower, terracotta, contrasting local brick | Reference description only |
 
+## Surface textures (photographic, CC0)
+
+Downloaded from Poly Haven (polyhaven.com) on 2026-11-23 by `tools/assets/fetch_textures.py`. All Poly Haven textures are **CC0 1.0** (public domain, no attribution required; credited here anyway). Each is reduced to 512 px: the albedo has its AO map multiplied in at 35%, and the second image packs the OpenGL normal map (RG) with roughness (B). The files are `www/assets/tex/<layer>_a.jpg` and `<layer>_n.jpg`, about 3.4 MB in total. Colours are re-tinted in the shaders per building, landcover class and weather.
+
+| Poly Haven asset | Used as | Metres per repeat |
+|---|---|---|
+| `asphalt_02` | asphalt | 3.0 m |
+| `concrete_pavement` | flags | 1.8 m |
+| `herringbone_pavement` | blocks | 2.0 m |
+| `concrete` | concrete | 4.0 m |
+| `leafy_grass` | grass | 2.0 m |
+| `red_brick_03` | brick_red | 1.0 m |
+| `brick_wall_001` | brick_dark | 3.0 m |
+| `brick_wall_02` | brick_buff | 2.0 m |
+| `painted_plaster_wall` | render | 2.0 m |
+| `pebble_embedded_concrete` | pebbledash | 2.6 m |
+| `clay_roof_tiles` | roof_clay | 4.0 m |
+| `roof_slates_02` | roof_slate | 3.0 m |
+| `asphalt_04` | felt | 4.04 m |
+| `corrugated_iron_02` | cladding | 2.7 m |
+| `gravel_floor` | gravel | 2.25 m |
+| `bark_brown_02` | bark | 1.0 m |
+| `farm_soil` | soil | 2.0 m |
+| `sandstone_blocks_08` | stone | 3.0 m |
+| `plaster_grey_04` | concrete_wall | 1.5 m |
+| `forest_leaves_02` | forest | 3.001 m |
+
+The leaf-cluster texture for tree crowns is drawn procedurally on a canvas at start-up (`src/vegetation.js`).
+
 ## Software
 
 | Component | Licence | Version | Use |
@@ -25,7 +54,7 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 
 ## Generated in this project (original work)
 
-* **Textures**: value-noise, FBM and Worley textures, cloud noise, brick, slate, flags, block paving and asphalt are procedural in shader code (`src/env.js`, `src/materials.js`); no image textures are used.
+* **Textures**: value-noise, FBM and Worley textures, cloud noise, window interiors (parallax rooms, shop shelving, curtains), road markings and the tree leaf clusters are procedural (`src/env.js`, `src/materials.js`, `src/vegetation.js`). Surface materials (brick, render, roof tiles, asphalt, paving, grass, bark and so on) use the CC0 photographs listed above.
 * **Models**: people, vehicles (hatchback, saloon, estate, SUV, van, single- and double-deck bus, police estate in Battenburg-style livery), street lamps, signal heads, Belisha beacons, bus shelters, canopies, the Cemetery Junction gateway and Reading Town Hall are procedural geometry in `src/`.
 * **Audio**: everything (rain, wind, traffic, footsteps, murmur, horn, two-tone siren, crossing beeps, crashes) is synthesised with WebAudio at runtime in `src/audio.js`; no samples.
 * **Shop fascia text**: rendered at runtime from OSM `name` tags in plain type. These are factual street names and shop names, not logos. Brand marks are never reproduced.

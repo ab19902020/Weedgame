@@ -4,8 +4,10 @@ import * as THREE from 'three/webgpu';
 import {
   Fn, float, vec2, vec3, vec4, attribute, positionWorld, positionLocal, normalWorld, cameraPosition, texture, uv,
   mix, smoothstep, step, clamp, fract, floor, abs, max, min, pow, exp, sin, cos, dot, normalize, length, reflect, select, If, Loop, fwidth,
+  int, cross,
 } from 'three/tsl';
 import { U, noiseTex, cloudTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL } from './env.js';
+import { L, sAlbedo, sDetail, sAlbedoAT, perturb, perturbW, groundUV, worldToView } from './surfaces.js';
 
 const h1 = Fn(([x]) => fract(sin(x.mul(12.9898)).mul(43758.5453)));
 const h3 = Fn(([v]) => fract(sin(dot(v, vec3(12.9898, 78.233, 37.719))).mul(43758.5453)));
@@ -29,13 +31,13 @@ export const skyReflection = Fn(([p, n, amount]) => {
   const v = viewDir();
   const r = reflect(v.negate(), n);
   const fres = pow(float(1).sub(max(dot(n, v), 0)), 4).mul(0.85).add(0.05);
-  return skyColor(r).mul(fres).mul(amount).mul(float(1).sub(U.night.mul(0.75)));
+  return skyColor(r).mul(fres).mul(amount).mul(float(1).sub(U.night.mul(0.75))).mul(float(1).sub(U.ibl.mul(0.8)));
 });
 export const wetReflection = Fn(([p, n, amount, sharp]) => {
   const v = viewDir();
   const r = reflect(v.negate(), n);
   const fres = pow(float(1).sub(max(dot(n, v), 0)), 4).mul(0.85).add(0.05);
-  const sky = skyColor(r).mul(fres).mul(amount).mul(float(1).sub(U.night.mul(0.75)));
+  const sky = skyColor(r).mul(fres).mul(amount).mul(float(1).sub(U.night.mul(0.75))).mul(float(1).sub(U.ibl.mul(0.8)));
   const acc = vec3(0).toVar();
   If(amount.greaterThan(0.02), () => {
     const rh = normalize(r.xz.add(vec2(1e-5, 0)));
@@ -59,7 +61,7 @@ function std(opts = {}) {
 }
 
 // --- terrain --------------------------------------------------------------------------
-const PAL = [ // landcover class -> base colour (linear-ish sRGB values)
+const PAL = [ // landcover class -> tint (relative colour cast applied over the photographic layer)
   [0.42, 0.5, 0.27], [0.2, 0.2, 0.2], [0.55, 0.54, 0.52], [0.36, 0.32, 0.3], [0.08, 0.13, 0.15], [0.26, 0.31, 0.16],
   [0.6, 0.57, 0.36], [0.40, 0.56, 0.25], [0.26, 0.26, 0.26], [0.42, 0.38, 0.33], [0.46, 0.42, 0.37], [0.38, 0.52, 0.24],
   [0.52, 0.44, 0.38], [0.33, 0.56, 0.22], [0.44, 0.47, 0.26], [0.36, 0.41, 0.22], [0.40, 0.5, 0.28], [0.5, 0.49, 0.48],
@@ -68,34 +70,61 @@ const palData = new Uint8Array(32 * 4);
 PAL.forEach((c, i) => { palData[i * 4] = c[0] * 255; palData[i * 4 + 1] = c[1] * 255; palData[i * 4 + 2] = c[2] * 255; palData[i * 4 + 3] = 255; });
 export const palTex = new THREE.DataTexture(palData, 32, 1, THREE.RGBAFormat);
 palTex.magFilter = palTex.minFilter = THREE.NearestFilter; palTex.colorSpace = THREE.SRGBColorSpace; palTex.needsUpdate = true;
+// landcover class -> surface layer
+// classes (build_world.py LC): 0 grass 1 road 2 pavement 3 building 4 water 5 wood 6 farm 7 park 8 parking
+// 9 rail 10 path 11 garden 12 plaza 13 pitch 14 allotment 15 scrub 16 cemetery 17 hard 18 brownfield 19 sand
+const LAYER_OF = [L.grass, L.asphalt, L.flags, L.concrete, L.soil, L.forest, L.soil, L.grass, L.asphalt, L.gravel,
+  L.gravel, L.grass, L.blocks, L.grass, L.soil, L.forest, L.grass, L.asphalt, L.soil, L.gravel];
+const classLayer = (c) => {
+  let n = int(LAYER_OF[19]);
+  for (let i = 18; i >= 0; i--) n = select(c.lessThan(i + 0.5), int(LAYER_OF[i]), n);
+  return n;
+};
+const luma = (c) => dot(c, vec3(0.2126, 0.7152, 0.0722));
 
 export function terrainMaterial() {
   const m = std();
   const slot = attribute('aslot', 'vec2');
   const p = positionWorld;
+  // jitter the 2 m landcover lookup so class boundaries read as organic edges, not pixels
+  const jit = nz(p.xz, 1 / 5.3).rg.sub(0.5).mul(2.4);
   const cls = Fn(([off]) => {
     const t = slot.mul(128).add(positionLocal.xz.add(off).div(2)).div(ATLAS_N);
     return texture(atlasTex, t).r.mul(255);
   });
   const palC = Fn(([c]) => texture(palTex, vec2(c.add(0.5).div(32), 0.5)).rgb);
-  const c0 = cls(vec2(0, 0));
-  const col = palC(c0).mul(0.4).add(palC(cls(vec2(1.2, 0))).mul(0.15)).add(palC(cls(vec2(-1.2, 0))).mul(0.15))
-    .add(palC(cls(vec2(0, 1.2))).mul(0.15)).add(palC(cls(vec2(0, -1.2))).mul(0.15));
+  const c0 = cls(jit);
+  const tintRaw = palC(c0).mul(0.5).add(palC(cls(jit.add(vec2(1.6, 0)))).mul(0.25)).add(palC(cls(jit.add(vec2(0, -1.6)))).mul(0.25));
   const isWater = step(3.5, c0).mul(step(c0, 4.5));
-  const isGreen = float(1).sub(isWater);
-  const n1 = nz(p.xz, 1 / 7).r, n2 = nz(p.xz, 1 / 61).a, n3 = nz(p.xz, 1 / 2.3).r;
-  const field = step(5.5, c0).mul(step(c0, 6.5)).mul(sin(p.x.mul(0.8).add(p.z.mul(0.25))).mul(0.06));
-  let albedo = col.mul(n1.mul(0.35).add(0.8)).mul(n2.mul(0.4).add(0.8)).mul(n3.mul(0.2).add(0.9)).add(field);
+  const layer = classLayer(c0);
+  const greenish = step(c0, 0.5).add(step(6.5, c0).mul(step(c0, 7.5))).add(step(10.5, c0).mul(step(c0, 11.5))).add(step(12.5, c0).mul(step(c0, 16.5))).min(1);
+  const uvm = groundUV(p);
+  const big = nz(p.xz, 1 / 41).a;
+  const tex = sAlbedoAT(layer, uvm, smoothstep(0.35, 0.65, nz(p.xz, 1 / 13).g));
+  // grass and woodland floors take their colour cast from the landcover class; others stay photographic
+  const tint = mix(vec3(1), clamp(tintRaw.div(vec3(0.42, 0.5, 0.27)), 0.55, 1.6), greenish.mul(0.6));
+  // mown stripes on parks and pitches, plough lines on fields
+  const stripes = step(6.5, c0).mul(step(c0, 7.5)).add(step(12.5, c0).mul(step(c0, 13.5))).mul(step(0.5, fract(p.x.mul(0.08).add(p.z.mul(0.02)))).mul(0.06));
+  const rows = step(5.5, c0).mul(step(c0, 6.5)).mul(sin(p.x.mul(2.2).add(p.z.mul(0.6))).mul(0.07));
+  // lawns: keep the photo's blade detail, pull its colour to British lawn green (cast per class)
+  const isLawn = step(c0, 0.5).add(step(6.5, c0).mul(step(c0, 7.5))).add(step(10.5, c0).mul(step(c0, 11.5))).add(step(12.5, c0).mul(step(c0, 13.5))).add(step(15.5, c0).mul(step(c0, 16.5))).min(1);
+  const lawn = vec3(luma(tex)).mul(vec3(0.62, 1.05, 0.3)).mul(tint).mul(mix(float(0.85), float(1.2), nz(p.xz, 1 / 6.1).r));
+  const base = mix(tex.mul(tint), lawn, isLawn.mul(0.8));
+  let albedo = base.mul(big.mul(0.25).add(0.88)).mul(float(1).add(stripes).add(rows));
   const sh = shelter(p);
   const wet = U.wet.mul(float(1).sub(sh));
-  albedo = albedo.mul(mix(float(1), float(0.78), wet.mul(isGreen)));
-  const water = vec3(0.03, 0.05, 0.06);
-  albedo = mix(albedo, water, isWater);
-  const cs = cloudShadow(p);
-  m.colorNode = albedo.mul(cs);
-  m.roughnessNode = mix(mix(float(0.95), float(0.6), wet), float(0.08), isWater);
-  const ripple = isWater.mul(U.rain).mul(nz(p.xz.add(vec2(U.t.mul(0.7), 0)), 1 / 1.3).r.mul(0.4));
-  m.emissiveNode = lightPool(p).mul(albedo).add(skyReflection(p, vec3(ripple.sub(0.2).mul(0.15), 1, 0).normalize(), isWater.mul(0.9)));
+  albedo = albedo.mul(mix(float(1), mix(float(0.62), float(0.82), greenish), wet));
+  // water: dark, smooth and rippled by wind and rain
+  const t = U.t;
+  const w1 = nz(p.xz.add(vec2(t.mul(0.9), t.mul(0.4))), 1 / 7).rg, w2 = nz(p.xz.add(vec2(t.mul(-0.5), t.mul(0.7))), 1 / 2.3).rg;
+  const rip = w1.add(w2).sub(1).mul(mix(float(0.12), float(0.35), U.rain).add(length(U.wind).mul(0.01)));
+  const waterN = normalize(vec3(rip.x, 1, rip.y));
+  albedo = mix(albedo, vec3(0.012, 0.022, 0.024), isWater);
+  const d = sDetail(layer, uvm);
+  m.colorNode = albedo.mul(cloudShadow(p));
+  m.roughnessNode = mix(mix(d.b.mul(0.35).add(0.62), float(0.32), wet), float(0.03), isWater);
+  m.normalNode = worldToView(mix(perturbW(normalWorld, d, float(0.9)), waterN, isWater));
+  m.emissiveNode = lightPool(p).mul(albedo).add(skyReflection(p, normalize(vec3(rip.x, 1, rip.y)), isWater.mul(0.9)));
   return m;
 }
 
@@ -110,36 +139,32 @@ export function groundMaterial() {
   const isPath = step(2.5, s).mul(step(s, 3.5));
   const isPlaza = step(3.5, s).mul(step(s, 4.5));
   const isBallast = step(6.5, s);
-  const fine = nz(p.xz, 1 / 0.9).r, fine2 = nz(p.xz, 1 / 0.21).r, big = nz(p.xz, 1 / 37).a, patch = nz(p.xz, 1 / 23).g;
-  // asphalt with aggregate and repair patches
-  const asphalt = vec3(0.105, 0.105, 0.11).mul(fine2.mul(0.5).add(0.75)).mul(smoothstep(0.62, 0.66, patch).mul(-0.25).add(1.05)).mul(big.mul(0.25).add(0.88));
-  // UK concrete flags 600x900 / tarmac pavements
-  const gx = fract(p.x.div(0.9)), gz = fract(p.z.div(0.6));
-  const joint = max(smoothstep(0.035, 0.0, min(gx, float(1).sub(gx))), smoothstep(0.05, 0.0, min(gz, float(1).sub(gz))));
-  const fwG = fwidth(p.x).add(fwidth(p.z));
-  const aaG = smoothstep(0.03, 0.12, fwG);
-  const flags = vec3(0.37, 0.36, 0.34).mul(fine.mul(0.2).add(0.88)).mul(float(1).sub(joint.mul(0.35).mul(float(1).sub(aaG))));
-  const tarmacPave = vec3(0.17, 0.165, 0.16).mul(fine2.mul(0.5).add(0.75));
-  const paveCol = mix(flags, tarmacPave, step(0.55, big));
-  const kerb = vec3(0.46, 0.45, 0.43).mul(fine.mul(0.2).add(0.85));
-  const path = vec3(0.2, 0.18, 0.15).mul(fine2.mul(0.5).add(0.75));
-  const bx = fract(p.x.div(0.2).add(step(0.5, fract(p.z.div(0.2))).mul(0.5))), bz = fract(p.z.div(0.1));
-  const brick = vec3(0.33, 0.21, 0.16).mul(float(1).sub(max(step(0.93, bx), step(0.9, bz)).mul(0.3).mul(float(1).sub(aaG)))).mul(fine.mul(0.3).add(0.8));
-  const ballast = vec3(0.27, 0.24, 0.21).mul(fine2.mul(0.8).add(0.6));
-  let albedo = asphalt.mul(isRoad).add(paveCol.mul(isPave)).add(kerb.mul(isKerb)).add(path.mul(isPath)).add(brick.mul(isPlaza)).add(ballast.mul(isBallast));
+  const big = nz(p.xz, 1 / 37).a, patch = nz(p.xz, 1 / 23).g;
+  // UK pavements: concrete flags, or tarmac where the large-scale noise says so
+  const tarmacPave = isPave.mul(step(0.58, big)).mul(step(s, 1.5));
+  const layer = select(isRoad.add(tarmacPave).greaterThan(0.5), int(L.asphalt), select(isPave.greaterThan(0.5), int(L.flags), select(isKerb.greaterThan(0.5), int(L.concrete),
+    select(isPath.greaterThan(0.5), int(L.asphalt), select(isPlaza.greaterThan(0.5), int(L.blocks), int(L.gravel))))));
+  const uvm = groundUV(p).mul(select(isPath.greaterThan(0.5), float(1.6), float(1)));
+  const tex = sAlbedoAT(layer, uvm, smoothstep(0.3, 0.7, nz(p.xz, 1 / 11).g));
+  // colour casts: darker A-road asphalt, repair patches, warm block paving, lighter tarmac pavements
+  const roadTone = vec3(0.78).mul(smoothstep(0.62, 0.66, patch).mul(-0.18).add(1.04)).mul(big.mul(0.2).add(0.9));
+  const tone = select(isRoad.greaterThan(0.5), roadTone, select(tarmacPave.greaterThan(0.5), vec3(0.95), select(isPlaza.greaterThan(0.5), vec3(1.18, 0.92, 0.8),
+    select(isPath.greaterThan(0.5), vec3(0.82, 0.78, 0.72), select(isBallast.greaterThan(0.5), vec3(0.8, 0.72, 0.66), vec3(1))))));
+  let albedo = tex.mul(tone);
   // wetness & puddles (not under shelter)
   const sh = shelter(p);
   const expo = float(1).sub(sh);
   const wet = U.wet.mul(expo);
   const pmask = nz(p.xz, 1 / 9).a.mul(0.6).add(nz(p.xz, 1 / 2.7).g.mul(0.4));
-  const pud = smoothstep(float(1).sub(U.puddle.mul(0.55)), float(1.02).sub(U.puddle.mul(0.55)), pmask).mul(expo).mul(isRoad.add(isPlaza).add(isPave.mul(0.6)).add(isPath));
+  const pud = smoothstep(float(1).sub(U.puddle.mul(0.55)), float(1.02).sub(U.puddle.mul(0.55)), pmask).mul(expo).mul(isRoad.add(isPlaza).add(isPave.mul(0.6)).add(isPath).min(1));
   albedo = albedo.mul(mix(float(1), float(0.5), wet)).mul(mix(float(1), float(0.55), pud));
-  const cs = cloudShadow(p);
-  m.colorNode = albedo.mul(cs);
-  m.roughnessNode = mix(mix(float(0.92), float(0.25), wet), float(0.03), pud);
+  const d = sDetail(layer, uvm);
+  m.colorNode = albedo.mul(cloudShadow(p));
+  m.roughnessNode = mix(mix(d.b.mul(0.3).add(0.66), float(0.2), wet), float(0.025), pud);
   const ripple = U.rain.mul(pud).mul(nz(p.xz.add(vec2(U.t.mul(0.31), U.t.mul(-0.2))), 1 / 0.6).r.sub(0.5).mul(0.25));
-  const n = normalize(vec3(ripple, 1, ripple.mul(0.7)));
-  m.emissiveNode = lightPool(p).mul(albedo.add(0.04)).add(wetReflection(p, n, max(wet.mul(0.55), pud), pud));
+  const nFlat = normalize(vec3(ripple, 1, ripple.mul(0.7)));
+  m.normalNode = worldToView(mix(perturbW(normalWorld, d, mix(float(1.0), float(0.45), wet)), nFlat, smoothstep(0.3, 0.7, pud)));
+  m.emissiveNode = lightPool(p).mul(albedo.add(0.04)).add(wetReflection(p, nFlat, max(wet.mul(0.55), pud), pud));
   return m;
 }
 
@@ -147,13 +172,15 @@ export function markingMaterial() {
   const m = std({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6 });
   const s = attribute('surf', 'float');
   const p = positionWorld;
-  const wear = nz(p.xz, 1 / 0.5).r.mul(0.35).add(0.7);
-  let albedo = mix(vec3(0.78, 0.78, 0.74), vec3(0.75, 0.6, 0.1), step(0.5, s)).mul(wear);
+  // thermoplastic paint: worn by tyres, with the asphalt grain showing through
+  const grain = sAlbedo(int(L.asphalt), groundUV(p)).r.mul(1.6);
+  const wear = nz(p.xz, 1 / 0.5).r.mul(0.35).add(0.7).mul(smoothstep(0.1, 0.4, nz(p.xz, 1 / 3.1).g).mul(0.3).add(0.7));
+  let albedo = mix(vec3(0.8, 0.8, 0.76), vec3(0.78, 0.62, 0.1), step(0.5, s)).mul(wear).mul(grain.mul(0.25).add(0.8));
   const expo = float(1).sub(shelter(p));
   const wet = U.wet.mul(expo);
   albedo = albedo.mul(mix(float(1), float(0.8), wet));
   m.colorNode = albedo.mul(cloudShadow(p));
-  m.roughnessNode = mix(float(0.8), float(0.3), wet);
+  m.roughnessNode = mix(float(0.7), float(0.25), wet);
   m.emissiveNode = lightPool(p).mul(albedo).add(skyReflection(p, vec3(0, 1, 0), wet.mul(0.4)));
   return m;
 }
@@ -164,18 +191,18 @@ export function structMaterial() {
   const s = attribute('surf', 'float');
   const p = positionWorld;
   const u = uv();
-  const fine = nz(p.xz.add(p.y), 1 / 0.7).r;
-  const concrete = vec3(0.45, 0.44, 0.42).mul(fine.mul(0.25).add(0.8)).mul(nz(p.xz.add(p.y.mul(3)), 1 / 9).a.mul(0.3).add(0.8));
-  const bxv = fract(u.x.div(0.225).add(step(0.5, fract(u.y.div(0.075 * 2))).mul(0.5))), byv = fract(u.y.div(0.075));
-  const brick = vec3(0.42, 0.2, 0.14).mul(float(1).sub(max(step(0.94, bxv), step(0.86, byv)).mul(0.35))).mul(fine.mul(0.3).add(0.8));
-  const fence = vec3(0.22, 0.16, 0.11).mul(step(0.12, fract(u.x.div(0.15))).mul(0.25).add(0.75));
-  const hedge = vec3(0.09, 0.17, 0.06).mul(nz(p.xz.add(p.y), 1 / 0.35).r.mul(0.9).add(0.45));
-  const steel = vec3(0.45, 0.46, 0.47);
-  const albedo = select(s.lessThan(0.5), concrete, select(s.lessThan(1.5), brick, select(s.lessThan(2.5), fence, select(s.lessThan(3.5), hedge, steel))));
+  const layer = select(s.lessThan(0.5), int(L.concrete_wall), select(s.lessThan(1.5), int(L.brick_red), select(s.lessThan(2.5), int(L.bark), select(s.lessThan(3.5), int(L.grass), int(L.cladding)))));
+  const uvm = select(s.lessThan(0.5), vec2(u.x, u.y.add(p.y)), u.mul(select(s.lessThan(3.5).and(s.greaterThan(2.5)), float(2.5), float(1))));
+  const tex = sAlbedo(layer, uvm);
+  const fence = vec3(0.42, 0.32, 0.24).mul(step(0.1, fract(u.x.div(0.15))).mul(0.3).add(0.7));
+  const hedgeLeaf = vec3(0.16, 0.3, 0.09).mul(nz(p.xz.add(p.y), 1 / 0.35).r.mul(0.9).add(0.45));
+  const albedo = select(s.lessThan(1.5), tex, select(s.lessThan(2.5), tex.mul(fence).mul(2.2), select(s.lessThan(3.5), hedgeLeaf.mul(tex.g.mul(1.6).add(0.4)), vec3(0.46, 0.47, 0.48))));
   const wet = U.wet.mul(float(1).sub(shelter(p)));
+  const d = sDetail(layer, uvm);
   m.colorNode = albedo.mul(mix(float(1), float(0.7), wet)).mul(cloudShadow(p));
-  m.roughnessNode = select(s.greaterThan(4.5), float(0.35), mix(float(0.9), float(0.5), wet));
+  m.roughnessNode = select(s.greaterThan(4.5), float(0.35), mix(d.b.mul(0.3).add(0.62), float(0.45), wet));
   m.metalnessNode = select(s.greaterThan(4.5), float(0.6), float(0));
+  m.normalNode = perturb(normalWorld, d, select(s.greaterThan(2.5).and(s.lessThan(3.5)), float(1.6), float(0.9)));
   m.emissiveNode = lightPool(p).mul(albedo);
   return m;
 }
@@ -189,33 +216,32 @@ export function buildingMaterial() {
   const shop = step(31.5, code);
   const u = uv();
   const p = positionWorld;
-  const r0 = h1(seed), r1 = h1(seed.add(17.3)), r2 = h1(seed.add(3.1));
+  const r0 = h1(seed), r1 = h1(seed.add(17.3)), r2 = h1(seed.add(3.1)), r3 = h1(seed.add(41.7));
   const isWall = step(part, 1.5).add(step(3.5, part).mul(step(part, 4.5))).add(step(5.5, part));
   const isRoof = step(1.5, part).mul(step(part, 2.5));
   const isFlat = step(2.5, part).mul(step(part, 3.5));
   const isChim = step(4.5, part).mul(step(part, 5.5));
   const isHouse = step(0.5, cls).mul(step(cls, 2.5));
+  const isTerrace = step(1.5, cls).mul(step(cls, 2.5));
   const isInd = step(7.5, cls).mul(step(cls, 8.5));
   const isOffice = step(5.5, cls).mul(step(cls, 6.5));
-  // ---- facade base materials
-  const fine = nz(vec2(u.x, u.y.add(p.x.mul(0.01))), 1 / 0.8).r;
-  const bx = fract(u.x.div(0.225).add(step(0.5, fract(u.y.div(0.15))).mul(0.5))), by = fract(u.y.div(0.075));
-  const mortar = max(step(0.93, bx), step(0.84, by));
-  const brickTone = mix(vec3(0.36, 0.15, 0.09), vec3(0.42, 0.26, 0.15), r1).mul(h1(floor(u.x.div(0.225)).add(floor(u.y.div(0.075)).mul(13.1)).add(seed)).mul(0.25).add(0.85));
-  const fwU = max(fwidth(u.x), fwidth(u.y));
-  const aa = smoothstep(0.006, 0.028, fwU);           // fade small-scale pattern with pixel footprint
-  const brickAvg = mix(vec3(0.38, 0.19, 0.12), vec3(0.45, 0.3, 0.19), r1);
-  const brick = mix(mix(brickTone, vec3(0.55, 0.52, 0.47), mortar.mul(0.8)), brickAvg, aa);
-  const yellowBrick = mix(mix(vec3(0.52, 0.43, 0.3), vec3(0.6, 0.57, 0.5), mortar.mul(0.7)), vec3(0.54, 0.46, 0.34), aa);
-  const render = mix(vec3(0.72, 0.69, 0.6), vec3(0.8, 0.8, 0.76), r1).mul(fine.mul(0.12).add(0.92));
-  const pebble = vec3(0.5, 0.49, 0.46).mul(mix(nz(u, 1 / 0.07).r.mul(0.45).add(0.75), float(0.97), aa));
-  const clad = mix(vec3(0.5, 0.53, 0.55), vec3(0.32, 0.38, 0.46), r1).mul(step(0.3, fract(u.x.div(0.3))).mul(0.15).add(0.85));
-  const concrete = vec3(0.55, 0.53, 0.5).mul(fine.mul(0.2).add(0.85));
-  const stone = vec3(0.55, 0.5, 0.42).mul(nz(u, 1 / 0.4).r.mul(0.3).add(0.8));
-  const houseWall = select(r0.lessThan(0.58), brick, select(r0.lessThan(0.8), render, select(r0.lessThan(0.92), pebble, yellowBrick)));
-  const otherWall = select(isInd.greaterThan(0.5), clad, select(isOffice.greaterThan(0.5), select(r0.lessThan(0.45), concrete, select(r0.lessThan(0.75), brick, render)),
-    select(cls.equal(9), stone, select(r0.lessThan(0.6), brick, render))));
-  const wallCol = select(isHouse.greaterThan(0.5), houseWall, otherWall);
+  // ---- wall surface: photographic brick / render / pebbledash / cladding / stone
+  const houseLayer = select(r0.lessThan(mix(float(0.4), float(0.2), isTerrace)), int(L.brick_red), select(r0.lessThan(mix(float(0.55), float(0.62), isTerrace)), int(L.brick_dark),
+    select(r0.lessThan(0.8), int(L.render), select(r0.lessThan(0.92), int(L.pebbledash), int(L.brick_buff)))));
+  const otherLayer = select(isInd.greaterThan(0.5), int(L.cladding), select(isOffice.greaterThan(0.5), select(r0.lessThan(0.45), int(L.concrete_wall), select(r0.lessThan(0.75), int(L.brick_red), int(L.render))),
+    select(cls.equal(9), int(L.stone), select(r0.lessThan(0.4), int(L.brick_red), select(r0.lessThan(0.6), int(L.brick_dark), int(L.render))))));
+  const wallLayer = select(isHouse.greaterThan(0.5), houseLayer, otherLayer);
+  const roofLayer = select(isFlat.greaterThan(0.5), int(L.felt), select(r3.lessThan(mix(float(0.45), float(0.85), isTerrace)), int(L.roof_slate), int(L.roof_clay)));
+  const layer = select(isWall.greaterThan(0.5), wallLayer, select(isChim.greaterThan(0.5), int(L.brick_red), roofLayer));
+  const uvm = vec2(u.x, u.y);
+  const wallTex = sAlbedo(layer, uvm);
+  const isRender = wallLayer.equal(int(L.render)).select(float(1), float(0)).mul(isWall);
+  const isPeb = wallLayer.equal(int(L.pebbledash)).select(float(1), float(0)).mul(isWall);
+  // render paint colours: magnolia, white, cream, pale grey, the odd pastel
+  const paint = select(r1.lessThan(0.35), vec3(1.25, 1.2, 1.05), select(r1.lessThan(0.6), vec3(1.4, 1.4, 1.36), select(r1.lessThan(0.8), vec3(1.3, 1.22, 1.0), select(r1.lessThan(0.93), vec3(1.1, 1.12, 1.12), vec3(1.15, 1.25, 1.3)))));
+  const cladTint = mix(vec3(0.75, 0.8, 0.85), vec3(0.45, 0.55, 0.7), r1);
+  let wallCol = wallTex.mul(mix(vec3(1), paint, isRender)).mul(mix(vec3(1), vec3(1.5), isPeb)).mul(mix(vec3(1), cladTint.mul(1.3), wallLayer.equal(int(L.cladding)).select(float(1), float(0))));
+  wallCol = wallCol.mul(h1(seed.add(2.2)).mul(0.18).add(0.91));   // per-building weathering / batch variation
   // ---- windows / doors / shopfronts
   const fh = max(floorH, 2.4);
   const fi = floor(max(u.y, 0).div(fh));
@@ -227,58 +253,88 @@ export function buildingMaterial() {
   const winTop = select(isInd.greaterThan(0.5), float(0.92), float(0.8));
   const winBot = select(isInd.greaterThan(0.5), float(0.75), float(0.33));
   const inWin = step(abs(cu.sub(0.5)), ww.mul(0.5)).mul(step(winBot, fv)).mul(step(fv, winTop)).mul(step(0.0, u.y)).mul(isWall);
-  const frame = inWin.mul(float(1).sub(step(abs(cu.sub(0.5)), ww.mul(0.5).sub(0.03)).mul(step(winBot.add(0.03), fv)).mul(step(fv, winTop.sub(0.03)))));
+  const fw = float(0.045).div(sp);                                 // ~6 cm uPVC frame
+  const inner = step(abs(cu.sub(0.5)), ww.mul(0.5).sub(fw)).mul(step(winBot.add(0.025), fv)).mul(step(fv, winTop.sub(0.025)));
+  // glazing bars: casement split for houses, transoms for offices
+  const bar = isHouse.mul(step(abs(cu.sub(0.5)), fw.mul(0.5))).add(step(abs(fv.sub(mix(winBot, winTop, 0.72))), 0.008).mul(isHouse))
+    .add(isOffice.mul(step(abs(fract(fv.mul(2)).sub(0.5)), 0.012))).min(1);
+  const frame = inWin.mul(float(1).sub(inner)).add(inWin.mul(inner).mul(bar)).min(1);
   const front = step(0.5, part).mul(step(part, 1.5));
-  // ground floor shopfront on the frontage wall
-  const shopFront = shop.mul(front).mul(step(fi, 0.5)).mul(step(0.06, fv)).mul(step(fv, 0.82)).mul(step(0.08, fract(u.x.div(2.6))));
-  // front door for houses
-  const doorCol = h1(seed.add(5.5)).mul(4).floor();
+  const shopFront = shop.mul(front).mul(step(fi, 0.5)).mul(step(0.06, fv)).mul(step(fv, 0.82)).mul(step(0.04, fract(u.x.div(2.6))));
+  const doorCol = h1(seed.add(5.5)).mul(5).floor();
   const isDoor = isHouse.mul(front).mul(step(fi, 0.5)).mul(ci.equal(floor(r2.mul(2))).select(float(1), float(0))).mul(step(abs(cu.sub(0.5)), 0.2)).mul(step(fv, 0.78));
-  const doorRGB = select(doorCol.lessThan(1), vec3(0.06, 0.08, 0.18), select(doorCol.lessThan(2), vec3(0.3, 0.05, 0.05), select(doorCol.lessThan(3), vec3(0.03, 0.03, 0.03), vec3(0.8, 0.8, 0.78))));
-  const glass = max(inWin.sub(frame), shopFront).mul(float(1).sub(isDoor));
-  const lit = step(h3(vec3(seed, fi, ci)), mix(float(0.0), float(0.55), U.night)).mul(glass);
-  const glassCol = vec3(0.03, 0.04, 0.05);
-  // ---- roofs
-  const tileRow = fract(u.y.div(0.27));
-  const slate = mix(vec3(0.13, 0.14, 0.16), vec3(0.34, 0.17, 0.11), step(0.55, h1(seed.add(9.9)))).mul(float(1).sub(step(0.85, tileRow).mul(mix(float(0.3), float(0.04), aa)))).mul(nz(u, 1 / 1.7).r.mul(0.3).add(0.8));
+  const doorRGB = select(doorCol.lessThan(1), vec3(0.04, 0.06, 0.16), select(doorCol.lessThan(2), vec3(0.32, 0.04, 0.05), select(doorCol.lessThan(3), vec3(0.02, 0.02, 0.02),
+    select(doorCol.lessThan(4), vec3(0.06, 0.16, 0.08), vec3(0.82, 0.82, 0.8)))));
+  const glass = max(inWin.mul(inner).mul(float(1).sub(bar)), shopFront).mul(float(1).sub(isDoor));
+  // ---- room interiors behind the glass (parallax box: back wall, side walls, floor, ceiling)
+  const nW = normalWorld;
+  const tU = normalize(cross(nW, vec3(0, 1, 0)).add(vec3(1e-4, 0, 0)));
+  const vIn = normalize(positionWorld.sub(cameraPosition));             // ray into the building
+  const rx = dot(vIn, tU), ry = vIn.y, rz = max(dot(vIn, nW.negate()), 0.05);
+  const depth = select(shopFront.greaterThan(0.5), float(6), float(3.2));
+  const halfW = sp.mul(0.5);
+  const x0 = cu.sub(0.5).mul(sp), y0 = fv.mul(fh);
+  const tBack = depth.div(rz);
+  const tSide = select(rx.greaterThan(0), halfW.sub(x0), halfW.add(x0)).div(abs(rx).max(1e-3));
+  const tFloor = select(ry.lessThan(0), y0.div(ry.negate().max(1e-3)), float(1e4));
+  const tCeil = select(ry.greaterThan(0), fh.sub(y0).div(ry.max(1e-3)), float(1e4));
+  const tHit = min(min(tBack, tSide), min(tFloor, tCeil));
+  const hitBack = step(tBack, tHit.add(1e-4)), hitSide = step(tSide, tHit.add(1e-4)).mul(float(1).sub(hitBack));
+  const hitFloor = step(tFloor, tHit.add(1e-4)).mul(float(1).sub(hitBack)).mul(float(1).sub(hitSide));
+  const roomSeed = h3(vec3(seed, fi, ci));
+  const wallpaper = mix(vec3(0.55, 0.5, 0.42), vec3(0.42, 0.48, 0.5), h1(roomSeed.mul(91)));
+  const room = select(hitBack.greaterThan(0.5), wallpaper, select(hitSide.greaterThan(0.5), wallpaper.mul(0.75), select(hitFloor.greaterThan(0.5), vec3(0.22, 0.16, 0.12), vec3(0.75, 0.74, 0.7))));
+  // furniture silhouettes in homes; shelving with stock in shops
+  const hy = y0.add(ry.mul(tHit)), hx = x0.add(rx.mul(tHit)), hz = rz.mul(tHit);
+  const furniture = hitBack.mul(step(hy, mix(float(0.7), float(1.1), roomSeed))).mul(step(abs(hx.sub(roomSeed.sub(0.5).mul(sp))), sp.mul(0.25))).mul(0.6);
+  const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.1));
+  const along = select(hitBack.greaterThan(0.5), hx, hz);
+  const cell = h3(vec3(floor(along.div(0.28)), floor(hy.div(0.42)), roomSeed.mul(53)));
+  const stock = mix(vec3(0.75, 0.2, 0.15), vec3(0.2, 0.35, 0.7), cell).mul(cell.mul(0.6).add(0.5)).add(vec3(0.25, 0.22, 0.1).mul(step(0.7, cell)));
+  const shelfEdge = step(fract(hy.div(0.42)), 0.09);
+  let roomCol = room.mul(float(1).sub(furniture));
+  roomCol = mix(roomCol, mix(stock, vec3(0.85), shelfEdge), shelfZone.mul(step(0.18, fract(along.div(0.28)))));
+  roomCol = roomCol.mul(exp(tHit.mul(-0.12)));
+  // curtains / nets on homes, part-drawn blinds in offices
+  const curtain = isHouse.mul(step(roomSeed, 0.55)).mul(step(halfW.mul(0.62), abs(x0)));
+  const nets = isHouse.mul(step(0.55, roomSeed)).mul(step(roomSeed, 0.75)).mul(0.55);
+  const blinds = isOffice.mul(step(roomSeed, 0.4)).mul(step(fh.mul(mix(float(0.45), float(0.85), h1(roomSeed.mul(7)))), y0)).mul(step(0.35, fract(y0.mul(7))).mul(0.3).add(0.6));
+  const curtainCol = mix(vec3(0.5, 0.38, 0.3), vec3(0.78, 0.74, 0.66), h1(roomSeed.mul(37)));
+  roomCol = mix(roomCol, curtainCol, curtain.max(blinds));
+  roomCol = mix(roomCol, vec3(0.8, 0.8, 0.78), nets);
+  const lit = step(roomSeed, mix(float(0.06), float(0.55), U.night)).add(shopFront).min(1);
+  const warm = mix(vec3(1.0, 0.74, 0.46), vec3(0.85, 0.9, 1.0), step(0.75, h1(roomSeed.mul(13))).max(shopFront));
+  // ---- roofs: photographic clay / slate / felt with moss and weathering
   const moss = nz(p.xz, 1 / 3.1).g;
-  const roofCol = mix(slate, vec3(0.22, 0.24, 0.12), smoothstep(0.62, 0.8, moss).mul(0.4));
-  const flatCol = mix(vec3(0.2, 0.2, 0.21), vec3(0.42, 0.42, 0.42), step(0.5, r1).mul(step(3.5, cls))).mul(nz(p.xz, 1 / 3).r.mul(0.3).add(0.8));
-  const chim = brickTone.mul(0.9);
+  const roofCol = wallTex.mul(mix(vec3(1), vec3(0.75, 0.85, 0.55), smoothstep(0.62, 0.8, moss).mul(0.35))).mul(h1(seed.add(9.9)).mul(0.2).add(0.9));
+  const flatCol = wallTex.mul(select(step(3.5, cls).mul(step(0.5, r1)).greaterThan(0.5), vec3(1.5), vec3(0.85)));
   let albedo = wallCol.mul(isWall);
-  albedo = mix(albedo, vec3(0.92, 0.92, 0.9), frame.mul(isHouse).add(frame.mul(0.6)).min(1));
+  const frameCol = select(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), select(r3.lessThan(0.85), vec3(0.9, 0.9, 0.88), vec3(0.15, 0.12, 0.1)));
+  albedo = mix(albedo, frameCol, frame);
   const sill = step(abs(cu.sub(0.5)), ww.mul(0.5).add(0.06)).mul(step(winBot.sub(0.05), fv)).mul(step(fv, winBot)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(isDoor)).mul(step(0, u.y));
-  albedo = mix(albedo, vec3(0.62, 0.6, 0.55), sill.mul(float(1).sub(aa.mul(0.6))));
-  albedo = mix(albedo, glassCol, glass);
+  albedo = mix(albedo, vec3(0.7, 0.68, 0.62), sill);
+  albedo = mix(albedo, vec3(0.012, 0.014, 0.016), glass);
   albedo = mix(albedo, doorRGB, isDoor);
-  albedo = albedo.add(roofCol.mul(isRoof)).add(flatCol.mul(isFlat)).add(chim.mul(isChim));
+  albedo = albedo.add(roofCol.mul(isRoof)).add(flatCol.mul(isFlat)).add(wallTex.mul(isChim));
   // wetness: roofs collect rain first and darken / gloss
   const wet = U.wet;
-  albedo = albedo.mul(mix(float(1), mix(float(0.82), float(0.6), isRoof.add(isFlat)), wet));
-  const cs = cloudShadow(p);
-  m.colorNode = albedo.mul(cs);
-  m.roughnessNode = mix(mix(float(0.88), float(0.4), wet.mul(isRoof.add(isFlat))), float(0.08), glass);
+  albedo = albedo.mul(mix(float(1), mix(float(0.8), float(0.6), isRoof.add(isFlat)), wet));
+  const d = sDetail(layer, uvm);
+  m.colorNode = albedo.mul(cloudShadow(p));
+  m.roughnessNode = mix(mix(d.b.mul(0.3).add(0.62), float(0.35), wet.mul(isRoof.add(isFlat).add(isWall.mul(0.4)))), float(0.04), glass.add(isDoor.mul(0.6)).min(1));
   m.metalnessNode = float(0);
-  const n = normalWorld;
-  const refl = skyReflection(p, n, glass.mul(0.6).add(wet.mul(isRoof).mul(0.25)));
-  const warm = mix(vec3(1.0, 0.72, 0.42), vec3(0.85, 0.9, 1.0), step(0.75, h3(vec3(seed, fi.add(3), ci))));
-  m.emissiveNode = lit.mul(warm).mul(select(shop.mul(shopFront).greaterThan(0.5), float(0.85), float(0.45))).add(refl).add(lightPool(p).mul(albedo));
+  const plain = glass.add(frame).add(isDoor).add(sill).min(1);
+  m.normalNode = perturb(nW, d, mix(float(1.0), float(0.7), isRender).mul(float(1).sub(plain)));
+  const refl = skyReflection(p, nW, glass.mul(0.6).add(wet.mul(isRoof).mul(0.25)));
+  const daylight = float(1).sub(U.night).mul(mix(float(0.07), float(0.04), U.cover));
+  const lamp = lit.mul(mix(float(0.9), mix(float(0.45), float(1.5), U.night), shopFront));
+  const interior = roomCol.mul(glass).mul(warm.mul(lamp).add(daylight));
+  m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo));
   return m;
 }
 
-// --- trees -------------------------------------------------------------------------------
-export function treeMaterials() {
-  const crown = std({ roughness: 0.85 });
-  const p = positionWorld;
-  const wobble = sin(U.t.mul(1.7).add(p.x.mul(0.3)).add(p.z.mul(0.2))).mul(length(U.wind).mul(0.012)).mul(positionLocal.y.max(0));
-  crown.positionNode = positionLocal.add(vec3(wobble.mul(U.wind.x.sign()), 0, wobble.mul(0.6)));
-  const leaf = nz(p.xz.add(p.y), 1 / 0.6).r;
-  const base = vec3(0.12, 0.2, 0.07).mul(leaf.mul(0.7).add(0.55));
-  crown.colorNode = base.mul(cloudShadow(p)).mul(mix(float(1), float(0.8), U.wet));
-  crown.emissiveNode = lightPool(p).mul(base);
-  const trunk = std({ roughness: 0.95, color: new THREE.Color(0.18, 0.14, 0.11) });
-  return { crown, trunk };
-}
+// --- trees (instanced leaf-card crowns built in vegetation.js) ------------------------------
+export { treeMaterials } from './vegetation.js';
 
 // --- simple lit/unlit helpers --------------------------------------------------------------
 export function lampMaterial() {

@@ -204,7 +204,8 @@ function step(dt, render) {
       if (Math.abs(next - pr) > 0.01) { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth, innerHeight); }
     }
   }
-  G.renderer.render(G.scene, G.camera);
+  G.ibl?.update(dt);
+  if (G.post) G.post.render(); else G.renderer.render(G.scene, G.camera);
   G.frame++;
 }
 G.renderer.setAnimationLoop(frame);

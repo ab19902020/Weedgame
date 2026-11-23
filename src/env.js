@@ -22,6 +22,7 @@ export const U = {
   coverOrigin: uniform(new THREE.Vector2(0, 0)), // rain shelter raster origin (world xz of texel 0)
   lightOrigin: uniform(new THREE.Vector2(0, 0)),
   exposure: uniform(1),
+  ibl: uniform(0),             // 1 when scene.environment (sky PMREM) supplies reflections
 };
 // nearby point lights for wet reflections: xyz + intensity, rgb + radius
 export const NL = 16;

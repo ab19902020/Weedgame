@@ -3,6 +3,7 @@
 import * as THREE from 'three/webgpu';
 import { atlasData, atlasTex, ATLAS_N } from './env.js';
 import { terrainMaterial, groundMaterial, markingMaterial, structMaterial, buildingMaterial, treeMaterials, lampMaterial } from './materials.js';
+import { crownGeometry, trunkGeometry } from './vegetation.js';
 
 const TILE = 256, NT = 65;
 
@@ -42,17 +43,9 @@ export class Tiles {
     this.buildShared();
   }
   buildShared() {
-    // tree geometries
-    const crown = new THREE.IcosahedronGeometry(1, 1);
-    const pos = crown.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-      const n = 1 + 0.18 * Math.sin(x * 5.1 + y * 3.3) * Math.cos(z * 4.2);
-      pos.setXYZ(i, x * n, y * n * 1.1 + 0.15, z * n);
-    }
-    crown.computeVertexNormals();
-    this.crownGeo = crown;
-    this.trunkGeo = new THREE.CylinderGeometry(0.12, 0.2, 1, 6).translate(0, 0.5, 0);
+    // tree geometries (leaf-card crowns, forked trunks: vegetation.js)
+    this.crownGeo = crownGeometry();
+    this.trunkGeo = trunkGeometry();
     // street lamp: pole + arm + head (lampHead attribute = 1 on the luminaire)
     const parts = [];
     const pole = new THREE.CylinderGeometry(0.07, 0.1, 7.5, 6).translate(0, 3.75, 0);
