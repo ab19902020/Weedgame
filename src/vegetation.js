@@ -140,6 +140,7 @@ export function treeMaterials() {
   // species / health tint per tree
   const tint = mix(vec3(0.5, 0.62, 0.45), vec3(0.7, 0.68, 0.38), tid).mul(tid.mul(0.3).add(0.62));
   let col = lt.rgb.mul(tint).mul(mix(float(1), float(0.78), U.wet));
+  col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 0.72).mul(vec3(1.0, 0.95, 1.25));   // real foliage is less saturated
   // ambient occlusion towards the crown's core and underside
   const r = length(positionLocal);
   const ao = smoothstep(0.25, 0.95, r).mul(0.55).add(0.45).mul(positionLocal.y.mul(0.25).add(0.85));
@@ -148,7 +149,7 @@ export function treeMaterials() {
   // translucency: light through leaves when looking towards the sun
   const v = normalize(p.sub(cameraPosition));
   const back = pow(max(dot(v, U.sunDir), 0), 6).mul(float(1).sub(U.night)).mul(float(1).sub(U.cover.mul(0.6)));
-  crown.emissiveNode = col.mul(vec3(0.9, 1.1, 0.5)).mul(U.sunCol).mul(back.mul(1.2).add(0.02));
+  crown.emissiveNode = col.mul(vec3(0.9, 1.1, 0.5)).mul(U.sunCol).mul(back.mul(0.8).add(0.02));
   // bark
   const trunk = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
   const tuv = vec2(uv().x.mul(1.3), positionWorld.y.mul(0.9));

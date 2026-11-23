@@ -38,7 +38,12 @@ export function createPost(G) {
   pipe.outputColorTransform = false;
   // subtle lens vignette after tone mapping
   const vig = float(1).sub(smoothstep(0.55, 1.05, screenUV.sub(0.5).mul(vec3(1.25, 1, 0).xy).length().mul(1.45)).mul(0.16));
-  pipe.outputNode = fxaa(renderOutput(vec4(c, 1)).mul(vec4(vig, vig, vig, 1)));
+  // gentle 'punchy' grade on top of AgX: +10% saturation, slight S-curve contrast
+  const disp = renderOutput(vec4(c, 1)).rgb;
+  const lum = disp.dot(vec3(0.2126, 0.7152, 0.0722));
+  let g = mix(vec3(lum), disp, 1.1);
+  g = g.add(g.sub(0.5).mul(0.08)).clamp(0, 1);
+  pipe.outputNode = fxaa(vec4(g.mul(vig), 1));
   return {
     pipe, aoPass, strength,
     render() { pipe.render(); },

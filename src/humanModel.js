@@ -14,17 +14,17 @@ export function partGeo(kind) {
   if (kind === 'torso') {
     // hips -> waist -> chest -> shoulders -> neck, elliptical in plan
     const t = lathe([V(0.0, 0.84), V(0.165, 0.845), V(0.178, 0.92), V(0.168, 1.02), V(0.16, 1.08), V(0.176, 1.2), V(0.188, 1.31),
-      V(0.186, 1.39), V(0.15, 1.455), V(0.085, 1.485), V(0.055, 1.5), V(0.052, 1.58), V(0.0, 1.585)], 18);
+      V(0.186, 1.39), V(0.15, 1.455), V(0.085, 1.485), V(0.055, 1.5), V(0.052, 1.58), V(0.0, 1.585)], 12);
     t.scale(1, 1, 0.64);
     // shoulder caps so the arms join the body
-    const sl = new THREE.SphereGeometry(0.056, 12, 8); sl.scale(1, 0.8, 1.05); sl.translate(-0.19, 1.41, 0);
+    const sl = new THREE.SphereGeometry(0.056, 8, 5); sl.scale(1, 0.8, 1.05); sl.translate(-0.19, 1.41, 0);
     const sr = sl.clone(); sr.translate(0.38, 0, 0);
     // collar
-    const collar = new THREE.TorusGeometry(0.062, 0.016, 6, 16); collar.rotateX(Math.PI / 2); collar.scale(1.15, 1, 0.95); collar.translate(0, 1.49, 0.005);
+    const collar = new THREE.TorusGeometry(0.062, 0.016, 4, 10); collar.rotateX(Math.PI / 2); collar.scale(1.15, 1, 0.95); collar.translate(0, 1.49, 0.005);
     return merge([t, sl, sr, collar]);
   }
   if (kind === 'head') {
-    const skull = new THREE.SphereGeometry(0.1, 20, 16);
+    const skull = new THREE.SphereGeometry(0.1, 14, 10);
     const p = skull.attributes.position;
     for (let i = 0; i < p.count; i++) {
       let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
@@ -35,29 +35,29 @@ export function partGeo(kind) {
     }
     skull.translate(0, 1.645, 0);
     const nose = new THREE.ConeGeometry(0.016, 0.04, 6); nose.rotateX(Math.PI / 2 + 0.35); nose.translate(0, 1.632, 0.1);
-    const earL = new THREE.SphereGeometry(0.022, 8, 6); earL.scale(0.45, 1.25, 0.9); earL.translate(-0.091, 1.645, -0.005);
+    const earL = new THREE.SphereGeometry(0.022, 6, 4); earL.scale(0.45, 1.25, 0.9); earL.translate(-0.091, 1.645, -0.005);
     const earR = earL.clone(); earR.translate(0.182, 0, 0);
     return merge([skull, nose, earL, earR]);
   }
   if (kind === 'hair') {
-    const g = new THREE.SphereGeometry(0.108, 18, 10, 0, Math.PI * 2, 0, Math.PI * 0.56);
+    const g = new THREE.SphereGeometry(0.108, 12, 6, 0, Math.PI * 2, 0, Math.PI * 0.56);
     g.scale(0.95, 1.08, 1.08); g.translate(0, 1.665, -0.012);
     return merge([g]);
   }
   if (kind === 'leg') {
     // thigh -> knee -> calf -> ankle (pivot at the hip joint)
-    const l = lathe([V(0.0, 0.02), V(0.082, 0.0), V(0.08, -0.12), V(0.066, -0.36), V(0.056, -0.45), V(0.06, -0.56), V(0.047, -0.76), V(0.042, -0.84), V(0.0, -0.845)], 12);
+    const l = lathe([V(0.0, 0.02), V(0.082, 0.0), V(0.08, -0.12), V(0.066, -0.36), V(0.056, -0.45), V(0.06, -0.56), V(0.047, -0.76), V(0.042, -0.84), V(0.0, -0.845)], 8);
     l.scale(1, 1, 1.08);
-    const shoe = new THREE.CapsuleGeometry(0.048, 0.17, 4, 10); shoe.rotateX(Math.PI / 2); shoe.scale(1.05, 0.72, 1); shoe.translate(0, -0.85, 0.05);
+    const shoe = new THREE.CapsuleGeometry(0.048, 0.17, 2, 7); shoe.rotateX(Math.PI / 2); shoe.scale(1.05, 0.72, 1); shoe.translate(0, -0.85, 0.05);
     return merge([l, shoe]);
   }
   if (kind === 'arm') {
-    const a = lathe([V(0.0, 0.03), V(0.056, 0.01), V(0.054, -0.12), V(0.045, -0.27), V(0.043, -0.31), V(0.039, -0.45), V(0.033, -0.55), V(0.0, -0.56)], 10);
+    const a = lathe([V(0.0, 0.03), V(0.056, 0.01), V(0.054, -0.12), V(0.045, -0.27), V(0.043, -0.31), V(0.039, -0.45), V(0.033, -0.55), V(0.0, -0.56)], 7);
     return merge([a]);
   }
   if (kind === 'hand') {
-    const palm = new THREE.SphereGeometry(0.042, 10, 8); palm.scale(0.75, 1.45, 1.0); palm.translate(0, -0.615, 0.006);
-    const thumb = new THREE.CapsuleGeometry(0.012, 0.03, 3, 6); thumb.rotateX(0.5); thumb.translate(0, -0.6, 0.035);
+    const palm = new THREE.SphereGeometry(0.042, 7, 5); palm.scale(0.75, 1.45, 1.0); palm.translate(0, -0.615, 0.006);
+    const thumb = new THREE.CapsuleGeometry(0.012, 0.03, 1, 4); thumb.rotateX(0.5); thumb.translate(0, -0.6, 0.035);
     return merge([palm, thumb]);
   }
   if (kind === 'hat') {

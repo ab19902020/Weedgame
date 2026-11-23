@@ -24,12 +24,12 @@ export function loftBody(def, pts, belt) {
   const tumble = def.prof === 'van' ? 0.35 : def.prof === 'suv' ? 0.75 : 1;
   // stations: cosine-spaced plus the profile's own break points (keeps the screen base crisp)
   const xs = new Set();
-  const NS = 34;
+  const NS = 22;
   for (let i = 0; i <= NS; i++) xs.add(+(-l * Math.cos(Math.PI * i / NS)).toFixed(4));
   for (const [x] of pts) if (x > -l + 0.01 && x < l - 0.01) xs.add(+x.toFixed(4));
   // dense stations across each wheel arch so the liner reads as a round arch, not a block
-  for (const c of [-def.wb / 2, def.wb / 2]) for (let k = -6; k <= 6; k++) {
-    const x = c + k / 6 * (def.wr + 0.12); if (x > -l + 0.02 && x < l - 0.02) xs.add(+x.toFixed(4));
+  for (const c of [-def.wb / 2, def.wb / 2]) for (let k = -4; k <= 4; k++) {
+    const x = c + k / 4 * (def.wr + 0.12); if (x > -l + 0.02 && x < l - 0.02) xs.add(+x.toFixed(4));
   }
   const X = [...xs].sort((a, b) => a - b);
   const rP = 0.34;
@@ -115,7 +115,7 @@ export function wheelGeometry() {
   const V = (r, y) => new THREE.Vector2(r, y);
   const prof = [V(0.0, -0.42), V(0.2, -0.43), V(0.6, -0.4), V(0.64, -0.5), V(0.86, -0.5), V(0.96, -0.44), V(1.0, -0.3), V(1.0, 0.3),
     V(0.96, 0.44), V(0.86, 0.5), V(0.64, 0.5), V(0.6, 0.4), V(0.2, 0.43), V(0.0, 0.42)];
-  const g = new THREE.LatheGeometry(prof, 24);
+  const g = new THREE.LatheGeometry(prof, 16);
   g.rotateX(Math.PI / 2);
   g.deleteAttribute('uv');
   g.computeVertexNormals();
