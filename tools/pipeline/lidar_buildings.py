@@ -133,10 +133,31 @@ def main():
             e0, n0 = k[0] - MARGIN, k[1] - MARGIN; n1 = k[1] + BLOCK + MARGIN
             nd = dsm - dtm
             Hh, Ww = nd.shape
+            # per-block registration: OSM footprints sit a few metres off the LIDAR grid (datum-transform
+            # residual), so find the shift that puts the most eroded-footprint pixels on top of roofs
+            def pix(rings, sx=0, sy=0): return [np.stack([r[:, 0] * K + E0 - e0 + sx, n1 - (N0 - r[:, 1] * K) + sy], 1) for r in rings]
+            sample = sorted(by_block[k], key=lambda b: -len(b[2][0]))[:80]
+            masks = []
+            for (fn, bi, rings, ce, cn) in sample:
+                px = pix(rings); lo = np.maximum(np.floor(px[0].min(0)).astype(int) - 6, 0); hi = np.minimum(np.ceil(px[0].max(0)).astype(int) + 6, [Ww, Hh])
+                if (hi - lo).min() < 8: continue
+                masks.append((px, lo, hi))
+            best, shift = -1, (0, 0)
+            for sx in range(-5, 6):
+                for sy in range(-5, 6):
+                    hit = tot = 0
+                    for px, lo, hi in masks:
+                        img = Image.new('L', (int(hi[0] - lo[0]), int(hi[1] - lo[1])), 0)
+                        ImageDraw.Draw(img).polygon([tuple(p - lo + [sx, sy]) for p in px[0]], fill=1)
+                        mk = np.array(img, bool); w = nd[lo[1]:hi[1], lo[0]:hi[0]][mk]
+                        hit += int(np.sum(w > 2.0)); tot += w.size
+                    sc = hit / max(tot, 1)
+                    if sc > best: best, shift = sc, (sx, sy)
+            S.setdefault('shifts', []).append([k[0], k[1], shift[0], shift[1], round(best, 3)])
             for (fn, bi, rings, ce, cn) in by_block[k]:
                 hdr, A = tiles[fn]; M = A['bM'].reshape(-1, NM); m = M[bi]
                 # rasterise the footprint (outer ring minus courtyards) on the 1 m grid
-                px = [np.stack([r[:, 0] * K + E0 - e0, n1 - (N0 - r[:, 1] * K)], 1) for r in rings]
+                px = pix(rings, *shift)
                 lo = np.floor(px[0].min(0)).astype(int) - 2; hi = np.ceil(px[0].max(0)).astype(int) + 2
                 lo = np.maximum(lo, 0); hi = np.minimum(hi, [Ww, Hh])
                 if (hi - lo).min() < 3: S['skipped_few'] += 1; continue
@@ -149,8 +170,10 @@ def main():
                 win = nd[lo[1]:hi[1], lo[0]:hi[0]]
                 v = win[use]; v = v[np.isfinite(v)]
                 if v.size < 6: S['skipped_nodata' if np.isnan(win[use]).all() else 'skipped_few'] += 1; continue
-                p12, p25, p75, p90, p97 = np.percentile(v, [12, 25, 75, 90, 97])
+                p25, p75, p90, p97 = np.percentile(v, [25, 75, 90, 97])
                 if p90 < 1.6: S['no_building'] += 1; continue
+                vr = v[v > 1.8]
+                p12 = float(np.percentile(vr if vr.size >= 5 else v, 12))
                 old_top = float(m[2] + (m[4] if m[3] > 0 else 0))
                 ox, oz = hdr['ix'] * TILE, hdr['iz'] * TILE
                 cls = int(m[10])
@@ -162,6 +185,7 @@ def main():
                 else:
                     ridge = float(p97); wall = float(max(2.2, p12 - 0.3)); rh = max(0.8, ridge - wall)
                     if rh > 9: wall = max(2.2, ridge - 9); rh = ridge - wall
+                    if m[9] > 0 and rh > 0.62 * m[9]: rh = 0.62 * m[9]; wall = max(2.2, ridge - rh)   # pitch no steeper than ~51 deg
                     # ridge band -> direction (world x = E, z = -N)
                     rr, cc = np.nonzero(use & (win >= ridge - 0.35))
                     rect = None
@@ -171,7 +195,7 @@ def main():
                         if o and o[4] <= 24 and o[3] >= 3: rect = list(o); S['new_rect'] += 1
                     gable = True
                     if rect and len(rr) >= 4:
-                        wx = (cc + lo[0] + 0.5 + e0 - E0) / K; wz = -((n1 - (rr + lo[1] + 0.5)) - N0) / K
+                        wx = (cc + lo[0] + 0.5 - shift[0] + e0 - E0) / K; wz = -((n1 - (rr + lo[1] + 0.5 - shift[1])) - N0) / K
                         q = np.stack([wx - wx.mean(), wz - wz.mean()], 1)
                         ev, evec = np.linalg.eigh(q.T @ q / len(q))
                         if ev[1] > 2.5 * max(ev[0], 1e-3):
@@ -201,6 +225,9 @@ def main():
     S['top_change_m'] = dict(mean=round(float(d.mean()), 2), median=round(float(np.median(d)), 2), p10=round(float(np.percentile(d, 10)), 2),
                              p90=round(float(np.percentile(d, 90)), 2), mean_abs=round(float(np.abs(d).mean()), 2))
     S['buildings_total'] = len(blds); S['seconds'] = round(time.time() - t0)
+    sh = np.array([[a[2], a[3]] for a in S.get('shifts', [])]) if S.get('shifts') else np.zeros((1, 2))
+    S['registration_shift_m'] = dict(east_mean=round(float(-sh[:, 0].mean()) * -1, 2), north_mean=round(float(-sh[:, 1].mean()), 2), blocks=len(sh))
+    del S['shifts']
     print(json.dumps(S, indent=1))
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'docs', 'lidar-buildings.json')
     if not args.dry: json.dump(S, open(out, 'w'), indent=1)
