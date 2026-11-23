@@ -7,11 +7,11 @@ A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Ear
 * `docs/SOURCES.md`: asset and source register (licences, dates, signing key).
 * `docs/verification.json`: computed comparisons of the world against its inputs.
 * `docs/captures/`: gameplay captures, `acceptance-run-8x.mp4` (the whole touch-driven run at 8× speed; software rendering here ran at ~1 fps), `acceptance.json` (step log) and landmark views (`L*.png`).
-* `builds/Green-County-0.6.0-dev.apk`: signed development APK.
+* `builds/Green-County-0.7.0-dev.apk`: signed development APK (v0.7: photographic surfaces, leaf-card trees, rounded cars, post-processing).
 
 ## Play
 
-* **Android**: install `builds/Green-County-0.6.0-dev.apk`. It is signed with a new development key, so uninstall any earlier Green County build first. Landscape only.
+* **Android**: install `builds/Green-County-0.7.0-dev.apk`. It uses the same development key as v0.6.0, so it installs over v0.6.0; builds older than v0.6 must be uninstalled first. Landscape only.
 * **Browser**: `npm run serve`, then open http://localhost:8080. Chrome or Edge recommended; WebGPU is used when available, otherwise WebGL2.
 
 Touch controls (landscape): drag on the **left side** to move (a floating stick appears under your thumb). Drag on the **right side** to orbit the camera. **Run** (on foot) doubles as **Brake** in a vehicle. **Get in / Exit** works on any parked car. **Horn** appears while driving. **Swap** switches between Cal and Leon wherever each is. **Map** opens the full map, **Dev** the developer panel.
