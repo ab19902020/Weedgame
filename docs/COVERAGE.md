@@ -47,6 +47,13 @@ Built 2026-11-22T22:02:40Z from the OpenStreetMap South East England extract (20
 
 * Environment Agency LIDAR Composite DTM 1m (WCS, resampled to 4 m), Open Government Licence v3.0. Fetched at 4 m posting through the public WCS; no voids in this area, so the EU-DEM fill was not needed. Sampled on a 4 m grid in each tile (16 m for the far ring). Surfaces drape onto the same triangles, and the terrain is sunk 0.25 m under hard surfaces.
 
+## Building heights and roofs measured from LIDAR
+
+* **46,062 of 46,583 buildings** have their wall height, roof type, roof height and ridge direction **measured** from the Environment Agency LIDAR composite (1 m last-return DSM minus 1 m DTM, OGL), over 77 1 km blocks (`tools/pipeline/lidar_buildings.py`). The rest keep the OSM/inferred values: 521 footprints showed no structure in the LIDAR (demolished or not yet built), 0 had too few clean pixels, and landmarks and canopies are hand-modelled.
+* Roofs: 42,592 pitched (22,511 gabled, 20,081 hipped or pyramidal) and 3,470 flat. 17,106 ridges were turned 90° to match the measured ridge line, 5,740 pitched roofs were added where OSM had none, 1,416 pitched guesses became flat.
+* Change in building top height against the previous OSM/inferred model: mean -0.15 m, median -0.54 m, mean absolute 2.02 m (10th–90th percentile -2.96 to +3.84 m).
+* Method and limits: footprint eroded 1 m; flat if the p25–p90 spread is under 0.9 m (wall = p75); otherwise ridge = p97, eaves = p12 − 0.3 m, ridge direction from the principal axis of the top 0.35 m band, gable if that band spans at least 72% of the roof rectangle. Footprints still come from OSM; dormers, chimneys, mixed roofs and extensions are simplified to one roof per footprint. Heights can be biased by trees overhanging roofs.
+
 ## Hand-authored and reference-modelled places
 
 | Place | Status | Evidence used | Estimated |
@@ -93,15 +100,36 @@ Re-run 2026-11-23T01:19:26.498Z: Fixed after the main run: buses whose OSM route
 
 Re-run 2026-11-23T02:00:49.022Z: The Woodley foot patrol had no parked car within witness range (nearest 62 m), so the step was inconclusive; repeated at Cemetery Junction, where kerbside parking sits near the foot patrol. Witness range for foot officers widened from 49 m to 60 m.
 
+## Performance (budgets, draw calls, flythrough)
+
+Quality budgets (`src/perf.js` `BUDGETS`): low / medium / high cap draw calls at 120 / 220 / 320, triangles at 300k / 600k / 900k, moving vehicles at 120 / 220 / 260 and people at 60 / 120 / 170, with shadow maps off / 1024 / 2048. Draw-call and triangle counts depend only on the scene and budget, so they carry over to phones. **Frame times below come from software rendering in this container (the renderer string is given) and say nothing about phone performance.** Phone figures have to come from the APK flythrough (`docs/PERF-CHECKLIST.md`).
+
+| Quality | Spot | Draw calls | Triangles | Tiles | Renderer |
+|---|---|---:|---:|---:|---|
+| high | woodley | 143 | 457720 | 64 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| high | cemetery | 154 | 500841 | 54 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| high | reading | 196 | 415657 | 64 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| high | a3290 | 120 | 359393 | 57 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| low | woodley | 79 | 217450 | 28 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| low | cemetery | 80 | 205603 | 26 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| low | reading | 161 | 153274 | 30 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| low | a3290 | 69 | 201430 | 25 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| medium | woodley | 134 | 406650 | 64 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| medium | cemetery | 137 | 361065 | 54 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| medium | reading | 158 | 256268 | 64 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+| medium | a3290 | 111 | 311455 | 57 | ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE) |
+
+Flythrough `perf-flythrough-medium.json` (['Woodley precinct', 'A3290', 'Reading town centre'], 7.02 of 7.02 km at 14 m/s, quality medium, backend WebGL2, renderer ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)): completed True, 2.1 fps average, frame p50 367.7 ms / p95 591 ms, 1332 stalls, draw calls p50 128 / p95 163, triangles p95 473974, JS heap 77.3–239.5 MB. Software renderer: not a phone measurement.
+
 ## Captures
 
-Real gameplay frames from the runs above (software WebGL2 at 915 × 412). `acceptance-run-8x.mp4` is the whole main run at 8× speed. `25-pursuit-emerged-during-drive.png` comes from the main run: during the flyover drive the driving script clipped another car within sight of a patrol, and a pursuit followed and resolved ("Police lost sight of you"). It was not staged. `L*.png` are landmark views taken by touch after the run. Reading Town Hall has no clean capture yet: its model is built and in place (bounding box x −7346…−7293, z −2630…−2564, spire top 80 m above datum, checked at runtime), but from the street views tried, neighbouring buildings or Forbury Gardens trees block it at the third-person camera distance.
+Real gameplay frames from the runs above (software WebGL2 at 915 × 412). `acceptance-run-8x.mp4` is the whole main run at 8× speed. `25-pursuit-emerged-during-drive.png` comes from an earlier main run (kept from v0.6.0): during the flyover drive the driving script clipped another car within sight of a patrol, and a pursuit followed and resolved ("Police lost sight of you"). It was not staged. `L*.png` are landmark views taken by touch after an earlier run. `T1-train-at-earley.png` and `T2-train-at-wokingham.png` come from `tools/test/trains.js`. Reading Town Hall has no clean capture yet: its model is built and in place (bounding box x −7346…−7293, z −2630…−2564, spire top 80 m above datum, checked at runtime), but from the street views tried, neighbouring buildings or Forbury Gardens trees block it at the third-person camera distance.
 
 `01-launch-woodley-precinct.png`, `02-against-shop-wall.png`, `03-shop-row-from-precinct.png`, `05-green-man.png`, `06-crossed.png`, `07-cemetery-junction-arch.png`, `08-junction-100.png`, `08-junction-140.png`, `08-junction-180.png`, `08-junction-20.png`, `08-junction-220.png`, `08-junction-60.png`, `09-cal-in-car.png`, `10-cal-parked.png`, `11-leon-in-reading.png`, `12-cal-car-still-there.png`, `13-map-both-brothers.png`, `14-after-underpass.png`, `14a-beneath-the-a3290.png`, `15-clear-midday.png`, `16-clouds-moved.png`, `17-drizzle.png`, `18-heavy-rain-wet-road.png`, `19-under-canopy-in-rain.png`, `20-shower-passing.png`, `21-drying.png`, `22-dusk-lights.png`, `23-police-onscene.png`, `23-police-responding.png`, `24-scene-cleared.png`, `25-police-stop.png`, `25-police-talking.png`, `25-pursuit-emerged-during-drive.png`, `26-resumed.png`, `27-migrated-prototype-save.png`, `L1-cemetery-junction-gateway.png`, `L3-woodley-precinct-canopies.png`, `L4-woodley-wet-night.png`, `L5-a3290-flyover-suttons-park-ave.png`, `acceptance-run-8x.mp4`
 
 ## Still to do, by area and system
 
-* **Hardware performance is unmeasured.** Nothing has run on an Honor Magic 6 Pro or any phone. Frame time, memory and stall figures exist only from software rendering in this container, which says nothing about device performance. The APK writes a performance log from the Dev panel (Save perf log).
+* **Hardware performance is unmeasured.** Nothing has run on an Honor Magic 6 Pro or any phone. Frame time, memory and stall figures exist only from software rendering in this container, which says nothing about device performance. The APK writes `perf-<time>.json` from the Dev panel (Perf flythrough or Save perf log); `docs/PERF-CHECKLIST.md` gives the steps and targets.
 * **WebGPU rendering is unverified.** The renderer starts on WebGPU where `navigator.gpu` exists and switches itself to WebGL2 (remembered per version) on device loss or pipeline errors. In this container WebGPU failed (SwiftShader/lavapipe), so every capture uses WebGL2. Whether Android WebView exposes WebGPU on the target phone still has to be checked.
 * Façade photography, shopfront detail and per-building materials (OSM `building:colour`/`building:material` are read but not yet used).
 * Front gardens and driveways are inferred, not surveyed; there are no bay windows, porches, gutters or attached garages yet, and no rear gardens or fences between plots.

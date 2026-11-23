@@ -207,6 +207,23 @@ def main():
                         else:
                             gable = False          # square-ish ridge band: hipped / pyramidal
                     if rect and rect[4] <= 24:
+                        # eaves from the roof planes themselves: fit height against distance from the ridge
+                        # (gable: across the ridge; hip: to the ridge segment) and extrapolate to the wall line
+                        r2, c2 = np.nonzero(use & (win > 1.8))
+                        if len(r2) >= 12:
+                            wx2 = (c2 + lo[0] + 0.5 - shift[0] + e0 - E0) / K; wz2 = -((n1 - (r2 + lo[1] + 0.5 - shift[1])) - N0) / K
+                            ca, sa = math.cos(rect[2]), math.sin(rect[2])
+                            uu = (wx2 - rect[0]) * ca + (wz2 - rect[1]) * sa; vv = -(wx2 - rect[0]) * sa + (wz2 - rect[1]) * ca
+                            dist = np.abs(vv) if gable else np.maximum(np.abs(vv), np.abs(uu) - max(0.0, (rect[3] - rect[4]) / 2))
+                            hh = win[r2, c2]; ok = np.isfinite(hh)
+                            if ok.sum() >= 12 and np.ptp(dist[ok]) > 1.0:
+                                b, a = np.polyfit(dist[ok], hh[ok], 1)       # hh = a + b * dist (b < 0)
+                                slope = -b
+                                if 0.35 <= slope <= 1.3:
+                                    eaves = a - slope * rect[4] / 2
+                                    ridge = float(min(max(a, ridge - 0.5), ridge + 0.4))
+                                    wall = float(min(max(2.2, eaves), ridge - 0.8)); rh = ridge - wall
+                                    S['fit'] = S.get('fit', 0) + 1
                         if m[3] == 0: S['to_pitched'] += 1
                         m[3] = 1 if gable else 2; S['gable' if gable else 'hip'] += 1
                         m[5], m[6], m[7], m[8], m[9] = rect[0] - ox, rect[1] - oz, rect[2], rect[3], rect[4]

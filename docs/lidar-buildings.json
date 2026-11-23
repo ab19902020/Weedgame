@@ -1,0 +1,31 @@
+{
+ "measured": 46062,
+ "skipped_few": 0,
+ "skipped_nodata": 0,
+ "no_building": 521,
+ "flat": 3470,
+ "pitched": 42592,
+ "gable": 22511,
+ "hip": 20081,
+ "rotated": 17106,
+ "new_rect": 5740,
+ "to_flat": 1416,
+ "to_pitched": 5636,
+ "blocks": 77,
+ "failed_blocks": 0,
+ "fit": 22217,
+ "top_change_m": {
+  "mean": -0.15,
+  "median": -0.54,
+  "p10": -2.96,
+  "p90": 3.84,
+  "mean_abs": 2.02
+ },
+ "buildings_total": 46583,
+ "seconds": 593,
+ "registration_shift_m": {
+  "east_mean": -0.18,
+  "north_mean": 0.87,
+  "blocks": 77
+ }
+}
