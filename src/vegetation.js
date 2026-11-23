@@ -141,7 +141,8 @@ export function treeMaterials() {
   const dist = length(cameraPosition.sub(p));
   const alpha = lt.a.mul(mix(float(1), float(2.3), smoothstep(25, 160, dist)));
   // species / health tint per tree
-  const tint = mix(vec3(0.5, 0.62, 0.45), vec3(0.7, 0.68, 0.38), tid).mul(tid.mul(0.3).add(0.62));
+  // targets foliage albedo of roughly (0.06, 0.12, 0.04) linear after the desaturation below
+  const tint = mix(vec3(1.0, 0.85, 1.0), vec3(1.25, 0.95, 0.8), tid).mul(tid.mul(0.3).add(0.85));
   let col = lt.rgb.mul(tint).mul(mix(float(1), float(0.78), U.wet));
   col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 0.72).mul(vec3(1.0, 0.95, 1.25));   // real foliage is less saturated
   // ambient occlusion towards the crown's core and underside
