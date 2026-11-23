@@ -6,12 +6,16 @@ import { mulberry } from './traffic.js';
 export class Parking {
   constructor(G) {
     this.G = G;
+    this.byKey = new Map();   // tile key -> its parked cars (a tile swapping LOD replaces its object without an unload event)
     G.tiles.listeners.push((ev, t) => ev === 'load' ? this.onLoad(t) : this.onUnload(t));
   }
   onLoad(t) {
+    const prev = this.byKey.get(t.key);
+    if (prev && t.lod === 0) { t.parked = prev; return; }          // reloaded at LOD0: keep the same cars
+    if (prev) { this.removeAll(prev); this.byKey.delete(t.key); }  // dropped to LOD1: the cars go with the detail
     if (t.lod !== 0 || !t.data.slots) return;
     const G = this.G, S = t.data.slots, K = t.data.slotKind;
-    t.parked = [];
+    t.parked = []; this.byKey.set(t.key, t.parked);
     for (let i = 0; i < S.length / 4; i++) {
       const id = `p:${t.key}:${i}`;
       if (G.save.taken.has(id) || G.traffic.byId.has(id)) continue;
@@ -31,9 +35,11 @@ export class Parking {
     for (const v of this.G.traffic.list) if (v.parked && Math.abs(v.x - x) < 3 && Math.abs(v.z - z) < 3) return true;
     return false;
   }
+  removeAll(list) { for (const v of list) if (!v.free && !v.player && v.parked) this.G.traffic.remove(v); }
   onUnload(t) {
-    if (!t.parked) return;
-    for (const v of t.parked) if (!v.free && !v.player && v.parked) this.G.traffic.remove(v);
+    const list = t.parked || this.byKey.get(t.key); this.byKey.delete(t.key);
+    if (!list) return;
+    this.removeAll(list);
     t.parked = null;
   }
 }
