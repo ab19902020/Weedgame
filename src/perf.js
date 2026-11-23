@@ -77,6 +77,7 @@ export function mergeGeometries(items) {
 //  * LOD1 tiles outside the view frustum are skipped as whole groups (they cast no shadows).
 //  * Empty instanced meshes are hidden so they cost no draw call.
 const CLUSTER = 4, TILE = 256;
+const EMPTY_GEO = new THREE.BufferGeometry();
 export class RenderBudget {
   constructor(G) {
     this.G = G; this.B = budgetFor(G.quality);
@@ -109,21 +110,27 @@ export class RenderBudget {
   }
   rebuild(c) {
     const G = this.G, t0 = performance.now();
-    if (c.batch) { G.scene.remove(c.batch); c.batch.geometry.dispose(); c.batch = null; }
     const items = [];
     for (const { mesh, t } of c.members.values()) items.push({ geo: mesh.geometry, dx: t.data.ox - c.ox, dz: t.data.oz - c.oz, mesh });
+    if (c.batch) { c.batch.geometry.dispose(); c.batch.geometry = EMPTY_GEO; c.batch.visible = false; }
     if (items.length >= 2) {
       const geo = mergeGeometries(items);
-      const m = new THREE.Mesh(geo, G.tiles.mats.building);
-      m.position.set(c.ox, 0, c.oz); m.matrixAutoUpdate = false; m.updateMatrix();
-      m.receiveShadow = items[0].mesh.receiveShadow; m.castShadow = false;
-      m.userData.k = 'lod1batch';
-      G.scene.add(m); c.batch = m;
-      for (const it of items) { it.mesh.visible = false; it.mesh.geometry.dispose(); } // frees GPU copies; re-uploaded if shown again
+      // one mesh object per cluster for its whole life; only the geometry is swapped on rebuild
+      let m = c.batch;
+      if (!m) {
+        m = new THREE.Mesh(geo, G.tiles.mats.building);
+        m.position.set(c.ox, 0, c.oz); m.matrixAutoUpdate = false; m.updateMatrix();
+        m.castShadow = false; m.userData.k = 'lod1batch';
+        G.scene.add(m); c.batch = m;
+      } else m.geometry = geo;
+      m.receiveShadow = items[0].mesh.receiveShadow; m.visible = true;
+      // hide the per-tile meshes (not dispose: disposing a geometry that stays attached to a scene mesh and is
+      // shown again later leaked renderer state, ~0.5 MB/s of JS heap during the flythrough)
+      for (const it of items) it.mesh.visible = false;
     } else for (const it of items) it.mesh.visible = true;
     c.dirtyAt = 0;
     this.stats.mergeMs = +(performance.now() - t0).toFixed(1);
-    if (!c.members.size) this.clusters.delete(c.key);
+    if (!c.members.size) { if (c.batch) G.scene.remove(c.batch); this.clusters.delete(c.key); }
   }
   bakeCanopies() {
     const G = this.G, grp = G.landmarks?.group; if (!grp) return;
@@ -159,8 +166,8 @@ export class RenderBudget {
       // at most one cluster rebuild per frame, once its membership has been stable for 0.6 s
       const now = performance.now(); let best = null, bd = 1e18;
       for (const c of this.clusters.values()) if (c.dirtyAt && now - c.dirtyAt > 600) { const d = (c.ox - cam.x) ** 2 + (c.oz - cam.z) ** 2; if (d < bd) { bd = d; best = c; } }
-      if (best) this.rebuild(best);
-      if (now - (this._ct || 0) > 1000) { this._ct = now; this.bakeCanopies(); }
+      if (best && !this.G.Q.has('nolod1batch')) this.rebuild(best);
+      if (now - (this._ct || 0) > 1000 && !this.G.Q.has('nocanopybake')) { this._ct = now; this.bakeCanopies(); }
     }
     this._pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); this.frustum.setFromProjectionMatrix(this._pm);
     const T = G.tiles, mats = T.mats;
