@@ -111,6 +111,9 @@ if (!G.traffic.byId.has('cal-car')) {
   G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'hatch', paint: G.save.legacy?.business?.paint ?? 0x812f42, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
   G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'estate', paint: 0x223e69, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
 }
+// the simulated fleet that was around both brothers comes back with the same ids
+G.traffic.anchors = G.brothers.b;
+G.traffic.restoreFleet(G.save.fleet, i => G.buses.routes.find(r => r.i === i));
 // brothers who were driving when the game closed sit in their (parked) car
 for (const b of G.brothers.b) { const v = G.brothers.vehicleOf(b); if (v) { v.parked = b !== G.brothers.me; v.player = b === G.brothers.me; } }
 G._needGround = true;

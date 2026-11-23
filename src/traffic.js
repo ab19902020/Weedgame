@@ -6,6 +6,7 @@ import { MODELS, PAINTS } from './vehicles.js';
 import { F_ONEWAY, F_ROUNDABOUT, F_BRIDGE, F_DRIVE } from './network.js';
 
 const FULL_R = 480, BUBBLE_R = 650, KILL_R = 820;
+export const KEEP_R = 250;        // the fleet within this radius of either brother is kept (frozen while he is inactive) and saved
 const RANK = { motorway: 10, trunk: 9, primary: 8, secondary: 7, tertiary: 6, motorway_link: 8, trunk_link: 7, primary_link: 7, secondary_link: 6, tertiary_link: 5, unclassified: 4, residential: 3, living_street: 2, service: 1, busway: 3 };
 const DENS = { motorway: 1 / 60, trunk: 1 / 70, primary: 1 / 55, secondary: 1 / 80, tertiary: 1 / 110, motorway_link: 1 / 150, trunk_link: 1 / 150, primary_link: 1 / 120, secondary_link: 1 / 150, tertiary_link: 1 / 200, unclassified: 1 / 260, residential: 1 / 520, living_street: 1 / 900 };
 
@@ -110,6 +111,9 @@ export class Traffic {
       if (v.parked || v.player || v.h == null) continue;
       const dx = v.x - focus.x, dz = v.z - focus.z, d2 = dx * dx + dz * dz;
       v.near = d2 < R2;
+      // traffic around the inactive brother waits where it is until he is played again
+      v.frozen = d2 > BUBBLE_R * BUBBLE_R && this.nearAnchor(v);
+      if (v.frozen) continue;
       if (v.crashed) { v.v = 0; v.brake = true; v.hazard = true; continue; }
       if (v.near || (v.tick = (v.tick || 0) + dt) > 0.4) { this.drive(v, v.near ? dt : v.tick, occ); v.tick = 0; }
       else { v.s += v.v * dt; if (v.s < net.len[v.h >> 1]) this.place(v); }
@@ -266,13 +270,60 @@ export class Traffic {
       if (!opp.some(o => Math.abs(o.s - myOpp) < 55)) { v.latT = -this.net.width[e] * 0.5; v.passing = true; v.stuck = 0; }
     }
   }
+  // ----------------------------------------------------------------- persistence
+  // anchors: positions to keep traffic around (both brothers). Set by the app every frame.
+  nearAnchor(v, r = KEEP_R) {
+    const A = this.anchors; if (!A) return false;
+    for (const a of A) { const dx = v.x - a.x, dz = v.z - a.z; if (dx * dx + dz * dz < r * r) return true; }
+    return false;
+  }
+  // compact record of one simulated vehicle (ids, route, edge and position)
+  fleetRecord(v) {
+    const r = { id: v.id, k: v.kind, m: v.model, p: v.paint, h: v.h, s: +v.s.toFixed(1), l: v.lane, v: +(v.v || 0).toFixed(1) };
+    if (v.kind === 'bus' && v.busRoute != null && v.fixedRoute) { r.br = v.busRoute; r.ri = v.ri; r.ns = v.nextStop; r.ref = v.ref; }
+    else { r.r = v.route.slice(v.ri, v.ri + 12); if (v.dest != null) r.d = v.dest; if (v.notInService) r.nis = 1; if (v.ref) r.ref = v.ref; }
+    return r;
+  }
+  // the moving fleet within r of any anchor, nearest first, capped (a record is ~150 bytes)
+  snapshotFleet(anchors = this.anchors || [], r = KEEP_R, max = 600) {
+    const out = [];
+    for (const v of this.list) {
+      if (v.parked || v.player || v.crashed || v.h == null || v.dead || v.free || v.owner) continue;
+      if (v.kind !== 'traffic' && v.kind !== 'bus') continue;
+      let d = 1e9; for (const a of anchors) d = Math.min(d, Math.hypot(v.x - a.x, v.z - a.z));
+      if (d < r) out.push([d, v]);
+    }
+    out.sort((a, b) => a[0] - b[0]);
+    return { v: 1, nextId: this.nextId, cars: out.slice(0, max).map(([, v]) => this.fleetRecord(v)) };
+  }
+  // recreate saved vehicles with their ids; busRoute(i) resolves a bus route index to its data
+  restoreFleet(fleet, busRoute = null) {
+    if (!fleet || !Array.isArray(fleet.cars)) return 0;
+    const net = this.net; let n = 0;
+    for (const r of fleet.cars) {
+      if (this.byId.has(r.id) || !MODELS[r.m] || r.h == null || r.h >> 1 >= net.nEdges) continue;
+      const v = this.add({ id: r.id, kind: r.k, model: r.m, paint: r.p, h: r.h, s: Math.min(r.s, net.len[r.h >> 1]), lane: Math.min(r.l || 0, net.laneCount(r.h) - 1), route: [r.h], ri: 0, v: r.v || 0 });
+      this.driver(v);
+      const bd = r.br != null && busRoute ? busRoute(r.br) : null;
+      if (bd && bd.hs[r.ri] === r.h) { v.route = bd.hs; v.ri = r.ri; v.fixedRoute = true; v.busRoute = r.br; v.ref = r.ref; v.persistent = true; v.v0f = 0.85; v.nextStop = r.ns; v.busData = bd; }
+      else {
+        if (Array.isArray(r.r) && r.r[0] === r.h) v.route = r.r.filter(h => h >> 1 < net.nEdges);
+        if (r.d != null) v.dest = r.d; if (r.nis) v.notInService = true; if (r.ref) v.ref = r.ref;
+        if (r.k === 'bus') v.notInService = true;
+      }
+      this.place(v); n++;
+      const m = /^v(\d+)$/.exec(r.id); if (m) this.nextId = Math.max(this.nextId, +m[1] + 1);
+    }
+    if (fleet.nextId) this.nextId = Math.max(this.nextId, fleet.nextId);
+    return n;
+  }
   // ----------------------------------------------------------------- density bubble
   maintain(focus, info) {
     const net = this.net;
     // remove far ordinary traffic that nobody can see
     for (let i = this.list.length - 1; i >= 0; i--) {
       const v = this.list[i];
-      if (v.kind !== 'traffic' || v.parked || v.player || v.crashed) continue;
+      if (v.kind !== 'traffic' || v.parked || v.player || v.crashed || v.frozen) continue;
       const d = Math.hypot(v.x - focus.x, v.z - focus.z);
       if (d > KILL_R && !info.visible(v.x, v.y, v.z, 0.6)) this.remove(v);
     }

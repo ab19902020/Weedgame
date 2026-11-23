@@ -44,6 +44,8 @@ export class Save {
       version: 1, mode: 'sandbox', savedAt: new Date().toISOString(),
       brothers: B.b.map(b => ({ ...b })), active: B.active, camYaw: B.cam.yaw,
       vehicles, taken: [...this.taken].slice(-2000),
+      // simulated traffic near both brothers (ids, routes, edge and position), restored on load
+      fleet: G.traffic.snapshotFleet ? G.traffic.snapshotFleet(B.b.map(b => ({ x: b.x, z: b.z }))) : null,
       world: G.world.s,
       // untouched business state from the prototype, kept for the future empire layer
       business: this.data?.business ?? (this.legacy ? { legacy: this.legacy } : null),
@@ -56,4 +58,5 @@ export class Save {
   tick() { if (performance.now() - (this.last || 0) > 8000) this.now(); }
   get world() { return this.data?.world; }
   get vehicles() { return this.data?.vehicles || []; }
+  get fleet() { return this.data?.fleet || null; }
 }
