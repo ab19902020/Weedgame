@@ -1,4 +1,4 @@
-# Green County · Berkshire sandbox (v0.8.0)
+# Green County · Berkshire sandbox (v0.9.0)
 
 A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Earley, Woodley, Winnersh, Wokingham and Bracknell, joined by the A329 and A329(M). It starts in **sandbox mode**: you control Cal or Leon Ward and can explore indefinitely. There are no missions, objectives, phone calls, deliveries or sales. The cannabis-empire layer from the v0.3–v0.5 prototype will sit on this world later; its save data is carried along untouched.
 
@@ -7,13 +7,13 @@ A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Ear
 * `docs/SOURCES.md`: asset and source register (licences, dates, signing key).
 * `docs/verification.json`: computed comparisons of the world against its inputs.
 * `docs/captures/`: gameplay captures, `acceptance-run-8x.mp4` (the whole touch-driven run at 8× speed; software rendering here ran at ~1 fps), `acceptance.json` (step log) and landmark views (`L*.png`).
-* `builds/Green-County-0.8.0-dev.apk`: signed development APK. v0.7 added the visual overhaul (photographic surfaces, leaf-card trees, rounded cars, post-processing); v0.8 adds Grok's simulation and performance work (quality budgets, perf flythrough, persistent traffic, actuated signals, walk graph, police incidents, trains).
+* `builds/Green-County-0.9.0-dev.apk`: signed development APK. v0.7 added the visual overhaul; v0.8 Grok's simulation and performance work; v0.9 detailed people and cars (with sports models), camera modes, summer lighting with screen-space reflections, 60 fps streaming work and LIDAR-measured buildings.
 * `docs/PERF-CHECKLIST.md`: how to record real frame times on a phone with the perf flythrough.
 * `docs/handoff/grok.md` and `docs/briefs/visual-overhaul-notes.md`: hand-off notes for the simulation/performance and visual work.
 
 ## Play
 
-* **Android**: install `builds/Green-County-0.8.0-dev.apk`. It uses the same development key as v0.6.0 and v0.7.0, so it installs over them; builds older than v0.6 must be uninstalled first. Landscape only.
+* **Android**: install `builds/Green-County-0.9.0-dev.apk`. It uses the same development key as v0.6–v0.8, so it installs over them; builds older than v0.6 must be uninstalled first. Landscape only.
 * **Browser**: `npm run serve`, then open http://localhost:8080. Chrome or Edge recommended; WebGPU is used when available, otherwise WebGL2.
 
 Touch controls (landscape): drag on the **left side** to move (a floating stick appears under your thumb). Drag on the **right side** to orbit the camera. **Run** (on foot) doubles as **Brake** in a vehicle. **Get in / Exit** works on any parked car. **Horn** appears while driving. **Swap** switches between Cal and Leon wherever each is. **Map** opens the full map, **Dev** the developer panel.
