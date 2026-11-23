@@ -93,6 +93,95 @@ export class Traffic {
     let r = this.rand() * tot, pick = outs[0];
     for (let i = 0; i < outs.length; i++) { r -= w[i]; if (r <= 0) { pick = outs[i]; break; } }
     v.route = [v.h, pick]; v.ri = 0;
+    // entering a roundabout: choose the exit now so the approach lane can match it
+    if ((this.net.flags[pick >> 1] & F_ROUNDABOUT) && !(this.net.flags[v.h >> 1] & F_ROUNDABOUT)) this.planRoundabout(v);
+  }
+  planRoundabout(v) {
+    const net = this.net; let h = v.route[v.route.length - 1];
+    for (let k = 0; k < 12; k++) {
+      const end = net.endNode(h), outs = net.outD[end].filter(o => (o >> 1) !== (h >> 1));
+      const ring = outs.find(o => net.flags[o >> 1] & F_ROUNDABOUT), exits = outs.filter(o => !(net.flags[o >> 1] & F_ROUNDABOUT) && this.rank[o >> 1] > 1);
+      if (exits.length && (!ring || this.rand() < 0.45)) { v.route.push(exits[Math.floor(this.rand() * exits.length)]); return; }
+      if (!ring) return;
+      v.route.push(ring); h = ring;
+    }
+  }
+  // turn at the end of half-edge h into nh: 'left' | 'right' | 'through' (UK: left is nearside)
+  turnOf(h, nh) {
+    const net = this.net, a = net.at(h, net.len[h >> 1] - 0.5, this.tmpT || (this.tmpT = [0, 0, 0, 0, 0])), dx = a[3], dz = a[4];
+    const b = net.at(nh, Math.min(net.len[nh >> 1], 6), this.tmpT2 || (this.tmpT2 = [0, 0, 0, 0, 0]));
+    const ex = b[0] - a[0], ez = b[2] - a[2], l = Math.hypot(ex, ez) || 1;
+    const left = (ex * dz - ez * dx) / l;   // component along (dz,-dx), the left of travel
+    if ((h >> 1) === (nh >> 1)) return 'right';   // U-turn
+    return left > 0.5 ? 'left' : left < -0.5 ? 'right' : 'through';
+  }
+  // exit direction for a planned route through a roundabout (relative to the approach)
+  roundaboutTurn(v) {
+    const net = this.net; let i = v.ri + 1;
+    while (i < v.route.length && (net.flags[v.route[i] >> 1] & F_ROUNDABOUT)) i++;
+    if (i >= v.route.length) return null;
+    const a = net.at(v.h, net.len[v.h >> 1] - 0.5, [0, 0, 0, 0, 0]), b = net.at(v.route[i], 2, [0, 0, 0, 0, 0]);
+    // component of the exit direction along the approach's left (dz,-dx), as in turnOf
+    return { exitIndex: i, left: b[3] * a[4] - b[4] * a[3], dot: a[3] * b[3] + a[4] * b[4] };
+  }
+  // lane wanted for the coming manoeuvre on a multi-lane approach, or null for no preference
+  wantedLane(v) {
+    const net = this.net, h = v.h, e = h >> 1, nl = net.laneCount(h), nh = v.route[v.ri + 1];
+    const psv = net.psv && net.psv[e] && nl > 1;
+    if (v.kind === 'bus' && psv) return 0;                      // buses keep to the nearside bus lane
+    if (nl < 2 || nh == null) return psv ? Math.max(1, Math.min(v.lane, nl - 1)) : null;
+    let turn;
+    if ((net.flags[nh >> 1] & F_ROUNDABOUT) && !(net.flags[e] & F_ROUNDABOUT)) {
+      const r = this.roundaboutTurn(v);
+      // UK: left or straight ahead (up to 12 o'clock) from the left lane, further round from the right lane
+      turn = !r ? null : (r.left > 0.3 ? 'left' : r.dot > 0.5 ? 'through' : 'right');
+      if (turn === 'through') return 0;
+    } else if (net.flags[e] & F_ROUNDABOUT) {
+      // on the ring: move to the outer (left) lane before taking the exit
+      return !(net.flags[nh >> 1] & F_ROUNDABOUT) ? 0 : null;
+    } else turn = this.turnOf(h, nh);
+    const tl = this.turnLanesOf(h);
+    if (tl) {
+      const ok = tl.map((t, i) => [t, i]).filter(([t]) => turn === 'left' ? /left/.test(t) : turn === 'right' ? /right/.test(t) : /through|^none$|^$/.test(t)).map(([, i]) => i);
+      if (ok.length) return ok.includes(v.lane) ? v.lane : ok.reduce((a, b) => Math.abs(b - v.lane) < Math.abs(a - v.lane) ? b : a);
+    }
+    if (turn === 'left') return 0;
+    if (turn === 'right') return nl - 1;                        // UK: right turns from the offside lane
+    if (psv && v.lane === 0) return 1;                          // others stay out of the bus lane
+    return null;
+  }
+  // OSM turn:lanes for half-edge h, left to right (lane 0 is the nearside), when Astra's data has it
+  turnLanesOf(h) {
+    const net = this.net; if (!net.turnLanes) return null;
+    const k = net.turnLanes[h]; if (k == null || k < 0) return null;
+    const c = this._tl || (this._tl = new Map()); if (c.has(k)) return c.get(k);
+    const str = net.names[k]; const arr = typeof str === 'string' && str.length ? str.split('|').map(x => x.trim()) : null;
+    const res = arr && arr.length === net.laneCount(h) ? arr : null; c.set(k, res); return res;
+  }
+  // move into lane `to` if there is room; the lateral offset eases across instead of snapping
+  changeLane(v, to, occ) {
+    if (to === v.lane) return true;
+    const l = occ.get(v.h) || [];
+    if (l.some(o => o !== v && o.lane === to && o.s > v.s - 10 && o.s < v.s + 8)) return false;
+    const before = this.laneOffset(v.h, v.lane);
+    v.lane = to; v.lat += before - this.laneOffset(v.h, to);
+    return true;
+  }
+  // right turns give way to oncoming traffic going ahead or turning left (not at signals with a red for them)
+  oncoming(v, node, occ) {
+    const net = this.net, a = net.at(v.h, net.len[v.h >> 1] - 0.5, this.tmpO || (this.tmpO = [0, 0, 0, 0, 0])), dx = a[3], dz = a[4];
+    for (const h of net.inD[node]) {
+      if (h === v.h || (h >> 1) === (v.h >> 1)) continue;
+      const L = net.len[h >> 1], b = net.at(h, L - 0.5, this.tmpO2 || (this.tmpO2 = [0, 0, 0, 0, 0]));
+      if (b[3] * dx + b[4] * dz > -0.7) continue;             // not opposing
+      const l = occ.get(h); if (!l) continue;
+      for (let i = l.length - 1; i >= 0; i--) {
+        const o = l[i], d = L - o.s;
+        if (d > 45) break;
+        if (o.v > 1.2 && d / Math.max(o.v, 1) < 4.5) { const onh = o.route[o.ri + 1]; if (onh == null || this.turnOf(h, onh) !== 'right') return true; }
+      }
+    }
+    return false;
   }
   // ----------------------------------------------------------------- main update
   update(dt, focus, camInfo) {
@@ -167,6 +256,16 @@ export class Traffic {
       if (this.conflict(v, end, occ)) stopAt = Math.min(stopAt, rem - 1.5);
     }
     if (rem > 30) v.stopped = false;
+    // lane choice for the next turn (turn:lanes, else UK rules), roundabout lanes and bus lanes
+    if (rem < 90 && rem > 6 && !v.passing) { const wl = this.wantedLane(v); if (wl != null && wl !== v.lane) this.changeLane(v, wl, occ); }
+    // right turns give way to oncoming traffic (patience runs out after ~20 s, then they nose through a gap)
+    const nhT = v.route[v.ri + 1];
+    if (nhT != null && rem < 22 && !v.siren && !(net.flags[e] & F_ROUNDABOUT) && net.inD[net.endNode(v.h)].length > 2 && this.turnOf(v.h, nhT) === 'right') {
+      v.rtWait = v.v < 0.5 ? (v.rtWait || 0) + dt : (v.rtWait || 0);
+      if (this.oncoming(v, net.endNode(v.h), occ) && v.rtWait < 20) stopAt = Math.min(stopAt, rem - 2);
+    } else if (rem > 30) v.rtWait = 0;
+    // demand-actuated signals: approaching vehicles register on the detector
+    if (sa && sa[2] - v.s < 60 && sa[2] - v.s > -2 && this.sig.detect) this.sig.detect(sa[0], sa[1]);
     // don't block the junction: next half-edge jammed at its entry
     const nh = v.route[v.ri + 1];
     if (nh != null && rem < 25) {
@@ -262,7 +361,7 @@ export class Traffic {
     if (nl > 1) { // change lane within the same direction
       const target = v.lane === 0 ? 1 : v.lane - 1;
       const l = occ.get(v.h) || [];
-      if (!l.some(o => o !== v && o.lane === target && Math.abs(o.s - v.s) < 12)) { v.lane = target; v.stuck = 0; return; }
+      if (!l.some(o => o !== v && o.lane === target && Math.abs(o.s - v.s) < 12)) { const b0 = this.laneOffset(v.h, v.lane); v.lane = target; v.lat += b0 - this.laneOffset(v.h, target); v.stuck = 0; return; }
     }
     if (!(net.flags[e] & F_ONEWAY)) { // overtake into the opposing lane when it is clear
       const opp = occ.get(v.h ^ 1) || [];
