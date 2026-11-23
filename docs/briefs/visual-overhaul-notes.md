@@ -44,3 +44,16 @@ Merged with `grok/sim-perf` (`f378e4c`). The visual features are now part of you
 ## Before and after
 
 `docs/captures/visual/V-*-before-after.jpg` shows the same four spots and the same time and weather, rendered by `c653995` and by this branch (WebGL2, software renderer).
+
+## Round 2 (people, cars, cameras, lighting, performance, LIDAR buildings)
+
+| Area | Where | Notes |
+|---|---|---|
+| People | `src/humans.js` (new); `src/characters.js` now re-exports `People` | One continuous body mesh per LOD (detailed within 30 m), skinned procedurally in the vertex shader from gait phase, speed and pose. Each vertex carries `skin` = (limb, chain coordinate, clothing region, accessory tag). Per-person data goes in 4 instanced vec4s (`iPos`, `iAnim`, `iCol` packed RGB24, `iSty`). They are decoded in the vertex stage: interpolated packed values scramble in the fragment stage. Looks have extra fields (`style`, `female`, `build`, `shoe`, `cap`, `hood`, `umbIdx`); `People.randomLook` fills them. |
+| Cars | `src/carModel.js` (`CAR_SPECS`, `buildCar`, `vehicleMaterial`, wheels) | Spec-driven bodies with real arch recesses, panel glass, lights, plates, mirrors, a cockpit and per-model alloys. New models `hothatch`, `coupe` and `sports`; `randomModel` / `paintFor` live in `vehicles.js`. Per-vertex data is `color` + `vdat` = (paint, part code, livery, model index + 1). Keep the total under WebGPU's 8 vertex buffers; `tools/shadercheck` now flags this. |
+| Cameras | `src/player.js` (`cycleCamera`, `driverCam`, `cineCam`), HUD `Cam` button, keys C/V | Driving: Chase / Far / High / Driver / Cinematic. On foot: Close / Far / High. |
+| Lighting | `src/post.js`, `src/main.js`, `src/weather.js` | SSR on high (`budget.ssr`), weighted by roughness/metalness from an MRT; misses fall back to the IBL. Summer setting (new games start mid-June; old saves move to June once, `season: 1`). Brighter sun and a stronger grade. |
+| Performance | `src/atmos.js`, `src/tiles.js`, `src/app.js`, `src/perf.js` | Shelter raster is a sliced scanline fill; per-tile atlas block copies (`tiles.gpuReady`, `opts.renderer`); light raster throttle; `compileAsync` warm-up; `targetFps` 60 in every budget; look-ahead tile priority (`tiles.update(x, z, {x, z, vx, vz})`). |
+| Buildings | `tools/pipeline/lidar_buildings.py`, `docs/lidar-buildings.json`, report section | EA LIDAR DSM − DTM per OSM footprint patches `bM` (wall, roof type, roof height, roof rectangle, storeys; height source 3 = LIDAR). **Astra:** if you rebuild the tiles with `build_world.py`, re-run this script afterwards, or fold it into the pipeline. |
+
+**No Google imagery is used anywhere.** Google Maps and Earth terms forbid deriving data from their imagery, so building shapes come from OSM plus the OGL LIDAR only.

@@ -49,6 +49,16 @@ w('* Front gardens (**inferred**): every house whose frontage wall sits at least
 w(f"* Parking: {cov['parkingSlots']} slots, **inferred** (car-park polygons on a 2.6 × 7.5 m grid; kerbside on residential roads). Occupancy is stable per slot ID.\n")
 w('## Terrain\n')
 w(f"* {man['sources']['terrain']}. Fetched at 4 m posting through the public WCS; no voids in this area, so the EU-DEM fill was not needed. Sampled on a 4 m grid in each tile (16 m for the far ring). Surfaces drape onto the same triangles, and the terrain is sunk 0.25 m under hard surfaces.\n")
+# measured building heights and roofs (tools/pipeline/lidar_buildings.py)
+_lp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'docs', 'lidar-buildings.json')
+if os.path.exists(_lp):
+    L = json.load(open(_lp))
+    w('## Building heights and roofs measured from LIDAR\n')
+    w(f"* **{L['measured']:,} of {L['buildings_total']:,} buildings** have their wall height, roof type, roof height and ridge direction **measured** from the Environment Agency LIDAR composite (1 m last-return DSM minus 1 m DTM, OGL), over {L['blocks']} 1 km blocks (`tools/pipeline/lidar_buildings.py`). The rest keep the OSM/inferred values: {L['no_building']} footprints showed no structure in the LIDAR (demolished or not yet built), {L['skipped_few'] + L['skipped_nodata']} had too few clean pixels, and landmarks and canopies are hand-modelled.")
+    w(f"* Roofs: {L['pitched']:,} pitched ({L['gable']:,} gabled, {L['hip']:,} hipped or pyramidal) and {L['flat']:,} flat. {L['rotated']:,} ridges were turned 90° to match the measured ridge line, {L['new_rect']:,} pitched roofs were added where OSM had none, {L['to_flat']:,} pitched guesses became flat.")
+    t = L['top_change_m']
+    w(f"* Change in building top height against the previous OSM/inferred model: mean {t['mean']:+} m, median {t['median']:+} m, mean absolute {t['mean_abs']} m (10th–90th percentile {t['p10']:+} to {t['p90']:+} m).")
+    w('* Method and limits: footprint eroded 1 m; flat if the p25–p90 spread is under 0.9 m (wall = p75); otherwise ridge = p97, eaves = p12 − 0.3 m, ridge direction from the principal axis of the top 0.35 m band, gable if that band spans at least 72% of the roof rectangle. Footprints still come from OSM; dormers, chimneys, mixed roofs and extensions are simplified to one roof per footprint. Heights can be biased by trees overhanging roofs.\n')
 w('## Hand-authored and reference-modelled places\n')
 w('| Place | Status | Evidence used | Estimated |')
 w('|---|---|---|---|')
