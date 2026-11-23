@@ -13,8 +13,11 @@ async function launch(video) {
   const b = await chromium.launch({ headless: false, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--autoplay-policy=no-user-gesture-required'], env: { ...process.env, CHROMIUM_WEBGL_RENDERER: 'lavapipe' } });
   const ctx = await b.newContext({ viewport: { width: 915, height: 412 }, deviceScaleFactor: 1, hasTouch: true, ...(video ? { recordVideo: { dir: video, size: { width: 915, height: 412 } } } : {}) });
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
+  // software rendering (SwiftShader) can stall a frame for tens of seconds; give Playwright actions room
+  p.setDefaultTimeout(180000);
   const errors = [];
   p.on('pageerror', e => errors.push(e.message)); p.on('console', m => { if (m.type() === 'error' && !/404/.test(m.text())) errors.push(m.text().slice(0, 300)); });
+  const devHidden = () => p.evaluate(() => { const e = document.getElementById('dev'); return !e || e.hidden || getComputedStyle(e).display === 'none' || getComputedStyle(e).visibility === 'hidden' || !e.getClientRects().length; });
   const T = {
     b, ctx, p, cdp, errors,
     touch: (type, pts) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: pts.map(([x, y, id]) => ({ x, y, id: id ?? 1, radiusX: 6, radiusY: 6, force: 1 })) }),
@@ -23,7 +26,7 @@ async function launch(video) {
     stickHold: async (sx, sy, run) => {
       const ox = 140, oy = 300;
       let extra = [];
-      if (run) { const r = await p.locator('#bRun').boundingBox(); T.runPt = [r.x + r.width / 2, r.y + r.height / 2, 4]; extra = [T.runPt]; } else T.runPt = null;
+      if (run) { const r = await T.rect('#bRun'); T.runPt = [r.x + r.width / 2, r.y + r.height / 2, 4]; extra = [T.runPt]; } else T.runPt = null;
       await T.touch('touchStart', [[ox, oy, 1], ...extra]); await T.touch('touchMove', [[ox + sx * 30, oy + sy * 30, 1], ...extra]); await T.touch('touchMove', [[ox + sx * 55, oy + sy * 55, 1], ...extra]);
     },
     stickMove: async (sx, sy) => T.touch('touchMove', [[140 + sx * 55, 300 + sy * 55, 1], ...(T.runPt ? [T.runPt] : [])]),
@@ -32,7 +35,7 @@ async function launch(video) {
     look: async (dx, dy = 0) => { const x = 620, y = 200; await T.touch('touchStart', [[x, y, 2]]); for (let k = 1; k <= 6; k++) await T.touch('touchMove', [[x + dx * k / 6, y + dy * k / 6, 2]]); await T.frames(1); await T.touch('touchEnd', []); },
     // hold the Brake (Run) button until the vehicle has stopped
     stopVehicle: async () => {
-      const r = await p.locator('#bRun').boundingBox(); const pt = [r.x + r.width / 2, r.y + r.height / 2, 5];
+      const r = await T.rect('#bRun'); const pt = [r.x + r.width / 2, r.y + r.height / 2, 5];
       await T.touch('touchStart', [pt]);
       for (let i = 0; i < 60; i++) { const sp = await p.evaluate(() => Math.abs(GC.brothers.vehicleOf(GC.brothers.me)?.sp || 0)); if (sp < 0.3) break; await T.frames(1); }
       await T.touch('touchEnd', []); await T.frames(1);
@@ -48,20 +51,19 @@ async function launch(video) {
       }
     },
     tapAt: async (x, y) => { await T.touch('touchStart', [[x, y, 3]]); await T.touch('touchEnd', []); },
-    tap: async sel => { const r = await p.locator(sel).first().boundingBox(); if (!r) throw new Error('no ' + sel); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(2); },
+    // element rect via page.evaluate (no actionability timeout: at ~1 fps under software rendering a frame can stall the main thread for >30 s)
+    rect: async sel => { for (let k = 0; k < 5; k++) { const r = await p.evaluate(sel => { const e = document.querySelector(sel); if (!e) return null; e.scrollIntoView({ block: 'nearest' }); const b = e.getBoundingClientRect(); return b.width && b.height ? { x: b.x, y: b.y, width: b.width, height: b.height } : null; }, sel); if (r) return r; await p.waitForTimeout(500); } return null; },
+    tap: async sel => { const r = await T.rect(sel); if (!r) throw new Error('no ' + sel); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(2); },
     dev: async (...acts) => { // open the developer panel and tap buttons by their stable data-act id
       for (const act of acts) {
-        if (await p.locator('#dev').isHidden()) await T.tap('#bDev');
-        const loc = p.locator(`#dev button[data-act="${act}"]`).first();
-        if (!(await loc.count())) throw new Error('no dev button with data-act=' + act);
-        await loc.scrollIntoViewIfNeeded();
-        const r = await loc.boundingBox(); if (!r) throw new Error('dev button not visible: ' + act);
+        if (await devHidden()) await T.tap('#bDev');
+        const r = await T.rect(`#dev button[data-act="${act}"]`); if (!r) throw new Error('no visible dev button with data-act=' + act);
         await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(2);
       }
-      if (!(await p.locator('#dev').isHidden())) { const r = await p.locator('#devX').boundingBox(); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(1); }
+      if (!(await devHidden())) { const r = await T.rect('#devX'); await T.tapAt(r.x + r.width / 2, r.y + r.height / 2); await T.frames(1); }
     },
     state: () => p.evaluate(() => { const B = GC.brothers, me = B.me, v = B.vehicleOf(me); return { brother: me.short, x: +me.x.toFixed(1), y: +me.y.toFixed(2), z: +me.z.toFixed(1), heading: +me.heading.toFixed(2), vehicle: me.vehicle, speed: +(B.speedNow || 0).toFixed(2), road: GC.roadName(me.x, me.z), district: GC.districtName(me.x, me.z), time: new Date(GC.world.time * 1000).toISOString(), hour: +GC.world.hours().toFixed(2), weather: GC.world.stateName(), rain: +GC.world.cur.rain.toFixed(2), cover: +GC.world.cur.cover.toFixed(2), wet: +GC.world.s.wet.toFixed(3), puddle: +GC.world.s.puddle.toFixed(3), police: GC.police.player.state, fps: GC.perf.samples.at(-1)?.fps ?? null, backend: GC.backend, frame: GC.frame }; }),
-    shot: async name => { await p.screenshot({ path: path.join(OUT, name + '.png') }); return name + '.png'; },
+    shot: async name => { const file = path.join(OUT, name + '.png'); try { await p.screenshot({ path: file, timeout: 180000 }); } catch (e) { await p.waitForTimeout(2000); await p.screenshot({ path: file, timeout: 180000 }); } return name + '.png'; },
     text: () => p.evaluate(() => document.body.innerText),
     // drive the stick so the brother/vehicle heads to a world point (re-evaluated every burst)
     // straight-line stick steering towards a world point (re-evaluated every burst)
