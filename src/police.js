@@ -195,7 +195,7 @@ export class Police {
   witnessed(x, z, r = 70) {
     const G = this.G;
     for (const v of this.units) if (v.status !== 'onscene' && Math.hypot(v.x - x, v.z - z) < r) return v;
-    for (const o of this.officers) if (Math.hypot(o.x - x, o.z - z) < r * 0.7) return o;
+    for (const o of this.officers) if (Math.hypot(o.x - x, o.z - z) < r * 0.85) return o;
     return null;
   }
   onOffence(what, x, z, level, inc) {

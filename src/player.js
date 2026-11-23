@@ -177,8 +177,10 @@ export class Brothers {
   nearestVehicle(maxD = 4.5) {
     const me = this.me; let best = null, bd = maxD;
     for (const v of this.G.traffic.list) {
-      if (!v.parked || v.hidden) continue;
-      const d = Math.hypot(v.x - me.x, v.z - me.z) - v.def.W / 2; if (d < bd) { bd = d; best = v; }
+      if (!v.parked || v.hidden || v.occupied) continue;
+      // a brother's own car wins when it is within reach
+      const d = Math.hypot(v.x - me.x, v.z - me.z) - v.def.W / 2 - (v.owner === me.short ? 3 : 0);
+      if (d < bd) { bd = d; best = v; }
     }
     return best;
   }

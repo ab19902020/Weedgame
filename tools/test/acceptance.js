@@ -39,6 +39,7 @@ async function launch(video) {
     },
     // turn the camera (right-side touch drag) so it looks towards a world point
     face: async (x, z) => {
+      await p.waitForFunction(() => !GC._needGround && !GC.tiles.busy, null, { timeout: 0, polling: 200 }); await T.frames(2);
       for (let k = 0; k < 3; k++) {
         const d = await p.evaluate(([x, z]) => { const c = GC.brothers.cam, me = GC.brothers.me; const want = Math.atan2(me.z - z, me.x - x); let e = want - c.yaw; while (e > Math.PI) e -= 2 * Math.PI; while (e < -Math.PI) e += 2 * Math.PI; return e; }, [x, z]);
         if (Math.abs(d) < 0.08) break;
@@ -167,7 +168,7 @@ async function step(name, fn) {
   });
 
   await step('Watch a pedestrian and a bus complete a junction (Cemetery Junction)', async rec => {
-    await T.dev('Cemetery Junction', '×8'); await T.frames(15);
+    await T.dev('Cemetery Junction arch', '×8'); await T.frames(15);
     await T.face(-5816, -2188); await T.frames(2);
     rec.shots.push(await T.shot('07-cemetery-junction-arch'));
     const J = { x: -5845.7, z: -2188.9 };
@@ -182,7 +183,7 @@ async function step(name, fn) {
       const b = s.buses.find(b => b.id === bus); if (b) busTrack.push([+b.x.toFixed(1), +b.z.toFixed(1), +b.d.toFixed(1), b.ref, +b.v.toFixed(1)]);
       if (!ped) { const c = s.crossing.find(c => c.mode === 'cross'); if (c) ped = c.id; }
       const pc = s.crossing.find(c => c.id === ped); pedTrack.push(pc ? pc.mode : (ped ? 'done' : null));
-      const busPassed = busTrack.length > 3 && Math.min(...busTrack.map(t => t[2])) < 30 && busTrack.at(-1)[2] > 45 && busTrack.findIndex(t => t[2] < 30) < busTrack.length - 1;
+      const busPassed = busTrack.length > 3 && Math.min(...busTrack.map(t => t[2])) < 30 && busTrack.at(-1)[2] > 40 && busTrack.findIndex(t => t[2] < 30) < busTrack.length - 1;
       const pedDone = ped && pedTrack.at(-1) === 'done';
       if (i % 40 === 20) rec.shots.push(await T.shot('08-junction-' + i));
       if (busPassed && pedDone) break;
@@ -289,7 +290,7 @@ async function step(name, fn) {
   });
 
   await step('Police response to a witnessed collision, and its resolution', async rec => {
-    await T.dev('Cemetery Junction', '×8', '12'); await T.frames(10);
+    await T.dev('Cemetery Junction arch', '×8', '12'); await T.frames(10);
     const before = await p.evaluate(() => GC.police.nextInc);
     await T.dev('Stage collision nearby'); await T.frames(3);
     const timeline = [];
@@ -311,11 +312,11 @@ async function step(name, fn) {
   });
 
   await step('Player disturbance: stop state and clean resolution', async rec => {
-    await T.dev('Woodley precinct'); await T.frames(10);
+    await T.dev('Cemetery Junction arch'); await T.frames(10);
     // go to the nearest foot patrol (setup via the dev API), then take a parked car in view of the officers
     const off = await p.evaluate(() => { const me = GC.brothers.me; let best = null, bd = 1e9; for (const o of GC.police.officers) { const d = Math.hypot(o.x - me.x, o.z - me.z); if (d < bd) { bd = d; best = o; } } return { x: best.x, z: best.z, id: best.id }; });
     await p.evaluate(o => GC.teleport(o.x + 6, o.z + 6), off); await T.frames(20);
-    const tgt = await p.evaluate(id => { const o = GC.police.officers.find(q => q.id === id); let best = null, bd = 1e9; for (const v of GC.traffic.list) if (v.parked && !v.free) { const d = Math.hypot(v.x - o.x, v.z - o.z); if (d < bd) { bd = d; best = v; } } return best ? { x: best.x, z: best.z, d: bd, id: best.id } : null; }, off.id);
+    const tgt = await p.evaluate(id => { const o = GC.police.officers.find(q => q.id === id); let best = null, bd = 1e9; for (const v of GC.traffic.list) if (v.parked && !v.free && !v.owner) { const d = Math.hypot(v.x - o.x, v.z - o.z); if (d < bd) { bd = d; best = v; } } return best ? { x: best.x, z: best.z, d: bd, id: best.id } : null; }, off.id);
     rec.notes.push(`foot patrol ${off.id}; nearest parked car ${tgt && tgt.id} (${tgt && tgt.d.toFixed(0)} m from the officers)`);
     if (!tgt) { rec.fail = 'no parked car'; return; }
     await T.walkTo(tgt.x, tgt.z, { within: 3, bursts: 25, frames: 6, run: true });

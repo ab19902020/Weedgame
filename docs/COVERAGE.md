@@ -70,6 +70,35 @@ Recomputed by `tools/pipeline/verify.py`, which writes `docs/verification.json`.
 | Building footprint areas (48144 footprints) | world 5.9862 km² vs ellipsoid 5.9858 km²; per-building ratio mean 1.00005, 1st–99th percentile 0.99998–1.00012 |
 | Signal coverage | 591 of 593 OSM `traffic_signals` nodes lie within a modelled controller; documented phase timings imported: 0 |
 
+## Acceptance run (touch input)
+
+Run 2026-11-22T23:38:17.316Z in headed Chromium (Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, l…) under Xvfb with software GL (ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)), backend **WebGL2**, viewport [915, 412]. All input went through CDP touch events on the on-screen joystick, camera drag and HUD buttons. Captures are in `docs/captures/`.
+
+| Step | Result | Notes |
+|---|---|---|
+| Launch straight into free roam in Woodley | pass | Started as Cal on Crockhamwell Road, Woodley |
+| Walk into and around a solid building (collision) | pass | tried to walk 30 m west from x=-2869; stopped at x=-2873.2 (moved 4.2 m), inside building: false; slid along the facade to z=-2221.5 |
+| Cross at a working signal (Woodley) | pass | controller 57: kerb A -2784.0,-2309.3, kerb B -2785.2,-2320.3; standing 2.0 m from the crossing post; crossed 7.5 m on the green man; vehicle aspects while crossing: RAP |
+| Watch a pedestrian and a bus complete a junction (Cemetery Junction) | pass (re-run) | bus v110 (13) closest approach 17.5 m, last distance 397.9 m; pedestrian p47 crossing states: cross -> done — main run failed (no bus completed the junction in the time allowed); passed when re-run after the fix noted below |
+| Park, switch brothers, drive to Reading, return and find the car | pass (re-run) | Cal parked at -2866.17, -2226 on Crockhamwell Road; switched to Leon at -2866.8, -2190.8; Leon reversed out; the Woodley-to-Reading run is shortened with the Dev "Go to" teleport (software rendering runs ~1 fps here); Leon parked in Reading town centre on Broad Street; back as Cal in Woodley; Cal's car now at -2866.17, -2226 (moved 0.00 m) — main run failed (could not get into Cal's car); passed when re-run after the fix noted below |
+| Drive across a town boundary and beneath a flyover (Suttons Park Avenue under the A3290) | pass (re-run) | route points: 16; districts passed: East Reading -> Earley; samples beneath a deck: 20 (deck 47.2, 45.1 m above datum, car at 41.5 m) — also passed in the main run; repeated in the re-run |
+| Clouds move, rain starts, roads get wet, then dry (Woodley precinct canopy) | pass | cloud field advected 11057 m with the wind; under canopy: sheltered=true, rain bed gain 0, overhead patter gain 0, rain low-pass 900 Hz; wetness peaked at 1 and fell to 0 after the shower (puddles 0) |
+| Police response to a witnessed collision, and its resolution | pass | responding (police-2, 452 m) -> onscene (police-2, 35 m) -> cleared (police-2, 25 m); units after: police-1:responding, police-2:patrol, police-3:patrol, police-4:patrol, police-5:patrol, police-6:patrol |
+| Player disturbance: stop state and clean resolution | pass (re-run) | foot patrol pc-Cemetery Junction-0; nearest parked car p:-23_-9:28 (38 m from the officers); stop: Police: pull over / stand still — an officer wants a word / talking: Officer: “Mind how you go. Words of advice given — no further action.” / none: Free to go. — also passed in the main run; repeated in the re-run |
+| Close and resume | pass | brothers, cars and weather restored: true; clock 1795448772 -> 1795448850 |
+| No objective or mission UI at any point | pass | no mission, objective, delivery, phone-call or sales text in the HUD |
+| Prototype save migrates with missions disabled | pass | active Leon in Woodley; prototype save kept: true; business progress carried (jobs=2); mode sandbox |
+
+Re-run 2026-11-23T01:19:26.498Z: Fixed after the main run: buses whose OSM route leaves the map area now continue as traffic instead of stopping; 'Get in' prefers the brother's own car (Leon's car was nearer); the test reverses Leon away from Cal's car. Same build also includes the police scene-arrival fix and window glare reduction.
+
+Re-run 2026-11-23T02:00:49.022Z: The Woodley foot patrol had no parked car within witness range (nearest 62 m), so the step was inconclusive; repeated at Cemetery Junction, where kerbside parking sits near the foot patrol. Witness range for foot officers widened from 49 m to 60 m.
+
+## Captures
+
+Real gameplay frames from the runs above (software WebGL2 at 915 × 412). `acceptance-run-8x.mp4` is the whole main run at 8× speed. `25-pursuit-emerged-during-drive.png` comes from the main run: during the flyover drive the driving script clipped another car within sight of a patrol, and a pursuit followed and resolved ("Police lost sight of you"). It was not staged. `L*.png` are landmark views taken by touch after the run. Reading Town Hall has no clean capture yet: its model is built and in place (bounding box x −7346…−7293, z −2630…−2564, spire top 80 m above datum, checked at runtime), but from the street views tried, neighbouring buildings or Forbury Gardens trees block it at the third-person camera distance.
+
+`01-launch-woodley-precinct.png`, `02-against-shop-wall.png`, `03-shop-row-from-precinct.png`, `05-green-man.png`, `06-crossed.png`, `07-cemetery-junction-arch.png`, `08-junction-100.png`, `08-junction-140.png`, `08-junction-180.png`, `08-junction-20.png`, `08-junction-220.png`, `08-junction-60.png`, `09-cal-in-car.png`, `10-cal-parked.png`, `11-leon-in-reading.png`, `12-cal-car-still-there.png`, `13-map-both-brothers.png`, `14-after-underpass.png`, `14a-beneath-the-a3290.png`, `15-clear-midday.png`, `16-clouds-moved.png`, `17-drizzle.png`, `18-heavy-rain-wet-road.png`, `19-under-canopy-in-rain.png`, `20-shower-passing.png`, `21-drying.png`, `22-dusk-lights.png`, `23-police-onscene.png`, `23-police-responding.png`, `24-scene-cleared.png`, `25-police-stop.png`, `25-police-talking.png`, `25-pursuit-emerged-during-drive.png`, `26-resumed.png`, `27-migrated-prototype-save.png`, `L1-cemetery-junction-gateway.png`, `L3-woodley-precinct-canopies.png`, `L4-woodley-wet-night.png`, `L5-a3290-flyover-suttons-park-ave.png`, `acceptance-run-8x.mp4`
+
 ## Still to do, by area and system
 
 * **Hardware performance is unmeasured.** Nothing has run on an Honor Magic 6 Pro or any phone. Frame time, memory and stall figures exist only from software rendering in this container, which says nothing about device performance. The APK writes a performance log from the Dev panel (Save perf log).

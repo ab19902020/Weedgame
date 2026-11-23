@@ -3,8 +3,8 @@ import { STATES } from './weather.js';
 
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 export const TESTSPOTS = [
-  ['Woodley precinct', -2869, -2192], ['Woodley signal crossing', -2790, -2318], ['Cemetery Junction', -5862, -2186],
-  ['Reading Town Hall', -7300, -2540], ['Suttons Park Ave (A3290 flyover)', -5372, -2681, 0], ['M4 over Reading Road', -289, 790],
+  ['Woodley precinct', -2869, -2192], ['Woodley signal crossing', -2790, -2318], ['Cemetery Junction arch', -5890, -2190, 0],
+  ['Reading Town Hall (from The Forbury)', -7240, -2600, 3.14], ['Suttons Park Ave (A3290 flyover)', -5372, -2681, 0], ['M4 over Reading Road', -289, 790],
 ];
 export class Hud {
   constructor(G) {

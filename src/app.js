@@ -82,14 +82,16 @@ function kerbPlace(x, z, filter) {
   return { x: n.x + n.dz * off, z: n.z - n.dx * off, heading: Math.atan2(n.dz, n.dx), e: n.e };
 }
 G.teleport = (x, z, heading) => {
-  const B = G.brothers, me = B.me, v = B.vehicleOf(me);
-  const p = kerbPlace(x, z, e => G.net.walkable(e) || (G.net.flags[e] & 16));
-  if (heading != null && Math.cos(p.heading - heading) < 0) {   // face the requested way on a two-way road (keep to the left)
-    p.heading += Math.PI; const w = G.net.width[p.e] / 2 - 1.0;
-    const n = G.net.nearest(x, z, 200, e => e === p.e); if (n) { p.x = n.x - n.dz * w; p.z = n.z + n.dx * w; }
-  }
-  if (v) { v.x = p.x; v.z = p.z; v.heading = p.heading; v.y = 0; v.sp = 0; me.x = p.x; me.z = p.z; B.cam.yaw = p.heading + Math.PI; }
-  else { me.x = p.x + Math.sin(p.heading) * 2; me.z = p.z - Math.cos(p.heading) * 2; }
+  const B = G.brothers, me = B.me, v = B.vehicleOf(me), net = G.net;
+  const n = net.nearest(x, z, 250, e => (net.flags[e] & 16) && !/motorway|trunk/.test(net.classes[net.cls[e]]));
+  if (!n) return;
+  let hd = Math.atan2(n.dz, n.dx), dir = 1;
+  if (heading != null && Math.cos(hd - heading) < 0 && !(net.flags[n.e] & 1)) { hd += Math.PI; dir = -1; }
+  const w = net.width[n.e] / 2;
+  // left of the travel direction: (dz,-dx) * dir
+  const lx = n.dz * dir, lz = -n.dx * dir;
+  if (v) { const o = w - 1.0; v.x = n.x + lx * o; v.z = n.z + lz * o; v.heading = hd; v.y = 0; v.sp = 0; me.x = v.x; me.z = v.z; B.cam.yaw = hd + Math.PI; }
+  else { const o = net.pav[n.e] ? w + 1.3 : w + 0.6; me.x = n.x + lx * o; me.z = n.z + lz * o; me.heading = hd; B.cam.yaw = hd + Math.PI; }
   me.y = 0; G._needGround = true;
   G.hud.fade(G.districtName(x, z));
 };

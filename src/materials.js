@@ -262,7 +262,7 @@ export function buildingMaterial() {
   const n = normalWorld;
   const refl = skyReflection(p, n, glass.mul(0.6).add(wet.mul(isRoof).mul(0.25)));
   const warm = mix(vec3(1.0, 0.72, 0.42), vec3(0.85, 0.9, 1.0), step(0.75, h3(vec3(seed, fi.add(3), ci))));
-  m.emissiveNode = lit.mul(warm).mul(select(shop.greaterThan(0.5), float(2.4), float(1.3))).add(refl).add(lightPool(p).mul(albedo));
+  m.emissiveNode = lit.mul(warm).mul(select(shop.mul(shopFront).greaterThan(0.5), float(0.85), float(0.45))).add(refl).add(lightPool(p).mul(albedo));
   return m;
 }
 

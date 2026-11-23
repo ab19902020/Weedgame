@@ -78,8 +78,23 @@ if acc:
     w('|---|---|---|')
     for s_ in acc['steps']:
         notes = '; '.join(s_.get('notes', []))[:420].replace('|', '/')
-        w(f"| {s_['name']} | {'pass' if s_['ok'] else 'FAIL'} | {notes}{(' — ' + (s_.get('fail') or s_.get('error', '')[:200])) if not s_['ok'] else ''} |")
+        res = 'pass' if s_['ok'] else 'FAIL'
+        if s_.get('rerun'):
+            fa = s_.get('firstAttempt') or {}
+            res += ' (re-run)'
+            if fa.get('ok'):
+                notes += ' — also passed in the main run; repeated in the re-run'
+            else:
+                notes += f" — main run failed ({(fa.get('fail') or (fa.get('error') or '')[:120])}); passed when re-run after the fix noted below"
+        w(f"| {s_['name']} | {res} | {notes}{(' — ' + (s_.get('fail') or s_.get('error', '')[:200])) if not s_['ok'] else ''} |")
     w('')
+    for r in acc.get('reruns', []):
+        w(f"Re-run {r['started']}: {r['reason']}\n")
+capdir = os.path.join(ROOT, 'docs/captures')
+if os.path.isdir(capdir):
+    w('## Captures\n')
+    w('Real gameplay frames from the runs above (software WebGL2 at 915 × 412). `acceptance-run-8x.mp4` is the whole main run at 8× speed. `25-pursuit-emerged-during-drive.png` comes from the main run: during the flyover drive the driving script clipped another car within sight of a patrol, and a pursuit followed and resolved ("Police lost sight of you"). It was not staged. `L*.png` are landmark views taken by touch after the run. Reading Town Hall has no clean capture yet: its model is built and in place (bounding box x −7346…−7293, z −2630…−2564, spire top 80 m above datum, checked at runtime), but from the street views tried, neighbouring buildings or Forbury Gardens trees block it at the third-person camera distance.\n')
+    w(', '.join(f'`{f}`' for f in sorted(os.listdir(capdir)) if f.endswith(('.png', '.mp4'))) + '\n')
 w('## Still to do, by area and system\n')
 for item in [
     '**Hardware performance is unmeasured.** Nothing has run on an Honor Magic 6 Pro or any phone. Frame time, memory and stall figures exist only from software rendering in this container, which says nothing about device performance. The APK writes a performance log from the Dev panel (Save perf log).',

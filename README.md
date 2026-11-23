@@ -6,7 +6,7 @@ A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Ear
 * `docs/COVERAGE.md`: what matches reference data, what is inferred or estimated, and what still needs work.
 * `docs/SOURCES.md`: asset and source register (licences, dates, signing key).
 * `docs/verification.json`: computed comparisons of the world against its inputs.
-* `docs/captures/`: gameplay captures and the log of the touch-driven acceptance run.
+* `docs/captures/`: gameplay captures, `acceptance-run-8x.mp4` (the whole touch-driven run at 8× speed; software rendering here ran at ~1 fps), `acceptance.json` (step log) and landmark views (`L*.png`).
 * `builds/Green-County-0.6.0-dev.apk`: signed development APK.
 
 ## Play

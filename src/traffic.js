@@ -218,6 +218,7 @@ export class Traffic {
     let guard = 0;
     while (v.s >= net.len[v.h >> 1] && guard++ < 6) {
       v.s -= net.len[v.h >> 1];
+      if (v.fixedRoute && v.ri + 1 >= v.route.length) { v.fixedRoute = false; v.busData = null; v.notInService = true; } // bus route left the map area: carry on as traffic
       this.extend(v);
       v.ri++;
       if (v.ri >= v.route.length) { v.ri = v.route.length - 1; v.s = net.len[v.h >> 1] - 0.1; v.v = 0; break; }

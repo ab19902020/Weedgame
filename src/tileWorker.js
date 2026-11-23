@@ -347,7 +347,9 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   for (let bi = 0; bi < P.length; bi++) {
     const m = M.subarray(bi * NM, bi * NM + NM);
     const base = m[0] + hmin, low = m[1] + hmin - 0.6, wallH = m[2], roof = m[3], rh = m[4];
-    const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], shop = m[12], seed = m[13];
+    const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], seed = m[13];
+    // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
+    const shop = m[12] || ((cls === 6 || cls === 7) && header.bn[bi] ? 1 : 0);
     if (cls === 13) { for (let k = 0; k < P[bi]; k++) ci += R[ri++]; continue; } // canopies are drawn by landmarks.js
     const floorH = Math.max(2.4, Math.min(5, wallH / Math.max(1, lv)));
     const rings = [];
