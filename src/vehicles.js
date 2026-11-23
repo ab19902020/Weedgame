@@ -4,6 +4,7 @@ import { Fn, attribute, vec3, float, mix, step, sin, fract, floor, positionLocal
 import { U } from './env.js';
 import { mergeGeos } from './tiles.js';
 import { lightPool } from './materials.js';
+import { loftBody, wheelGeometry, wheelMaterial } from './carModel.js';
 import { positionWorld } from 'three/tsl';
 
 export const MODELS = {
@@ -32,30 +33,37 @@ function profile(kind, L, H) {
 
 function buildModel(def) {
   const { L, W, H, prof } = def;
-  const shape = new THREE.Shape(profile(prof, L, H).map(([x, y]) => new THREE.Vector2(x, y)));
-  let body = new THREE.ExtrudeGeometry(shape, { depth: W - 0.08, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 1, steps: 1 });
-  body.translate(0, 0, -(W - 0.08) / 2);
-  body = body.toNonIndexed(); body.computeVertexNormals();
+  const isBus = prof === 'decker' || prof === 'single';
+  const belt = isBus ? 1.25 : prof === 'van' ? 1.2 : 0.98;
+  let body;
+  if (isBus) {
+    const shape = new THREE.Shape(profile(prof, L, H).map(([x, y]) => new THREE.Vector2(x, y)));
+    body = new THREE.ExtrudeGeometry(shape, { depth: W - 0.08, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 1, steps: 1 });
+    body.translate(0, 0, -(W - 0.08) / 2);
+    body = body.toNonIndexed(); body.computeVertexNormals();
+  } else body = loftBody(def, profile(prof, L, H), belt);   // rounded, smooth-shaded (carModel.js)
   // per-vertex classification: paint / glass / trim / lights
   const pos = body.attributes.position, nor = body.attributes.normal, n = pos.count;
   const col = new Float32Array(n * 3), paint = new Float32Array(n), lit = new Float32Array(n), liv = new Float32Array(n);
-  const isBus = prof === 'decker' || prof === 'single';
-  const belt = isBus ? 1.25 : prof === 'van' ? 1.2 : 0.98;
   for (let t = 0; t < n; t += 3) {
-    let cy = 0, cx = 0, ny = 0, nx = 0, nz = 0;
-    for (let k = 0; k < 3; k++) { cy += pos.getY(t + k) / 3; cx += pos.getX(t + k) / 3; ny += nor.getY(t + k) / 3; nx += nor.getX(t + k) / 3; nz += nor.getZ(t + k) / 3; }
+    let cy = 0, cx = 0, cz = 0, ny = 0, nx = 0, nz = 0;
+    for (let k = 0; k < 3; k++) { cy += pos.getY(t + k) / 3; cx += pos.getX(t + k) / 3; cz += pos.getZ(t + k) / 3; ny += nor.getY(t + k) / 3; nx += nor.getX(t + k) / 3; nz += nor.getZ(t + k) / 3; }
+    // wheel arches: dark liner around each wheel on the body sides
+    const arch = Math.abs(cz) > W / 2 - 0.3 && Math.hypot(Math.abs(cx) - def.wb / 2, cy - def.wr) < def.wr + 0.07;
     let glass = false;
     if (isBus) {
       const bands = prof === 'decker' ? [[1.3, 2.05], [2.55, 3.85]] : [[1.25, 2.55]];
       glass = Math.abs(ny) < 0.5 && bands.some(([a, b]) => cy > a && cy < b) && Math.abs(cx) < L / 2 - 0.15;
       if (Math.abs(nx) > 0.6 && cx > 0 && cy > 0.9 && cy < H - 0.3) glass = true; // windscreen
+    } else if (body.attributes.glassQ) {
+      glass = body.attributes.glassQ.getX(t) > 0.5 && !(prof === 'van' && Math.abs(nz) > 0.6 && cx < L / 2 - 1.3);
     } else {
       glass = cy > belt && cy < H - 0.04 && ny < 0.85 && !(prof === 'van' && Math.abs(nz) > 0.6 && cx < L / 2 - 1.3);
     }
     for (let k = 0; k < 3; k++) {
       const v = t + k;
       if (glass) { col[v * 3] = 0.05; col[v * 3 + 1] = 0.07; col[v * 3 + 2] = 0.09; paint[v] = 0; }
-      else if (cy < 0.42) { col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = 0.06; paint[v] = 0; }
+      else if (cy < (isBus ? 0.42 : def.prof === 'suv' ? 0.5 : 0.36) || arch) { col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = arch ? 0.02 : 0.05; paint[v] = 0; }
       else { paint[v] = 1; col[v * 3] = col[v * 3 + 1] = col[v * 3 + 2] = 1; liv[v] = def.livery && Math.abs(nz) > 0.5 && cy < belt && cy > 0.45 ? 1 : 0; }
     }
   }
@@ -63,6 +71,7 @@ function buildModel(def) {
   body.setAttribute('paint', new THREE.BufferAttribute(paint, 1));
   body.setAttribute('lit', new THREE.BufferAttribute(lit, 1));
   body.setAttribute('livery', new THREE.BufferAttribute(liv, 1));
+  body.deleteAttribute('glassQ');
   const parts = [body];
   const add = (g, rgb, p, l, lv = 0) => {
     g = g.toNonIndexed(); const c = g.attributes.position.count;
@@ -74,12 +83,14 @@ function buildModel(def) {
   };
   const l = L / 2, hy = isBus ? 0.75 : prof === 'van' ? 0.95 : 0.78;
   for (const s of [-1, 1]) {
-    add(new THREE.BoxGeometry(0.06, 0.14, 0.32).translate(l + 0.01, hy, s * (W / 2 - 0.3)), [0.9, 0.9, 0.85], 0, 1);      // headlights
-    add(new THREE.BoxGeometry(0.06, 0.16, 0.26).translate(-l - 0.01, hy + 0.08, s * (W / 2 - 0.25)), [0.5, 0.04, 0.03], 0, 2); // tail / brake
+    const inset = isBus ? 0.01 : -0.11;
+    add(new THREE.BoxGeometry(0.12, 0.13, 0.36).translate(l + inset, hy, s * (W / 2 - 0.3)), [0.9, 0.9, 0.85], 0, 1);      // headlights
+    add(new THREE.BoxGeometry(0.12, 0.15, 0.3).translate(-l - inset, hy + 0.08, s * (W / 2 - 0.27)), [0.5, 0.04, 0.03], 0, 2); // tail / brake
     if (!isBus) add(new THREE.BoxGeometry(0.22, 0.12, 0.06).translate(l - (prof === 'van' ? 1.1 : 1.75), belt + 0.06, s * (W / 2 + 0.03)), [0.08, 0.08, 0.08], 0, 0); // mirrors
   }
   add(new THREE.BoxGeometry(0.05, 0.11, 0.52).translate(-l - 0.01, 0.45, 0), [0.95, 0.8, 0.1], 0, 0); // rear plate
   add(new THREE.BoxGeometry(0.05, 0.11, 0.52).translate(l + 0.01, 0.45, 0), [0.95, 0.95, 0.92], 0, 0); // front plate
+  if (!isBus) add(new THREE.BoxGeometry(0.05, 0.16, W * 0.42).translate(l + 0.0, hy - 0.16, 0), [0.03, 0.03, 0.035], 0, 0); // grille
   if (def.livery) {
     add(new THREE.BoxGeometry(0.35, 0.1, 1.2).translate(-0.4, H + 0.05, 0), [0.1, 0.1, 0.12], 0, 3); // light bar
   }
@@ -91,7 +102,7 @@ function buildModel(def) {
 export class VehicleRenderer {
   constructor(scene, shadows) {
     this.meshes = {}; this.idx = {};
-    const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.35, metalness: 0.25, vertexColors: true });
+    const mat = new THREE.MeshPhysicalNodeMaterial({ roughness: 0.35, metalness: 0.25, vertexColors: true, clearcoat: 1, clearcoatRoughness: 0.06 });
     const vc = attribute('color', 'vec3'), paint = attribute('paint', 'float'), lit = attribute('lit', 'float'), liv = attribute('livery', 'float');
     const ic = attribute('iPaint', 'vec3');
     const st = attribute('iState', 'vec4'); // x brake, y lights, z siren, w indicator
@@ -102,7 +113,10 @@ export class VehicleRenderer {
     let base = mix(vc, ic, paint);
     base = mix(base, batten, liv);
     mat.colorNode = base;
-    mat.roughnessNode = mix(float(0.12), float(0.38), paint);
+    const glassish = step(vc.b, 0.12).mul(step(0.07, vc.b)).mul(float(1).sub(paint));   // glass colour (0.05, 0.07, 0.09)
+    mat.roughnessNode = mix(mix(float(0.55), float(0.03), glassish), float(0.42), paint);
+    mat.metalnessNode = paint.mul(0.45);
+    mat.clearcoatNode = paint;
     const head = step(0.5, lit).mul(step(lit, 1.5));
     const tail = step(1.5, lit).mul(step(lit, 2.5));
     const bar = step(2.5, lit).mul(step(lit, 3.5));
@@ -114,8 +128,8 @@ export class VehicleRenderer {
       .add(vec3(1, 0.65, 0.05).mul(blind).mul(1.5))
       .add(lightPool(positionWorld).mul(base));
     this.mat = mat;
-    const wheelGeo = new THREE.CylinderGeometry(1, 1, 1, 14).rotateX(Math.PI / 2);
-    const wm = new THREE.MeshStandardNodeMaterial({ roughness: 0.8, color: 0x111111 });
+    const wheelGeo = wheelGeometry();
+    const wm = wheelMaterial();
     this.wheels = new THREE.InstancedMesh(wheelGeo, wm, 1500);
     this.wheels.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.wheels.frustumCulled = false; this.wheels.count = 0; scene.add(this.wheels);

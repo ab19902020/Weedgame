@@ -9,6 +9,7 @@ import { createSky } from './sky.js';
 import { World } from './weather.js';
 import { SignAtlas } from './signs.js';
 import { createPost, createIBL } from './post.js';
+import { createGrass } from './grass.js';
 import { loadSurfaces } from './surfaces.js';
 
 const Q = new URLSearchParams(location.search);
@@ -68,10 +69,11 @@ export async function boot(extra = {}) {
   await surfaces;
   G.post = createPost(G);
   G.ibl = createIBL(G);
+  G.grass = createGrass(G);
   G.updateLighting = () => {
     sun.intensity = 3.2 * world.sunIntensity + 0.12 * U.night.value;
     sun.color.copy(U.sunCol.value).lerp(new THREE.Color(0.6, 0.68, 0.9), U.night.value);
-    hemi.intensity = (0.25 + world.skyIntensity * 1.1) * (G.ibl ? 0.35 : 1);
+    hemi.intensity = (0.25 + world.skyIntensity * 1.1) * (G.ibl ? 0.35 + U.night.value * 0.65 : 1);
     if (G.ibl) { scene.environmentIntensity = 0.35 + world.skyIntensity * 0.75; G.ibl.groundLum.value = 0.08 + world.day * 0.6; }
     hemi.color.copy(U.zenith.value).lerp(new THREE.Color(0.75, 0.8, 0.9), 0.55);
     hemi.groundColor.setRGB(0.22, 0.22, 0.18).multiplyScalar(0.25 + world.day * 0.75);

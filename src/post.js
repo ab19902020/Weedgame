@@ -32,7 +32,7 @@ export function createPost(G) {
   const strength = uniform(0.9);
   let c = colour.rgb.mul(mix(float(1), aoTerm, strength));
   // HDR bloom: lamps, headlights, lit shopfronts, sun glints on wet roads
-  const bl = bloom(vec4(c, 1), high ? 0.32 : 0.25, 0.45, 1.1);
+  const bl = bloom(vec4(c, 1), high ? 0.3 : 0.22, 0.45, 1.6);
   c = c.add(bl.rgb);
   const pipe = new THREE.RenderPipeline(renderer);
   pipe.outputColorTransform = false;

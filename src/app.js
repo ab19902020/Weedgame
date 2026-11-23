@@ -205,6 +205,7 @@ function step(dt, render) {
     }
   }
   G.ibl?.update(dt);
+  G.grass?.update(G.camera.position);
   if (G.post) G.post.render(); else G.renderer.render(G.scene, G.camera);
   G.frame++;
 }

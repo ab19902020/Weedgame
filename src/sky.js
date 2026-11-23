@@ -1,6 +1,6 @@
 // Sky dome: analytic atmosphere + raymarched cloud layer lit by the same sun as the streets.
 import * as THREE from 'three/webgpu';
-import { Fn, float, vec2, vec3, vec4, positionWorld, cameraPosition, texture, normalize, dot, max, min, mix, smoothstep, step, exp, pow, clamp, fract, floor, sin, If, Loop, abs } from 'three/tsl';
+import { Fn, float, vec2, vec3, vec4, positionWorld, cameraPosition, texture, normalize, dot, max, min, mix, smoothstep, step, exp, pow, clamp, fract, floor, sin, If, Loop, abs, log2, length } from 'three/tsl';
 import { U, cloudTex, skyColor } from './env.js';
 
 const h3 = Fn(([v]) => fract(sin(dot(v, vec3(12.9898, 78.233, 37.719))).mul(43758.5453)));
@@ -10,9 +10,11 @@ export function createSky(steps = 8) {
   const H0 = 1350, H1 = 2700;
   const density = Fn(([pos, hf]) => {
     const q = pos.xz.add(U.cloudOff);
-    const base = texture(cloudTex, q.div(9000)).level(0).r;
-    const weather = texture(cloudTex, q.div(42000)).level(0).b;
-    const detail = texture(cloudTex, q.div(1900).add(hf.mul(0.37))).level(1).g;
+    // distance-based mip level: far, grazing samples were aliasing into horizontal streaks
+    const lod = log2(max(length(pos.xz.sub(cameraPosition.xz)).div(2500), 1));
+    const base = texture(cloudTex, q.div(9000)).level(lod).r;
+    const weather = texture(cloudTex, q.div(42000)).level(lod.mul(0.5)).b;
+    const detail = texture(cloudTex, q.div(1900).add(hf.mul(0.37))).level(lod.add(1)).g;
     const shape = base.mul(0.7).add(weather.mul(0.3));
     const thr = mix(float(0.72), float(0.05), U.cover);
     const profile = smoothstep(0.0, 0.18, hf).mul(smoothstep(1.0, mix(float(0.45), float(0.85), U.cover), hf));
@@ -36,7 +38,7 @@ export function createSky(steps = 8) {
       const dt = t1.sub(t0).div(steps);
       const trans = float(1).toVar();
       const light = vec3(0).toVar();
-      const jitter = h3(d.mul(911)).mul(0.25).add(0.35);
+      const jitter = h3(d.mul(911));   // full-step dither hides slab banding
       const sunVis = smoothstep(-0.08, 0.05, U.sunDir.y);
       const amb = mix(vec3(U.zenith).mul(0.9).add(vec3(U.horizon).mul(0.5)), vec3(0.06, 0.05, 0.05), U.night.mul(0.5));
       Loop(steps, ({ i }) => {

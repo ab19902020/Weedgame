@@ -1,37 +1,19 @@
 // Instanced low-poly people. Every person (brothers, pedestrians, police) is drawn by the
 // same nine instanced part meshes, so a crowd costs nine draw calls.
 import * as THREE from 'three/webgpu';
-import { mergeGeos } from './tiles.js';
+import { partGeo } from './humanModel.js';
 
 const MAX = 260;
 const Y = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0), Z = new THREE.Vector3(0, 0, 1);
 
-function partGeo(kind) {
-  let g;
-  if (kind === 'torso') {
-    g = new THREE.CylinderGeometry(0.2, 0.17, 0.62, 8, 1); g.scale(1, 1, 0.62); g.translate(0, 1.15, 0);
-    const sh = new THREE.SphereGeometry(0.2, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2); sh.scale(1.05, 0.35, 0.62); sh.translate(0, 1.45, 0);
-    g = mergeGeos([g.toNonIndexed(), sh.toNonIndexed()]);
-  } else if (kind === 'head') { g = new THREE.SphereGeometry(0.105, 10, 8); g.scale(0.92, 1.12, 1); g.translate(0, 1.64, 0); }
-  else if (kind === 'hair') { g = new THREE.SphereGeometry(0.112, 10, 6, 0, Math.PI * 2, 0, Math.PI * 0.55); g.scale(0.95, 1.05, 1.05); g.translate(0, 1.665, -0.01); }
-  else if (kind === 'leg') { g = new THREE.CapsuleGeometry(0.072, 0.74, 3, 8); g.translate(0, -0.44, 0); const foot = new THREE.BoxGeometry(0.1, 0.07, 0.24); foot.translate(0, -0.86, 0.05); g = mergeGeos([g.toNonIndexed(), foot.toNonIndexed()]); }
-  else if (kind === 'arm') { g = new THREE.CapsuleGeometry(0.05, 0.5, 3, 6); g.translate(0, -0.29, 0); }
-  else if (kind === 'hand') { g = new THREE.SphereGeometry(0.048, 6, 4); g.translate(0, -0.6, 0); }
-  else if (kind === 'hat') { const a = new THREE.CylinderGeometry(0.1, 0.12, 0.16, 10); a.translate(0, 1.79, 0); const d = new THREE.SphereGeometry(0.1, 10, 5, 0, Math.PI * 2, 0, Math.PI / 2); d.scale(1, 1.4, 1); d.translate(0, 1.86, 0); const brim = new THREE.CylinderGeometry(0.15, 0.15, 0.015, 12); brim.translate(0, 1.72, 0); g = mergeGeos([a.toNonIndexed(), d.toNonIndexed(), brim.toNonIndexed()]); }
-  else if (kind === 'umbrella') { const c = new THREE.ConeGeometry(0.55, 0.28, 10, 1, true); c.translate(0, 2.12, 0); const st = new THREE.CylinderGeometry(0.012, 0.012, 0.9, 4); st.translate(0, 1.7, 0); g = mergeGeos([c.toNonIndexed(), st.toNonIndexed()]); }
-  else if (kind === 'bag') { g = new THREE.BoxGeometry(0.26, 0.32, 0.1); g.translate(0, 1.18, -0.17); }
-  if (g.index) g = g.toNonIndexed();
-  g.computeVertexNormals();
-  return g;
-}
-
+// part meshes: smooth-shaded models in humanModel.js
 const PARTS = ['torso', 'head', 'hair', 'legL', 'legR', 'armL', 'armR', 'handL', 'handR', 'hat', 'umbrella', 'bag'];
 
 export class People {
   constructor(scene, shadows) {
     this.list = [];
     const geos = { torso: partGeo('torso'), head: partGeo('head'), hair: partGeo('hair'), leg: partGeo('leg'), arm: partGeo('arm'), hand: partGeo('hand'), hat: partGeo('hat'), umbrella: partGeo('umbrella'), bag: partGeo('bag') };
-    const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.85 });
+    const mat = new THREE.MeshStandardNodeMaterial({ roughness: 0.78 });
     const umat = new THREE.MeshStandardNodeMaterial({ roughness: 0.4, side: THREE.DoubleSide });
     this.meshes = {};
     for (const p of PARTS) {

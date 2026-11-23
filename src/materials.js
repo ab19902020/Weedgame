@@ -4,7 +4,7 @@ import * as THREE from 'three/webgpu';
 import {
   Fn, float, vec2, vec3, vec4, attribute, positionWorld, positionLocal, normalWorld, cameraPosition, texture, uv,
   mix, smoothstep, step, clamp, fract, floor, abs, max, min, pow, exp, sin, cos, dot, normalize, length, reflect, select, If, Loop, fwidth,
-  int, cross,
+  int, cross, dFdx, dFdy,
 } from 'three/tsl';
 import { U, noiseTex, cloudTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL } from './env.js';
 import { L, sAlbedo, sDetail, sAlbedoAT, perturb, perturbW, groundUV, worldToView } from './surfaces.js';
@@ -52,7 +52,9 @@ export const wetReflection = Fn(([p, n, amount, sharp]) => {
       acc.addAssign(C.rgb.mul(L.w).mul(streak).div(dist.mul(dist).mul(0.004).add(1)));
     });
   });
-  return sky.add(acc.mul(amount).mul(fres.mul(2).add(0.3)));
+  // Fresnel-weighted: steep views of the wet ground right in front of the camera reflect little
+  const streaks = acc.mul(amount).mul(fres.mul(2.4).add(0.04));
+  return sky.add(streaks.div(streaks.add(1)).mul(1.6));        // soft-clipped so close signal heads don't flood
 });
 
 function std(opts = {}) {
@@ -252,13 +254,26 @@ export function buildingMaterial() {
   const ww = select(isOffice.greaterThan(0.5), mix(float(0.55), float(0.85), r1), select(isInd.greaterThan(0.5), float(0.25), float(0.45)));
   const winTop = select(isInd.greaterThan(0.5), float(0.92), float(0.8));
   const winBot = select(isInd.greaterThan(0.5), float(0.75), float(0.33));
+  // view ray in façade space; u direction from screen derivatives so it always matches the uv
+  const nW = normalWorld;
+  const dp1 = dFdx(p), dp2 = dFdy(p), du1 = dFdx(u.x), du2 = dFdy(u.x);
+  const tRaw = cross(dp2, nW).mul(du1).add(cross(nW, dp1).mul(du2));
+  const tU = normalize(tRaw.sub(nW.mul(dot(nW, tRaw))).add(vec3(1e-5, 0, 1e-5)));
+  const vIn = normalize(positionWorld.sub(cameraPosition));             // ray into the building
+  const rx = dot(vIn, tU), ry = vIn.y, rz = max(dot(vIn, nW.negate()), 0.05);
   const inWin = step(abs(cu.sub(0.5)), ww.mul(0.5)).mul(step(winBot, fv)).mul(step(fv, winTop)).mul(step(0.0, u.y)).mul(isWall);
+  // frames and glass sit 11 cm back in the opening: shift their coordinates by parallax and show the
+  // reveal (shaded brick) where the shifted opening no longer covers the pixel
+  const rev = float(0.11).div(rz).mul(float(1).sub(isInd));
+  const cuS = cu.add(rx.mul(rev).div(sp)), fvS = fv.add(ry.mul(rev).div(fh));
+  const opening = step(abs(cuS.sub(0.5)), ww.mul(0.5)).mul(step(winBot, fvS)).mul(step(fvS, winTop));
+  const reveal = inWin.mul(float(1).sub(opening));
   const fw = float(0.045).div(sp);                                 // ~6 cm uPVC frame
-  const inner = step(abs(cu.sub(0.5)), ww.mul(0.5).sub(fw)).mul(step(winBot.add(0.025), fv)).mul(step(fv, winTop.sub(0.025)));
+  const inner = step(abs(cuS.sub(0.5)), ww.mul(0.5).sub(fw)).mul(step(winBot.add(0.025), fvS)).mul(step(fvS, winTop.sub(0.025))).mul(opening);
   // glazing bars: casement split for houses, transoms for offices
-  const bar = isHouse.mul(step(abs(cu.sub(0.5)), fw.mul(0.5))).add(step(abs(fv.sub(mix(winBot, winTop, 0.72))), 0.008).mul(isHouse))
-    .add(isOffice.mul(step(abs(fract(fv.mul(2)).sub(0.5)), 0.012))).min(1);
-  const frame = inWin.mul(float(1).sub(inner)).add(inWin.mul(inner).mul(bar)).min(1);
+  const bar = isHouse.mul(step(abs(cuS.sub(0.5)), fw.mul(0.5))).add(step(abs(fvS.sub(mix(winBot, winTop, 0.72))), 0.008).mul(isHouse))
+    .add(isOffice.mul(step(abs(fract(fvS.mul(2)).sub(0.5)), 0.012))).min(1);
+  const frame = inWin.mul(opening).mul(float(1).sub(inner)).add(inWin.mul(inner).mul(bar)).min(1);
   const front = step(0.5, part).mul(step(part, 1.5));
   const shopFront = shop.mul(front).mul(step(fi, 0.5)).mul(step(0.06, fv)).mul(step(fv, 0.82)).mul(step(0.04, fract(u.x.div(2.6))));
   const doorCol = h1(seed.add(5.5)).mul(5).floor();
@@ -267,13 +282,9 @@ export function buildingMaterial() {
     select(doorCol.lessThan(4), vec3(0.06, 0.16, 0.08), vec3(0.82, 0.82, 0.8)))));
   const glass = max(inWin.mul(inner).mul(float(1).sub(bar)), shopFront).mul(float(1).sub(isDoor));
   // ---- room interiors behind the glass (parallax box: back wall, side walls, floor, ceiling)
-  const nW = normalWorld;
-  const tU = normalize(cross(nW, vec3(0, 1, 0)).add(vec3(1e-4, 0, 0)));
-  const vIn = normalize(positionWorld.sub(cameraPosition));             // ray into the building
-  const rx = dot(vIn, tU), ry = vIn.y, rz = max(dot(vIn, nW.negate()), 0.05);
   const depth = select(shopFront.greaterThan(0.5), float(6), float(3.2));
   const halfW = sp.mul(0.5);
-  const x0 = cu.sub(0.5).mul(sp), y0 = fv.mul(fh);
+  const x0 = cuS.sub(0.5).mul(sp), y0 = fvS.mul(fh);
   const tBack = depth.div(rz);
   const tSide = select(rx.greaterThan(0), halfW.sub(x0), halfW.add(x0)).div(abs(rx).max(1e-3));
   const tFloor = select(ry.lessThan(0), y0.div(ry.negate().max(1e-3)), float(1e4));
@@ -290,7 +301,7 @@ export function buildingMaterial() {
   const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.1));
   const along = select(hitBack.greaterThan(0.5), hx, hz);
   const cell = h3(vec3(floor(along.div(0.28)), floor(hy.div(0.42)), roomSeed.mul(53)));
-  const stock = mix(vec3(0.75, 0.2, 0.15), vec3(0.2, 0.35, 0.7), cell).mul(cell.mul(0.6).add(0.5)).add(vec3(0.25, 0.22, 0.1).mul(step(0.7, cell)));
+  const stock = mix(vec3(0.5), mix(vec3(0.7, 0.3, 0.22), vec3(0.3, 0.4, 0.62), cell), 0.45).mul(cell.mul(0.5).add(0.55));
   const shelfEdge = step(fract(hy.div(0.42)), 0.09);
   let roomCol = room.mul(float(1).sub(furniture));
   roomCol = mix(roomCol, mix(stock, vec3(0.85), shelfEdge), shelfZone.mul(step(0.18, fract(along.div(0.28)))));
@@ -311,6 +322,7 @@ export function buildingMaterial() {
   let albedo = wallCol.mul(isWall);
   const frameCol = select(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), select(r3.lessThan(0.85), vec3(0.9, 0.9, 0.88), vec3(0.15, 0.12, 0.1)));
   albedo = mix(albedo, frameCol, frame);
+  albedo = mix(albedo, wallCol.mul(mix(float(0.55), float(0.8), step(0, ry))), reveal.mul(float(1).sub(shopFront)));
   const sill = step(abs(cu.sub(0.5)), ww.mul(0.5).add(0.06)).mul(step(winBot.sub(0.05), fv)).mul(step(fv, winBot)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(isDoor)).mul(step(0, u.y));
   albedo = mix(albedo, vec3(0.7, 0.68, 0.62), sill);
   albedo = mix(albedo, vec3(0.012, 0.014, 0.016), glass);
@@ -327,7 +339,9 @@ export function buildingMaterial() {
   m.normalNode = perturb(nW, d, mix(float(1.0), float(0.7), isRender).mul(float(1).sub(plain)));
   const refl = skyReflection(p, nW, glass.mul(0.6).add(wet.mul(isRoof).mul(0.25)));
   const daylight = float(1).sub(U.night).mul(mix(float(0.07), float(0.04), U.cover));
-  const lamp = lit.mul(mix(float(0.9), mix(float(0.45), float(1.5), U.night), shopFront));
+  // ceiling light: brighter towards the top of the room and the back wall
+  const pool = hy.div(fh).mul(0.6).add(0.55).mul(mix(float(0.8), float(1.15), hitBack));
+  const lamp = lit.mul(mix(float(0.42), mix(float(0.3), float(0.75), U.night), shopFront)).mul(pool);
   const interior = roomCol.mul(glass).mul(warm.mul(lamp).add(daylight));
   m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo));
   return m;
