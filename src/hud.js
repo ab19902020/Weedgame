@@ -21,6 +21,7 @@ export class Hud {
         <button id="bUse" class="big">Enter</button>
         <button id="bRun" class="big">Run</button>
         <button id="bHorn" class="big" hidden>Horn</button>
+        <button id="bCam" data-act="camera">Cam</button>
         <button id="bSwap">Swap</button>
         <button id="bMap">Map</button>
         <button id="bDev">Dev</button>
@@ -32,7 +33,7 @@ export class Hud {
     this.el = id => root.querySelector('#' + id);
     const I = G.input;
     I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn');
-    I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
+    I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
     this.el('mClose').onclick = () => this.toggleMap(false);
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
     this.mapView = { x: 0, z: 0, s: 0.25 };

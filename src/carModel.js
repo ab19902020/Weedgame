@@ -226,6 +226,22 @@ export function buildCar(def, key, modelIndex) {
     const g = new THREE.CylinderGeometry(nEx > 1 ? 0.04 : 0.028, nEx > 1 ? 0.04 : 0.028, 0.12, 10); g.rotateZ(Math.PI / 2); g.translate(xTail(z) + 0.02, S.hs + 0.05, z); parts.add(g, 17, 0, [0.5, 0.5, 0.52]);
   }
   if (def.livery) { const g = new THREE.BoxGeometry(0.35, 0.1, 1.2); g.translate(-0.25, H + 0.05, 0); parts.add(g, 3, 0, [0.1, 0.1, 0.12]); }
+  // cockpit (seen from the driver camera, where the single-sided shell drops away): dashboard under the
+  // windscreen, instrument binnacle, steering wheel on the right, front seats
+  {
+    const sc = topF(S.ws0) - 0.015, fl = S.hs + 0.12, iw = widthAt(S.ws0 - 0.3) * 0.86;
+    const dash = new THREE.BoxGeometry(0.6, sc - fl, iw * 2); dash.translate(S.ws0 - 0.32, (sc + fl) / 2, 0); parts.add(dash, 16, 0, [0.035, 0.035, 0.038]);
+    const top = new THREE.BoxGeometry(0.3, 0.025, iw * 2); top.translate(S.ws0 - 0.5, sc - 0.01, 0); parts.add(top, 16, 0, [0.05, 0.05, 0.052]);
+    const bin = new THREE.BoxGeometry(0.16, 0.07, 0.34); bin.translate(S.ws0 - 0.62, sc + 0.02, 0.37); parts.add(bin, 16, 0, [0.02, 0.02, 0.022]);
+    const sw = new THREE.TorusGeometry(0.18, 0.02, 6, 20); sw.rotateY(Math.PI / 2); sw.rotateZ(0.42); sw.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(sw, 16, 0, [0.02, 0.02, 0.02]);
+    const hub = new THREE.CylinderGeometry(0.06, 0.06, 0.04, 10); hub.rotateZ(Math.PI / 2 - 0.42); hub.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(hub, 16, 0, [0.03, 0.03, 0.03]);
+    const seatX = S.ws0 - 1.35;
+    for (const z of [0.37, -0.37]) {
+      const base = new THREE.BoxGeometry(0.5, 0.12, 0.46); base.translate(seatX + 0.1, fl + 0.2, z); parts.add(base, 16, 0, [0.05, 0.05, 0.055]);
+      const back = new THREE.BoxGeometry(0.12, 0.62, 0.46); back.rotateZ(0.22); back.translate(seatX - 0.17, fl + 0.55, z); parts.add(back, 16, 0, [0.05, 0.05, 0.055]);
+      const rest = new THREE.BoxGeometry(0.1, 0.18, 0.26); rest.rotateZ(0.22); rest.translate(seatX - 0.25, fl + 0.95, z); parts.add(rest, 16, 0, [0.06, 0.06, 0.065]);
+    }
+  }
   return { parts: parts.list, spec: S, wheels };
 }
 

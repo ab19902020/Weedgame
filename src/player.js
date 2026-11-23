@@ -7,6 +7,7 @@ import { pointInRing } from './tiles.js';
 
 const JACKETS = [0x314958, 0x765741, 0x294735, 0x653143], SKINS = [0xb48265, 0x895e46, 0xc39475];
 
+import { CAR_SPECS } from './carModel.js';
 export class Brothers {
   constructor(G, saved) {
     this.G = G;
@@ -14,7 +15,8 @@ export class Brothers {
       outfit: { jacket: i, skin: i ? 1 : 0, hair: 0 } });
     this.b = saved?.brothers || [def(0), def(1)];
     this.active = saved?.active ?? 0;
-    this.cam = { yaw: saved?.camYaw ?? 0, pitch: 0.28, dist: 4.4, x: 0, y: 0, z: 0, lastUser: -10, fade: 0 };
+    this.cam = { yaw: saved?.camYaw ?? 0, pitch: 0.28, dist: 4.4, x: 0, y: 0, z: 0, lastUser: -10, fade: 0, foot: 0, car: 0, cine: null };
+    try { const m = JSON.parse(localStorage.getItem('greenCounty.camModes') || '{}'); this.cam.foot = m.foot | 0; this.cam.car = m.car | 0; } catch (e) { /* storage blocked */ }
     this.actor = [0, 1].map(i => ({ id: 'brother' + i, x: 0, y: 0, z: 0, heading: 0, speed: 0, phase: 0, look: this.lookFor(i), visible: true, t: 0 }));
     this.vel = { x: 0, z: 0 };
     this.notice = null;
@@ -34,6 +36,7 @@ export class Brothers {
     if (look.dx || look.dy) { this.cam.yaw += look.dx * 0.0062; this.cam.pitch = Math.max(-0.25, Math.min(1.1, this.cam.pitch + look.dy * 0.0045)); this.cam.lastUser = G.time; }
     const veh = this.vehicleOf(me);
     if (veh) this.drive(dt, input, veh); else this.walk(dt, input);
+    if (input.consume('camera')) this.cycleCamera(!!veh);
     if (input.consume('use')) this.toggleVehicle();
     if (input.consume('swap')) this.swap();
     // update actors for both brothers
@@ -75,7 +78,8 @@ export class Brothers {
     this.speedNow = sp;
     // on foot, only re-centre behind the brother while the stick is pushed mostly forward
     const forward = ax.y < -0.55 && Math.abs(ax.x) < 0.35;
-    this.followCam(dt, me.x, me.y + 1.55, me.z, 4.3, sp > 0.5 && forward ? me.heading : null, 0.7);
+    const fm = this.cam.foot;
+    this.followCam(dt, me.x, me.y + 1.55 + (fm === 2 ? 0.6 : 0), me.z, [4.3, 7.4, 13][fm], sp > 0.5 && forward ? me.heading : null, 0.7, fm === 0 ? null : [0.28, 0.36, 0.85][fm]);
   }
   collideCircle(x, z, r, y) {
     const G = this.G;
@@ -156,11 +160,54 @@ export class Brothers {
     this.speedNow = Math.abs(v.sp);
     if (input.consume('horn')) G.events.emit('horn', { x: v.x, z: v.z, v });
     const big = v.model.startsWith('bus') ? 13 : v.model === 'van' ? 8.5 : 7.2;
-    this.followCam(dt, v.x, v.y + (v.model.startsWith('bus') ? 3 : 1.5), v.z, big, Math.abs(v.sp) > 1 ? (v.sp > 0 ? v.heading : v.heading + Math.PI) : null);
+    const camY = v.y + (v.model.startsWith('bus') ? 3 : 1.5), mh = Math.abs(v.sp) > 1 ? (v.sp > 0 ? v.heading : v.heading + Math.PI) : null;
+    const mode = this.cam.car;
+    if (mode === 3) this.driverCam(v);
+    else if (mode === 4) this.cineCam(dt, v);
+    else this.followCam(dt, v.x, camY + (mode === 1 ? 0.4 : mode === 2 ? 1 : 0), v.z, big * [1, 1.65, 2.7][mode], mh, mode === 2 ? 2.2 : 1.6, [0.22, 0.3, 0.78][mode]);
   }
-  followCam(dt, tx, ty, tz, dist, moveHeading, rate = 1.6) {
+  // ------------------------------------------------------------------ camera modes
+  static CAR_MODES = ['Chase', 'Far chase', 'High', 'Driver', 'Cinematic'];
+  static FOOT_MODES = ['Close', 'Far', 'High'];
+  cycleCamera(inCar) {
+    const c = this.cam, names = inCar ? Brothers.CAR_MODES : Brothers.FOOT_MODES;
+    if (inCar) c.car = (c.car + 1) % names.length; else c.foot = (c.foot + 1) % names.length;
+    c.cine = null; c.lastUser = -10;
+    try { localStorage.setItem('greenCounty.camModes', JSON.stringify({ foot: c.foot, car: c.car })); } catch (e) { /* storage blocked */ }
+    this.G.hud.toast('Camera · ' + names[inCar ? c.car : c.foot], 1.6);
+  }
+  // from the driver's seat (right-hand drive): the shell is single-sided, so pillars and roof drop away
+  driverCam(v) {
+    const c = this.cam, G = this.G, h = v.heading, fx = Math.cos(h), fz = Math.sin(h), rx = -Math.sin(h), rz = Math.cos(h);
+    const bus = v.model.startsWith('bus'), S = CAR_SPECS[v.model];
+    // seat position from the car's own windscreen and belt line
+    const eye = bus ? 2.3 : v.model === 'van' ? 1.8 : S ? (S.belt[0] + S.belt[1]) / 2 + 0.26 : 1.2;
+    const fwd = bus ? v.def.L / 2 - 1.2 : S ? S.ws0 - 1.4 : 0, side = bus ? 0.6 : 0.37;
+    c.x = v.x + fx * fwd + rx * side; c.y = v.y + eye; c.z = v.z + fz * fwd + rz * side;
+    const look = (G.time - c.lastUser < 2.5) ? c.yaw + Math.PI - h : 0;     // drag to look around, eases back
+    c.yaw = G.time - c.lastUser < 2.5 ? c.yaw : h + Math.PI;
+    const lh = h + look;
+    G.camera.position.set(c.x, c.y, c.z);
+    G.camera.lookAt(c.x + Math.cos(lh) * 20, c.y - 1.2 - (v.pitch || 0) * 20, c.z + Math.sin(lh) * 20);
+  }
+  // roadside cameras that hand over as the car passes
+  cineCam(dt, v) {
+    const c = this.cam, G = this.G, fx = Math.cos(v.heading), fz = Math.sin(v.heading);
+    const far = !c.cine || Math.hypot(c.cine.x - v.x, c.cine.z - v.z) > 38 || ((c.cine.x - v.x) * fx + (c.cine.z - v.z) * fz) < -22;
+    if (far) {
+      const ahead = 16 + Math.min(24, Math.abs(v.sp || 0) * 1.6), sd = Math.random() < 0.5 ? -1 : 1;
+      const x = v.x + fx * ahead - fz * sd * 7, z = v.z + fz * ahead + fx * sd * 7;
+      const gy = G.tiles.ground(x, z, v.y + 2) ?? v.y;
+      c.cine = { x, z, y: gy + (Math.random() < 0.3 ? 4.5 : 1.1) };
+    }
+    G.camera.position.set(c.cine.x, c.cine.y, c.cine.z);
+    G.camera.lookAt(v.x, v.y + 0.9, v.z);
+    c.x = c.cine.x; c.y = c.cine.y; c.z = c.cine.z;
+  }
+  followCam(dt, tx, ty, tz, dist, moveHeading, rate = 1.6, pitchTarget = null) {
     const c = this.cam, G = this.G;
     if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate));
+    if (pitchTarget != null && G.time - c.lastUser > 1.4) c.pitch += (pitchTarget - c.pitch) * Math.min(1, dt * 2);
     c.dist += (dist - c.dist) * Math.min(1, dt * 3);
     const cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
     let d = c.dist;

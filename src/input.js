@@ -72,4 +72,4 @@ export class Input {
     btn.addEventListener('pointerup', off); btn.addEventListener('pointercancel', off); btn.addEventListener('lostpointercapture', off);
   }
 }
-const KEYMAP = { ShiftLeft: 'run', ShiftRight: 'run', KeyF: 'use', Enter: 'use', KeyH: 'horn', Space: 'brake', Tab: 'swap', KeyM: 'map', KeyP: 'dev', Backquote: 'dev' };
+const KEYMAP = { ShiftLeft: 'run', ShiftRight: 'run', KeyF: 'use', Enter: 'use', KeyH: 'horn', Space: 'brake', Tab: 'swap', KeyM: 'map', KeyP: 'dev', Backquote: 'dev', KeyC: 'camera', KeyV: 'camera' };

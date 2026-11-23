@@ -22,7 +22,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #fade{position:absolute;inset:0;display:grid;place-items:center;font-size:22px;font-weight:700;opacity:0;background:#000;color:#fff}
 #fade.go{animation:fade 1.6s ease}
 @keyframes fade{0%{opacity:.95}55%{opacity:.85}100%{opacity:0}}
-#btns{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:16px;display:grid;grid-template-columns:repeat(3,auto);gap:10px;justify-items:center;align-items:end}
+#btns{position:absolute;right:max(14px,env(safe-area-inset-right));bottom:16px;display:grid;grid-template-columns:repeat(4,auto);gap:10px;justify-items:center;align-items:end}
 #btns button{background:#0008;color:#fff;border:2px solid #ffffff66;border-radius:30px;padding:9px 13px;font-weight:700;font-size:13px;min-width:64px;touch-action:none}
 #btns button.big{grid-row:1;width:74px;height:74px;border-radius:50%;font-size:13px;padding:0}
 #btns button.on{background:#ffffff55}
