@@ -5,7 +5,8 @@
 //         prefiltered (PMREM) as scene.environment, so every PBR surface picks up sky light
 //         and glossy reflections that follow the weather.
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, vec3, vec4, float, uniform, mix, renderOutput, screenUV, normalWorld, positionWorld, Fn, smoothstep, max } from 'three/tsl';
+import { pass, mrt, output, normalView, vec2, vec3, vec4, float, uniform, mix, renderOutput, screenUV, normalWorld, positionWorld, Fn, smoothstep, max, metalness, roughness } from 'three/tsl';
+import { ssr } from 'three/examples/jsm/tsl/display/SSRNode.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
@@ -17,7 +18,8 @@ export function createPost(G) {
   if (!B.post || G.Q.get('post') === '0') return null;
   const { renderer, scene, camera } = G;
   const scenePass = pass(scene, camera);
-  scenePass.setMRT(mrt({ output, normal: normalView }));
+  const useSSR = !!B.ssr && G.Q.get('ssr') !== '0';
+  scenePass.setMRT(useSSR ? mrt({ output, normal: normalView, metalrough: vec2(metalness, roughness) }) : mrt({ output, normal: normalView }));
   const colour = scenePass.getTextureNode('output');
   const depth = scenePass.getTextureNode('depth');
   const normal = scenePass.getTextureNode('normal');
@@ -33,6 +35,28 @@ export function createPost(G) {
   }
   const strength = uniform(0.9);
   let c = aoPass ? colour.rgb.mul(mix(float(1), aoPass.getTextureNode().sample(screenUV).r, strength)) : colour.rgb;
+  // screen-space reflections ('fake ray tracing'): wet roads and puddles, glass, car paint and chrome
+  // reflect what is actually on screen; the sky PMREM still covers rays that leave the screen
+  let ssrPass = null;
+  if (useSSR) {
+    const mr = scenePass.getTextureNode('metalrough');
+    ssrPass = ssr(colour, depth, normal, { metalnessNode: mr.r, roughnessNode: mr.g, reflectNonMetals: true, camera });
+    ssrPass.resolutionScale = B.ssr.scale ?? 0.5;
+    ssrPass.quality.value = B.ssr.quality ?? 0.45;
+    ssrPass.maxDistance.value = 60;
+    ssrPass.thickness.value = 0.35;
+    ssrPass.intensity.value = 0.9;
+    ssrPass.screenEdgeFade.value = 0.25;
+    if (G.Q.get('ssrdbg')) { const pipe = new THREE.RenderPipeline(renderer); pipe.outputNode = G.Q.get('ssrdbg') === 'mr' ? vec4(mr.rg, 0, 1) : vec4(ssrPass.rgb.add(vec3(0, 0, ssrPass.a.mul(0.3))), 1); return { pipe, render() { pipe.render(); } }; }
+    // energy weighting the node leaves to us: only smooth surfaces reflect (puddles and glass most,
+    // wet tarmac and paint less, rough walls not at all), metals more strongly than dielectrics
+    const rough = mr.g, metal = mr.r;
+    // rays that miss come back black (the node's env fallback needs an equirect map, not our live PMREM):
+    // drop them so the material's own sky/IBL reflection shows instead
+    const hitLum = max(max(ssrPass.r, ssrPass.g), ssrPass.b);
+    const w = smoothstep(0.5, 0.04, rough).mul(mix(float(0.55), float(0.85), metal)).mul(ssrPass.a).mul(smoothstep(0.004, 0.04, hitLum)).clamp(0, 1);
+    c = mix(c, ssrPass.rgb, w);
+  }
   // HDR bloom: lamps, headlights, lit shopfronts, sun glints on wet roads
   if (B.bloom > 0) c = c.add(bloom(vec4(c, 1), B.bloom, 0.45, 1.6).rgb);
   const pipe = new THREE.RenderPipeline(renderer);
@@ -42,11 +66,13 @@ export function createPost(G) {
   // gentle 'punchy' grade on top of AgX: +10% saturation, slight S-curve contrast
   const disp = renderOutput(vec4(c, 1)).rgb;
   const lum = disp.dot(vec3(0.2126, 0.7152, 0.0722));
-  let g = mix(vec3(lum), disp, 1.1);
-  g = g.add(g.sub(0.5).mul(0.08)).clamp(0, 1);
+  // grade on top of AgX: richer saturation, S-curve contrast, cool shadows / warm highlights
+  let g = mix(vec3(lum), disp, 1.2);
+  g = g.add(g.sub(0.5).mul(0.11));
+  g = g.mul(mix(vec3(0.97, 1.0, 1.05), vec3(1.035, 1.0, 0.955), smoothstep(0.2, 0.8, lum))).clamp(0, 1);
   pipe.outputNode = fxaa(vec4(g.mul(vig), 1));
   return {
-    pipe, aoPass, strength,
+    pipe, aoPass, ssrPass, strength,
     render() { pipe.render(); },
   };
 }

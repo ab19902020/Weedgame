@@ -37,7 +37,7 @@ window.onerror = e => log('ERR', e);
     const act = (x, pose, extra = {}) => ({ x, y: 0, z: 0, heading: 0.3, visible: true, look: People.randomLook(), pose, speed: 1.2, phase: 1, t: 3, ...extra });
     ppl.draw([act(0, 'umbrella'), act(1, 'phone', { hat: true, hiVis: true }), act(60, 'walk', { fall: 0.5 })], cam.position, 1000);
     scene.add(createSky(4));
-    const G = { renderer: r, scene, camera: cam, quality: 'high', Q: new URLSearchParams(''), tiles: { landcover: () => 0, terrain: () => 0 } };
+    const G = { renderer: r, scene, camera: cam, quality: 'high', Q: new URLSearchParams(''), budget: { post: true, ao: { scale: 0.5, samples: 12 }, bloom: 0.3, ibl: 128, grass: true, ssr: { scale: 0.5, quality: 0.45 } }, tiles: { landcover: () => 0, terrain: () => 0 } };
     const grass = createGrass(G);
     const ibl = createIBL(G); ibl.update(1, true);
     const post = createPost(G);

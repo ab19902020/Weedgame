@@ -78,13 +78,13 @@ export async function boot(extra = {}) {
   G.ibl = createIBL(G);
   G.grass = createGrass(G);
   G.updateLighting = () => {
-    sun.intensity = 3.2 * world.sunIntensity + 0.12 * U.night.value;
+    sun.intensity = 4.3 * world.sunIntensity + 0.12 * U.night.value;   // AgX rolls off highlights, so daylight can run brighter
     sun.color.copy(U.sunCol.value).lerp(new THREE.Color(0.6, 0.68, 0.9), U.night.value);
     hemi.intensity = (0.25 + world.skyIntensity * 1.1) * (G.ibl ? 0.35 + U.night.value * 0.65 : 1);
     if (G.ibl) { scene.environmentIntensity = 0.35 + world.skyIntensity * 0.75; G.ibl.groundLum.value = 0.08 + world.day * 0.6; }
     hemi.color.copy(U.zenith.value).lerp(new THREE.Color(0.75, 0.8, 0.9), 0.55);
     hemi.groundColor.setRGB(0.22, 0.22, 0.18).multiplyScalar(0.25 + world.day * 0.75);
-    renderer.toneMappingExposure = (0.85 + U.night.value * 0.9 + U.cover.value * 0.25) * (renderer.toneMapping === THREE.AgXToneMapping ? 1.12 : 1);
+    renderer.toneMappingExposure = (0.85 + U.night.value * 0.9 + U.cover.value * 0.25) * (renderer.toneMapping === THREE.AgXToneMapping ? 1.22 : 1);
   };
   G.placeSun = (fx, fy, fz) => {
     const d = U.sunDir.value;

@@ -13,9 +13,9 @@ export const STATES = {
   clearing: { cover: 0.32, rain: 0, fog: 0.0008, wind: 7, dark: 0 },
 };
 const NEXT = {
-  clear: [['broken', 0.7], ['mist', 0.1], ['clear', 0.2]],
-  broken: [['clear', 0.3], ['overcast', 0.55], ['broken', 0.15]],
-  overcast: [['drizzle', 0.5], ['broken', 0.3], ['mist', 0.2]],
+  clear: [['broken', 0.5], ['mist', 0.05], ['clear', 0.45]],
+  broken: [['clear', 0.45], ['overcast', 0.35], ['broken', 0.2]],
+  overcast: [['drizzle', 0.38], ['broken', 0.45], ['mist', 0.17]],
   drizzle: [['rain', 0.55], ['overcast', 0.45]],
   rain: [['drizzle', 0.5], ['clearing', 0.5]],
   mist: [['overcast', 0.5], ['clear', 0.5]],
@@ -27,15 +27,21 @@ function rnd(seed) { let s = seed >>> 0 || 1; s = Math.imul(s ^ (s >>> 15), 2246
 
 export class World {
   constructor(saved) {
+    // The sandbox runs in an English summer (long days, trees in leaf): mid-June, mid-morning
     const now = new Date();
-    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 10).getTime() / 1000;
+    const start = new Date(now.getFullYear(), 5, 15, 10, 30).getTime() / 1000;
     this.s = Object.assign({
       t: start,            // game time (unix seconds)
       scale: 30,           // game seconds per real second
       seed: (Math.random() * 1e9) | 0,
       seg: { i: 0, start: start, len: 70 * 60, state: 'broken', prev: 'clear' },
-      wet: 0, puddle: 0, cloudOff: [0, 0], windDir: 0.6, forced: null,
+      wet: 0, puddle: 0, cloudOff: [0, 0], windDir: 0.6, forced: null, season: 1,
     }, saved || {});
+    // saves from before the summer setting: same clock time and weather, moved to mid-June (one-off)
+    if (!this.s.season) {
+      const d = new Date(this.s.t * 1000), m = new Date(d.getFullYear(), 5, 15, d.getHours(), d.getMinutes(), d.getSeconds()).getTime() / 1000;
+      const shift = m - this.s.t; this.s.t += shift; this.s.seg.start += shift; this.s.season = 1;
+    }
     this.cur = { ...STATES.broken };
     this.sun = new THREE.Vector3(); this.moon = new THREE.Vector3();
     this.update(0);
