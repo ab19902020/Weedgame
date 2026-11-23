@@ -52,12 +52,12 @@ w(f"* {man['sources']['terrain']}. Fetched at 4 m posting through the public WCS
 # measured building heights and roofs (tools/pipeline/lidar_buildings.py)
 _lp = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'docs', 'lidar-buildings.json')
 if os.path.exists(_lp):
-    L = json.load(open(_lp))
+    LB = json.load(open(_lp))
     w('## Building heights and roofs measured from LIDAR\n')
-    w(f"* **{L['measured']:,} of {L['buildings_total']:,} buildings** have their wall height, roof type, roof height and ridge direction **measured** from the Environment Agency LIDAR composite (1 m last-return DSM minus 1 m DTM, OGL), over {L['blocks']} 1 km blocks (`tools/pipeline/lidar_buildings.py`). The rest keep the OSM/inferred values: {L['no_building']} footprints showed no structure in the LIDAR (demolished or not yet built), {L['skipped_few'] + L['skipped_nodata']} had too few clean pixels, and landmarks and canopies are hand-modelled.")
-    w(f"* Roofs: {L['pitched']:,} pitched ({L['gable']:,} gabled, {L['hip']:,} hipped or pyramidal) and {L['flat']:,} flat. {L['rotated']:,} ridges were turned 90° to match the measured ridge line, {L['new_rect']:,} pitched roofs were added where OSM had none, {L['to_flat']:,} pitched guesses became flat.")
-    t = L['top_change_m']
-    w(f"* Change in building top height against the previous OSM/inferred model: mean {t['mean']:+} m, median {t['median']:+} m, mean absolute {t['mean_abs']} m (10th–90th percentile {t['p10']:+} to {t['p90']:+} m).")
+    w(f"* **{LB['measured']:,} of {LB['buildings_total']:,} buildings** have their wall height, roof type, roof height and ridge direction **measured** from the Environment Agency LIDAR composite (1 m last-return DSM minus 1 m DTM, OGL), over {LB['blocks']} 1 km blocks (`tools/pipeline/lidar_buildings.py`). The rest keep the OSM/inferred values: {LB['no_building']} footprints showed no structure in the LIDAR (demolished or not yet built), {LB['skipped_few'] + LB['skipped_nodata']} had too few clean pixels, and landmarks and canopies are hand-modelled.")
+    w(f"* Roofs: {LB['pitched']:,} pitched ({LB['gable']:,} gabled, {LB['hip']:,} hipped or pyramidal) and {LB['flat']:,} flat. {LB['rotated']:,} ridges were turned 90° to match the measured ridge line, {LB['new_rect']:,} pitched roofs were added where OSM had none, {LB['to_flat']:,} pitched guesses became flat.")
+    tc = LB['top_change_m']
+    w(f"* Change in building top height against the previous OSM/inferred model: mean {tc['mean']:+} m, median {tc['median']:+} m, mean absolute {tc['mean_abs']} m (10th–90th percentile {tc['p10']:+} to {tc['p90']:+} m).")
     w('* Method and limits: footprint eroded 1 m; flat if the p25–p90 spread is under 0.9 m (wall = p75); otherwise ridge = p97, eaves = p12 − 0.3 m, ridge direction from the principal axis of the top 0.35 m band, gable if that band spans at least 72% of the roof rectangle. Footprints still come from OSM; dormers, chimneys, mixed roofs and extensions are simplified to one roof per footprint. Heights can be biased by trees overhanging roofs.\n')
 w('## Hand-authored and reference-modelled places\n')
 w('| Place | Status | Evidence used | Estimated |')
