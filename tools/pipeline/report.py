@@ -82,7 +82,9 @@ if acc:
         if s_.get('rerun'):
             fa = s_.get('firstAttempt') or {}
             res += ' (re-run)'
-            if fa.get('ok'):
+            if fa.get('ok') and any('not witnessed' in n for n in (fa.get('notes') or [])):
+                notes += ' — main run inconclusive (offence not witnessed, so no reaction); repeated where a patrol could see it'
+            elif fa.get('ok'):
                 notes += ' — also passed in the main run; repeated in the re-run'
             else:
                 notes += f" — main run failed ({(fa.get('fail') or (fa.get('error') or '')[:120])}); passed when re-run after the fix noted below"
