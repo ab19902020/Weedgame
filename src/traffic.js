@@ -201,9 +201,9 @@ export class Traffic {
       const dx = v.x - focus.x, dz = v.z - focus.z, d2 = dx * dx + dz * dz;
       v.near = d2 < R2;
       // traffic around the inactive brother waits where it is until he is played again
-      v.frozen = d2 > BUBBLE_R * BUBBLE_R && this.nearAnchor(v);
-      if (v.frozen) continue;
-      if (v.crashed) { v.v = 0; v.brake = true; v.hazard = true; continue; }
+      v.frozen = v.kind !== 'police' && d2 > BUBBLE_R * BUBBLE_R && this.nearAnchor(v);
+      if (v.frozen || v.offroad) continue;     // off-road police are moved by police.js
+      if (v.crashed || v.brokenDown) { v.v = 0; v.brake = true; v.hazard = true; continue; }
       if (v.near || (v.tick = (v.tick || 0) + dt) > 0.4) { this.drive(v, v.near ? dt : v.tick, occ); v.tick = 0; }
       else { v.s += v.v * dt; if (v.s < net.len[v.h >> 1]) this.place(v); }
       v.spin = (v.spin + v.v * dt / v.def.wr) % (Math.PI * 2);
@@ -219,7 +219,9 @@ export class Traffic {
     const l = occ.get(v.h);
     if (l) for (const o of l) {
       if (o === v || o.s <= v.s) continue;
+      if (v.siren && o.yieldTo > 0 && o.v < 6) continue;        // blue lights squeeze past cars pulling over
       if (o.lane !== v.lane && Math.abs(o.lat - v.lat) < 1.2 && net.laneCount(v.h) > 1) continue;
+      if (v.passing && Math.abs((o.lat || 0) - (v.lat || 0)) > 1.6) continue;   // overtaking in the opposing lane
       const g = o.s - v.s - o.len / 2 - v.len / 2;
       if (g < gap) { gap = g; lv = o.v; }
       break;
@@ -279,10 +281,10 @@ export class Traffic {
       if (d > 0 && d < 30 && this.zebraBusy.has(e + ':' + Math.round(c.s))) stopAt = Math.min(stopAt, d - 3);
     }
     // overtake / change lane when blocked by a stationary obstacle
-    if (gap < 14 && lv < 0.5 && stopAt > gap + 2) {
+    if (gap < 14 && lv < (v.siren ? 3 : 0.5) && stopAt > gap + 2) {
       v.stuck += dt;
-      if (v.stuck > 4) this.tryPass(v, occ);
-    } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing && gap > 25) { v.passing = false; v.latT = 0; } }
+      if (v.stuck > (v.siren ? 1 : 4)) this.tryPass(v, occ);
+    } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing && gap > 25 && v.s > (v.passUntil ?? -1e9)) { v.passing = false; v.latT = 0; } }
     // responding police: pull up ~10 m short of the scene when it lies ahead on this road
     if (v.target && v.status === 'responding') {
       for (let k = 0; k <= 90; k += 6) {
@@ -366,7 +368,7 @@ export class Traffic {
     if (!(net.flags[e] & F_ONEWAY)) { // overtake into the opposing lane when it is clear
       const opp = occ.get(v.h ^ 1) || [];
       const L = net.len[e], myOpp = L - v.s;
-      if (!opp.some(o => Math.abs(o.s - myOpp) < 55)) { v.latT = -this.net.width[e] * 0.5; v.passing = true; v.stuck = 0; }
+      if (!opp.some(o => Math.abs(o.s - myOpp) < 55)) { v.latT = -this.net.width[e] * 0.5; v.passing = true; v.stuck = 0; const l = occ.get(v.h) || []; const ahead = l.filter(o => o !== v && o.s > v.s && o.s - v.s < 45); v.passUntil = ahead.length ? Math.max(...ahead.map(o => o.s + o.len)) + 4 : v.s + 20; }
     }
   }
   // ----------------------------------------------------------------- persistence
@@ -422,7 +424,7 @@ export class Traffic {
     // remove far ordinary traffic that nobody can see
     for (let i = this.list.length - 1; i >= 0; i--) {
       const v = this.list[i];
-      if (v.kind !== 'traffic' || v.parked || v.player || v.crashed || v.frozen) continue;
+      if (v.kind !== 'traffic' || v.parked || v.player || v.crashed || v.brokenDown || v.frozen || v.towing) continue;
       const d = Math.hypot(v.x - focus.x, v.z - focus.z);
       if (d > KILL_R && !info.visible(v.x, v.y, v.z, 0.6)) this.remove(v);
     }

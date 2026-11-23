@@ -135,6 +135,7 @@ export class Peds {
       if (p.mode === 'cross') { this.cross(p, dt); continue; }
       if (p.mode === 'waitCross') { this.waitCross(p, dt); continue; }
       if (p.mode === 'scene') { this.atScene(p, dt); continue; }
+      if (p.mode === 'chase') continue;    // moved by police.js (foot chase)
       if (p.mode === 'toDoor' || p.mode === 'atDoor' || p.mode === 'fromDoor' || p.mode === 'link') { this.doorWalk(p, dt); continue; }
       if (p.corner) { this.corner(p, dt, rain); continue; }
       if (p.leader && !p.leader.gone && p.leader.mode === 'walk') { this.follow(p, dt); continue; }
