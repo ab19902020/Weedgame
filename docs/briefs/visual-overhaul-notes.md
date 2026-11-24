@@ -83,3 +83,7 @@ Branch `grok/town-look`, based on `ccr-0546346a-2h4fov` @ `589d23fe`. Cars, peop
 
 WebGL2 shader check: 0 failing programs after this round.
 
+## Round 5 (shop fascias — still no cars, people, or weather)
+
+Branch `grok/town-look`. Named shops take their fascia from the OSM name already on the footprint (`bn`) or the POI sign (`sn`). `src/brands.js` matches the chain (Waitrose, Iceland, Tesco, the banks, the high street) and `src/signs.js` paints original lettering in that chain's colours. Large stores get a canopy and deeper glass; the brand id rides in `bA.z` as `id * 64`. No logo image files.
+

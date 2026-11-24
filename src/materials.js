@@ -8,9 +8,18 @@ import {
 } from 'three/tsl';
 import { U, noiseTex, cloudTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL } from './env.js';
 import { L, sAlbedo, sDetail, sAlbedoAT, perturb, perturbW, groundUV, worldToView } from './surfaces.js';
+import { BRAND_N, paletteBytes } from './brands.js';
 // branch-free select: plain select() compiles to if/else blocks, which breaks texture sampling
 // (WGSL uniformity) and leaks block-scoped vars (GLSL). Both sides are cheap or already computed.
 const sel = (c, a, b) => select(c, a, b).uniformFlow().toVar();   // own variable: GLSL emits the ternary unparenthesised
+
+const brandTex = new THREE.DataTexture(paletteBytes(), BRAND_N, 1);
+brandTex.magFilter = THREE.NearestFilter;
+brandTex.minFilter = THREE.NearestFilter;
+brandTex.wrapS = THREE.ClampToEdgeWrapping;
+brandTex.wrapT = THREE.ClampToEdgeWrapping;
+brandTex.colorSpace = THREE.NoColorSpace;
+brandTex.needsUpdate = true;
 
 const h1 = Fn(([x]) => fract(sin(x.mul(12.9898)).mul(43758.5453)));
 const h3 = Fn(([v]) => fract(sin(dot(v, vec3(12.9898, 78.233, 37.719))).mul(43758.5453)));
@@ -257,6 +266,12 @@ export function buildingMaterial() {
   const pEq = k => step(k - 0.5, part).mul(step(part, k + 0.5));
   const cls = code.sub(floor(code.div(32)).mul(32));
   const shop = step(31.5, code);
+  const brand = floor(code.div(64.0));
+  const hasBrand = step(0.5, brand);
+  const fasciaCol = texture(brandTex, vec2(brand.add(0.5).div(BRAND_N), float(0.5))).rgb;
+  const big = step(0.5, brand).mul(step(brand, 24.5));
+  const bank = step(70.5, brand).mul(step(brand, 84.5));
+  const isPub = step(143.5, brand);
   const u = uv();
   const p = positionWorld;
   const r0 = h1(seed), r1 = h1(seed.add(17.3)), r2 = h1(seed.add(3.1)), r3 = h1(seed.add(41.7));
@@ -326,7 +341,11 @@ export function buildingMaterial() {
     .add(isOffice.mul(step(abs(fract(fvS.mul(2)).sub(0.5)), 0.012))).min(1);
   const frame = inWin.mul(opening).mul(float(1).sub(inner)).add(inWin.mul(inner).mul(bar)).min(1);
   const front = step(0.5, part).mul(step(part, 1.5));
-  const shopFront = shop.mul(front).mul(step(fi, 0.5)).mul(step(0.06, fv)).mul(step(fv, 0.82)).mul(step(0.04, fract(u.x.div(2.6))));
+  const gBot = mix(float(0.06), mix(mix(mix(float(0.18), float(0.02), big), float(0.40), bank), float(0.46), isPub), hasBrand);
+  const gTop = mix(float(0.82), mix(float(0.63), float(0.58), max(bank, isPub)), hasBrand);
+  const bay = mix(float(2.6), mix(mix(float(2.15), float(4.2), big), float(2.8), bank), hasBrand);
+  const mullW = mix(float(0.04), mix(float(0.028), float(0.012), big), hasBrand);
+  const shopFront = shop.mul(front).mul(step(fi, 0.5)).mul(step(gBot, fv)).mul(step(fv, gTop)).mul(step(mullW, fract(u.x.div(bay))));
   const doorCol = h1(seed.add(5.5)).mul(5).floor();
   const hasDoor = isHouse.mul(front).mul(step(0.1, doorU));
   const du = abs(u.x.sub(doorU));
@@ -376,6 +395,7 @@ export function buildingMaterial() {
   const curtainCol = mix(vec3(0.5, 0.38, 0.3), vec3(0.78, 0.74, 0.66), h1(roomSeed.mul(37)));
   roomCol = mix(roomCol, curtainCol, curtain.max(blinds));
   roomCol = mix(roomCol, vec3(0.8, 0.8, 0.78), nets);
+  roomCol = mix(roomCol, fasciaCol, shopFront.mul(hasBrand).mul(0.14));
   const lit = step(roomSeed, mix(float(0.06), float(0.55), U.night)).add(shopFront).min(1);
   const warm = mix(vec3(1.0, 0.74, 0.46), vec3(0.85, 0.9, 1.0), step(0.75, h1(roomSeed.mul(13))).max(shopFront));
   // ---- roofs: photographic clay / slate / felt with moss and weathering
@@ -398,8 +418,26 @@ export function buildingMaterial() {
   const gutterCol = sel(r1.lessThan(0.22), vec3(0.75), vec3(0.03, 0.03, 0.032));
   albedo = albedo.add(trimCol.mul(isTrim)).add(gutterCol.mul(isGutter)).add(trimCol.mul(0.92).mul(isSoffit)).add(vec3(0.42, 0.2, 0.1).mul(isPot));
   albedo = albedo.add(isBay.mul(mix(mix(mix(vec3(0.012, 0.014, 0.016), trimCol, bFrame.add(bHead).min(1)), vec3(0.68, 0.66, 0.6), bSill), wallCol, bRiser)));
-  const fascia = shop.mul(front).mul(step(fi, 0.5)).mul(step(0.8, fv)).mul(step(fv, 0.98));
-  albedo = mix(albedo, sel(r1.lessThan(0.33), vec3(0.12, 0.18, 0.32), sel(r1.lessThan(0.66), vec3(0.42, 0.07, 0.07), vec3(0.08, 0.22, 0.14))), fascia);
+  const fasciaBot = mix(float(0.80), mix(float(0.645), float(0.60), max(bank, isPub)), hasBrand);
+  const fasciaTop = mix(float(0.98), float(0.995), hasBrand);
+  const fascia = shop.mul(front).mul(step(fi, 0.5)).mul(step(fasciaBot, fv)).mul(step(fv, fasciaTop));
+  const oldFascia = sel(r1.lessThan(0.33), vec3(0.12, 0.18, 0.32), sel(r1.lessThan(0.66), vec3(0.42, 0.07, 0.07), vec3(0.08, 0.22, 0.14)));
+  albedo = mix(albedo, mix(oldFascia, fasciaCol, hasBrand), fascia);
+  const stallCol = mix(mix(mix(fasciaCol.mul(0.45), vec3(0.74, 0.73, 0.7), big), vec3(0.5, 0.48, 0.44), bank), vec3(0.12, 0.1, 0.08), isPub);
+  const stall = shop.mul(front).mul(hasBrand).mul(step(fi, 0.5)).mul(step(0.0, u.y)).mul(step(fv, gBot));
+  albedo = mix(albedo, stallCol, stall);
+  const frameB = mix(mix(fasciaCol.mul(0.32), vec3(0.09, 0.1, 0.11), big), vec3(0.22, 0.21, 0.2), bank);
+  const mullion = shop.mul(front).mul(hasBrand).mul(step(fi, 0.5)).mul(step(gBot.sub(0.01), fv)).mul(step(fv, gTop.add(0.02))).mul(step(fract(u.x.div(bay)), mullW.add(0.01)));
+  const head = shop.mul(front).mul(hasBrand).mul(step(fi, 0.5)).mul(step(abs(fv.sub(gTop)), 0.016));
+  albedo = mix(albedo, frameB, max(mullion, head));
+  const sDoor = big.mul(front).mul(shop).mul(step(2.0, doorU)).mul(step(abs(u.x.sub(doorU)), 0.95)).mul(step(0.02, u.y)).mul(step(u.y, floorH.mul(0.6)));
+  const sFrame = big.mul(front).mul(shop).mul(step(2.0, doorU)).mul(step(abs(u.x.sub(doorU)), 1.12)).mul(step(-0.02, u.y)).mul(step(u.y, floorH.mul(0.63))).mul(float(1).sub(sDoor));
+  albedo = mix(albedo, frameB.mul(0.55), sFrame);
+  albedo = mix(albedo, vec3(0.03, 0.035, 0.04), sDoor);
+  const sPane = sDoor.mul(step(0.22, fract(u.y.mul(0.55)))).mul(step(abs(u.x.sub(doorU)), 0.62));
+  albedo = mix(albedo, vec3(0.08, 0.1, 0.12), sPane);
+  const shed = big.mul(isWall).mul(float(1).sub(front)).mul(float(1).sub(min(glass.add(frame), float(1))));
+  albedo = mix(albedo, vec3(0.78, 0.78, 0.75), shed.mul(0.75));
   const mossFoot = isWall.mul(float(1).sub(glass.add(frame).min(1))).mul(smoothstep(1.15, -0.1, u.y)).mul(smoothstep(0.38, 0.78, nz(p.xz, 1 / 0.65).g));
   albedo = mix(albedo, vec3(0.12, 0.22, 0.08), mossFoot.mul(0.7));
   const trimAll = isTrim.add(isGutter).add(isSoffit).add(isPot).add(bFrame).add(bHead).add(bSill).add(doorFrame).min(1);
@@ -418,7 +456,7 @@ export function buildingMaterial() {
   const pool = hy.div(fh).mul(0.6).add(0.55).mul(mix(float(0.8), float(1.15), hitBack));
   const lamp = lit.mul(mix(float(0.42), mix(float(0.3), float(0.75), U.night), shopFront)).mul(pool);
   const interior = roomCol.mul(glass).mul(warm.mul(lamp).add(daylight));
-  m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo));
+  m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo)).add(fascia.mul(fasciaCol).mul(U.night).mul(0.55));
   return m;
 }
 

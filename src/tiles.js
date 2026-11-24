@@ -194,23 +194,39 @@ export class Tiles {
     t.group.add(im);
   }
   addSigns(t, signs) {
-    const S = signs.data, n = S.length / 7; if (!n || !this.signAtlas) return;
+    const S = signs.data, n = Math.floor(S.length / 7); if (!n || !this.signAtlas) return;
     t.signs = [];
     const pos = [], uvs = [], nor = [];
+    const push = (a, b, c, d, uv, nm) => {
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      const [u0, v0, u1, v1] = uv;
+      uvs.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
+      for (let k = 0; k < 6; k++) nor.push(nm[0], nm[1], nm[2]);
+    };
     for (let i = 0; i < n; i++) {
-      const x0 = S[i * 7], z0 = S[i * 7 + 1], x1 = S[i * 7 + 2], z1 = S[i * 7 + 3], base = S[i * 7 + 4];
-      const cat = S[i * 7 + 6];
-      const uvr = this.signAtlas.alloc(signs.text[i], cat);
+      const x0 = S[i * 7], z0 = S[i * 7 + 1], x1 = S[i * 7 + 2], z1 = S[i * 7 + 3];
+      const base = S[i * 7 + 4], dy = S[i * 7 + 5], h = S[i * 7 + 6];
+      if (!(h > 0.15)) continue;
+      const uvr = this.signAtlas.alloc(signs.text[i]);
       if (!uvr) continue;
       t.signs.push(uvr.slot);
-      const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.5) continue;
-      const nx = dz / l, nz = -dx / l; // outward for CCW rings
-      const off = 0.12, y0 = t.data.hmin + base + 2.95, y1 = y0 + 0.75;
-      const a = [x0 + nx * off, y0, z0 + nz * off], b = [x1 + nx * off, y0, z1 + nz * off], c = [x1 + nx * off, y1, z1 + nz * off], d = [x0 + nx * off, y1, z0 + nz * off];
-      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.4) continue;
+      const tx = dx / l, tz = dz / l, nx = dz / l, nz = -dx / l;
+      const off = 0.08, th = 0.05;
+      const y0 = t.data.hmin + base + dy, y1 = y0 + h;
+      const P = (s, o, y) => [x0 + tx * s + nx * o, y, z0 + tz * s + nz * o];
       const [u0, v0, u1, v1] = uvr.uv;
+      const face = uvr.uv;
+      const solid = [u0 + 0.0008, v0 + 0.0008, u0 + 0.0012, v0 + 0.0012];
+      // winding A-B-C faces back into the wall; the street side is B-A-D
+      const o = off + th;
+      const A = P(0, o, y0), B = P(l, o, y0), C = P(l, o, y1), D = P(0, o, y1);
+      pos.push(...B, ...A, ...D, ...B, ...D, ...C);
       uvs.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
       for (let k = 0; k < 6; k++) nor.push(nx, 0, nz);
+      push(P(l, off, y0), P(0, off, y0), P(0, off, y1), P(l, off, y1), solid, [-nx, 0, -nz]);
+      push(P(0, off, y1), P(l, off, y1), P(l, o, y1), P(0, o, y1), solid, [0, 1, 0]);
+      push(P(0, o, y0), P(l, o, y0), P(l, off, y0), P(0, off, y0), solid, [0, -1, 0]);
     }
     if (!pos.length) return;
     const g = new THREE.BufferGeometry();
