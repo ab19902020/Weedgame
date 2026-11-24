@@ -1,4 +1,4 @@
-# Green County · Berkshire sandbox (v0.9.0)
+# Green County · Berkshire sandbox (v0.10.0)
 
 A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Earley, Woodley, Winnersh, Wokingham and Bracknell, joined by the A329 and A329(M). It starts in **sandbox mode**: you control Cal or Leon Ward and can explore indefinitely. There are no missions, objectives, phone calls, deliveries or sales. The cannabis-empire layer from the v0.3–v0.5 prototype will sit on this world later; its save data is carried along untouched.
 
@@ -7,13 +7,13 @@ A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Ear
 * `docs/SOURCES.md`: asset and source register (licences, dates, signing key).
 * `docs/verification.json`: computed comparisons of the world against its inputs.
 * `docs/captures/`: gameplay captures, `acceptance-run-8x.mp4` (the whole touch-driven run at 8× speed; software rendering here ran at ~1 fps), `acceptance.json` (step log) and landmark views (`L*.png`).
-* `builds/Green-County-0.9.0-dev.apk`: signed development APK. v0.7 added the visual overhaul; v0.8 Grok's simulation and performance work; v0.9 detailed people and cars (with sports models), camera modes, summer lighting with screen-space reflections, 60 fps streaming work and LIDAR-measured buildings.
+* `builds/Green-County-0.10.0-dev.apk`: signed development APK. v0.7 added the visual overhaul; v0.8 Grok's simulation and performance work; v0.9 detailed people and cars (with sports models), camera modes, summer lighting with screen-space reflections, 60 fps streaming work and LIDAR-measured buildings; v0.10 FSR upscaling with dynamic resolution, a baked cloud sky, distant car LODs, procedural house detail, street furniture with telegraph wires, and baked faces and hair.
 * `docs/PERF-CHECKLIST.md`: how to record real frame times on a phone with the perf flythrough.
 * `docs/handoff/grok.md` and `docs/briefs/visual-overhaul-notes.md`: hand-off notes for the simulation/performance and visual work.
 
 ## Play
 
-* **Android**: install `builds/Green-County-0.9.0-dev.apk`. It uses the same development key as v0.6–v0.8, so it installs over them; builds older than v0.6 must be uninstalled first. Landscape only.
+* **Android**: install `builds/Green-County-0.10.0-dev.apk`. It uses the same development key as v0.6–v0.9, so it installs over them; builds older than v0.6 must be uninstalled first. Landscape only.
 * **Browser**: `npm run serve`, then open http://localhost:8080. Chrome or Edge recommended; WebGPU is used when available, otherwise WebGL2.
 
 Touch controls (landscape): drag on the **left side** to move (a floating stick appears under your thumb). Drag on the **right side** to orbit the camera. **Run** (on foot) doubles as **Brake** in a vehicle. **Get in / Exit** works on any parked car. **Horn** appears while driving. **Swap** switches between Cal and Leon wherever each is. **Map** opens the full map, **Dev** the developer panel.
@@ -21,13 +21,15 @@ Keyboard: WASD or arrows, Shift run, F get in/out, Space brake, H horn, Tab swap
 
 The developer panel can set the hour and clock speed, force any weather (clear, broken, overcast, drizzle, rain, mist, clearing), soak or dry the roads, stage a collision for the police to attend, run extra simulation steps, teleport to districts and test spots, show the performance overlay, save a performance log (written to app storage on Android), and switch between WebGPU and WebGL2.
 
-URL options (browser): `?backend=webgl|webgpu`, `?quality=low|medium|high`, `?perf` (overlay), `?time=17.5`, `?weather=rain`, `?scale=120`, `?sim=4`, `?r0=…&r1=…` (streaming radii), `?post=0`, `?ao=0`, `?ibl=0`, `?grass=0|1`, `?tm=aces` (look A/B), `?nobatch` (render batching off).
+URL options (browser): `?backend=webgl|webgpu`, `?quality=low|medium|high`, `?perf` (overlay), `?time=17.5`, `?weather=rain`, `?scale=120`, `?sim=4`, `?r0=…&r1=…` (streaming radii), `?post=0`, `?ao=0`, `?ibl=0`, `?grass=0|1`, `?ssr=0`, `?fsr=0` (no upscaling), `?skybake=0` (per-pixel sky), `?tm=aces` (look A/B), `?nobatch` (render batching off).
 
 ## What runs
 
 * **World**: 1,067 streamed 256 m tiles in two LOD rings, built from OSM and EA LIDAR. Each building footprint becomes its own closed mesh with gabled or hipped roofs, chimneys, procedural façades, front doors, shopfronts and lit windows. Carriageways, kerbed pavements, paths and plazas are seamless polygons; markings include centre and lane lines, stop and give-way lines, zebras with zig-zags, and studs at signalised crossings. Bridges and flyovers have decks, parapets and piers on separate levels. Also streamed: street lamps, trees, walls, hedges, fences, shop fascias, rails, bus stops and shelters, canopies, the Cemetery Junction gateway and Reading Town Hall.
+* **Procedural detail and street life**: houses get canted bay windows (some two-storey), door hoods on brackets, fascias, soffits, gutters and downpipes, bargeboards, ridge tiles, chimney pots and a plinth. Streets get wheelie bins, telegraph poles with line wires and drops to the houses, pillar boxes, litter bins and benches. All of it is built inside the existing tile meshes, so it adds no draw calls.
+* **Image and frame rate**: the scene renders at a dynamic internal resolution and is upscaled with FSR 1 (edge-adaptive upsampling + sharpening), so the image stays sharp while the scale moves to hold 60 fps (30 fps evenly paced as the floor). The cloud sky is baked into a cube map four times a second instead of raymarched per pixel; cars beyond 70 m use a light LOD.
 * **Buildings measured from LIDAR**: every footprint's wall height, roof type (flat, gabled, hipped), roof height and ridge direction come from the Environment Agency LIDAR surface model (OGL), registered to the OSM footprints block by block (`tools/pipeline/lidar_buildings.py`, summary in `docs/COVERAGE.md`).
-* **People and cars**: one continuous, procedurally skinned body per person (faces, hair styles, clothing, hats, hoods, umbrellas, hi-vis), animated walking, running and posing on the GPU; detailed cars (hatch, hot hatch, saloon, estate, SUV, van, coupé, mid-engined sports car, police) with real wheel arches, lights, UK plates, mirrors, cockpits and alloys.
+* **People and cars**: one continuous, procedurally skinned body per person (eight canvas-baked faces with eyes, lashes, brows, stubble, beards, lips and age lines; strand-textured hair on hairline-following shells; clothing, hats, hoods, umbrellas, hi-vis), animated walking, running and posing on the GPU; detailed cars (hatch, hot hatch, saloon, estate, SUV, van, coupé, mid-engined sports car, police) with real wheel arches, lights, UK plates, mirrors, cockpits and alloys.
 * **Cameras**: the Cam button (or C) cycles Chase, Far chase, High, Driver and Cinematic while driving, and Close, Far and High on foot.
 * **Brothers**: Cal and Leon are the only playable characters. Each keeps his own outfit, position, heading and vehicle across swaps and relaunches. You can walk, run, drive, park and get out (on the driver's side). Collisions apply against buildings, vehicles and people.
 * **Traffic**: vehicles have stable IDs and persistent state, follow A*-routed journeys, keep to UK left-hand lanes, car-follow with IDM, obey signals, give way at junctions and roundabouts, don't block junction boxes, stop for zebras, and change lanes or overtake round stopped vehicles. Buses run the OSM bus routes and serve stops and queues. The bubble is simulated at full rate near you and more cheaply further out, without despawning anything in view.

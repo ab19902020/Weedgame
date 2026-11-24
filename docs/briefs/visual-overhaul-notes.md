@@ -57,3 +57,14 @@ Merged with `grok/sim-perf` (`f378e4c`). The visual features are now part of you
 | Buildings | `tools/pipeline/lidar_buildings.py`, `docs/lidar-buildings.json`, report section | EA LIDAR DSM − DTM per OSM footprint patches `bM` (wall, roof type, roof height, roof rectangle, storeys; height source 3 = LIDAR). **Astra:** if you rebuild the tiles with `build_world.py`, re-run this script afterwards, or fold it into the pipeline. |
 
 **No Google imagery is used anywhere.** Google Maps and Earth terms forbid deriving data from their imagery, so building shapes come from OSM plus the OGL LIDAR only.
+
+## Round 3 (image quality, sky, detail, street life, faces)
+
+| Area | Where | Notes |
+|---|---|---|
+| Upscaling | `src/post.js`, `src/perf.js`, `src/app.js` | With `budget.fsr`, the scene pass, GTAO and SSR run at `scale` × output size; grade and FXAA run at that size; then `fsr1` upscales to the canvas. `app.js` moves the scale between `budget.scale[0]` and `[2]` to hold 60 fps and drops to evenly paced 30 fps at the floor. `?fsr=0` and `?scale=0.7` override it. |
+| Sky | `src/skybake.js` (new) | The sky mesh moves into its own scene and renders into a cube target (256/384/512 by quality) every 0.25 s, which becomes `scene.background`. `?skybake=0` restores the per-pixel sky. |
+| Cars | `src/vehicles.js`, `src/carModel.js` | `buildCar(def, key, idx, lod)`: LOD1 (no cockpit, boxes for lamps, 10 loft rings) beyond 70 m. |
+| Buildings | `src/tileWorker.js` (`addRoof`, `addFrontage`, `beam`), `src/materials.js` | New building parts 7–13 (trim, gutter, ridge, pot, soffit, bay glazing, bay/hood roof). The door position along the wall is encoded in the seed: `seed + 1000·round(u·4)`. |
+| Street props | `src/tileWorker.js` (`wheelieBin`, `pillarBox`, `litterBin`, `bench`, `sagWire`), `structMaterial` | Struct-mesh `surf` ids 10–17. `gardens` entries carry the eave height (10th field) for the drop wires. |
+| Faces and hair | `src/faceBake.js` (new), `src/humans.js` | The atlas has 8 faces (4 × 2 cells of 256 px; channels: shading, facial hair, tint, eye mask). The face index travels in `iSty.x` as `style + 0.05·face`. Hair is a tileable strand map applied tri-planar in head space. `headShape()` is shared by the skull and the hair shells; each hair style has a hairline table, and the shell drops 4 mm under the skin below it. `look.face` is 0–3; women use cells 4–7. |

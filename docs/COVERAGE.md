@@ -41,6 +41,7 @@ Built 2026-11-22T22:02:40Z from the OpenStreetMap South East England extract (20
 * Trees: 1936 mapped individually; 283304 **scattered** by landcover density (woodland, parks, gardens, cemeteries).
 * Boundary walls, fences, hedges and guard rails: 1285 mapped lines are modelled with collision.
 * Front gardens (**inferred**): every house whose frontage wall sits at least 1.6 m behind the back of the pavement gets a boundary. That is a hedge (40%), a low brick wall (42%) or an open frontage, with collision, plus a gap holding either a 3 m driveway (block paving or tarmac) or a flagged front path to the house. Mapped boundaries take precedence visually but are not de-duplicated against the inferred ones.
+* Street furniture (**inferred**, built per tile in `tileWorker.js`): wheelie bins (one or two per front garden, general waste and recycling), wooden telegraph poles every 32 m on about 60% of residential roads with line wires and service drops to the nearest house eaves, the odd pillar box, and litter bins and benches along town-centre main roads and pedestrian streets. Positions are plausible, not surveyed.
 * Parking: 35730 slots, **inferred** (car-park polygons on a 2.6 × 7.5 m grid; kerbside on residential roads). Occupancy is stable per slot ID.
 
 ## Terrain
@@ -132,7 +133,7 @@ Real gameplay frames from the runs above (software WebGL2 at 915 × 412). `accep
 * **Hardware performance is unmeasured.** Nothing has run on an Honor Magic 6 Pro or any phone. Frame time, memory and stall figures exist only from software rendering in this container, which says nothing about device performance. The APK writes `perf-<time>.json` from the Dev panel (Perf flythrough or Save perf log); `docs/PERF-CHECKLIST.md` gives the steps and targets.
 * **WebGPU rendering is unverified.** The renderer starts on WebGPU where `navigator.gpu` exists and switches itself to WebGL2 (remembered per version) on device loss or pipeline errors. In this container WebGPU failed (SwiftShader/lavapipe), so every capture uses WebGL2. Whether Android WebView exposes WebGPU on the target phone still has to be checked.
 * Façade photography, shopfront detail and per-building materials (OSM `building:colour`/`building:material` are read but not yet used).
-* Front gardens and driveways are inferred, not surveyed; there are no bay windows, porches, gutters or attached garages yet, and no rear gardens or fences between plots.
+* Front gardens and driveways are inferred, not surveyed. Bay windows, door hoods, gutters, downpipes, bargeboards and chimney pots are procedural (placed on the front wall the pipeline picks), not matched to each real house; there are no attached garages, rear gardens or fences between plots.
 * Signal timings: no published phase data (Reading Borough Council / Bracknell Forest UTC) has been imported; all timings are simulated.
 * Lane-level junction geometry: no turn lanes or slip-lane markings from `turn:lanes`; vehicles keep lane counts but don’t pick lanes for turns; roundabout markings are minimal.
 * Underpasses and tunnels cut into terrain (OSM `tunnel=*`) are not carved out of the terrain mesh.
