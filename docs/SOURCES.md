@@ -18,9 +18,19 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 
 `www/characters/cal.glb` and `www/characters/leon.glb` are the two playable brothers. Both were supplied by the project owner as Tripo-generated models with their animation sets, and were processed with `tools/characters/prepare-hero.mjs` (see `docs/CLAUDE-CHARACTERS.md`). `officer.glb` and `civilian.glb` come from the earlier character hand-over.
 
+## Vehicles
+
+`www/vehicles/rangerover.glb` is the brothers' Range Rover. It is a Tripo-generated model supplied by the project owner, processed with `tools/vehicles/prepare-car.mjs`: the body merged into one mesh, the four wheels split out about their axles, and the textures resized. The game draws it with `src/heroCars.js`, scaled to 4.95 m. The Range Rover name and badging belong to Jaguar Land Rover; the project uses them for the owner's private game.
+
 ## Sound recordings
 
 `www/sfx/berkshire.ogg` holds 124 field-recording and foley cues (traffic, engines, horns, footsteps by surface, crowd, crashes). They are cut from CC0 and CC BY 3.0 recordings on OpenGameArt and Freesound. Each source, author and licence is listed in `www/sfx/CREDITS.txt`, which ships in the APK beside the bank; the CC BY items need that attribution kept. Cue offsets are in `src/soundCues.json`. The player's own engine, tyre squeal and scrape are synthesised (`src/audio.js`).
+
+`www/sfx/rangerover.ogg` is the Range Rover's V8, built by `tools/vehicles/engine_bank.py` from two CC0 recordings on Freesound:
+- "Crown Victoria Startup and idle" by Therancher01 (Ford 4.6 V8, https://freesound.org/s/610774/). The start-up is used as recorded, and its idle is rebuilt as seamless loops at 800–5,600 rpm.
+- "S63 AMG V8 Engine Revs" by marcelweiss (https://freesound.org/s/505321/), for the throttle blip.
+
+No official Land Rover audio is used: none is available under a licence the game could use. Both recordings are credited in `www/sfx/CREDITS.txt`.
 
 ## Surface textures (photographic, CC0)
 
@@ -80,4 +90,4 @@ The leaf-cluster texture for tree crowns is drawn procedurally on a canvas at st
 
 ## Signing
 
-`builds/Green-County-0.13.0-dev.apk` (and v0.6–v0.12 before it) is signed with a **development key** generated in the build container (`CN=Green County Development`, SHA-256 `2e65a803dd6285bca94a1d76cb7ae7dd8ab4475b6d847c957a09bb8c4e2f7ff3`). The key isn't committed (`*.keystore` is git-ignored) and the container is ephemeral, so later builds will have a different key. Android won't install a differently-signed update over the top: uninstall first. The previous v0.5 APK used another key, so v0.6 needs a fresh install too. Prototype saves held by the old file:// WebView origin are handed over by `migrate.html` only when that data is still on the device.
+`builds/Green-County-0.14.0-dev.apk` (and v0.6–v0.13 before it) is signed with a **development key** generated in the build container (`CN=Green County Development`, SHA-256 `2e65a803dd6285bca94a1d76cb7ae7dd8ab4475b6d847c957a09bb8c4e2f7ff3`). The key isn't committed (`*.keystore` is git-ignored) and the container is ephemeral, so later builds will have a different key. Android won't install a differently-signed update over the top: uninstall first. The previous v0.5 APK used another key, so v0.6 needs a fresh install too. Prototype saves held by the old file:// WebView origin are handed over by `migrate.html` only when that data is still on the device.

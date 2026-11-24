@@ -1,4 +1,5 @@
 import cues from './soundCues.json';
+import rrBank from './rangeroverCues.json';
 
 // These indices follow the landcover palette in the world builder.
 const groundSounds = ['grass','boots','boots','tile','water','grass','grass','grass','boots','gravel','gravel','grass','boots','grass','grass','grass','grass','boots','gravel','gravel'];
@@ -67,6 +68,36 @@ export class Audio {
     source.connect(output);
     source.start(0, start + Math.random() * length);
     return source;
+  }
+  // Range Rover V8: a bank of seamless loops at six rpm points built from a real V8 (tools/vehicles/engine_bank.py),
+  // crossfaded by rpm and fine-tuned in rate, opened up by the throttle; start-up and throttle-blip one-shots
+  async loadRangeRover() {
+    if (this.rr || !this.ctx) return this.rr;
+    this.rr = { ready: false };
+    const r = await fetch('sfx/rangerover.ogg'); if (!r.ok) throw Error('Range Rover bank HTTP ' + r.status);
+    const buf = await this.ctx.decodeAudioData(await r.arrayBuffer()), A = this.ctx;
+    const out = A.createGain(), filt = A.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 2500; filt.Q.value = 0.7;
+    out.gain.value = 0; out.connect(filt); filt.connect(this.master);
+    const loops = rrBank.rpm.map(rpm => {
+      const [start, len] = rrBank.cues['r' + rpm], src = A.createBufferSource(), g = A.createGain();
+      src.buffer = buf; src.loop = true; src.loopStart = start; src.loopEnd = start + len; g.gain.value = 0;
+      src.connect(g); g.connect(out); src.start(0, start + Math.random() * len);
+      return { rpm, src, g };
+    });
+    Object.assign(this.rr, { ready: true, buf, out, filt, loops, lastThr: 0 });
+    return this.rr;
+  }
+  rrOneShot(name, gain = 0.8) {
+    const R = this.rr; if (!R?.ready) return false;
+    const [start, len] = rrBank.cues[name], s = this.ctx.createBufferSource(), g = this.ctx.createGain();
+    s.buffer = R.buf; g.gain.value = gain; s.connect(g); g.connect(this.master); s.start(0, start, len);
+    return true;
+  }
+  // engine start / stop for the car you get into or out of
+  engineStart(v) {
+    if (!this.on) return;
+    if (v.model === 'rangerover') { this.loadRangeRover().then(() => this.rrOneShot('start', 0.9)).catch(e => console.warn(e)); return; }
+    this.play('Car_Engine_Start_Up', v.x, v.y, v.z);
   }
   play(name, x, y, z, gain = 0.4) {
     if (!this.bank) return;
@@ -147,16 +178,34 @@ export class Audio {
     const pv = inCar ? G.traffic.byId.get(me.vehicle) : null;
     if (pv && pv.ph) {
       const ph = pv.ph, rpm = Math.max(700, pv.rpm || 900), thr = ph.thr || 0;
-      const cyl = pv.model === 'sports' || pv.model === 'coupe' ? 8 : pv.model.startsWith('bus') || pv.model === 'van' ? 6 : 4;
+      const cyl = pv.model === 'sports' || pv.model === 'coupe' || pv.model === 'rangerover' ? 8 : pv.model.startsWith('bus') || pv.model === 'van' ? 6 : 4;
+      const R = pv.model === 'rangerover' ? (this.rr || (this.loadRangeRover().catch(e => console.warn(e)), this.rr)) : null;
+      if (R?.ready) {
+        // the two nearest rpm loops, equal-power crossfade, each re-pitched to the exact rpm
+        const L = R.loops; let i = 0; while (i < L.length - 2 && rpm > L[i + 1].rpm) i++;
+        const a = L[i], b = L[i + 1], k = Math.max(0, Math.min(1, (rpm - a.rpm) / (b.rpm - a.rpm)));
+        for (const l of L) {
+          const w = l === a ? Math.cos(k * Math.PI / 2) : l === b ? Math.sin(k * Math.PI / 2) : 0;
+          l.g.gain.setTargetAtTime(w, t, 0.04);
+          if (w > 0) l.src.playbackRate.setTargetAtTime(Math.max(0.6, Math.min(1.6, rpm / l.rpm)), t, 0.03);
+        }
+        // on throttle the V8 is louder and brighter; lifting off it burbles quietly
+        R.out.gain.setTargetAtTime(0.32 + thr * 0.5 + Math.min(0.15, rpm / 40000), t, 0.06);
+        R.filt.frequency.setTargetAtTime(900 + thr * 5200 + rpm * 0.5, t, 0.06);
+        if (thr > 0.85 && R.lastThr < 0.3 && Math.abs(pv.sp) < 2 && performance.now() - (R.blipT || 0) > 2500) { R.blipT = performance.now(); this.rrOneShot('blip', 0.45); }
+        R.lastThr = thr;
+      } else if (this.rr?.ready) this.rr.out.gain.setTargetAtTime(0, t, 0.15);
       const f = rpm / 60 * cyl / 2;
       this.eng.o1.frequency.setTargetAtTime(f, t, 0.03); this.eng.o2.frequency.setTargetAtTime(f * 1.006, t, 0.03); this.eng.sub.frequency.setTargetAtTime(f / 2, t, 0.03);
       this.eng.f.frequency.setTargetAtTime(280 + thr * 2200 + rpm * 0.12, t, 0.05);
-      this.eng.g.gain.setTargetAtTime(0.045 + thr * 0.06 + Math.min(0.03, rpm / 200000), t, 0.05);
+      // synthesised engine: the whole note for most cars, a thin top layer for the recorded V8
+      this.eng.g.gain.setTargetAtTime((R?.ready ? 0.25 * Math.min(1, rpm / 5000) : 1) * (0.045 + thr * 0.06 + Math.min(0.03, rpm / 200000)), t, 0.05);
       this.squeal.g.gain.setTargetAtTime(Math.min(0.09, (ph.slip || 0) * 0.1) * (G.world.s.wet > 0.3 ? 0.3 : 1), t, 0.06);
       this.squeal.o.frequency.setTargetAtTime(950 + Math.min(500, Math.abs(pv.sp) * 12), t, 0.1);
       this.scrape.g.gain.setTargetAtTime((ph.scrape || 0) * 0.3, t, 0.05);
     } else {
       this.eng.g.gain.setTargetAtTime(0, t, 0.2); this.squeal.g.gain.setTargetAtTime(0, t, 0.1); this.scrape.g.gain.setTargetAtTime(0, t, 0.1);
+      if (this.rr?.ready) this.rr.out.gain.setTargetAtTime(0, t, 0.25);
     }
     // footsteps
     const running = G.brothers.speedNow > 3;

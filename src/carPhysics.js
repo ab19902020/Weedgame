@@ -34,6 +34,8 @@ export const HANDLING = {
   hothatch: { kw: 210, vmax: 70, drive: 'F', mu: 1.1, fw: 0.6, cg: 0.48, gears: 6, redline: 6800, assist: 0.8 },
   coupe: { kw: 300, vmax: 77, drive: 'R', mu: 1.12, fw: 0.52, cg: 0.46, gears: 7, redline: 7000, assist: 0.6 },
   sports: { kw: 460, vmax: 90, drive: 'R', mu: 1.24, fw: 0.42, cg: 0.42, gears: 7, redline: 8300, assist: 0.45 },
+  // Range Rover 5.0 V8: permanent four-wheel drive, eight-speed automatic, air suspension (tall but well damped)
+  rangerover: { kw: 330, vmax: 69, drive: 'A', mu: 0.95, fw: 0.53, cg: 0.72, gears: 8, redline: 6500, assist: 1.1 },
   bus: { kw: 190, vmax: 24, drive: 'R', mu: 0.82, fw: 0.36, cg: 1.35, gears: 4, redline: 2400, assist: 1.4 },
   busS: { kw: 180, vmax: 25, drive: 'R', mu: 0.82, fw: 0.36, cg: 1.1, gears: 4, redline: 2400, assist: 1.4 },
 };

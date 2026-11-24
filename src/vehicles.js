@@ -19,6 +19,8 @@ export const MODELS = {
   hothatch: { L: 4.28, W: 1.79, H: 1.45, wb: 2.63, wr: 0.33, prof: 'hatch', max: 40, mass: 1350 },
   coupe: { L: 4.64, W: 1.83, H: 1.38, wb: 2.81, wr: 0.34, prof: 'saloon', max: 30, mass: 1550 },
   sports: { L: 4.52, W: 1.95, H: 1.2, wb: 2.62, wr: 0.35, prof: 'saloon', max: 12, mass: 1450 },
+  // the brothers' own car: a hand-made model drawn by heroCars.js (wheelbase centre 0.12 m ahead of the body centre)
+  rangerover: { L: 4.95, W: 2.02, H: 1.9, wb: 2.91, wr: 0.42, prof: 'glb', max: 6, mass: 2450, glb: 'rangerover', wx: 0.12 },
   bus: { L: 10.6, W: 2.55, H: 4.3, wb: 5.6, wr: 0.5, prof: 'decker', max: 30, mass: 12000 },
   busS: { L: 11.2, W: 2.5, H: 3.05, wb: 5.9, wr: 0.5, prof: 'single', max: 20, mass: 10000 },
 };
@@ -37,7 +39,7 @@ function profile(kind, L, H) {
 }
 
 // wheel x offset per model (front-engined cars sit their wheels forward of the body centre)
-for (const [k, d] of Object.entries(MODELS)) d.wx = CAR_SPECS[k] ? (CAR_SPECS[k].wheelX || 0) * d.L / 2 : 0;
+for (const [k, d] of Object.entries(MODELS)) if (!d.glb) d.wx = CAR_SPECS[k] ? (CAR_SPECS[k].wheelX || 0) * d.L / 2 : 0;
 const MODEL_LIST = Object.entries(MODELS);
 // traffic mix (UK-ish), and paints: sports models get brighter colours
 export function randomModel(r) {
@@ -149,6 +151,7 @@ export class VehicleRenderer {
       scene.add(m); return m;
     };
     for (const [name, def] of Object.entries(MODELS)) {
+      if (def.glb) continue;   // drawn by heroCars.js
       this.meshes[name] = make(def, buildModel(def, name), shadows);
       this.far[name] = CAR_SPECS[name] ? make(def, buildModel(def, name, 1), false) : this.meshes[name];
     }
@@ -207,6 +210,13 @@ export class VehicleRenderer {
         this._e.set((v.roll || 0) + S.r, -v.heading, (v.pitch || 0) + S.p, 'YXZ'); this._q.setFromEuler(this._e);
         this._m.compose(this._v.set(v.x, v.y - Math.abs(S.r) * 0.25 - Math.abs(S.p) * 0.4, v.z), this._q, this._s.set(1, 1, 1));
       } else this._m.copy(this._g);
+      if (def.glb) {
+        // hand-made models: contact shadow and headlight pool here, the car itself in heroCars.js
+        if (d2 < 90 * 90 && sn < 400) { this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g); this._sm.elements[13] += 0.035; this.shadows.setMatrixAt(sn++, this._sm); }
+        if (v.lights && d2 < 140 * 140 && bn < 300 && !(v.dmg && v.dmg[0] > 0.6)) { this._sm.makeScale(22, 1, 9).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g); this.beams.setMatrixAt(bn++, this._sm); }
+        this.heroCars?.place(v, this._g, this._m);
+        continue;
+      }
       if (!v.hasCabin) {
       C[v.model]++;
       mesh.setMatrixAt(i, this._m);
@@ -245,7 +255,9 @@ export class VehicleRenderer {
       m.count = n; m.visible = n > 0;   // empty instanced meshes cost a draw call
       if (n) { m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true; m.geometry.attributes.iDmg.needsUpdate = true; }
     };
+    this.heroCars?.finish();
     for (const k in MODELS) {
+      if (!this.meshes[k]) continue;
       commit(this.meshes[k], counts[k]);
       if (this.far[k] !== this.meshes[k]) commit(this.far[k], countsFar[k]);
     }

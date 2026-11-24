@@ -4,6 +4,7 @@ import { boot } from './main.js';
 import { Controller } from './controller.js';
 import { CarDynamics } from './carPhysics.js';
 import { TyreFx } from './skidmarks.js';
+import { HeroCars } from './heroCars.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import { Brothers } from './player.js';
@@ -63,6 +64,7 @@ G.carDyn = new CarDynamics(G);   // player driving, collisions, struck cars slid
 G.tyreFx = new TyreFx(G.scene);   // skid marks and tyre smoke
 G.traffic.maxVehicles = G.budget.vehicles;
 G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled);
+G.vehicleRenderer.heroCars = G.heroCars = new HeroCars(G.scene);   // the brothers' Range Rovers (heroCars.js)
 G.people = new People(G.scene, G.renderer.shadowMap.enabled);
 G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
 G.peds = new Peds(G);
@@ -113,15 +115,17 @@ const init = G.save.initialBrothers(START);
 G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
 G.controller=new Controller(G);
+// the brothers' own cars are Range Rovers (older saves had a hatch and an estate under these ids)
+const OWN = { 'cal-car': 'rangerover', 'leon-car': 'rangerover' };
 for (const sv of G.save.vehicles) {
-  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined });
+  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: OWN[sv.id] || sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined });
   if (sv.id.startsWith('p:')) G.save.taken.add(sv.id);
 }
 if (!G.traffic.byId.has('cal-car')) {
   // both cars on the service road at the north end of the precinct, in view from the start
   const a = kerbPlace(START.x, START.z - 33), b = kerbPlace(START.x - 6, START.z - 33);
-  G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'hatch', paint: G.save.legacy?.business?.paint ?? 0x812f42, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
-  G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'estate', paint: 0x223e69, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
+  G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'rangerover', paint: 0x23382c, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
+  G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'rangerover', paint: 0x23382c, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
 }
 // the simulated fleet that was around both brothers comes back with the same ids
 G.traffic.anchors = G.brothers.b;

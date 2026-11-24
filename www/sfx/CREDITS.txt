@@ -86,3 +86,13 @@ by CGEffex
 http://freesound.org/people/CGEffex/sounds/98341/
 http://creativecommons.org/licenses/by/4.0/
 
+
+Range Rover engine bank (rangerover.ogg). Game edits: the idle cut into firing pulses and rebuilt as seamless loops at six rpm points (pitch-synchronous overlap-add), start-up and a throttle blip excerpted, faded and Ogg Vorbis encoded (tools/vehicles/engine_bank.py).
+
+Crown Victoria Startup and idle — Therancher01, CC0
+https://freesound.org/s/610774/
+https://creativecommons.org/publicdomain/zero/1.0/
+
+S63 AMG V8 Engine Revs — marcelweiss, CC0
+https://freesound.org/s/505321/
+https://creativecommons.org/publicdomain/zero/1.0/

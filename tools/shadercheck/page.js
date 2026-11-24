@@ -4,6 +4,7 @@ import { terrainMaterial, groundMaterial, markingMaterial, structMaterial, build
 import { loadSurfaces } from '../../src/surfaces.js';
 import { crownGeometry, trunkGeometry } from '../../src/vegetation.js';
 import { VehicleRenderer } from '../../src/vehicles.js';
+import { HeroCars, HERO_CARS } from '../../src/heroCars.js';
 import { People } from '../../src/characters.js';
 import { createGrass } from '../../src/grass.js';
 import { createPost, createIBL } from '../../src/post.js';
@@ -32,7 +33,13 @@ window.onerror = e => log('ERR', e);
     const cr = new THREE.InstancedMesh(crownGeometry(), tm.crown, 2); cr.castShadow = true; scene.add(cr);
     const tr = new THREE.InstancedMesh(trunkGeometry(), tm.trunk, 2); scene.add(tr);
     const vr = new VehicleRenderer(scene, true);
-    vr.draw(['hatch', 'hothatch', 'saloon', 'estate', 'suv', 'van', 'coupe', 'sports', 'police', 'bus'].map((model, i) => ({ model, x: i * 6, y: 0, z: 0, heading: 0.3, paint: 0xb5121b, spin: 1, lights: true, brake: i % 2 === 0, siren: model === 'police' })), cam.position, 1000);
+    // the hand-made Range Rover (heroCars.js): wait for its GLB, then draw one with every lamp state on
+    HERO_CARS.rangerover.file = '../' + HERO_CARS.rangerover.file;   // this page lives in www/test/
+    vr.heroCars = new HeroCars(scene); vr.heroCars.load('rangerover');
+    for (let i = 0; i < 100 && !vr.heroCars.assets.get('rangerover'); i++) await new Promise(res => setTimeout(res, 100));
+    const rr = { id: 'rr', model: 'rangerover', x: -8, y: 0, z: 0, heading: 0.3, paint: 0, spin: 1, steer: 0.3, player: true, lights: true, brake: true, reversing: true, ind: 1, dmg: [0.4, 0.2, 0.3, 0] };
+    vr.draw([rr, ...['hatch', 'hothatch', 'saloon', 'estate', 'suv', 'van', 'coupe', 'sports', 'police', 'bus'].map((model, i) => ({ model, x: i * 6, y: 0, z: 0, heading: 0.3, paint: 0xb5121b, spin: 1, lights: true, brake: i % 2 === 0, siren: model === 'police' }))], cam.position, 1000);
+    log('range rover drawn', vr.heroCars.active.size);
     const ppl = new People(scene, true);
     const act = (x, pose, extra = {}) => ({ x, y: 0, z: 0, heading: 0.3, visible: true, look: People.randomLook(), pose, speed: 1.2, phase: 1, t: 3, ...extra });
     ppl.draw([act(0, 'umbrella'), act(1, 'phone', { hat: true, hiVis: true }), act(60, 'walk', { fall: 0.5 })], cam.position, 1000);

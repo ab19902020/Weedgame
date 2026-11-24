@@ -229,7 +229,7 @@ export class Brothers {
       if (!n) { G.hud.toast('No vehicle within reach'); return; }
       const wasNpc = !n.owner && !n.free;
       G.audio?.play('Car_Door_Open', n.x, n.y, n.z);
-      if (n.parked) G.audio?.play('Car_Engine_Start_Up', n.x, n.y, n.z);
+      if (n.parked) { if (G.audio?.engineStart) G.audio.engineStart(n); else G.audio?.play('Car_Engine_Start_Up', n.x, n.y, n.z); }
       n.parked = false; n.player = true; n.free = true; n.hidden = false;
       me.vehicle = n.id; n.sp = 0;
       G.carDyn.loose.delete(n); if (n.ph) { n.ph.vx = n.ph.vz = n.ph.w = 0; n.ph.gear = 1; n.ph.rpm = 900; }

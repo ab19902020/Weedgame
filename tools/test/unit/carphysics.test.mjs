@@ -23,7 +23,7 @@ function run(dyn, v, secs, ctl, dt = 1 / 60, each) { for (let t = 0; t < secs; t
 const speed = v => Math.hypot(v.ph.vx, v.ph.vz);
 
 test('acceleration: 0-60 mph times and top speeds are in a believable range', () => {
-  for (const [m, lo, hi, vlo, vhi] of [['hatch', 7.5, 14.5, 44, 53], ['hothatch', 5, 8.5, 60, 72], ['sports', 2.8, 5, 75, 92]]) {
+  for (const [m, lo, hi, vlo, vhi] of [['hatch', 7.5, 14.5, 44, 53], ['hothatch', 5, 8.5, 60, 72], ['sports', 2.8, 5, 75, 92], ['rangerover', 3.8, 6.5, 62, 70]]) {
     const { dyn } = world(), v = car(m);
     let t60 = null;
     run(dyn, v, 60, { throttle: 1, steer: 0 }, 1 / 60, t => { if (t60 == null && v.sp >= 26.8) t60 = t; });
