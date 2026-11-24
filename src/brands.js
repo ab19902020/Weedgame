@@ -235,11 +235,14 @@ export function fasciaBrand(name, retail) {
   return independent(raw, key);
 }
 
-// Where the wordmark sits on the ground floor, in metres above the building base.
+// Where the wordmark sits, in metres above the building base.
+// High-street units: 74%–97.5% of the ground-floor height (buildingMaterial).
+// Supermarkets: a band in the top quarter of the retail front, just under the parapet.
 export function signBox(brand, floorH) {
-  const fh = Math.max(2.5, Math.min(5.4, +floorH || 3.2));
-  const canopy = !!(brand && brand.canopy);
-  const cap = canopy ? 1.35 : brand && brand.bank ? 0.58 : brand && brand.pub ? 0.66 : 0.82;
-  const h = Math.min(cap, fh * (canopy ? 0.3 : 0.24));
-  return { dy: Math.max(1.45, fh - 0.06 - h), h };
+  const fh = Math.max(2.4, Math.min(9.2, +floorH || 3.2));
+  if (brand && brand.canopy) {
+    const dy = fh * 0.76;
+    return { dy, h: fh * 0.16 };
+  }
+  return { dy: fh * 0.74, h: fh * 0.235 };
 }

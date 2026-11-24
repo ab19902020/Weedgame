@@ -9,7 +9,7 @@ VERSION=$(node -p "require('./package.json').version"); CODE=${VERSION_CODE:-6}
 W=build/android; rm -rf $W; mkdir -p $W/classes $W/assets/www $W/res/mipmap-xxxhdpi $W/res/mipmap-xxhdpi $W/res/mipmap-xhdpi $W/res/mipmap-hdpi $W/res/mipmap-mdpi
 node tools/build.mjs
 python3 tools/android/icon.py $W/res
-cp -r www/index.html www/app.js www/worker.js www/hud.css www/county-menu.webp www/characters www/world www/assets $W/assets/www/
+cp -r www/index.html www/app.js www/worker.js www/hud.css www/county-menu.webp www/characters www/sfx www/world www/assets $W/assets/www/
 cp tools/android/assets-extra/migrate.html $W/assets/
 $BT/aapt2 compile --dir $W/res -o $W/res.zip
 $BT/aapt2 link -o $W/base.apk -I $JAR --manifest tools/android/AndroidManifest.xml $W/res.zip -A $W/assets \
