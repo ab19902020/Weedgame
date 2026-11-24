@@ -3,7 +3,7 @@
 // The crown geometry is unit radius, so the existing instancing in tiles.js scales it per tree.
 import * as THREE from 'three/webgpu';
 import {
-  float, vec2, vec3, vec4, positionLocal, positionGeometry, positionWorld, normalWorld, cameraPosition, uv, texture, int,
+  float, vec2, vec3, vec4, positionLocal, positionGeometry, positionWorld, normalWorld, cameraPosition, uv, texture, int, attribute,
   mix, sin, length, max, dot, normalize, pow, smoothstep, fract, instanceIndex,
 } from 'three/tsl';
 import { U, cloudShadow } from './env.js';
@@ -11,54 +11,85 @@ import { L, sAlbedo, sDetail, perturb } from './surfaces.js';
 
 const rnd = (() => { let s = 1234567; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
 
-// ---- leaf cluster texture (2x2 atlas of variants), drawn once on a canvas -----------------
+// ---- leaf cluster texture (2x2 atlas): oak, lime, copper beech, yew/needle
 function leafTexture() {
   const N = 512, c = document.createElement('canvas'); c.width = c.height = N;
   const g = c.getContext('2d');
   g.clearRect(0, 0, N, N);
-  for (let v = 0; v < 4; v++) {
+  const leaf = (x, y, a, L, W, rgb, serrate) => {
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    g.beginPath();
+    if (!serrate) {
+      g.moveTo(-L, 0);
+      g.quadraticCurveTo(-L * 0.2, -W, L * 0.15, -W * 0.15);
+      g.quadraticCurveTo(L * 0.7, -W * 0.35, L, 0);
+      g.quadraticCurveTo(L * 0.7, W * 0.35, L * 0.15, W * 0.15);
+      g.quadraticCurveTo(-L * 0.2, W, -L, 0);
+    } else {
+      g.moveTo(-L * 0.2, 0);
+      for (let k = 0; k <= 8; k++) {
+        const f = k / 8, s = Math.sin(f * Math.PI), wob = (k % 2 ? 1 : 0.62);
+        g.lineTo(-L * 0.15 + f * L * 1.15, -W * s * wob);
+      }
+      for (let k = 8; k >= 0; k--) {
+        const f = k / 8, s = Math.sin(f * Math.PI), wob = (k % 2 ? 1 : 0.62);
+        g.lineTo(-L * 0.15 + f * L * 1.15, W * s * wob);
+      }
+    }
+    g.fill();
+    g.strokeStyle = `rgba(${Math.min(255, rgb[0] + 30)},${Math.min(255, rgb[1] + 28)},${rgb[2]},0.55)`;
+    g.lineWidth = 0.7; g.beginPath(); g.moveTo(-L * 0.7, 0); g.lineTo(L * 0.85, 0); g.stroke();
+    g.restore();
+  };
+  const specs = [
+    { n: 210, base: [34, 78, 28], yel: 40, serr: true },
+    { n: 190, base: [78, 120, 32], yel: 70, serr: false },
+    { n: 180, base: [92, 38, 28], yel: 20, serr: false },
+    { n: 260, base: [22, 58, 30], yel: 8, serr: false, needle: true },
+  ];
+  specs.forEach((sp, v) => {
     const ox = (v % 2) * N / 2, oy = Math.floor(v / 2) * N / 2, h = N / 2;
     g.save(); g.beginPath(); g.rect(ox, oy, h, h); g.clip();
-    // twigs
-    g.strokeStyle = 'rgba(70,52,35,1)'; g.lineCap = 'round';
+    g.strokeStyle = 'rgba(58,42,28,0.9)'; g.lineCap = 'round';
     const twigs = [];
-    for (let i = 0; i < 5; i++) {
-      const x0 = ox + h * (0.3 + rnd() * 0.4), y0 = oy + h * (0.55 + rnd() * 0.4), a = -Math.PI / 2 + (rnd() - 0.5) * 2.2, len = h * (0.3 + rnd() * 0.25);
+    for (let i = 0; i < 6; i++) {
+      const x0 = ox + h * (0.28 + rnd() * 0.44), y0 = oy + h * (0.5 + rnd() * 0.42);
+      const a = -Math.PI / 2 + (rnd() - 0.5) * 2.4, len = h * (0.22 + rnd() * 0.28);
       const x1 = x0 + Math.cos(a) * len, y1 = y0 + Math.sin(a) * len;
-      g.lineWidth = 2.2; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+      g.lineWidth = 1.4 + rnd(); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
       twigs.push([x0, y0, x1, y1]);
     }
-    // leaves along twigs and filling the cluster
-    const leaves = 150 + v * 15;
-    for (let i = 0; i < leaves; i++) {
+    for (let i = 0; i < sp.n; i++) {
       let x, y, a;
-      if (i < leaves * 0.6) {
+      if (i < sp.n * 0.72) {
         const t = twigs[i % twigs.length], f = rnd();
-        x = t[0] + (t[2] - t[0]) * f + (rnd() - 0.5) * 22; y = t[1] + (t[3] - t[1]) * f + (rnd() - 0.5) * 22;
-        a = Math.atan2(t[3] - t[1], t[2] - t[0]) + (rnd() < 0.5 ? -1 : 1) * (0.5 + rnd() * 0.7);
+        x = t[0] + (t[2] - t[0]) * f + (rnd() - 0.5) * 16;
+        y = t[1] + (t[3] - t[1]) * f + (rnd() - 0.5) * 16;
+        a = Math.atan2(t[3] - t[1], t[2] - t[0]) + (rnd() < 0.5 ? -1 : 1) * (0.4 + rnd() * 0.8);
       } else {
-        const r = Math.sqrt(rnd()) * h * 0.46, th = rnd() * Math.PI * 2;
-        x = ox + h / 2 + Math.cos(th) * r; y = oy + h / 2 + Math.sin(th) * r * 0.9; a = rnd() * Math.PI * 2;
+        const r = Math.sqrt(rnd()) * h * 0.48, th = rnd() * Math.PI * 2;
+        x = ox + h / 2 + Math.cos(th) * r; y = oy + h / 2 + Math.sin(th) * r * 0.92; a = rnd() * Math.PI * 2;
       }
-      const L = 9 + rnd() * 9, W = L * (0.38 + rnd() * 0.18);
-      const shade = 0.55 + rnd() * 0.45, yellow = rnd() * 0.25;
-      const R = Math.round((48 + yellow * 90) * shade), Gc = Math.round((92 + yellow * 40) * shade), B = Math.round(28 * shade);
-      g.save(); g.translate(x, y); g.rotate(a);
-      g.fillStyle = `rgb(${R},${Gc},${B})`;
-      g.beginPath(); g.moveTo(-L, 0); g.quadraticCurveTo(0, -W, L, 0); g.quadraticCurveTo(0, W, -L, 0); g.fill();
-      g.strokeStyle = `rgba(${R + 25},${Gc + 30},${B + 10},0.6)`; g.lineWidth = 0.8; g.beginPath(); g.moveTo(-L, 0); g.lineTo(L, 0); g.stroke();
-      g.restore();
+      const shade = 0.45 + rnd() * 0.6, yellow = rnd() * (sp.yel / 80);
+      const rgb = sp.base.map((ch, k) => Math.round(Math.min(255, (ch + (k === 0 ? yellow * 80 : k === 1 ? yellow * 30 : 0)) * shade)));
+      if (sp.needle) {
+        g.save(); g.translate(x, y); g.rotate(a);
+        g.strokeStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`; g.lineWidth = 1.1;
+        g.beginPath(); g.moveTo(-7, 0); g.lineTo(7, 0); g.moveTo(0, -5); g.lineTo(0, 5); g.stroke();
+        g.restore();
+      } else leaf(x, y, a, 7 + rnd() * 10, (7 + rnd() * 8) * (0.32 + rnd() * 0.16), rgb, sp.serr && rnd() < 0.7);
     }
     g.restore();
-  }
+  });
   const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
   t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
   return t;
 }
 
 // ---- crown geometry: ~56 leaf cards in a unit ellipsoid, normals pointing out from the centre
-export function crownGeometry(cards = 56) {
+export function crownGeometry(cards = 72) {
   const P = [], N = [], UV = [], I = [];
   const up = new THREE.Vector3(0, 1, 0), d = new THREE.Vector3(), t = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), q = new THREE.Vector3();
   for (let k = 0; k < cards; k++) {
@@ -116,50 +147,53 @@ export function trunkGeometry() {
   geo.setAttribute('normal', new THREE.BufferAttribute(Nn, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(UVa, 2));
   geo.setIndex(I);
+  // root flare: widen the butt of the main stem
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    if (y < 0.22 && Math.abs(pos.getX(i)) < 0.45 && Math.abs(pos.getZ(i)) < 0.45) {
+      const f = 1 + (0.22 - y) / 0.22 * 0.9;
+      pos.setX(i, pos.getX(i) * f); pos.setZ(i, pos.getZ(i) * f);
+    }
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
   return geo;
 }
 
 // ---- materials ---------------------------------------------------------------------------
 export function treeMaterials() {
   const leafTex = leafTexture();
-  const crown = new THREE.MeshStandardNodeMaterial({ roughness: 0.75, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.42 });
+  const crown = new THREE.MeshStandardNodeMaterial({ roughness: 0.82, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.35 });
   const p = positionWorld;
-  // per-tree variation
   const tid = fract(sin(float(instanceIndex).mul(12.9898)).mul(43758.5453));
-  // wind sway: whole crown leans, leaves flutter
   const wind = length(U.wind);
   const gust = sin(U.t.mul(0.9).add(tid.mul(30))).mul(0.5).add(0.5);
-  // positionLocal is already instance-transformed here (three applies instancing before positionNode),
-  // so shape-dependent terms use positionGeometry (unit crown space)
   const g0 = positionGeometry;
-  const sway = sin(U.t.mul(1.6).add(tid.mul(17)).add(g0.x.mul(1.3))).mul(wind.mul(0.006).mul(gust.mul(0.7).add(0.3)));
-  const flutter = sin(U.t.mul(9).add(g0.x.mul(23)).add(g0.z.mul(17))).mul(wind.mul(0.0025));
-  const lift = g0.y.add(1).max(0).mul(4);   // crown radius is ~3-5 m once instanced
+  const sway = sin(U.t.mul(1.6).add(tid.mul(17)).add(g0.x.mul(1.3))).mul(wind.mul(0.008).mul(gust.mul(0.7).add(0.3)));
+  const flutter = sin(U.t.mul(9).add(g0.x.mul(23)).add(g0.z.mul(17))).mul(wind.mul(0.0032));
+  const lift = g0.y.add(1).max(0).mul(4);
   crown.positionNode = positionLocal.add(vec3(sway.mul(lift).add(flutter), flutter.mul(0.6), sway.mul(lift).mul(0.6)));
   const lt = texture(leafTex, uv());
-  // distant crowns: keep coverage as mips average the alpha down
   const dist = length(cameraPosition.sub(p));
-  const alpha = lt.a.mul(mix(float(1), float(2.3), smoothstep(25, 160, dist)));
-  // species / health tint per tree
-  // targets foliage albedo of roughly (0.06, 0.12, 0.04) linear after the desaturation below
-  const tint = mix(vec3(1.0, 0.85, 1.0), vec3(1.25, 0.95, 0.8), tid).mul(tid.mul(0.3).add(0.85));
-  let col = lt.rgb.mul(tint).mul(mix(float(1), float(0.78), U.wet));
-  col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 0.72).mul(vec3(1.0, 0.95, 1.25));   // real foliage is less saturated
-  // ambient occlusion towards the crown's core and underside
-  const pg = positionGeometry;   // crown space (positionLocal is instance-transformed in the fragment)
+  const alpha = lt.a.mul(mix(float(1), float(2.4), smoothstep(25, 160, dist)));
+  // instanceColor is the species (set in tiles.js): oak, lime, plane, copper, yew
+  const species = attribute('instanceColor', 'vec3');
+  let col = lt.rgb.mul(species).mul(tid.mul(0.18).add(0.9)).mul(mix(float(1), float(0.72), U.wet));
+  col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 0.78);
+  const pg = positionGeometry;
   const r = length(pg);
-  const ao = smoothstep(0.25, 0.95, r).mul(0.55).add(0.45).mul(pg.y.mul(0.25).add(0.85));
+  const ao = smoothstep(0.2, 0.95, r).mul(0.6).add(0.4).mul(pg.y.mul(0.28).add(0.8));
   col = col.mul(ao);
   crown.colorNode = vec4(col.mul(cloudShadow(p)), alpha);
-  // translucency: light through leaves when looking towards the sun
   const v = normalize(p.sub(cameraPosition));
-  const back = pow(max(dot(v, U.sunDir), 0), 6).mul(float(1).sub(U.night)).mul(float(1).sub(U.cover.mul(0.6)));
-  crown.emissiveNode = col.mul(vec3(0.9, 1.1, 0.5)).mul(U.sunCol).mul(back.mul(0.8).add(0.02));
-  // bark
-  const trunk = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 });
-  const tuv = vec2(uv().x.mul(1.3), positionWorld.y.mul(0.9));
+  const back = pow(max(dot(v, U.sunDir), 0), 5).mul(float(1).sub(U.night)).mul(float(1).sub(U.cover.mul(0.6)));
+  crown.emissiveNode = col.mul(vec3(1.05, 1.15, 0.45)).mul(U.sunCol).mul(back.mul(0.95).add(0.025));
+  const trunk = new THREE.MeshStandardNodeMaterial({ roughness: 0.92, metalness: 0 });
+  const tuv = vec2(uv().x.mul(1.6), positionWorld.y.mul(0.85));
   const bark = sAlbedo(int(L.bark), tuv);
-  trunk.colorNode = bark.mul(0.9).mul(mix(float(1), float(0.65), U.wet)).mul(cloudShadow(positionWorld));
-  trunk.normalNode = perturb(normalWorld, sDetail(int(L.bark), tuv), float(1.2));
+  const lichen = smoothstep(0.62, 0.86, texture(leafTex, tuv.mul(0.15)).g).mul(0.22);
+  trunk.colorNode = bark.mul(mix(vec3(0.72, 0.62, 0.5), vec3(0.85), species.b)).mul(mix(float(1), float(0.62), U.wet)).mul(mix(vec3(1), vec3(0.75, 0.9, 0.62), lichen)).mul(cloudShadow(positionWorld));
+  trunk.normalNode = perturb(normalWorld, sDetail(int(L.bark), tuv), float(1.35));
   return { crown, trunk };
 }

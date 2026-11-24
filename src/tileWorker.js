@@ -2,6 +2,7 @@
 // Everything here is plain math so the main thread never stalls on geometry.
 import earcut from '../node_modules/three/src/extras/lib/earcut.js';
 import { inflate, decode } from './data.js';
+import { fasciaBrand, signBox, normName } from './brands.js';
 
 const TILE = 256, NT = 65, STEP = 4;
 let NET = null;
@@ -190,6 +191,7 @@ function build(header, A, lod) {
       const th = kind === 2 ? 0.8 : kind === 1 ? 0.06 : kind === 5 ? 0.1 : 0.25;
       const id = kind === 2 ? 3 : kind === 1 ? 2 : kind === 5 ? 4 : 1;
       wall(S, pts, th, h, hAt, id);
+      if (id === 3) wall(S, pts, th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id);
       for (let q = 0; q < pts.length - 1; q++) wallCol.push(pts[q][0], pts[q][1], pts[q + 1][0], pts[q + 1][1], h);
     }
   }
@@ -203,7 +205,7 @@ function build(header, A, lod) {
     const P = (s_, o) => [x0 + ux * s_ + nx * o, z0 + uz * s_ + nz * o];
     if (style !== 'open') {
       const h = style === 'hedge' ? 0.95 + r * 0.5 : 0.62, th = style === 'hedge' ? 0.6 : 0.24, id = style === 'hedge' ? 3 : 1;
-      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) { const A0 = P(a, t), B0 = P(b, t); wall(S, [A0, B0], th, h, hAt, id); wallCol.push(A0[0], A0[1], B0[0], B0[1], h); }
+      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) { const A0 = P(a, t), B0 = P(b, t); wall(S, [A0, B0], th, h, hAt, id); if (id === 3) wall(S, [A0, B0], th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id); wallCol.push(A0[0], A0[1], B0[0], B0[1], h); }
     }
     // driveway (block paving or tarmac) or front path (flags) from the gap to the house
     const surfId = drive ? (seed % 5 < 3 ? 4 : 0) : 1, lift = drive ? 0.08 : 0.09;
@@ -216,6 +218,21 @@ function build(header, A, lod) {
       for (let k = 0; k < (seed % 3 ? 2 : 1); k++) {
         const [bx, bz] = P(sb + k * 0.68, 0.55), y = hAt(bx, bz);
         wheelieBin(S, bx, y, bz, ang, k ? [11, 12][seed % 2] : (seed % 4 ? 10 : 17));
+      }
+    }
+    // shrubs and a flower bed in the front garden, kept off the driveway
+    if (!lod && style !== 'open') {
+      const spots = [];
+      if (gs > 1.3) spots.push(Math.max(0.4, gs * 0.45));
+      if (l - (gs + gw) > 1.3) spots.push(Math.min(l - 0.4, gs + gw + (l - gs - gw) * 0.55));
+      spots.forEach((sv, i) => {
+        const [sx, sz] = P(sv, Math.min(Math.max(t * 0.42, 0.8), 2.2));
+        shrub(S, sx, hAt(sx, sz), sz, 0.46 + ((seed + i) % 4) * 0.07);
+      });
+      if (seed % 4 !== 0) {
+        const sv = Math.min(l - 0.35, Math.max(0.35, drive ? gs + gw + 0.55 : l * 0.5));
+        const [sx, sz] = P(sv, 0.45);
+        bloom(S, sx, hAt(sx, sz), sz, Math.atan2(uz, ux), drive ? 0.75 : 1.2, [19, 20, 21][seed % 3]);
       }
     }
   }
@@ -277,6 +294,15 @@ function build(header, A, lod) {
         }
       }
     }
+    // shop planters on the pavement in front of a retail frontage
+    for (const [x0, z0, x1, z1, nx, nz, len, seed] of out.buildings.planters || []) {
+      const ux = (x1 - x0) / len, uz = (z1 - z0) / len, ang = Math.atan2(uz, ux);
+      for (const f of [0.22, 0.78]) {
+        const x = x0 + ux * len * f + nx * 0.45, z = z0 + uz * len * f + nz * 0.45;
+        if (x < 0 || z < 0 || x >= TILE || z >= TILE) continue;
+        bloom(S, x, hAt(x, z), z, ang, 0.85, [19, 21, 20][seed % 3]);
+      }
+    }
   }
   if (wallCol.length) {
     const B = out.buildings, col = Array.from(B.col), pts = Array.from(B.colPts);
@@ -300,11 +326,20 @@ function build(header, A, lod) {
   const pk = A.pk, slots = new Float32Array(pk.length);
   for (let k = 0; k < pk.length; k += 4) { slots[k] = pk[k]; slots[k + 1] = hAt(pk[k], pk[k + 1]) + 0.05; slots[k + 2] = pk[k + 1]; slots[k + 3] = pk[k + 2]; }
   out.slots = slots; out.slotKind = new Float32Array(Array.from({ length: pk.length / 4 }, (_, i) => pk[i * 4 + 3]));
-  out.signs = { data: new Float32Array(A.sg), text: header.sn };
+  out.signs = mergeSigns(header, A, out.buildings.fascias || []);
+  delete out.buildings.fascias;
   return out;
 }
 
 // ---- street props (struct mesh; surf ids 10.. map to colours in materials.structMaterial)
+function shrub(B, x, y, z, s) {
+  box(B, x, y, z, 0.4, s * 0.48, s * 0.34, s * 0.42, 18);
+  box(B, x + s * 0.08, y + s * 0.5, z, 1.2, s * 0.32, s * 0.24, s * 0.3, 18);
+}
+function bloom(B, x, y, z, ang, len, id) {
+  box(B, x, y, z, ang, len * 0.5, 0.06, 0.18, 18);
+  box(B, x, y + 0.1, z, ang, len * 0.42, 0.06, 0.14, id);
+}
 function box(B, x, y, z, ang, hx, hy, hz, id) {
   const ca = Math.cos(ang), sa = Math.sin(ang), P = (u, v, w) => [x + u * ca - w * sa, y + v, z + u * sa + w * ca];
   const c = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
@@ -442,6 +477,70 @@ function ribbonDeck(G, S, pts, w, kind, hAt) {
 }
 
 // ------------------------------------------------------------------ buildings
+function floorHOf(M, bi) {
+  if (!M || bi < 0 || (bi + 1) * 16 > M.length) return 3.2;
+  const wall = M[bi * 16 + 2], lv = M[bi * 16 + 11];
+  if (!(wall > 0)) return 3.2;
+  return Math.max(2.5, Math.min(5.4, wall / Math.max(1, lv || 1)));
+}
+function mergeSigns(header, A, fascias) {
+  const covered = new Set(fascias.map(f => normName(f.name)));
+  const data = [], text = [];
+  const sg = A.sg && A.sg.length ? A.sg : new Float32Array(0);
+  const sn = header.sn || [];
+  const nSign = Math.min(sn.length, Math.floor(sg.length / 7));
+  for (let i = 0; i < nSign; i++) {
+    const name = sn[i] || '';
+    if (!name || covered.has(normName(name))) continue;
+    const brand = fasciaBrand(name, true);
+    const box = signBox(brand, floorHOf(A.bM, sg[i * 7 + 5] | 0));
+    data.push(sg[i * 7], sg[i * 7 + 1], sg[i * 7 + 2], sg[i * 7 + 3], sg[i * 7 + 4], box.dy, box.h);
+    text.push(name);
+  }
+  for (const f of fascias) {
+    data.push(f.x0, f.z0, f.x1, f.z1, f.base, f.dy, f.h);
+    text.push(f.name);
+  }
+  return { data: new Float32Array(data), text };
+}
+// Centred wordmark on the street edge. Large stores sit the board on a canopy lip.
+function placeFascia(fascias, outer, edge, baseRel, floorH, brand) {
+  const [x0, z0] = outer[edge], [x1, z1] = outer[(edge + 1) % outer.length];
+  const dx = x1 - x0, dz = z1 - z0, fl = Math.hypot(dx, dz);
+  if (fl < 2.4) return null;
+  let uF = 0;
+  for (let q = 0; q < edge; q++) {
+    const [ax, az] = outer[q], [bx, bz] = outer[(q + 1) % outer.length];
+    const l = Math.hypot(bx - ax, bz - az); if (l >= 0.02) uF += l;
+  }
+  const tx = dx / fl, tz = dz / fl, nx = tz, nz = -tx;
+  const box = signBox(brand, floorH);
+  const canopy = !!(brand.canopy && fl >= 12);
+  let w = canopy ? Math.min(15, Math.max(8, fl * 0.36)) : Math.min(10.5, Math.max(3.3, String(brand.label).length * 0.48));
+  w = Math.min(w, fl - 0.45);
+  if (w < 2.2) return null;
+  const inset = canopy ? 1.52 : 0, c0 = (fl - w) / 2;
+  fascias.push({
+    x0: x0 + tx * c0 + nx * inset, z0: z0 + tz * c0 + nz * inset,
+    x1: x0 + tx * (c0 + w) + nx * inset, z1: z0 + tz * (c0 + w) + nz * inset,
+    base: baseRel, dy: box.dy, h: box.h, name: brand.label,
+  });
+  return { x0, z0, x1, z1, fl, box, doorU: uF + fl * 0.5 };
+}
+function addShopCanopy(B, x0, z0, x1, z1, y0, y1, uvY, depth, ex) {
+  const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
+  if (L < 8 || y1 <= y0) return;
+  const tx = dx / L, tz = dz / L, nx = dz / L, nz = -dx / L, end = 0.04;
+  const A = [x0 - tx * end, z0 - tz * end], C = [x1 + tx * end, z1 + tz * end];
+  const Aw = [A[0] + nx * depth, A[1] + nz * depth], Cw = [C[0] + nx * depth, C[1] + nz * depth];
+  const soffit = [ex[0], ex[1], ex[2], 11];
+  const uv = [[0, uvY], [L, uvY], [L, uvY], [0, uvY]];
+  quad(B, [Aw[0], y0, Aw[1]], [Cw[0], y0, Cw[1]], [Cw[0], y1, Cw[1]], [Aw[0], y1, Aw[1]], [nx, 0, nz], uv, ex);
+  quad(B, [A[0], y1, A[1]], [C[0], y1, C[1]], [Cw[0], y1, Cw[1]], [Aw[0], y1, Aw[1]], [0, 1, 0], uv, ex);
+  quad(B, [Aw[0], y0, Aw[1]], [Cw[0], y0, Cw[1]], [C[0], y0, C[1]], [A[0], y0, A[1]], [0, -1, 0], null, soffit);
+  quad(B, [A[0], y0, A[1]], [Aw[0], y0, Aw[1]], [Aw[0], y1, Aw[1]], [A[0], y1, A[1]], [-tx, 0, -tz], [[0, uvY], [1, uvY], [1, uvY], [0, uvY]], ex);
+  quad(B, [Cw[0], y0, Cw[1]], [C[0], y0, C[1]], [C[0], y1, C[1]], [Cw[0], y1, Cw[1]], [tx, 0, tz], [[0, uvY], [1, uvY], [1, uvY], [0, uvY]], ex);
+}
 function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   const B = new Buf(4);
   const C = A.bC, R = A.bR, P = A.bP, M = A.bM, hmin = header.hmin;
@@ -470,14 +569,18 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   const col = []; // collision: per building [ringStart, ringLen, top, base]
   const landmarks = [], destinations = [];
   const gardens = [];
+  const planters = [];
+  const fascias = [];
   const colPts = [];
   let ci = 0, ri = 0;
   for (let bi = 0; bi < P.length; bi++) {
     const m = M.subarray(bi * NM, bi * NM + NM);
     const base = m[0] + hmin, low = m[1] + hmin - 0.6, wallH = m[2], roof = m[3], rh = m[4];
     const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], seed = m[13];
+    const bname = (header.bn && header.bn[bi]) || '';
+    const brand = (!lod && fasciaBrand(bname, m[12] > 0 || cls === 6 || cls === 7)) || null;
     // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
-    const shop = m[12] || ((cls === 6 || cls === 7) && header.bn[bi] ? 1 : 0);
+    const shop = m[12] || ((cls === 6 || cls === 7) && bname) || brand ? 1 : 0;
 
     if (cls === 13) { for (let k = 0; k < P[bi]; k++) ci += R[ri++]; continue; } // canopies are drawn by landmarks.js
     const floorH = Math.max(2.4, Math.min(5, wallH / Math.max(1, lv)));
@@ -516,7 +619,16 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       }
       if (bd > 40) front = -1;
     }
-    const clsCode = cls + (shop ? 32 : 0);
+    if (!lod && brand && front < 0) {
+      let bl = 0, bq = -1;
+      for (let q = 0; q < outer.length; q++) {
+        const [ax, az] = outer[q], [bx, bz] = outer[(q + 1) % outer.length];
+        const l = Math.hypot(bx - ax, bz - az);
+        if (l > bl) { bl = l; bq = q; }
+      }
+      if (bl >= 2.4) front = bq;
+    }
+    const clsCode = cls + (shop ? 32 : 0) + (brand ? brand.id * 64 : 0);
     // front door and bay window positions are chosen here (so the door hood and bay line up with the
     // painted door); the door's u coordinate along the wall rides in the seed attribute
     let doorU = 0, seedEnc = seed, frontInfo = null;
@@ -537,6 +649,18 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       const ce = segDist((x0 + x1) / 2, (z0 + z1) / 2, segs, true);
       const t = ce - 2.1;
       if (t >= 1.6 && t <= 14 && l >= 4) gardens.push([x0, z0, x1, z1, nx, nz, t, seed, cls, base + wallH]);
+    }
+    if (front >= 0 && shop) {
+      const [x0, z0] = outer[front], [x1, z1] = outer[(front + 1) % outer.length];
+      const l = Math.hypot(x1 - x0, z1 - z0);
+      if (l >= 4 && l <= 40 && !(brand && brand.canopy)) planters.push([x0, z0, x1, z1, (z1 - z0) / l, -(x1 - x0) / l, l, seed]);
+    }
+    if (!lod && brand && front >= 0) {
+      const placed = placeFascia(fascias, outer, front, m[0], floorH, brand);
+      if (placed && brand.canopy) seedEnc = seed + 1000 * Math.round(placed.doorU * 4);
+      if (placed && brand.canopy && placed.fl >= 12) {
+        addShopCanopy(B, placed.x0, placed.z0, placed.x1, placed.z1, base + placed.box.dy, base + placed.box.dy + placed.box.h, placed.box.dy + placed.box.h * 0.5, 1.48, [floorH, seedEnc, clsCode, 1]);
+      }
     }
     // walls
     rings.forEach((ring, k) => {
@@ -569,7 +693,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     for (const [x, z] of outer) colPts.push(x + ox, z + oz);
   }
   const g = B.pack();
-  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.destinations = destinations; g.landmarks = landmarks; g.gardens = gardens;
+  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.destinations = destinations; g.landmarks = landmarks; g.gardens = gardens; g.planters = planters; g.fascias = fascias;
   return g;
 }
 
@@ -636,6 +760,15 @@ function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed, base = 0) 
   } else if (type !== 4) {
     if (ridge > 0.05) beam(B, P(-ridge, 0, top + 0.04), P(ridge, 0, top + 0.04), 0.22, 0.12, part(9));
     for (const s of [-1, 1]) for (const v of [-1, 1]) beam(B, P(s * ridge, 0, top + 0.03), P(s * (l + o), v * (w + o), ye + 0.03), 0.2, 0.1, part(9));
+  }
+  // television aerial on some pitched roofs (lived-in streets, not every house)
+  if ((cls === 1 || cls === 2) && seed % 5 === 2) {
+    const u = (seed % 2 ? 0.4 : -0.4) * Math.max(0.4, l * 0.5);
+    const yA = type === 1 ? top - rh * 0.45 : eave + 0.15;
+    const c = P(u, w * 0.2, yA);
+    beam(B, c, [c[0], c[1] + 1.05, c[2]], 0.025, 0.025, part(8), [0, 1, 0]);
+    beam(B, [c[0] - ca * 0.42, c[1] + 0.9, c[2] - sa * 0.42], [c[0] + ca * 0.42, c[1] + 0.9, c[2] + sa * 0.42], 0.015, 0.015, part(8));
+    beam(B, [c[0] - sa * 0.26, c[1] + 0.72, c[2] + ca * 0.26], [c[0] + sa * 0.26, c[1] + 0.72, c[2] - ca * 0.26], 0.015, 0.015, part(8));
   }
   // chimney on houses
   if ((cls === 1 || cls === 2) && seed % 3 !== 0) {

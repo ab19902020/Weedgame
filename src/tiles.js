@@ -149,7 +149,9 @@ export class Tiles {
     const n = tr.length / 4; if (!n) return;
     const crowns = new THREE.InstancedMesh(this.crownGeo, this.mats.crown, n);
     const trunks = new THREE.InstancedMesh(this.trunkGeo, this.mats.trunk, n);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
+    // half-tints (shader multiplies by 2): oak, lime, plane, copper beech, yew
+    const PAL = [[0.48, 0.52, 0.40], [0.56, 0.58, 0.36], [0.50, 0.55, 0.42], [0.64, 0.36, 0.32], [0.30, 0.42, 0.32]];
     t.trees = [];
     for (let i = 0; i < n; i++) {
       const x = tr[i * 4], y = tr[i * 4 + 1], z = tr[i * 4 + 2], code = tr[i * 4 + 3];
@@ -157,12 +159,20 @@ export class Tiles {
       const r = hash(x * 13.1 + z * 7.7);
       let H = kind === 1 ? 11 + r * 8 : kind === 2 ? 5 + r * 4 : kind === 3 ? 9 + r * 6 : 8 + r * 6;
       if (hTag > 2) H = hTag;
-      const cw = H * (0.28 + r * 0.1);
+      const si = kind === 1 ? (r < 0.45 ? 2 : 1) : kind === 2 ? (r < 0.22 ? 3 : 0) : kind === 3 ? 4 : (r < 0.12 ? 3 : 0);
+      const cw = H * (si === 4 ? 0.22 + r * 0.05 : 0.30 + r * 0.1);
+      let sx = cw, sy = cw * (si === 4 ? 1.55 : si === 1 ? 0.86 : 1.02), sz = cw * (si === 1 ? 1.14 : 1);
+      if (kind === 2) { sx *= 1.18; sy *= 0.78; sz *= 1.18; }
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r * 6.28);
-      m.compose(p.set(x, y + H - cw * 0.95, z), q, s.set(cw, cw * 1.05, cw)); crowns.setMatrixAt(i, m);
-      m.compose(p.set(x, y - 0.2, z), q, s.set(1 + H / 14, H - cw * 1.2, 1 + H / 14)); trunks.setMatrixAt(i, m);
+      m.compose(p.set(x, y + H - sy * 0.9, z), q, s.set(sx, sy, sz)); crowns.setMatrixAt(i, m);
+      const trunkH = Math.max(1.1, H - sy * (si === 4 ? 0.55 : 1.05));
+      m.compose(p.set(x, y - 0.15, z), q, s.set(0.85 + H / 18, trunkH, 0.85 + H / 18)); trunks.setMatrixAt(i, m);
+      col.setRGB(PAL[si][0], PAL[si][1], PAL[si][2]);
+      crowns.setColorAt(i, col); trunks.setColorAt(i, col);
       t.trees.push([x + t.data.ox, z + t.data.oz, H]);
     }
+    if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
+    if (trunks.instanceColor) trunks.instanceColor.needsUpdate = true;
     crowns.castShadow = trunks.castShadow = this.shadows;
     crowns.receiveShadow = this.shadows;
     crowns.computeBoundingSphere(); trunks.computeBoundingSphere();
@@ -184,23 +194,39 @@ export class Tiles {
     t.group.add(im);
   }
   addSigns(t, signs) {
-    const S = signs.data, n = S.length / 7; if (!n || !this.signAtlas) return;
+    const S = signs.data, n = Math.floor(S.length / 7); if (!n || !this.signAtlas) return;
     t.signs = [];
     const pos = [], uvs = [], nor = [];
+    const push = (a, b, c, d, uv, nm) => {
+      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      const [u0, v0, u1, v1] = uv;
+      uvs.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
+      for (let k = 0; k < 6; k++) nor.push(nm[0], nm[1], nm[2]);
+    };
     for (let i = 0; i < n; i++) {
-      const x0 = S[i * 7], z0 = S[i * 7 + 1], x1 = S[i * 7 + 2], z1 = S[i * 7 + 3], base = S[i * 7 + 4];
-      const cat = S[i * 7 + 6];
-      const uvr = this.signAtlas.alloc(signs.text[i], cat);
+      const x0 = S[i * 7], z0 = S[i * 7 + 1], x1 = S[i * 7 + 2], z1 = S[i * 7 + 3];
+      const base = S[i * 7 + 4], dy = S[i * 7 + 5], h = S[i * 7 + 6];
+      if (!(h > 0.15)) continue;
+      const uvr = this.signAtlas.alloc(signs.text[i]);
       if (!uvr) continue;
       t.signs.push(uvr.slot);
-      const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.5) continue;
-      const nx = dz / l, nz = -dx / l; // outward for CCW rings
-      const off = 0.12, y0 = t.data.hmin + base + 2.95, y1 = y0 + 0.75;
-      const a = [x0 + nx * off, y0, z0 + nz * off], b = [x1 + nx * off, y0, z1 + nz * off], c = [x1 + nx * off, y1, z1 + nz * off], d = [x0 + nx * off, y1, z0 + nz * off];
-      pos.push(...a, ...b, ...c, ...a, ...c, ...d);
+      const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.4) continue;
+      const tx = dx / l, tz = dz / l, nx = dz / l, nz = -dx / l;
+      const off = 0.08, th = 0.05;
+      const y0 = t.data.hmin + base + dy, y1 = y0 + h;
+      const P = (s, o, y) => [x0 + tx * s + nx * o, y, z0 + tz * s + nz * o];
       const [u0, v0, u1, v1] = uvr.uv;
+      const face = uvr.uv;
+      const solid = [u0 + 0.0008, v0 + 0.0008, u0 + 0.0012, v0 + 0.0012];
+      // winding A-B-C faces back into the wall; the street side is B-A-D
+      const o = off + th;
+      const A = P(0, o, y0), B = P(l, o, y0), C = P(l, o, y1), D = P(0, o, y1);
+      pos.push(...B, ...A, ...D, ...B, ...D, ...C);
       uvs.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
       for (let k = 0; k < 6; k++) nor.push(nx, 0, nz);
+      push(P(l, off, y0), P(0, off, y0), P(0, off, y1), P(l, off, y1), solid, [-nx, 0, -nz]);
+      push(P(0, off, y1), P(l, off, y1), P(l, o, y1), P(0, o, y1), solid, [0, 1, 0]);
+      push(P(0, o, y0), P(l, o, y0), P(l, off, y0), P(0, off, y0), solid, [0, -1, 0]);
     }
     if (!pos.length) return;
     const g = new THREE.BufferGeometry();

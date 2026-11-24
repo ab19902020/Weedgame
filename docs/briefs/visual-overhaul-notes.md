@@ -80,3 +80,22 @@ Merged with `grok/sim-perf` (`f378e4c`). The visual features are now part of you
 | Renderer | `src/vehicles.js` | Sprung body matrix (pitch/roll from acceleration) over a ground matrix for the wheels; AI steer angle from yaw rate; contact-shadow instanced quads. |
 | Tyre effects | `src/skidmarks.js` (`TyreFx`) | Ring buffer of 1600 mark quads and 160 smoke sprites, both fed from `CarDynamics.finish`. |
 | AI | `src/traffic.js` | `v.ind` (1 left, 2 right) before turns and pull-outs. |
+
+## Round 4 (town graphics only — buildings, roads, plants)
+
+Branch `grok/town-look`, based on `ccr-0546346a-2h4fov` @ `589d23fe`. Cars, people, weather, sky and post are untouched.
+
+| Area | Where | Notes |
+|---|---|---|
+| Roads and pavements | `src/materials.js` `groundMaterial` | Aggregate chips, tar repair patches, flag joints, weeds in pavement cracks, moss on kerbs. |
+| Lawns | `terrainMaterial`, `src/grass.js` | Clover and daisies in the lawn albedo. Near grass is taller on verges, shorter in gardens, with seed heads. On for high quality or `?grass=1`. |
+| Hedges, shrubs, flowers | `structMaterial`, `src/tileWorker.js` | Hedge caps and flower flecks. Front gardens get privet shrubs and a flower bed (struct surf 18–21). Shops get two pavement planters. |
+| Houses | `buildingMaterial`, `addRoof` | Rain streaks on render, ivy on some frontages, moss at the wall foot, a painted shop fascia, TV aerials on some roofs. |
+| Trees | `src/vegetation.js`, `src/tiles.js` `addTrees` | Fuller leaf cards (oak, lime, copper, yew), species tint via `instanceColor`, broader or columnar crowns, root flare and lichen on bark. |
+
+WebGL2 shader check: 0 failing programs after this round.
+
+## Round 5 (shop fascias — still no cars, people, or weather)
+
+Branch `grok/town-look`. Named shops take their fascia from the OSM name already on the footprint (`bn`) or the POI sign (`sn`). `src/brands.js` matches the chain (Waitrose, Iceland, Tesco, the banks, the high street) and `src/signs.js` paints original lettering in that chain's colours. Large stores get a canopy and deeper glass; the brand id rides in `bA.z` as `id * 64`. No logo image files.
+
