@@ -271,6 +271,7 @@ const sel = (c, a, b) => select(c, a, b).uniformFlow().toVar();
 const eqf = (a, k) => step(k - 0.5, a).mul(step(a, k + 0.5));
 const rotY = (v, a) => { const c = cos(a), s = sin(a); return vec3(v.x.mul(c).add(v.z.mul(s)), v.y, v.z.mul(c).sub(v.x.mul(s))); };
 
+const clamp01n = v => v.clamp(0, 1);
 const bitf = (v, k) => step(0.5, fract(floor(v.div(2 ** k)).mul(0.5)));
 const band = (v, a, b) => step(a, v).mul(step(v, b));
 // cheap value noise from a hash of the model-space position (dents, dirt, scratches)
@@ -455,8 +456,8 @@ export function vehicleMaterial(models) {
   const grime = smoothstep(hs.add(0.42), hs, y).mul(float(0.18).add(U.wet.mul(0.3))).mul(dn.mul(0.6).add(0.4)).mul(paintArea);
   base = mix(base, vec3(0.16, 0.14, 0.12), grime);
   // damage: dents shade the paint, scratches show primer and bare metal
-  const scratch = step(0.8, vnoise(vec3(x.mul(2.5), y.mul(70), z.mul(2.5)))).mul(step(0.45, dent)).mul(smoothstep(0.1, 0.4, dmg)).mul(paintArea);
   const dent = vnoise(lp.mul(3.2).add(1.7));
+  const scratch = step(0.8, vnoise(vec3(x.mul(2.5), y.mul(70), z.mul(2.5)))).mul(step(0.45, dent)).mul(smoothstep(0.1, 0.4, dmg)).mul(paintArea);
   base = base.mul(float(1).sub(dmg.mul(smoothstep(0.45, 0.9, dent)).mul(0.35).mul(paintArea)));
   base = mix(base, mix(vec3(0.42, 0.42, 0.4), vec3(0.62), step(0.5, dn2)), scratch);
   mat.colorNode = base;
@@ -498,7 +499,6 @@ export function vehicleMaterial(models) {
     .add(lightPool(positionWorld).mul(base));
   return mat;
 }
-const clamp01n = v => v.clamp(0, 1);
 
 // ------------------------------------------------------------------ wheels
 // unit wheel: radius 1, axle along z, width 1. Per instance iWheel = (rim radius fraction, design, spin, red calipers)

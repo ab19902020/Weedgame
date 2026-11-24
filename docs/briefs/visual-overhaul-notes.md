@@ -68,3 +68,15 @@ Merged with `grok/sim-perf` (`f378e4c`). The visual features are now part of you
 | Buildings | `src/tileWorker.js` (`addRoof`, `addFrontage`, `beam`), `src/materials.js` | New building parts 7–13 (trim, gutter, ridge, pot, soffit, bay glazing, bay/hood roof). The door position along the wall is encoded in the seed: `seed + 1000·round(u·4)`. |
 | Street props | `src/tileWorker.js` (`wheelieBin`, `pillarBox`, `litterBin`, `bench`, `sagWire`), `structMaterial` | Struct-mesh `surf` ids 10–17. `gardens` entries carry the eave height (10th field) for the drop wires. |
 | Faces and hair | `src/faceBake.js` (new), `src/humans.js` | The atlas has 8 faces (4 × 2 cells of 256 px; channels: shading, facial hair, tint, eye mask). The face index travels in `iSty.x` as `style + 0.05·face`. Hair is a tileable strand map applied tri-planar in head space. `headShape()` is shared by the skull and the hair shells; each hair style has a hairline table, and the shell drops 4 mm under the skin below it. `look.face` is 0–3; women use cells 4–7. |
+
+## Round 4 (vehicles)
+
+| Area | Where | Notes |
+|---|---|---|
+| Handling | `src/carPhysics.js` (`CarDynamics`, `HANDLING`, `params`) | The player's car goes through `G.carDyn.drive(v, dt, {throttle, steer, handbrake})` at 120 Hz substeps. State lives in `v.ph` (vx, vz, yaw rate w, ax/ay, gear, rpm, slip, scrape). `v.sp`, `v.v`, `v.steer`, `v.rpm` and `v.gear` are written back for the camera, HUD and audio. |
+| Collisions | `CarDynamics.collide`, `obb` | Impulses with restitution and friction against tile building rings, 2-point walls, lamp posts (`t.data.lamps`), tree trunks (`t.trees`) and other cars. A struck car becomes a loose body in `G.carDyn.loose` until it stops; moving traffic hit with Δv > 1.6 m/s is set `crashed` and `vehicleHit` is emitted (police). `o._offLane` lets `Traffic.place` ease it back into lane. |
+| Damage | `v.dmg` = [front, rear, left −z, right +z]; `iDmg` instance attribute | Crumple in `vehicleMaterial().positionNode` (world offset from heading; instancing runs before positionNode), with dents, scratches, cracked glass and broken lamps in the fragment shader. Saved for owned cars. |
+| Car shader | `src/carModel.js` (`carLayout`, `vehicleMaterial`) | The loft is part 20, and `color` carries (ring section 0–12, end cap flag). Glass, pillars, lamps, grilles, trims and shut lines are per pixel from per-model uniform arrays. `iState.x` flags: 1 brake, 2 reversing, 4 left indicator, 8 right, 16 hazards. **Vertex buffers are at WebGPU's limit of 8** (position, normal, color, vdat, instanceMatrix, iState, iPaint, iDmg): don't add attributes to vehicle geometry. |
+| Renderer | `src/vehicles.js` | Sprung body matrix (pitch/roll from acceleration) over a ground matrix for the wheels; AI steer angle from yaw rate; contact-shadow instanced quads. |
+| Tyre effects | `src/skidmarks.js` (`TyreFx`) | Ring buffer of 1600 mark quads and 160 smoke sprites, both fed from `CarDynamics.finish`. |
+| AI | `src/traffic.js` | `v.ind` (1 left, 2 right) before turns and pull-outs. |

@@ -57,7 +57,7 @@ export class Hud {
     const near = !inCar && G.brothers.nearestVehicle();
     this.el('bUse').textContent = inCar ? 'Exit' : near ? (near.owner ? `Get in (${near.owner}'s)` : 'Get in') : 'Get in';
     this.el('bUse').classList.toggle('dim', !inCar && !near);
-    this.el('bRun').textContent = inCar ? 'Brake' : 'Run';
+    this.el('bRun').textContent = inCar ? 'Handbrake' : 'Run';
     this.el('bHorn').hidden = !inCar;
     // run button doubles as brake in a vehicle
     if (inCar) { if (I.held.has('run')) I.held.add('brake'); else if (!I.keys.has('Space')) I.held.delete('brake'); }
