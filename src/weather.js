@@ -1,16 +1,23 @@
 // One world clock and one weather timeline for the whole map. State is integrated
 // (wetness, puddles, cloud drift) and saved, so brother swaps and relaunches stay continuous.
+// The sky is physical: the sun follows the NOAA solar position for Reading, the moon its real orbit and
+// phase (astro.js), the stars turn with sidereal time, and every light colour (sunlight, sky light,
+// fog, the light on the clouds) is read from the same atmosphere model the sky is drawn with.
 import * as THREE from 'three/webgpu';
-import { U } from './env.js';
+import { U, coverThreshold } from './env.js';
+import { starRotation, moonPosition, moonPhase } from './astro.js';
+import { transmittance, inscatter } from './atmosphere.js';
 
+// cover: fraction of sky clouded; base/thick: cloud layer (m above the street); type: 0 stratus sheet ..
+// 1 heaped cumulus; cirrus: high ice cloud; haze: aerosol (Mie) multiplier; dens: cloud extinction scale
 export const STATES = {
-  clear: { cover: 0.1, rain: 0, fog: 0.00045, wind: 3, dark: 0 },
-  broken: { cover: 0.45, rain: 0, fog: 0.0006, wind: 5, dark: 0 },
-  overcast: { cover: 0.93, rain: 0, fog: 0.0009, wind: 6, dark: 0.15 },
-  drizzle: { cover: 0.96, rain: 0.22, fog: 0.0015, wind: 5, dark: 0.35 },
-  rain: { cover: 1.0, rain: 1.0, fog: 0.0024, wind: 9, dark: 0.85 },
-  mist: { cover: 0.75, rain: 0, fog: 0.0075, wind: 1, dark: 0.1 },
-  clearing: { cover: 0.32, rain: 0, fog: 0.0008, wind: 7, dark: 0 },
+  clear: { cover: 0.14, rain: 0, fog: 0.00045, wind: 3, dark: 0, base: 1350, thick: 900, type: 1, cirrus: 0.4, haze: 1.8, dens: 0.8 },
+  broken: { cover: 0.47, rain: 0, fog: 0.0006, wind: 5, dark: 0, base: 1100, thick: 1600, type: 0.92, cirrus: 0.2, haze: 2.4, dens: 1 },
+  overcast: { cover: 0.94, rain: 0, fog: 0.0009, wind: 6, dark: 0.15, base: 750, thick: 1100, type: 0.35, cirrus: 0, haze: 3.5, dens: 1.1 },
+  drizzle: { cover: 0.97, rain: 0.22, fog: 0.0015, wind: 5, dark: 0.35, base: 450, thick: 1300, type: 0.18, cirrus: 0, haze: 5, dens: 1.3 },
+  rain: { cover: 1.0, rain: 1.0, fog: 0.0024, wind: 9, dark: 0.85, base: 380, thick: 2600, type: 0.12, cirrus: 0, haze: 6, dens: 1.7 },
+  mist: { cover: 0.75, rain: 0, fog: 0.0075, wind: 1, dark: 0.1, base: 300, thick: 520, type: 0.12, cirrus: 0.1, haze: 9, dens: 0.9 },
+  clearing: { cover: 0.34, rain: 0, fog: 0.0008, wind: 7, dark: 0, base: 1000, thick: 2300, type: 1, cirrus: 0.28, haze: 1.3, dens: 1 },
 };
 const NEXT = {
   clear: [['broken', 0.5], ['mist', 0.05], ['clear', 0.45]],
@@ -62,7 +69,7 @@ export class World {
     const k = Math.max(0, Math.min(1, (this.s.t - seg.start) / BLEND));
     const e = k * k * (3 - 2 * k);
     const out = {};
-    for (const key of Object.keys(b)) out[key] = a[key] + (b[key] - a[key]) * e;
+    for (const key of Object.keys(b)) { const av = a[key] ?? b[key]; out[key] = av + (b[key] - av) * e; }
     return out;
   }
   advanceSegments() {
@@ -87,7 +94,10 @@ export class World {
     this.s.windDir += Math.sin(this.s.t / 5400) * 0.00002 * dt;
     const wx = Math.cos(this.s.windDir) * w.wind, wz = Math.sin(this.s.windDir) * w.wind;
     this.wind = [wx, wz];
-    this.s.cloudOff[0] += wx * 2.2 * dt; this.s.cloudOff[1] += wz * 2.2 * dt;
+    // the cloud deck drifts at about twice the street wind, sped up a little with the clock (not with the
+    // full time-lapse: at 30x the sky would race), so moving clouds read as weather, not a fast-forward
+    const drift = 2 * Math.min(this.s.scale, 4) * realDt;
+    this.s.cloudOff[0] += wx * drift; this.s.cloudOff[1] += wz * drift;
     this.s.cloudOff[0] %= 4.2e6; this.s.cloudOff[1] %= 4.2e6;
     this.computeSun();
     // wetness & puddles
@@ -101,7 +111,7 @@ export class World {
       this.s.puddle = Math.max(0, this.s.puddle - dry * 0.45 * dt);
     }
     if (this.s.wet < this.s.puddle * 0.6) this.s.wet = this.s.puddle * 0.6;
-    this.applyUniforms();
+    this.applyUniforms(realDt);
   }
   computeSun() {
     // NOAA-style approximation for Reading (51.45N, 0.95W)
@@ -120,33 +130,87 @@ export class World {
     let az = Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(lat) - Math.tan(decl) * Math.cos(lat)) + Math.PI; // from north, clockwise
     this.sunEl = el; this.sunAz = az;
     this.sun.set(Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az));
-    // moon roughly opposite, offset
-    this.moon.set(-this.sun.x * 0.8 + 0.2, Math.max(0.15, -this.sun.y * 0.8 + 0.25), -this.sun.z * 0.8).normalize();
+    // the moon (real place and phase) and the star sphere
+    const ms = this.s.t * 1000;
+    this.starM = starRotation(ms, this.starM);
+    const mp = moonPosition(ms, this.starM);
+    this.moon.set(mp.dir[0], mp.dir[1], mp.dir[2]);
+    this.moonRadius = mp.radius;
+    this.moonLit = moonPhase(ms).fraction;
   }
-  applyUniforms() {
+  // sky light from the atmosphere model: sun colour, zenith and horizon radiance, sky and ground light
+  // for the clouds. A few dozen samples; refreshed a few times a second.
+  skyLight(w) {
+    const sun = [this.sun.x, this.sun.y, this.sun.z], moon = [this.moon.x, this.moon.y, this.moon.z], K = SKY_E, haze = w.haze ?? 2;
+    const moonK = this.moonE(), lum = c => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+    const at = (el, az) => { const d = [Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az)];
+      const a = inscatter(d, sun, K, 80, haze, 12), b = moonK > 0 ? inscatter(d, moon, moonK, 80, haze, 8) : [0, 0, 0];
+      return [a[0] + b[0] + 0.0036, a[1] + b[1] + 0.0055, a[2] + b[2] + 0.0115]; };
+    const sAz = this.sunAz || 0, D = Math.PI / 180;
+    const zen = at(Math.PI / 2, 0);
+    const hor = [0, 0, 0], mid = [0, 0, 0];
+    for (let k = 0; k < 6; k++) { const az = sAz + k * Math.PI / 3, h = at(5 * D, az), m = at(30 * D, az); for (let i = 0; i < 3; i++) { hor[i] += h[i] / 6; mid[i] += m[i] / 6; } }
+    const T = transmittance(80, Math.max(-0.2, this.sun.y), haze);
+    // cosine-weighted sky light on an upward face, and the street's bounce light from below
+    const skyAmb = [0, 1, 2].map(i => zen[i] * 0.35 + mid[i] * 0.45 + hor[i] * 0.2);
+    const up = Math.max(0, this.sun.y), sunUp = smooth(-0.03, 0.03, this.sun.y);
+    const ground = [0, 1, 2].map(i => (T[i] * up * sunUp * 1.35 + skyAmb[i]) * 0.16);
+    return { zen, hor, T, skyAmb, ground, lum };
+  }
+  // moonlight in sky units: phase (with the opposition surge), above the horizon
+  moonE() { return SKY_E * 0.035 * Math.pow(this.moonLit ?? 0, 1.6) * smooth(-0.03, 0.05, this.moon.y); }
+  applyUniforms(realDt = 0) {
     const w = this.cur, el = this.sunEl;
     const day = smooth(-0.1, 0.12, Math.sin(el));         // 0 night .. 1 day
-    const golden = Math.max(0, 1 - Math.abs(Math.sin(el) - 0.05) / 0.22) * day;
-    U.sunDir.value.copy(this.sun.y > -0.05 ? this.sun : this.moon);
+    this._skyT = (this._skyT ?? 0) - realDt;
+    if (this._skyT <= 0 || !this._sky) { this._skyT = 0.2; this._sky = this.skyLight(w); }
+    const S = this._sky, cover = w.cover, ov = cover * cover;
+    U.sunTrue.value.copy(this.sun);
     U.moonDir.value.copy(this.moon);
-    const sunCol = new THREE.Color().setRGB(1, 0.93 - golden * 0.3, 0.84 - golden * 0.5);
-    U.sunCol.value.copy(sunCol.multiplyScalar(day));
-    const clearZen = new THREE.Color(0.16, 0.33, 0.68), ovZen = new THREE.Color(0.42, 0.45, 0.49), nightZen = new THREE.Color(0.006, 0.01, 0.025);
-    const clearHor = new THREE.Color(0.62, 0.72, 0.84).lerp(new THREE.Color(0.95, 0.62, 0.38), golden * (1 - w.cover)), ovHor = new THREE.Color(0.56, 0.58, 0.6), nightHor = new THREE.Color(0.025, 0.03, 0.045);
-    const zen = clearZen.clone().lerp(ovZen, w.cover * 0.95).multiplyScalar(1 - w.dark * 0.45);
-    const hor = clearHor.clone().lerp(ovHor, w.cover * 0.9).multiplyScalar(1 - w.dark * 0.35);
-    zen.lerp(nightZen, 1 - day); hor.lerp(nightHor.clone().lerp(new THREE.Color(0.07, 0.05, 0.035), w.cover), 1 - day);
+    // key light: the sun; at night the moon, or the sky glow from overhead when the moon is down
+    const moonUp = this.moon.y > 0.05;
+    if (this.sun.y > -0.05) U.sunDir.value.copy(this.sun);
+    else if (moonUp) U.sunDir.value.copy(this.moon);
+    else U.sunDir.value.set(0.25, 0.92, 0.3).normalize();
+    // sunlight colour: the atmosphere's transmittance (gold, then red, low in the sky), normalised to noon
+    const sunUp = smooth(-0.03, 0.03, this.sun.y);
+    U.sunTrans.value.setRGB(S.T[0], S.T[1], S.T[2]);
+    U.sunCol.value.setRGB(S.T[0] / 0.87, S.T[1] / 0.87, S.T[2] / 0.87).multiplyScalar(day * sunUp + (1 - day) * 0.0);
+    // zenith / horizon / fog: the clear sky, greyed and dimmed under cloud as the deck closes in
+    const grey = S.lum(S.skyAmb) * 1.05 * (1 - w.dark * 0.5);
+    const zen = new THREE.Color(S.zen[0], S.zen[1], S.zen[2]).lerp(new THREE.Color(grey * 0.94, grey * 0.97, grey), ov * 0.95);
+    const hor = new THREE.Color(S.hor[0], S.hor[1], S.hor[2]).lerp(new THREE.Color(grey * 1.08, grey * 1.1, grey * 1.12), ov * 0.9);
     U.zenith.value.copy(zen); U.horizon.value.copy(hor);
-    U.fogCol.value.copy(hor.clone().lerp(new THREE.Color(0.5, 0.52, 0.55).multiplyScalar(day * 0.9 + 0.05), w.rain * 0.5 + (w.fog > 0.004 ? 0.5 : 0)));
+    const murk = Math.min(1, w.rain * 0.5 + (w.fog > 0.004 ? 0.5 : 0));
+    U.fogCol.value.copy(hor.clone().lerp(new THREE.Color(0.5, 0.52, 0.55).multiplyScalar(Math.max(0.02, grey * 0.9)), murk));
     U.fogDensity.value = w.fog;
-    U.cover.value = w.cover; U.cloudDark.value = w.dark; U.rain.value = w.rain;
-    U.night.value = 1 - smooth(-0.06, 0.08, Math.sin(el) - w.cover * 0.05 - w.dark * 0.05);
+    U.cover.value = cover; U.cloudDark.value = w.dark; U.rain.value = w.rain;
+    U.night.value = 1 - smooth(-0.06, 0.08, Math.sin(el) - cover * 0.05 - w.dark * 0.05);
     U.wet.value = this.s.wet; U.puddle.value = this.s.puddle;
     U.cloudOff.value.set(this.s.cloudOff[0], this.s.cloudOff[1]);
     U.wind.value.set(this.wind[0], this.wind[1]);
+    // clouds and atmosphere
+    U.skyE.value = SKY_E; U.haze.value = w.haze ?? 2;
+    U.moonE.value = this.moonE(); U.moonLit.value = this.moonLit ?? 0; U.moonRadius.value = this.moonRadius ?? 0.0047;
+    U.cloudBase.value = w.base ?? 1100; U.cloudThick.value = w.thick ?? 1400; U.cloudType.value = w.type ?? 0.9;
+    U.cloudDens.value = (w.dens ?? 1) * (1 + w.dark * 0.3); U.cirrus.value = w.cirrus ?? 0;
+    U.covThr.value = coverThreshold(cover);
+    U.cloudSun.value.setScalar(1.35);
+    const lp = U.night.value * (0.45 + cover * 0.75) + (1 - U.night.value) * 0.0;
+    U.lp.value = lp;
+    U.skyAmb.value.setRGB(S.skyAmb[0], S.skyAmb[1], S.skyAmb[2]).multiplyScalar(1 - w.dark * 0.35);
+    U.groundAmb.value.setRGB(S.ground[0] + 0.07 * lp, S.ground[1] + 0.05 * lp, S.ground[2] + 0.03 * lp);
+    // stars: the world -> equatorial rotation, the pole for the moon's orientation, and visibility
+    const m = this.starM;
+    U.starRot.value.set(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8]);
+    U.celNorth.value.set(m[6], m[7], m[8]);
+    const dark = smooth(-0.07, -0.2, this.sun.y);
+    U.starVis.value = dark * (1 - 0.55 * (this.moonLit ?? 0) * (moonUp ? 1 : 0)) * (1 - smooth(3, 9, w.haze ?? 2) * 0.8) * (1 - ov * 0.5);
     this.day = day;
-    this.sunIntensity = day * (1 - w.cover * 0.78) * (1 - w.dark * 0.3);
+    const moonLight = moonUp && this.sun.y < -0.05 ? 0.05 * Math.pow(this.moonLit ?? 0, 1.6) * smooth(0.05, 0.3, this.moon.y) : 0;
+    this.sunIntensity = day * sunUp * (1 - cover * 0.78) * (1 - w.dark * 0.3) + moonLight * (1 - cover * 0.8);
     this.skyIntensity = 0.06 + day * (0.9 - w.dark * 0.25);
   }
 }
+const SKY_E = 20;   // sky calibration: noon zenith ~0.3, matching the scene's sunlight and exposure
 function smooth(a, b, x) { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); }

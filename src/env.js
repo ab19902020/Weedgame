@@ -1,9 +1,11 @@
 // Shared lighting / weather uniforms and procedural textures used by every material.
 import * as THREE from 'three/webgpu';
-import { uniform, uniformArray, vec2, vec3, vec4, float, texture, Fn, positionWorld, cameraPosition, normalize, dot, max, mix, smoothstep, clamp, pow, exp, abs, fract, sin } from 'three/tsl';
+import { uniform, uniformArray, vec2, vec3, vec4, float, texture, Fn, positionWorld, cameraPosition, normalize, dot, max, mix, smoothstep, clamp, pow, exp, abs, fract, sin, sqrt, length } from 'three/tsl';
+import { msTexture } from './atmosphere.js';
+import { starCells, STAR_G } from './astro.js';
 
 export const U = {
-  sunDir: uniform(new THREE.Vector3(0.3, 0.8, 0.2)),
+  sunDir: uniform(new THREE.Vector3(0.3, 0.8, 0.2)),   // key light: the sun by day, the moon at night
   sunCol: uniform(new THREE.Color(1, 0.95, 0.85)),
   zenith: uniform(new THREE.Color(0.25, 0.45, 0.75)),
   horizon: uniform(new THREE.Color(0.7, 0.78, 0.86)),
@@ -23,6 +25,27 @@ export const U = {
   lightOrigin: uniform(new THREE.Vector2(0, 0)),
   exposure: uniform(1),
   ibl: uniform(0),             // 1 when scene.environment (sky PMREM) supplies reflections
+  // ---- sky (sky.js, weather.js): physically based atmosphere, volumetric clouds, sun, moon and stars
+  sunTrue: uniform(new THREE.Vector3(0.3, 0.8, 0.2)),  // the sun itself, also below the horizon (twilight)
+  sunTrans: uniform(new THREE.Color(1, 1, 1)),         // atmospheric transmittance towards the sun from the street
+  skyE: uniform(20),           // solar irradiance in sky units (calibrates the atmosphere to the scene exposure)
+  moonE: uniform(0),           // moonlight in the same units (phase and distance included)
+  moonLit: uniform(0),         // illuminated fraction of the moon's disc
+  moonRadius: uniform(0.0047), // apparent radius (radians)
+  haze: uniform(1),            // aerosol (Mie) multiplier: dry summer haze .. murky drizzle
+  cloudBase: uniform(1200),    // cloud layer base and thickness (m above the street)
+  cloudThick: uniform(1400),
+  cloudType: uniform(0.85),    // 0 stratus sheet .. 1 heaped cumulus
+  cloudDens: uniform(1),       // extinction multiplier (rain clouds are denser)
+  covThr: uniform(0.6),        // weather-map threshold that leaves `cover` of the sky clouded
+  cirrus: uniform(0.2),        // high ice-cloud amount
+  cloudSun: uniform(new THREE.Color(1, 1, 1)),   // direct light reaching the cloud layer (sun or moon), scene units
+  skyAmb: uniform(new THREE.Color(0.3, 0.4, 0.55)), // light on the clouds from the sky above / the ground below
+  groundAmb: uniform(new THREE.Color(0.12, 0.12, 0.1)),
+  lp: uniform(0),              // urban light-pollution glow (night)
+  starRot: uniform(new THREE.Matrix3()),          // world -> equatorial (sidereal time, latitude)
+  starVis: uniform(0),         // 0 daylight .. 1 dark sky (twilight, moonlight, haze)
+  celNorth: uniform(new THREE.Vector3(0, 0.78, -0.62)),
 };
 // nearby point lights for wet reflections: xyz + intensity, rgb + radius
 export const NL = 16;
@@ -101,25 +124,77 @@ atlasTex.magFilter = atlasTex.minFilter = THREE.NearestFilter; atlasTex.needsUpd
 // ------------------------------------------------------------------ shared TSL helpers
 export const nTex = (uvNode) => texture(noiseTex, uvNode);
 
-// cloud density at a world point projected along the sun direction to the cloud layer (for ground shadows)
+// ------------------------------------------------------------------ cloud volumes (tools/sky/cloud_noise.py)
+// 128^3 base shape, 32^3 detail and a 256^2 weather map (cumulus cells, Perlin-Worley, regional, cirrus).
+// Filled when assets/clouds/noise3d.bin arrives; until then the sky is clear.
+const vol = (n) => {
+  const t = new THREE.Data3DTexture(new Uint8Array(n * n * n), n, n, n);
+  t.format = THREE.RedFormat; t.type = THREE.UnsignedByteType; t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping;
+  t.minFilter = t.magFilter = THREE.LinearFilter; t.unpackAlignment = 1; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
+  return t;
+};
+export const shapeTex = vol(128), detailTex = vol(32);
+export const weatherTex = new THREE.DataTexture(new Uint8Array(256 * 256 * 4), 256, 256, THREE.RGBAFormat);
+weatherTex.wrapS = weatherTex.wrapT = THREE.RepeatWrapping; weatherTex.magFilter = THREE.LinearFilter; weatherTex.minFilter = THREE.LinearMipmapLinearFilter;
+weatherTex.generateMipmaps = true; weatherTex.colorSpace = THREE.NoColorSpace; weatherTex.needsUpdate = true;
+export const WEATHER_TILE = 24000;   // metres per weather-map repeat
+// quantiles of the coverage field, so U.covThr can be set for a requested cloud fraction
+export const coverQuantiles = new Float32Array(33).map((_, i) => i / 32);
+const covField = (c, p, r) => c * 0.46 + p * 0.38 + r * 0.26 - 0.05;
+let noiseLoad = null;
+export function loadCloudNoise(base = 'assets/clouds/') {
+  if (noiseLoad) return noiseLoad;
+  noiseLoad = fetch(base + 'noise3d.bin').then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(buf => {
+    const b = new Uint8Array(buf), n0 = 128 ** 3, n1 = 32 ** 3;
+    shapeTex.image.data.set(b.subarray(0, n0)); shapeTex.needsUpdate = true;
+    detailTex.image.data.set(b.subarray(n0, n0 + n1)); detailTex.needsUpdate = true;
+    const w = b.subarray(n0 + n1, n0 + n1 + 256 * 256 * 4); weatherTex.image.data.set(w); weatherTex.needsUpdate = true;
+    const f = new Float32Array(256 * 256);
+    for (let i = 0; i < f.length; i++) f[i] = covField(w[i * 4] / 255, w[i * 4 + 1] / 255, w[i * 4 + 2] / 255);
+    f.sort(); for (let i = 0; i <= 32; i++) coverQuantiles[i] = f[Math.min(f.length - 1, Math.floor(i / 32 * (f.length - 1)))];
+    return true;
+  }).catch(e => { console.warn('cloud noise', e); return false; });
+  return noiseLoad;
+}
+// weather-map threshold leaving `cover` of the map clouded
+export function coverThreshold(cover) {
+  const q = Math.max(0, Math.min(1, 1 - cover)) * 32, i = Math.min(31, Math.floor(q)), f = q - i;
+  return coverQuantiles[i] * (1 - f) + coverQuantiles[i + 1] * f;
+}
+// cloud coverage (0..1, soft-edged) at a world xz already shifted by the wind offset
+export const cloudCoverage = Fn(([xz]) => {
+  const w = texture(weatherTex, xz.div(WEATHER_TILE));
+  const f = w.r.mul(0.46).add(w.g.mul(0.38)).add(w.b.mul(0.26)).sub(0.05);
+  const soft = mix(float(0.16), float(0.3), U.cover);
+  return smoothstep(U.covThr.sub(soft.mul(0.35)), U.covThr.add(soft), f).mul(smoothstep(0.0, 0.04, U.cover));
+});
+export const msTex = msTexture();
+export const starTex = (() => {
+  const t = new THREE.DataTexture(starCells(), STAR_G, STAR_G * 6, THREE.RGBAFormat);
+  t.magFilter = t.minFilter = THREE.NearestFilter; t.generateMipmaps = false; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
+  return t;
+})();
+
+// Ground shadow of the clouds: the weather-map coverage where the sun's ray from p crosses the middle of
+// the cloud layer, so shadows sweep under the clouds you can see. A multiplier on albedo (1 in sun).
 export const cloudShadow = Fn(([p]) => {
   const sd = U.sunDir;
-  const t = float(1600).sub(p.y).div(max(sd.y, 0.12));
+  const h = U.cloudBase.add(U.cloudThick.mul(mix(float(0.3), float(0.15), U.cloudType)));
+  const t = h.div(max(sd.y, 0.12));
   const q = p.xz.add(sd.xz.mul(t)).add(U.cloudOff);
-  const c = texture(cloudTex, q.mul(1 / 5200)).r.mul(0.65).add(texture(cloudTex, q.mul(1 / 1700)).g.mul(0.35));
-  const thr = mix(float(0.82), float(0.18), U.cover);
-  const d = smoothstep(thr, thr.add(0.22), c);
-  const overcast = smoothstep(0.75, 1.0, U.cover);
-  return mix(float(1), float(0.42), max(d, overcast).mul(smoothstep(0.02, 0.15, sd.y)));
+  const c = cloudCoverage(q);
+  const thick = smoothstep(0.75, 1.0, U.cover).mul(0.35).add(U.cloudDark.mul(0.25));
+  return mix(float(1), float(0.42).sub(thick.mul(0.25)), clamp(c.mul(1.25), 0, 1).mul(smoothstep(0.02, 0.15, sd.y)));
 });
 
-// Sky radiance in a direction (no clouds) – used by the sky dome, fog and wet reflections.
+// Sky radiance in a direction (no clouds): a cheap gradient fitted to the physical sky (weather.js
+// evaluates the atmosphere for U.zenith / U.horizon), used for wet reflections and fog.
 export const skyColor = Fn(([d]) => {
   const h = clamp(d.y, -0.2, 1);
   const base = mix(vec3(U.horizon), vec3(U.zenith), pow(smoothstep(-0.02, 0.9, h), 0.6));
-  const sunAmt = max(dot(d, U.sunDir), 0);
+  const sunAmt = max(dot(d, U.sunTrue), 0);
   const glow = pow(sunAmt, 8).mul(0.35).add(pow(sunAmt, 64).mul(0.6));
-  const disk = smoothstep(0.9995, 0.99975, sunAmt).mul(12);
-  const sunVis = smoothstep(-0.05, 0.02, U.sunDir.y).mul(float(1).sub(U.cover.mul(0.85)));
+  const disk = smoothstep(0.99996, 0.99999, sunAmt).mul(12);
+  const sunVis = smoothstep(-0.05, 0.02, U.sunTrue.y).mul(float(1).sub(U.cover.mul(0.85)));
   return base.add(vec3(U.sunCol).mul(glow.add(disk).mul(sunVis)));
 });
