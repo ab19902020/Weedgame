@@ -9,7 +9,7 @@ export class Controller {
     const axis=n=>{const x=pad?.axes[n]||0;return Math.sign(x)*Math.max(0,Math.abs(x)-.14)/.86;};
     const car=!!G.brothers.me.vehicle;
     I.padX=0;I.padY=0;I.padRun=false;I.padBrake=false;
-    if(tap(9)){if(M.el.hidden)M.open();else M.close();}
+    if(tap(9)||tap(16)){if(M.el.hidden)M.open();else M.close();}
     else if(!M.el.hidden || !H.el('map').hidden || !H.el('dev').hidden){
       const panel=!M.el.hidden?M.el:!H.el('map').hidden?H.el('map'):H.el('dev');
       const list=[...panel.querySelectorAll('button,select')].filter(e=>e.offsetWidth);
@@ -29,7 +29,7 @@ export class Controller {
     }else{
       I.padX=axis(0);I.padY=car?(pad?.buttons[6]?.value||0)-(pad?.buttons[7]?.value||0):axis(1);
       I.look.dx+=axis(2)*dt*260;I.look.dy+=axis(3)*dt*200;
-      I.padRun=buttons[0]||buttons[10];I.padBrake=car&&(buttons[0]||buttons[4]);
+      I.padRun=buttons[0]||buttons[10];I.padBrake=car&&(buttons[0]||buttons[2]||buttons[4]);
       if(tap(3))I.pressed.add('use');
       if(tap(8)||tap(17)||tap(12))H.toggleMap(true);
       if(tap(13))I.pressed.add('swap');
