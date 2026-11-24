@@ -24,7 +24,7 @@ export class Hud {
         <button id="bRun" class="big">Run</button>
         <button id="bHorn" class="big" hidden>Horn</button>
         <button id="bSwap">Swap</button>
-        <button id="bMenu">Menu</button><button id="bMap">Map</button>
+        <button id="bJump">Jump</button><button id="bHit">Hit</button><button id="bPickup">Pick up</button><button id="bMenu">Menu</button><button id="bMap">Map</button>
         <button id="bDev">Dev</button>
       </div>
       <div id="map" hidden><canvas id="mapC"></canvas><div class="maptools"><div class="atlasTitle">Green County <em>Road Atlas</em></div><button id="mClose">Close</button></div>
@@ -35,6 +35,7 @@ export class Hud {
     this.mini = root.querySelector('#miniC').getContext('2d');
     this.el = id => root.querySelector('#' + id);
     const I = G.input;
+    for(const [id,action] of [['bJump','jump'],['bHit','hit'],['bPickup','pickup']])I.bindButton(this.el(id),action);
     I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn');
     I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
     this.el('mClose').onclick = () => this.toggleMap(false);
@@ -82,6 +83,7 @@ export class Hud {
     this.el('bUse').classList.toggle('dim', !inCar && !near);
     this.el('bRun').textContent = inCar ? 'Brake' : 'Run';
     this.el('bHorn').hidden = !inCar;
+    for(const id of ['bJump','bHit','bPickup'])this.el(id).hidden=inCar;
     // run button doubles as brake in a vehicle
     if (inCar) { if (I.held.has('run')) I.held.add('brake'); else if (!I.keys.has('Space')) I.held.delete('brake'); }
     this._acc = (this._acc || 0) + dt;

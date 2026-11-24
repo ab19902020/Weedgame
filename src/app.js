@@ -1,6 +1,7 @@
 // Green County · living Berkshire sandbox. Free roam only: no missions, objectives or calls.
 import * as THREE from 'three/webgpu';
 import { boot } from './main.js';
+import { Controller } from './controller.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import { Brothers } from './player.js';
@@ -100,6 +101,7 @@ G.teleport = (x, z, heading) => {
 const init = G.save.initialBrothers(START);
 G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
+G.controller=new Controller(G);
 for (const sv of G.save.vehicles) {
   const v = G.traffic.add({ id: sv.id, kind: 'parked', model: sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy });
   if (sv.id.startsWith('p:')) G.save.taken.add(sv.id);
@@ -130,6 +132,7 @@ G.simSteps = Number(G.Q.get('sim')) || 1;   // extra simulation substeps per ren
 function frame() {
   const now = performance.now();
   let dt = Math.min(0.1, (now - last) / 1000); last = now;
+  G.controller.poll(dt);
   if (!G.hud.menu.el.hidden) return;
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
   for (let k = 1; k < G.simSteps; k++) step(dt, false);
@@ -152,7 +155,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) B.update(dt, G.input);
+  if (!G._needGround) { B.update(dt, G.input); G.controller.actions(dt); }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3) {

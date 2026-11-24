@@ -45,7 +45,7 @@ export class Brothers {
   walk(dt, input) {
     const G = this.G, me = this.me, a = this.actor[this.active];
     const ax = input.axis();
-    const run = input.held.has('run') || Math.hypot(ax.x, ax.y) > 0.92 && input.held.has('run');
+    const run = input.padRun || input.held.has('run') || Math.hypot(ax.x, ax.y) > 0.92 && input.held.has('run');
     const speed = (run ? 5.4 : 1.7) * Math.min(1, Math.hypot(ax.x, ax.y));
     const fx = -Math.cos(this.cam.yaw), fz = -Math.sin(this.cam.yaw);
     const dx = (-ax.y) * fx + ax.x * -fz, dz = (-ax.y) * fz + ax.x * fx;
@@ -100,7 +100,7 @@ export class Brothers {
     const ax = input.axis();
     const throttle = -ax.y, steerIn = ax.x;
     v.sp = v.sp || 0;
-    const braking = input.held.has('brake');
+    const braking = input.padBrake || input.held.has('brake');
     const maxV = v.model.startsWith('bus') ? 18 : v.model === 'van' ? 33 : 50;
     let acc = 0;
     if (throttle > 0.05) acc = v.sp < -0.5 ? 9 * throttle : (v.model.startsWith('bus') ? 1.4 : 3.6) * throttle * (1 - Math.max(0, v.sp) / maxV);
