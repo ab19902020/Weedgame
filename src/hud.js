@@ -1,4 +1,5 @@
 // HUD: minimap, full map, buttons, notices, developer panel and performance overlay.
+import { GameMenu } from './gameMenu.js';
 import { Navigation, distanceLabel } from './navigation.js';
 import { STATES } from './weather.js';
 
@@ -23,11 +24,11 @@ export class Hud {
         <button id="bRun" class="big">Run</button>
         <button id="bHorn" class="big" hidden>Horn</button>
         <button id="bSwap">Swap</button>
-        <button id="bMap">Map</button>
+        <button id="bMenu">Menu</button><button id="bMap">Map</button>
         <button id="bDev">Dev</button>
       </div>
       <div id="map" hidden><canvas id="mapC"></canvas><div class="maptools"><div class="atlasTitle">Green County <em>Road Atlas</em></div><button id="mClose">Close</button></div>
-      <div class="atlasPlaces"><select id="mPlaces" aria-label="Route to a place"><option value="">Route to a place…</option></select><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
+      <div class="atlasPlaces"><select id="mPlaces" aria-label="Route to a place"><option value="">Route to a place…</option></select><button id="mFit" hidden>Route</button><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
       <div class="atlasFooter"><span id="mInfo"></span><button id="mClear">Clear waypoint</button></div></div>
       <div id="dev" class="panel" hidden></div>
       <div id="perf" hidden></div>`;
@@ -52,7 +53,14 @@ export class Hud {
     this.el('mOut').onclick=()=>this.zoomMap(.65);
     this.el('mIn').onclick=()=>this.zoomMap(1.5);
     this.el('miniC').onclick=()=>this.toggleMap(true);
+    this.el('mFit').onclick=()=>{
+      const points=[G.brothers.me,this.nav.pin,...(this.nav.route?.pts || [])].filter(Boolean);
+      let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+      for(const p of points){left=Math.min(left,p.x);right=Math.max(right,p.x);top=Math.min(top,p.z);bottom=Math.max(bottom,p.z);}
+      this.mapView={x:(left+right)/2,z:(top+bottom)/2,s:Math.max(.025,Math.min(2,(innerWidth-64)/Math.max(1,right-left),(innerHeight-160)/Math.max(1,bottom-top)))};
+    };
     this.setupMap();
+    this.menu=new GameMenu(this);
     this.overview = new Map();
     this.feedItems = [];
     this.perfOn = G.Q.has('perf');
@@ -91,7 +99,7 @@ export class Hud {
   drawMini() {
     const G = this.G, c = this.mini, W = 220, me = G.brothers.me, net = G.net;
     const scale = me.vehicle ? Math.max(.35,.92-(G.brothers.speedNow || 0)*.018) : 1.6; // px per metre
-    const rot = me.vehicle ? -me.heading-Math.PI/2 : -(G.brothers.cam.yaw + Math.PI / 2) - Math.PI; // map rotates with camera
+    const rot = this.menu.settings.orientation === 'North up' ? 0 : me.vehicle ? -me.heading-Math.PI/2 : -(G.brothers.cam.yaw + Math.PI / 2) - Math.PI; // map rotates with camera
     c.save(); c.clearRect(0, 0, W, W);
     c.fillStyle = 'rgba(28,36,32,0.88)'; c.beginPath(); c.arc(W / 2, W / 2, W / 2 - 2, 0, 7); c.fill(); c.clip();
     c.translate(W / 2, W / 2); c.rotate(rot); c.scale(scale, scale); c.translate(-me.x, -me.z);
@@ -236,7 +244,12 @@ export class Hud {
     G.brothers.b.forEach((b, i) => { dot(c, X(b.x), Z(b.z), 8, i === G.brothers.active ? '#ffffff' : '#ffb347'); c.fillStyle = '#111'; c.font = 'bold 13px system-ui'; c.fillText(b.short, X(b.x), Z(b.z) - 12); });
     const nav=this.nav;
     this.el('mInfo').textContent=nav.pin ? nav.pin.name+' · '+(nav.route ? distanceLabel(nav.route.length-nav.progress)+' remaining' : nav.instruction()) : 'Tap a street to set a waypoint · drag to explore';
-    this.el('mClear').hidden=!nav.pin;
+    this.el('mClear').hidden=this.el('mFit').hidden=!nav.pin;
+    const metres=[10,25,50,100,250,500,1000,2500].find(n=>n*V.s>=45)||2500;
+    const width=metres*V.s;
+    c.fillStyle='#19372e';c.fillRect(14,H-85,width+12,29);c.fillStyle='#fff5d9';
+    c.font='bold 11px system-ui';c.textAlign='left';c.fillText(metres>=1000?metres/1000+' km':metres+' m',20,H-70);
+    c.fillRect(20,H-65,width,2);
   }
   // ------------------------------------------------------------------ developer panel
   toggleDev() {

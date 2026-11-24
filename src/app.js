@@ -130,6 +130,7 @@ G.simSteps = Number(G.Q.get('sim')) || 1;   // extra simulation substeps per ren
 function frame() {
   const now = performance.now();
   let dt = Math.min(0.1, (now - last) / 1000); last = now;
+  if (!G.hud.menu.el.hidden) return;
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
   for (let k = 1; k < G.simSteps; k++) step(dt, false);
   step(dt, true);
