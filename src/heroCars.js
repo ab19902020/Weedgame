@@ -9,12 +9,14 @@
 // broken lamps from the damage zones; and the dark glasshouse areas of the texture shaded as tinted glass.
 import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { texture, uv, uniform, vec3, vec4, float, mix, step, smoothstep, abs, max, min, positionGeometry, positionLocal, sin, fract, floor, dot } from 'three/tsl';
+import { texture, uv, uniform, vec3, vec4, float, mix, step, smoothstep, abs, max, min, positionGeometry, positionLocal, normalGeometry, sin, fract, floor, dot, frontFacing } from 'three/tsl';
 
 // model space: +Z forward, +Y up, +X the car's left, 0.978 units long. The game's car frame is +X forward.
 export const HERO_CARS = {
   rangerover: {
     file: 'vehicles/rangerover.glb', scale: 5.06,
+    // driver's eye (right-hand drive): metres ahead of the body centre, to the right, above the ground
+    driver: { fwd: -0.32, side: 0.4, eye: 1.62 },
     // lamp regions (model units) — headlights under the bonnet line, tail clusters on the rear corners
     head: { z: 0.425, x0: 0.112, x1: 0.206, y0: 0.172, y1: 0.228 },
     tail: { z: -0.425, x0: 0.143, x1: 0.212, y0: 0.158, y1: 0.262 },
@@ -61,7 +63,7 @@ export class HeroCars {
     const mBody = new THREE.Group(), mGround = new THREE.Group();
     for (const m of [mBody, mGround]) { m.rotation.y = Math.PI / 2; m.scale.setScalar(C.scale); }
     body.add(mBody); ground.add(mGround);
-    const state = { brake: uniform(0), lights: uniform(0), reverse: uniform(0), indL: uniform(0), indR: uniform(0), dmg: uniform(new THREE.Vector4()) };
+    const state = { brake: uniform(0), lights: uniform(0), reverse: uniform(0), indL: uniform(0), indR: uniform(0), camIn: uniform(0), dmg: uniform(new THREE.Vector4()) };
     const mesh = new THREE.Mesh(parts.body.geo, bodyMaterial(parts.body.mat, C, state));
     mesh.castShadow = true; mesh.receiveShadow = true;
     mBody.add(mesh);
@@ -86,6 +88,7 @@ export class HeroCars {
     const spin = v.spin || 0, steer = v.player ? (v.steer || 0) : (v.steerVis || 0);
     for (const [k, w] of Object.entries(c.wheels)) w.mesh.rotation.set(spin, k[0] === 'f' ? -steer : 0, 0, 'YXZ');
     const s = c.state, blink = (performance.now() / 666) % 1 < 0.5 ? 1 : 0;
+    s.camIn.value = v.camInside ? 1 : 0;
     s.brake.value = v.brake ? 1 : 0; s.lights.value = v.lights ? 1 : 0; s.reverse.value = v.reversing ? 1 : 0;
     s.indL.value = (v.ind === 1 || v.hazard) && blink ? 1 : 0; s.indR.value = (v.ind === 2 || v.hazard) && blink ? 1 : 0;
     const d = v.dmg || [0, 0, 0, 0]; s.dmg.value.set(d[0], d[1], d[2], d[3]);
@@ -105,7 +108,10 @@ function wheelMaterial(src) {
 }
 
 function bodyMaterial(src, C, s) {
-  const m = new THREE.MeshPhysicalNodeMaterial();
+  // double-sided: from inside (driver's view) and through any gap the inside of the shell reads as a dark
+  // cabin interior instead of letting you see straight through the car
+  const m = new THREE.MeshPhysicalNodeMaterial({ side: THREE.DoubleSide });
+  const inside = float(1).sub(float(frontFacing));
   const p = positionGeometry, ax = abs(p.x);
   const base = texture(src.map, uv()).rgb;
   const rm = src.metalnessMap ? texture(src.metalnessMap, uv()) : vec4(1, 0.5, 0, 1);
@@ -136,19 +142,28 @@ function bodyMaterial(src, C, s) {
   const inScreen = step(S.z0, p.z).mul(step(p.z, S.z1)).mul(step(S.y0, p.y)).mul(step(ax, S.x));
   const inBack = step(p.z, Bk.z).mul(step(Bk.y0, p.y)).mul(step(p.y, Bk.y1)).mul(step(ax, Bk.x));
   const inSide = step(Sd.x, ax).mul(step(Sd.y0, p.y)).mul(step(p.y, Sd.y1)).mul(step(Sd.z0, p.z)).mul(step(p.z, Sd.z1));
-  const glass = max(max(inScreen, inBack), inSide).mul(smoothstep(0.3, 0.16, lum)).mul(smoothstep(0.25, 0.12, sat));
+  const glass = max(max(inScreen, inBack), inSide).mul(smoothstep(0.42, 0.22, lum)).mul(smoothstep(0.28, 0.14, sat));
   // colour: the baked paint, darker and scuffed where dented
   const scuff = step(0.9, n0).mul(smoothstep(0.15, 0.5, dm)).mul(float(1).sub(glass));
-  let col = mix(base, base.mul(0.35).add(vec3(0.004, 0.006, 0.008)), glass);
+  let col = mix(base, mix(vec3(0.01, 0.013, 0.017), base.mul(0.3), 0.3), glass);   // even dark tint; reflections do the rest
   col = col.mul(float(1).sub(dm.mul(n1.sub(0.3)).mul(0.35)));
   col = mix(col, vec3(0.3, 0.3, 0.29), scuff);
   col = mix(col, vec3(0.03), brokenF.mul(headLens).mul(step(0.5, n0)));
-  m.colorNode = col;
+  // interior: charcoal trim and leather, a little lighter low down (seats, floor) than up at the headlining
+  const trim = vec3(0.028, 0.026, 0.024).mul(float(0.8).add(base.dot(vec3(0.3, 0.59, 0.11)).mul(0.6)));
+  m.colorNode = mix(col, trim, inside);
+  // from inside, the window openings are cut out so the driver sees the road; from outside they stay glass
+  const winRegion = max(max(inScreen.mul(step(S.y0 + 0.006, p.y)), inBack), inSide.mul(step(Sd.y0 + 0.008, p.y)).mul(step(p.y, Sd.y1 - 0.012)));
+  // (the model also has an inner glass layer facing into the cabin: cut that too)
+  const inward = step(normalGeometry.dot(p.sub(vec3(0, 0.29, -0.08))), 0);
+  // only while the camera sits inside this car: from outside nothing is cut, gaps show the dark interior
+  m.opacityNode = float(1).sub(max(inside, inward).mul(winRegion).mul(s.camIn));
+  m.alphaTest = 0.5;
   // gloss: the paint and glass in the texture get a clearcoat; rubber and trim stay matt
   const rough = rm.g, metal = rm.b;
-  m.roughnessNode = mix(mix(rough, float(0.04), glass), float(0.85), scuff);
-  m.metalnessNode = metal.mul(float(1).sub(scuff)).mul(float(1).sub(glass));
-  m.clearcoatNode = max(smoothstep(0.75, 0.4, rough), glass).mul(float(1).sub(dm.mul(0.8)));
+  m.roughnessNode = mix(mix(mix(rough, float(0.04), glass), float(0.85), scuff), float(0.75), inside);
+  m.metalnessNode = metal.mul(float(1).sub(scuff)).mul(float(1).sub(glass)).mul(float(1).sub(inside));
+  m.clearcoatNode = max(smoothstep(0.75, 0.4, rough), glass).mul(float(1).sub(dm.mul(0.8))).mul(float(1).sub(inside));
   m.clearcoatRoughnessNode = mix(float(0.05), float(0.5), dm);
   if (src.normalMap) m.normalMap = src.normalMap;
   // emission
@@ -157,7 +172,7 @@ function bodyMaterial(src, C, s) {
   const tail = tailLens.mul(float(1).sub(indRear)).mul(float(1).sub(brokenR)).mul(s.lights.mul(0.9).add(s.brake.mul(3.2)).add(0.05));
   const rev = revLens.mul(s.reverse).mul(2.5).mul(float(1).sub(brokenR));
   const ind = indFront.mul(step(0.3, lum)).add(indRear.mul(red)).min(1).mul(indOn).mul(4);
-  m.emissiveNode = vec3(0.9, 0.93, 1).mul(drl).add(vec3(1, 0.95, 0.85).mul(beam))
+  m.emissiveNode = vec3(0.9, 0.93, 1).mul(drl.mul(float(1).sub(inside))).add(vec3(1, 0.95, 0.85).mul(beam))
     .add(vec3(1, 0.04, 0.02).mul(tail)).add(vec3(1, 0.03, 0.02).mul(hiStop).mul(s.brake).mul(3))
     .add(vec3(1, 0.98, 0.95).mul(rev)).add(vec3(1, 0.5, 0.05).mul(ind));
   return m;

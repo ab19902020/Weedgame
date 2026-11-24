@@ -8,6 +8,7 @@ import { pointInRing } from './tiles.js';
 const JACKETS = [0x314958, 0x765741, 0x294735, 0x653143], SKINS = [0xb48265, 0x895e46, 0xc39475];
 
 import { CAR_SPECS } from './carModel.js';
+import { HERO_CARS } from './heroCars.js';
 export class Brothers {
   constructor(G, saved) {
     this.G = G;
@@ -124,6 +125,7 @@ export class Brothers {
     const mode = this.cam.car;
     const vel = Math.hypot(ph.vx, ph.vz);
     const mhv = mh != null && vel > 4 && v.sp > 0 ? lerpAngle(v.heading, Math.atan2(ph.vz, ph.vx), 0.55) : mh;
+    v.camInside = mode === 3;
     if (mode === 3) this.driverCam(v);
     else if (mode === 4) this.cineCam(dt, v);
     else this.followCam(dt, v.x, camY + (mode === 1 ? 0.4 : mode === 2 ? 1 : 0), v.z, big * [1, 1.65, 2.7][mode] * (1 + Math.min(0.18, vel / 260)), mhv, mode === 2 ? 2.2 : 1.6 + Math.min(1.2, vel / 30), [0.22, 0.3, 0.78][mode]);
@@ -154,10 +156,10 @@ export class Brothers {
   // from the driver's seat (right-hand drive): the shell is single-sided, so pillars and roof drop away
   driverCam(v) {
     const c = this.cam, G = this.G, h = v.heading, fx = Math.cos(h), fz = Math.sin(h), rx = -Math.sin(h), rz = Math.cos(h);
-    const bus = v.model.startsWith('bus'), S = CAR_SPECS[v.model];
-    // seat position from the car's own windscreen and belt line
-    const eye = bus ? 2.3 : v.model === 'van' ? 1.8 : S ? (S.belt[0] + S.belt[1]) / 2 + 0.26 : 1.2;
-    const fwd = bus ? v.def.L / 2 - 1.2 : S ? Math.max(S.ws0 - 1.4, S.rr0 + 0.3) : 0, side = bus ? 0.6 : 0.37;
+    const bus = v.model.startsWith('bus'), S = CAR_SPECS[v.model], Hd = HERO_CARS[v.model]?.driver;
+    // seat position from the car's own windscreen and belt line (hand-made models give their own)
+    const eye = Hd ? Hd.eye : bus ? 2.3 : v.model === 'van' ? 1.8 : S ? (S.belt[0] + S.belt[1]) / 2 + 0.26 : 1.2;
+    const fwd = Hd ? Hd.fwd : bus ? v.def.L / 2 - 1.2 : S ? Math.max(S.ws0 - 1.4, S.rr0 + 0.3) : 0, side = Hd ? Hd.side : bus ? 0.6 : 0.37;
     c.x = v.x + fx * fwd + rx * side; c.y = v.y + eye; c.z = v.z + fz * fwd + rz * side;
     const look = (G.time - c.lastUser < 2.5) ? c.yaw + Math.PI - h : 0;     // drag to look around, eases back
     c.yaw = G.time - c.lastUser < 2.5 ? c.yaw : h + Math.PI;
@@ -212,7 +214,7 @@ export class Brothers {
     const G = this.G, me = this.me, v = this.vehicleOf(me);
     if (v) {
       if (Math.abs(v.sp || 0) > 2) { G.hud.toast('Slow down to get out'); return; }
-      v.sp = 0; v.v = 0; v.player = false; v.parked = true; v.owner = v.owner || me.short; v.brake = false; v.reversing = false;
+      v.sp = 0; v.v = 0; v.player = false; v.parked = true; v.owner = v.owner || me.short; v.brake = false; v.reversing = false; v.camInside = false;
       if (v.ph) { v.ph.vx = v.ph.vz = v.ph.w = 0; v.ph.gear = 1; }
       v.parkedBy = me.short; v.parkedAt = G.world.time;
       const rx = -Math.sin(v.heading), rz = Math.cos(v.heading);
