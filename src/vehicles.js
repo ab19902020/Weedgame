@@ -150,6 +150,11 @@ export class VehicleRenderer {
     this.shadows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.shadows.frustumCulled = false; this.shadows.count = 0; this.shadows.renderOrder = 1;
     scene.add(this.shadows);
+    // headlight pools on the road ahead of cars with their lights on (additive, one draw call)
+    this.beams = new THREE.InstancedMesh(beamGeometry(), beamMaterial(), 300);
+    this.beams.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.beams.frustumCulled = false; this.beams.count = 0; this.beams.renderOrder = 2;
+    scene.add(this.beams);
     this.t0 = performance.now();
   }
   // sprung body: pitch under braking and acceleration, roll in corners, with a little overshoot
@@ -173,7 +178,7 @@ export class VehicleRenderer {
   }
   draw(vehicles, cam, maxDist = 700) {
     const counts = {}, countsFar = {}; for (const k in MODELS) { counts[k] = 0; countsFar[k] = 0; }
-    let wn = 0, sn = 0;
+    let wn = 0, sn = 0, bn = 0;
     const now = performance.now(), dt = Math.min(0.1, Math.max(0.001, (now - this.t0) / 1000)); this.t0 = now;
     const FAR2 = FAR_LOD * FAR_LOD;
     const md2 = maxDist * maxDist;
@@ -206,6 +211,11 @@ export class VehicleRenderer {
         this._sm.elements[13] += 0.035;
         this.shadows.setMatrixAt(sn++, this._sm);
       }
+      if (v.lights && d2 < 140 * 140 && bn < 300 && !(v.dmg && v.dmg[0] > 0.6)) {
+        // beam quad: starts at the nose, 22 m long, 9 m wide at the far end
+        this._sm.makeScale(22, 1, 9).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g);
+        this.beams.setMatrixAt(bn++, this._sm);
+      }
       // wheels
       if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
         const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
@@ -230,6 +240,7 @@ export class VehicleRenderer {
     }
     this.wheels.count = wn; this.wheels.visible = wn > 0; this.wheels.instanceMatrix.needsUpdate = true; this.iWheel.needsUpdate = true;
     this.shadows.count = sn; this.shadows.visible = sn > 0; this.shadows.instanceMatrix.needsUpdate = true;
+    this.beams.count = bn; this.beams.visible = bn > 0; if (bn) this.beams.instanceMatrix.needsUpdate = true;
   }
 }
 // unit quad on the ground (x along the car, z across); opacity: a soft rounded rectangle, darkest under the tyres
@@ -243,6 +254,20 @@ function contactMaterial() {
   const tyres = smoothstep(0.16, 0.0, length(vec2(abs(p.x).sub(0.31).mul(2.2), abs(p.z).sub(0.4).mul(3.0))));
   m.colorNode = vec3(0, 0, 0);
   m.opacityNode = body.mul(0.55).add(tyres.mul(0.35)).min(0.8).mul(float(1).sub(U.night.mul(0.35)));
+  return m;
+}
+// headlight pool: unit quad from x 0..1 (ahead) and z -0.5..0.5; two overlapping fans, brightest a few metres out
+function beamGeometry() { const g = new THREE.PlaneGeometry(1, 1, 8, 4); g.translate(0.5, 0, 0); g.rotateX(-Math.PI / 2); return g; }
+function beamMaterial() {
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false, blending: THREE.AdditiveBlending });
+  m.polygonOffset = true; m.polygonOffsetFactor = -4; m.polygonOffsetUnits = -4;
+  const p = positionGeometry, ax = p.x.max(0.001), az = abs(p.z);
+  const fan = (c) => smoothstep(1, 0.35, abs(p.z.sub(c)).div(ax.mul(0.42).add(0.035)));
+  const f = fan(0.042).add(fan(-0.042)).min(1.3);
+  const along = smoothstep(0.0, 0.12, ax).mul(smoothstep(1, 0.25, ax));
+  const I = f.mul(along).mul(U.night.mul(0.9).add(U.wet.mul(0.15))).mul(0.32).mul(float(1).sub(smoothstep(0.42, 0.5, az)));
+  m.colorNode = vec3(1, 0.9, 0.74).mul(I);
+  m.opacityNode = I;
   return m;
 }
 export const PAINTS = [0xe8e8e8, 0x1a1a1a, 0x9a9da0, 0x3a3d42, 0x6e7378, 0x8a1c1c, 0x1d3d7a, 0x234a33, 0xb8b3a6, 0x3d2b23, 0xc9c9c4, 0x0f2240, 0x5b6770, 0xd4d0c8, 0x7a1f2e, 0x2f2f33];

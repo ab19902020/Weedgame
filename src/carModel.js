@@ -106,7 +106,7 @@ export function carLayout(def, key) {
     l, hw, hy, hlH, hlZ0: hw - (thin ? 0.4 : 0.42), ty, tlH, tlZ0: S.lightBar ? 0 : hw - (tall ? 0.2 : 0.36), Htop, boot,
     grY0, grY1, grW: hw - 0.47, gstyle: S.wing ? 2 : key === 'suv' || key === 'hothatch' || key === 'coupe' ? 1 : 0,
     pfy: S.wing ? S.hs + 0.24 : Math.max(S.hs + 0.17, grY0 - 0.08), pry: Math.max(S.hs + 0.22, Math.min(ty - tlH - 0.12, 0.66)),
-    roofBlack: S.wing || key === 'hothatch' ? 1 : 0,
+    roofBlack: S.wing || key === 'hothatch' ? 1 : 0, livery: def.livery ? 1 : 0,
   };
   layoutCache.set(key, Lo);
   return Lo;
@@ -303,7 +303,7 @@ export function vehicleMaterial(models) {
   const Gd = arr((Lo, S) => V(S.gl[0], S.gl[1], Lo.boot, S.endR), V(0, 0, -99, 0.4));
   const BL = arr((Lo, S) => V(S.belt[0], S.belt[1], S.panelVan ? 1 : 0, S.cladding ? 1 : 0), V(1, 1, 0, 0));
   const HL = arr(Lo => V(Lo.hy, Lo.hlH, Lo.hlZ0, Lo.roofBlack), V(-9, 0, 9, 0));
-  const TL = arr(Lo => V(Lo.ty, Lo.tlH, Lo.tlZ0, 0), V(-9, 0, 9, 0));
+  const TL = arr(Lo => V(Lo.ty, Lo.tlH, Lo.tlZ0, Lo.livery), V(-9, 0, 9, 0));
   const GR = arr(Lo => V(Lo.grY0, Lo.grY1, Lo.grW, Lo.gstyle), V(-9, -9, 0, 0));
   const isCar = step(0.01, A.x);
   const loft = eqf(part, 20).mul(isCar);
@@ -430,7 +430,9 @@ export function vehicleMaterial(models) {
   const tlBroken = smoothstep(0.38, 0.6, dm4.y.add(mix(dm4.w, dm4.z, step(z, 0)).mul(0.5)));
   // ---------------- colour
   let base = mix(vc, ic, paint);
-  base = mix(base, batten, liv);
+  // police: Battenburg checks along the sides below the windows
+  const livL = loft.mul(TL.w).mul(step(0.5, abs(nm.z))).mul(band(y, hs.add(0.17), belt.sub(0.035)));
+  base = mix(base, batten, clamp01n(liv.add(livL)));
   const blackPl = vec3(0.028, 0.028, 0.03), glossBlk = vec3(0.012), chrome = vec3(0.72, 0.73, 0.75);
   base = mix(base, blackPl, clamp01n(sill.add(clad).add(archLip).add(splitter).add(diffuser).add(intake).add(seal)));
   base = mix(base, glossBlk, clamp01n(dloTrim.add(roofBlk).add(frit).add(rearFrit)));
@@ -451,6 +453,10 @@ export function vehicleMaterial(models) {
   // glass, cracked where the zone is smashed
   const crack = step(0.985, abs(sin(atan(y.sub(D.w), z.add(x.mul(0.3))).mul(13).add(dn.mul(3))))).add(step(0.99, abs(sin(length(vec2(x, y.sub(D.w))).mul(70).add(dn.mul(6)))))).min(1).mul(smoothstep(0.45, 0.7, dmg));
   base = mix(base, mix(cabin.mul(daylight), vec3(0.2, 0.21, 0.22), crack), glassPart.mul(isCar));
+  // buses: window pillars every ~1.2 m and a rubber frame along the glass bands
+  const busGl = eqf(part, 14).mul(float(1).sub(isCar)).mul(step(0.5, abs(nm.z)));
+  const pillar = step(fract(x.div(1.22).add(0.5)), 0.07);
+  base = mix(base, vec3(0.012), busGl.mul(pillar));
   // road grime low on the body, heavier in the wet
   const paintArea = paint.mul(float(1).sub(glassPart)).mul(isCar);
   const grime = smoothstep(hs.add(0.42), hs, y).mul(float(0.18).add(U.wet.mul(0.3))).mul(dn.mul(0.6).add(0.4)).mul(paintArea);
