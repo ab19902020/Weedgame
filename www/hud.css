@@ -38,3 +38,22 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #dev button{background:#2b3742;color:#fff;border:1px solid #6c7c8a;border-radius:6px;padding:6px 9px;font-size:12px}
 #dev p{font-size:12px;color:#9fb3c8}
 #perf{position:absolute;left:10px;bottom:8px;font:11px ui-monospace,monospace;background:#000a;padding:3px 6px;border-radius:4px;max-width:60vw}
+
+/* Berkshire field atlas */
+#miniC{pointer-events:auto;cursor:pointer;border:3px solid #a6c4ab;box-shadow:0 0 0 2px #193229,0 3px 12px #0009}
+#road,#guidance{background:#152c27ed;color:#fff3d9;padding:4px 8px;border-left:3px solid #70dab2;border-radius:2px;width:max-content;max-width:min(49vw,270px);white-space:normal;text-shadow:none}
+#guidance{margin-top:3px;padding:6px 9px}
+#guidance small,#guidance strong{display:block}
+#guidance small{color:#85eac3;font:700 10px system-ui;letter-spacing:.12em}
+#guidance strong{margin-top:2px;font-size:13px}
+#map .maptools,#map .atlasPlaces,#map .atlasFooter{background:#17332cf5;color:#fcf5db;border:1px solid #9bb9a0;border-radius:8px;box-shadow:0 3px 14px #16271e44;padding:5px;display:flex;align-items:center;gap:6px}
+#map .maptools{top:max(10px,env(safe-area-inset-top));left:max(10px,env(safe-area-inset-left))}
+.atlasTitle{padding:1px 10px;font:bold 21px Georgia,serif;line-height:1}
+.atlasTitle em{font:600 10px system-ui;display:block;color:#9ee2c2;letter-spacing:.16em;text-transform:uppercase;margin-top:3px}
+#map button,#map select{background:#29493e;color:#fff5db;border:1px solid #638275;border-radius:4px;min-height:38px;padding:4px 10px;font:600 13px system-ui}
+.atlasPlaces{position:absolute;top:10px;right:10px}
+.atlasPlaces select{max-width:31vw}
+.atlasFooter{position:absolute;bottom:max(10px,env(safe-area-inset-bottom));left:10px;right:10px;justify-content:space-between;font-size:13px}
+.atlasFooter span{padding:0 6px}
+#map button[hidden]{display:none}
+@media(max-width:660px){.atlasPlaces{top:70px;left:10px;right:auto}.atlasPlaces select{max-width:48vw}}
