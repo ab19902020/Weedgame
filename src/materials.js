@@ -196,18 +196,27 @@ export function structMaterial() {
   const s = attribute('surf', 'float');
   const p = positionWorld;
   const u = uv();
-  const layer = sel(s.lessThan(0.5), int(L.concrete_wall), sel(s.lessThan(1.5), int(L.brick_red), sel(s.lessThan(2.5), int(L.bark), sel(s.lessThan(3.5), int(L.grass), int(L.cladding)))));
+  // street props (ids 10..17, tile worker): 10 black bin, 11 blue lid, 12 green lid, 13 pillar-box red, 14 cable,
+  // 15 creosoted pole, 16 bench timber, 17 dark grey plastic/metal
+  const prop = step(9.5, s), timber = step(14.5, s).mul(step(s, 16.5));
+  const layer = sel(s.lessThan(0.5), int(L.concrete_wall), sel(s.lessThan(1.5), int(L.brick_red), sel(s.lessThan(2.5), int(L.bark), sel(s.lessThan(3.5), int(L.grass),
+    sel(s.lessThan(9.5), int(L.cladding), sel(timber.greaterThan(0.5), int(L.bark), int(L.concrete_wall)))))));
   const uvm = sel(s.lessThan(0.5), vec2(u.x, u.y.add(p.y)), u.mul(sel(s.lessThan(3.5).and(s.greaterThan(2.5)), float(2.5), float(1))));
   const tex = sAlbedo(layer, uvm);
   const fence = vec3(0.42, 0.32, 0.24).mul(step(0.1, fract(u.x.div(0.15))).mul(0.3).add(0.7));
   const hedgeLeaf = vec3(0.16, 0.3, 0.09).mul(nz(p.xz.add(p.y), 1 / 0.35).r.mul(0.9).add(0.45));
-  const albedo = sel(s.lessThan(1.5), tex, sel(s.lessThan(2.5), tex.mul(fence).mul(2.2), sel(s.lessThan(3.5), hedgeLeaf.mul(tex.g.mul(1.6).add(0.4)), vec3(0.46, 0.47, 0.48))));
+  const propCol = sel(s.lessThan(10.5), vec3(0.035, 0.037, 0.04), sel(s.lessThan(11.5), vec3(0.03, 0.09, 0.3), sel(s.lessThan(12.5), vec3(0.045, 0.19, 0.06),
+    sel(s.lessThan(13.5), vec3(0.52, 0.025, 0.02), sel(s.lessThan(14.5), vec3(0.015), sel(s.lessThan(15.5), vec3(0.15, 0.1, 0.065), sel(s.lessThan(16.5), vec3(0.36, 0.23, 0.13), vec3(0.08, 0.085, 0.09))))))));
+  const propAlb = propCol.mul(tex.dot(vec3(0.3, 0.59, 0.11)).mul(mix(float(0.9), float(2.2), timber)).add(mix(float(0.6), float(0.2), timber)));
+  const albedo = sel(s.lessThan(1.5), tex, sel(s.lessThan(2.5), tex.mul(fence).mul(2.2), sel(s.lessThan(3.5), hedgeLeaf.mul(tex.g.mul(1.6).add(0.4)), sel(s.lessThan(9.5), vec3(0.46, 0.47, 0.48), propAlb))));
   const wet = U.wet.mul(float(1).sub(shelter(p)));
   const d = sDetail(layer, uvm);
   m.colorNode = albedo.mul(mix(float(1), float(0.7), wet)).mul(cloudShadow(p));
-  m.roughnessNode = sel(s.greaterThan(4.5), float(0.35), mix(d.b.mul(0.3).add(0.62), float(0.45), wet));
-  m.metalnessNode = sel(s.greaterThan(4.5), float(0.6), float(0));
-  m.normalNode = perturb(normalWorld, d, sel(s.greaterThan(2.5).and(s.lessThan(3.5)), float(1.6), float(0.9)));
+  const steel = step(4.5, s).mul(float(1).sub(prop));
+  const propRough = mix(sel(s.greaterThan(12.5).and(s.lessThan(13.5)), float(0.28), float(0.5)), float(0.82), timber);
+  m.roughnessNode = mix(mix(mix(d.b.mul(0.3).add(0.62), float(0.45), wet), float(0.35), steel), mix(propRough, float(0.3), wet), prop);
+  m.metalnessNode = steel.mul(0.6);
+  m.normalNode = perturb(normalWorld, d, sel(s.greaterThan(2.5).and(s.lessThan(3.5)), float(1.6), mix(float(0.9), float(0.35), prop.mul(float(1).sub(timber)))));
   m.emissiveNode = lightPool(p).mul(albedo);
   return m;
 }

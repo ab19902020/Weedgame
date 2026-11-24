@@ -209,6 +209,73 @@ function build(header, A, lod) {
     const a = P(gs, t + 0.3), b = P(gs + gw, t + 0.3), c = P(gs + gw, 0.05), d = P(gs, 0.05);
     const q = [a, b, c, d].map(([x, z]) => [x, hAt(x, z) + lift, z]);
     quad(G, q[0], q[1], q[2], q[3], [0, 1, 0], null, [surfId]);
+    // wheelie bins by the house, away from the path (general waste black/grey, recycling blue or green)
+    if (!lod && seed % 7 !== 0 && l > 3.5) {
+      const sb = gs > l / 2 ? 0.45 : l - 1.35, ang = Math.atan2(uz, ux);
+      for (let k = 0; k < (seed % 3 ? 2 : 1); k++) {
+        const [bx, bz] = P(sb + k * 0.68, 0.55), y = hAt(bx, bz);
+        wheelieBin(S, bx, y, bz, ang, k ? [11, 12][seed % 2] : (seed % 4 ? 10 : 17));
+      }
+    }
+  }
+  // ---------------- street life (inferred): telegraph poles and wires along residential roads, the odd
+  // pillar box, litter bins and benches along pedestrian ways
+  if (!lod && NET) {
+    const inTile = (x, z) => x >= 0 && x < TILE && z >= 0 && z < TILE;
+    // eave anchor of each house front (for telegraph drop wires): mid front wall, just under the eaves
+    const drops = (out.buildings.gardens || []).map(([x0, z0, x1, z1, nx, nz, , , , eave]) => [(x0 + x1) / 2 + nx * 0.15, (z0 + z1) / 2 + nz * 0.15, eave, 0]);
+    const h32i = v => { v = Math.imul(v ^ (v >>> 16), 0x45d9f3b); v = Math.imul(v ^ (v >>> 16), 0x45d9f3b); return (v ^ (v >>> 16)) >>> 0; };
+    for (const e of header.edges) {
+      const cn = NET.classes[NET.cls[e]], st = NET.pstart[e], n = NET.pcount[e], w = NET.width[e];
+      const pts = []; let cum = 0;
+      for (let i = 0; i < n; i++) { const x = NET.pts[(st + i) * 3] - ox, z = NET.pts[(st + i) * 3 + 2] - oz; if (i) cum += Math.hypot(x - pts[i - 1][0], z - pts[i - 1][1]); pts.push([x, z, cum]); }
+      if (cum < 10) continue;
+      const at = (sv, off) => {
+        let i = 1; while (i < pts.length - 1 && pts[i][2] < sv) i++;
+        const a = pts[i - 1], b = pts[i], L = Math.max(1e-3, b[2] - a[2]), t = Math.min(1, Math.max(0, (sv - a[2]) / L));
+        const dx = (b[0] - a[0]) / L, dz = (b[1] - a[1]) / L;
+        return [a[0] + (b[0] - a[0]) * t - dz * off, a[1] + (b[1] - a[1]) * t + dx * off, Math.atan2(dz, dx)];
+      };
+      const hh = h32i(e + 7);
+      if (/^(residential|unclassified|living_street)$/.test(cn) && hh % 5 < 3) {
+        const side = hh & 1 ? 1 : -1, off = side * (w / 2 + 0.9), sp = 32, s0 = 4 + (hh % 14);
+        let prev = null;
+        for (let sv = s0; sv < cum - 4; sv += sp) {
+          const [x, z] = at(sv, off); if (!inTile(x, z)) { prev = null; continue; }
+          const y = hAt(x, z), top = y + 8.4;
+          box(S, x, y, z, 0, 0.13, 4.2, 0.13, 15);
+          const [, , ang] = at(sv, off);
+          box(S, x, top - 0.35, z, ang + Math.PI / 2, 0.55, 0.05, 0.06, 15);
+          // service drops: the fan of thin cables from the pole to the eaves of the nearest houses
+          let nd = 0;
+          for (const g of drops) {
+            if (nd >= 5) break;
+            const ddx = g[0] - x, ddz = g[1] - z, dd = ddx * ddx + ddz * ddz;
+            if (dd > 26 * 26 || dd < 9 || g[3]) continue;
+            g[3] = 1; nd++;
+            sagWire(S, [x, top - 0.55, z], [g[0], g[2] - 0.25, g[1]], 0.25 + Math.sqrt(dd) * 0.012, 3);
+          }
+          if (prev) for (const o of [-0.4, 0, 0.4]) sagWire(S, [prev[0] + Math.cos(prev[2] + Math.PI / 2) * o, prev[1] - 0.3, prev[3] + Math.sin(prev[2] + Math.PI / 2) * o], [x + Math.cos(ang + Math.PI / 2) * o, top - 0.3, z + Math.sin(ang + Math.PI / 2) * o], 0.45);
+          prev = [x, top, ang, z];
+        }
+        if (hh % 23 === 0) { const [x, z, ang] = at(Math.min(8, cum / 2), -side * (w / 2 + 0.7)); if (inTile(x, z)) pillarBox(S, x, hAt(x, z), z, ang); }
+      }
+      if (header.core && /^(primary|secondary|tertiary)$/.test(cn)) {
+        // high-street furniture on the pavement edge: litter bins, the odd bench
+        for (let sv = 10 + (hh % 25); sv < cum - 6; sv += 42) {
+          const sd = (Math.round(sv) & 1) ? 1 : -1, [x, z, ang] = at(sv, sd * (w / 2 + 0.55)); if (!inTile(x, z)) continue;
+          const y = hAt(x, z) + 0.15;
+          if ((h32i(e * 17 + Math.round(sv)) % 5) === 0) bench(S, x, y, z, ang + (sd > 0 ? 0 : Math.PI)); else litterBin(S, x, y, z);
+        }
+      }
+      if (/^(pedestrian|footway)$/.test(cn) && (header.core || /pedestrian/.test(cn))) {
+        for (let sv = 8 + (hh % 20); sv < cum - 3; sv += 32) {
+          const [x, z, ang] = at(sv, (hh & 2 ? 1 : -1) * (w / 2 + 0.5)); if (!inTile(x, z)) continue;
+          const y = hAt(x, z) + 0.1;
+          if ((h32i(e * 31 + Math.round(sv)) & 3) === 0) bench(S, x, y, z, ang); else litterBin(S, x, y, z);
+        }
+      }
+    }
   }
   if (wallCol.length) {
     const B = out.buildings, col = Array.from(B.col), pts = Array.from(B.colPts);
@@ -234,6 +301,45 @@ function build(header, A, lod) {
   out.slots = slots; out.slotKind = new Float32Array(Array.from({ length: pk.length / 4 }, (_, i) => pk[i * 4 + 3]));
   out.signs = { data: new Float32Array(A.sg), text: header.sn };
   return out;
+}
+
+// ---- street props (struct mesh; surf ids 10.. map to colours in materials.structMaterial)
+function box(B, x, y, z, ang, hx, hy, hz, id) {
+  const ca = Math.cos(ang), sa = Math.sin(ang), P = (u, v, w) => [x + u * ca - w * sa, y + v, z + u * sa + w * ca];
+  const c = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
+  for (let k = 0; k < 4; k++) {
+    const [u0, w0] = c[k], [u1, w1] = c[(k + 1) % 4], mu = (u0 + u1) / 2, mw = (w0 + w1) / 2;
+    quad(B, P(u0, 0, w0), P(u1, 0, w1), P(u1, 2 * hy, w1), P(u0, 2 * hy, w0), [mu * ca - mw * sa, 0, mu * sa + mw * ca], [[0, 0], [1, 0], [1, 1], [0, 1]], [id]);
+  }
+  quad(B, P(-hx, 2 * hy, -hz), P(hx, 2 * hy, -hz), P(hx, 2 * hy, hz), P(-hx, 2 * hy, hz), [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], [id]);
+}
+function wheelieBin(B, x, y, z, ang, lidId) {
+  box(B, x, y + 0.08, z, ang, 0.29, 0.48, 0.34, lidId === 17 ? 17 : 10);
+  box(B, x, y + 1.04, z - 0.0, ang, 0.31, 0.025, 0.37, lidId);
+  for (const sd of [-1, 1]) box(B, x - Math.sin(ang) * sd * 0.24 - Math.cos(ang) * 0.0, y, z + Math.cos(ang) * sd * 0.24, ang, 0.1, 0.1, 0.03, 17);
+}
+function pillarBox(B, x, y, z, ang) {
+  box(B, x, y, z, ang, 0.24, 0.72, 0.24, 13);
+  box(B, x, y + 1.44, z, ang, 0.28, 0.06, 0.28, 13);
+  box(B, x, y + 1.25, z, ang, 0.245, 0.02, 0.18, 17);
+}
+function litterBin(B, x, y, z) { box(B, x, y, z, 0.3, 0.26, 0.5, 0.26, 17); box(B, x, y + 1.0, z, 0.3, 0.28, 0.04, 0.28, 17); }
+function bench(B, x, y, z, ang) {
+  box(B, x, y + 0.42, z, ang, 0.9, 0.025, 0.22, 16);
+  box(B, x - Math.sin(ang) * -0.2, y + 0.55, z + Math.cos(ang) * -0.2, ang, 0.9, 0.18, 0.025, 16);
+  for (const sd of [-0.8, 0.8]) box(B, x + Math.cos(ang) * sd, y, z + Math.sin(ang) * sd, ang, 0.03, 0.22, 0.2, 17);
+}
+// sagging cable between two points (catenary approximated by 4 straight spans)
+function sagWire(B, a, b, sag, N = 4) {
+  let p0 = a;
+  for (let i = 1; i <= N; i++) {
+    const t = i / N, y = a[1] + (b[1] - a[1]) * t - sag * 4 * t * (1 - t);
+    const p1 = [a[0] + (b[0] - a[0]) * t, y, a[2] + (b[2] - a[2]) * t];
+    const dx = p1[0] - p0[0], dz = p1[2] - p0[2], L = Math.hypot(dx, dz) || 1, px = -dz / L * 0.02, pz = dx / L * 0.02;
+    quad(B, [p0[0] - px, p0[1], p0[2] - pz], [p1[0] - px, p1[1], p1[2] - pz], [p1[0] + px, p1[1] + 0.03, p1[2] + pz], [p0[0] + px, p0[1] + 0.03, p0[2] + pz], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], [14]);
+    quad(B, [p0[0] - px, p0[1], p0[2] - pz], [p1[0] - px, p1[1], p1[2] - pz], [p1[0] + px, p1[1] + 0.03, p1[2] + pz], [p0[0] + px, p0[1] + 0.03, p0[2] + pz], [0, -1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], [14]);
+    p0 = p1;
+  }
 }
 
 // polyline strip (flat quads along a 2D polyline at lateral offset)
@@ -406,7 +512,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       const l = Math.hypot(x1 - x0, z1 - z0), nx = (z1 - z0) / l, nz = -(x1 - x0) / l;
       const ce = segDist((x0 + x1) / 2, (z0 + z1) / 2, segs, true);
       const t = ce - 2.1;
-      if (t >= 1.6 && t <= 14 && l >= 4) gardens.push([x0, z0, x1, z1, nx, nz, t, seed, cls]);
+      if (t >= 1.6 && t <= 14 && l >= 4) gardens.push([x0, z0, x1, z1, nx, nz, t, seed, cls, base + wallH]);
     }
     // walls
     rings.forEach((ring, k) => {
