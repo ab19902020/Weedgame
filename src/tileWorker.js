@@ -50,6 +50,128 @@ function initNet(m) {
   NET.stops = new Map();
   for (const [e, d, stop] of m.approaches) { if (!NET.stops.has(e)) NET.stops.set(e, []); NET.stops.get(e).push([d, stop]); }
   NET.driveCls = new Set(m.driveCls);
+  NET.added = m.addedBridges || [];
+  NET.shoulder = m.shoulder || null; NET.strip = m.strip || null;
+  initEmbankments(m);
+  initBarriers(m.barriers);
+  const bays = m.bays || [];   // (NET is this message: read the flat list before replacing it with the map)
+  NET.bays = new Map();
+  for (let i = 0; i + 4 < bays.length; i += 5) { const e = bays[i]; if (!NET.bays.has(e)) NET.bays.set(e, []); NET.bays.get(e).push([bays[i + 1], bays[i + 2], bays[i + 3], bays[i + 4]]); }
+}
+
+// ------------------------------------------------------------------ barriers (roadDetail.js)
+// kind 0: concrete step barrier on a motorway's central reservation; 2: double-sided steel fence on a dual
+// carriageway's; 1: steel fence along a verge on a high embankment. Segments are drawn by the tile that
+// holds their midpoint.
+function initBarriers(flat) {
+  NET.bar = null;
+  if (!flat || !flat.length) return;
+  const seg = [], grid = new Map();
+  for (let i = 0; i < flat.length;) {
+    const n = flat[i], kind = flat[i + 1]; i += 2;
+    for (let k = 0; k + 1 < n; k++) {
+      const a = i + k * 3, b = a + 3, id = seg.length / 7;
+      seg.push(flat[a], flat[a + 1], flat[a + 2], flat[b], flat[b + 1], flat[b + 2], kind);
+      const key = Math.floor((flat[a] + flat[b]) / 2 / TILE) * 65536 + Math.floor((flat[a + 2] + flat[b + 2]) / 2 / TILE);
+      let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(id);
+    }
+    i += n * 3;
+  }
+  NET.bar = { seg: new Float32Array(seg), grid };
+}
+function buildBarriers(S, ix, iz, ox, oz) {
+  const B = NET && NET.bar; if (!B) return;
+  const ids = B.grid.get(ix * 65536 + iz); if (!ids) return;
+  const g = B.seg;
+  for (const id of ids) {
+    const o = id * 7, kind = g[o + 6];
+    const a = [g[o] - ox, g[o + 1], g[o + 2] - oz], b = [g[o + 3] - ox, g[o + 4], g[o + 5] - oz];
+    const dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz); if (l < 0.05) continue;
+    const nx = -dz / l, nz = dx / l;
+    const at = (p, off, h) => [p[0] + nx * off, p[1] + h, p[2] + nz * off];
+    if (kind === 0) {
+      // concrete step barrier: 0.9 m, a 60 mm step then a sloped face, both sides (struct 0 = concrete)
+      const prof = [[0.3, -0.3], [0.3, 0.06], [0.24, 0.16], [0.1, 0.9]];
+      for (const sd of [1, -1]) for (let q = 0; q + 1 < prof.length; q++) {
+        const [w0, h0] = prof[q], [w1, h1] = prof[q + 1];
+        quad(S, at(a, sd * w0, h0), at(b, sd * w0, h0), at(b, sd * w1, h1), at(a, sd * w1, h1), [nx * sd, (w0 - w1) * 2, nz * sd], [[0, h0], [l, h0], [l, h1], [0, h1]], [0]);
+      }
+      quad(S, at(a, 0.1, 0.9), at(b, 0.1, 0.9), at(b, -0.1, 0.9), at(a, -0.1, 0.9), [0, 1, 0], null, [0]);
+    } else {
+      // tensioned corrugated steel beam on Z posts every 3.2 m (struct 6 = galvanised steel)
+      const faces = kind === 2 ? [1, -1] : [1, -1];
+      for (const sd of faces) {
+        quad(S, at(a, sd * 0.09, 0.45), at(b, sd * 0.09, 0.45), at(b, sd * 0.09, 0.76), at(a, sd * 0.09, 0.76), [nx * sd, 0, nz * sd], [[0, 0], [l, 0], [l, 0.31], [0, 0.31]], [6]);
+        quad(S, at(a, sd * 0.09, 0.6), at(b, sd * 0.09, 0.6), at(b, sd * 0.13, 0.6), at(a, sd * 0.13, 0.6), [0, 1, 0], null, [6]);
+      }
+      quad(S, at(a, 0.09, 0.76), at(b, 0.09, 0.76), at(b, -0.09, 0.76), at(a, -0.09, 0.76), [0, 1, 0], null, [6]);
+      const ang = Math.atan2(dz, dx);
+      for (let sv = 1.6; sv < l; sv += 3.2) { const t = sv / l; box(S, a[0] + dx * t, a[1] + (b[1] - a[1]) * t - 0.4, a[2] + dz * t, ang, 0.06, 0.56, 0.05, 6); }
+    }
+  }
+}
+
+// ------------------------------------------------------------------ embankments
+// Roads that climb to a bridge (net.rise, from roadProfile.js) get the ground built up under them: level
+// with the road across the carriageway and pavements, then falling away at 1:1.7. The fill stops dead at
+// a bridge end (the abutment) and never covers another road, pavement, railway, water or a building.
+const EMB_CELL = 64, EMB_SLOPE = 0.6, EMB_REC = 10;
+function initEmbankments(m) {
+  NET.emb = null;
+  const rise = m.rise, ea = m.ea, eb = m.eb;
+  if (!rise || !ea) return;
+  const brNode = new Set();
+  for (let e = 0; e < m.flags.length; e++) if (m.flags[e] & 4) { brNode.add(ea[e]); brNode.add(eb[e]); }
+  const seg = [], grid = new Map(), P = m.pts;
+  for (let e = 0; e < m.flags.length; e++) {
+    if (m.flags[e] & 12) continue;   // decks and tunnels
+    const s = m.pstart[e], c = m.pcount[e];
+    const cn = m.classes[m.cls[e]], walk = !NET.driveCls.has(m.cls[e]);
+    const pw = m.pav[e] ? (/primary|secondary|trunk/.test(cn) ? 2.6 : 2.0) : 0.4;
+    const hw = m.width[e] / 2 + (walk ? 0.6 : pw + 0.5);
+    for (let k = 0; k + 1 < c; k++) {
+      const r = Math.max(rise[s + k], rise[s + k + 1]);
+      if (r < 0.06) continue;
+      const a = (s + k) * 3, b = a + 3, id = seg.length / EMB_REC;
+      seg.push(P[a], P[a + 1], P[a + 2], P[b], P[b + 1], P[b + 2], hw, k === 0 && brNode.has(ea[e]) ? 1 : 0, k + 2 === c && brNode.has(eb[e]) ? 1 : 0, r);
+      const R = hw + r / EMB_SLOPE + 1;
+      for (let cx = Math.floor((Math.min(P[a], P[b]) - R) / EMB_CELL); cx <= Math.floor((Math.max(P[a], P[b]) + R) / EMB_CELL); cx++)
+        for (let cz = Math.floor((Math.min(P[a + 2], P[b + 2]) - R) / EMB_CELL); cz <= Math.floor((Math.max(P[a + 2], P[b + 2]) + R) / EMB_CELL); cz++) {
+          const key = cx * 65536 + cz; let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(id);
+        }
+    }
+  }
+  if (seg.length) NET.emb = { seg: new Float32Array(seg), grid };
+}
+function embank(H, ox, oz, lcAt) {
+  const E = NET && NET.emb; if (!E) return;
+  const ids = new Set();
+  for (let cx = Math.floor(ox / EMB_CELL); cx <= Math.floor((ox + TILE) / EMB_CELL); cx++)
+    for (let cz = Math.floor(oz / EMB_CELL); cz <= Math.floor((oz + TILE) / EMB_CELL); cz++)
+      for (const id of E.grid.get(cx * 65536 + cz) || []) ids.add(id);
+  const S = E.seg;
+  for (const id of ids) {
+    const o = id * EMB_REC;
+    const ax = S[o] - ox, ay = S[o + 1], az = S[o + 2] - oz, bx = S[o + 3] - ox, by = S[o + 4], bz = S[o + 5] - oz;
+    const hw = S[o + 6], capA = S[o + 7], capB = S[o + 8], R = hw + S[o + 9] / EMB_SLOPE + 1;
+    const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1e-6;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - R) / STEP)), i1 = Math.min(NT - 1, Math.ceil((Math.max(ax, bx) + R) / STEP));
+    const j0 = Math.max(0, Math.floor((Math.min(az, bz) - R) / STEP)), j1 = Math.min(NT - 1, Math.ceil((Math.max(az, bz) + R) / STEP));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = i * STEP, z = j * STEP;
+      let t = ((x - ax) * vx + (z - az) * vz) / L2;
+      if (t < 0) { if (capA) continue; t = 0; } else if (t > 1) { if (capB) continue; t = 1; }
+      const d = Math.hypot(x - ax - vx * t, z - az - vz * t);
+      if (d > R) continue;
+      const target = ay + (by - ay) * t - 0.06 - Math.max(0, d - hw) * EMB_SLOPE, k = j * NT + i;
+      if (target <= H[k]) continue;
+      // (grid points on the tile edge are shared with the neighbour, which can't see this land cover: both
+      // tiles must agree on them, so the land-cover test is left out there)
+      const edge = i === 0 || j === 0 || i === NT - 1 || j === NT - 1, c = edge ? 0 : lcAt(x, z);
+      if (c === 3 || (d > hw && (c === 1 || c === 2 || c === 4 || c === 8 || c === 9 || c === 10 || c === 12))) continue;
+      H[k] = target;
+    }
+  }
 }
 
 // ------------------------------------------------------------------ growable buffers
@@ -88,6 +210,7 @@ function build(header, A, lod) {
   for (let i = 0; i < H.length; i++) H[i] = hmin + A.h[i] / 100;
   const lc = A.lc;  // 128x128 at 2 m
   const lcAt = (x, z) => lc[Math.min(127, Math.max(0, z >> 1)) * 128 + Math.min(127, Math.max(0, x >> 1))];
+  embank(H, ox, oz, lcAt);
   // terrain surface height (matches triangle split of the terrain mesh)
   const hAt = (x, z) => {
     const gx = Math.max(0, Math.min(NT - 1.0001, x / STEP)), gz = Math.max(0, Math.min(NT - 1.0001, z / STEP));
@@ -163,12 +286,28 @@ function build(header, A, lod) {
   const bm = A.brM, bp = A.brP;
   let off = 0;
   for (let k = 0; k < bm.length; k += 4) {
-    const n = bm[k], w = bm[k + 1], kind = bm[k + 2];
-    const pts = []; for (let q = 0; q < n; q++) pts.push([bp[(off + q) * 3], bp[(off + q) * 3 + 1], bp[(off + q) * 3 + 2]]);
+    const n = bm[k], w = bm[k + 1], kind = bm[k + 2], e = bm[k + 3];
+    // deck heights come from the network (roadProfile.js aligns decks with their approaches)
+    const live = NET && e >= 0 && NET.pcount[e] === n ? NET.pstart[e] : -1;
+    const pts = []; for (let q = 0; q < n; q++) pts.push([bp[(off + q) * 3], live >= 0 ? NET.pts[(live + q) * 3 + 1] : bp[(off + q) * 3 + 1], bp[(off + q) * 3 + 2]]);
     off += n;
     ribbonDeck(G, S, pts, w, kind, hAt);
     if(kind===2) permanentWay(S,pts);
   }
+  // spans the pipeline dropped (the M4 over the River Loddon), drawn in the tile holding their middle
+  const addedHere = [];
+  for (const e of NET ? NET.added : []) {
+    const st = NET.pstart[e], n = NET.pcount[e], P = NET.pts;
+    let inside = false;
+    for (let q = 0; q < n; q++) { const x = P[(st + q) * 3] - ox, z = P[(st + q) * 3 + 2] - oz; if (x > -20 && x < TILE + 20 && z > -20 && z < TILE + 20) inside = true; }
+    if (!inside) continue;
+    addedHere.push(e);
+    const m = Math.floor(n / 2), mx = P[(st + m) * 3] - ox, mz = P[(st + m) * 3 + 2] - oz;
+    if (mx < 0 || mx >= TILE || mz < 0 || mz >= TILE) continue;
+    const pts = []; for (let q = 0; q < n; q++) pts.push([P[(st + q) * 3] - ox, P[(st + q) * 3 + 1], P[(st + q) * 3 + 2] - oz]);
+    ribbonDeck(G, S, pts, NET.width[e], 0, hAt);
+  }
+  buildBarriers(S, header.ix, header.iz, ox, oz);
   // ---------------- rails
   {
     const C = A.railC; let ci = 0;
@@ -314,7 +453,7 @@ function build(header, A, lod) {
   }
   out.ground = G.pack();
   out.struct = S.pack();
-  out.markings = buildMarkings(header, ox, oz, hAt);
+  out.markings = buildMarkings(addedHere.length ? { ...header, edges: [...header.edges, ...addedHere] } : header, ox, oz, hAt);
 
   // ---------------- instances: trees, lamps, slots
   const tr = A.tr, trees = new Float32Array(tr.length);
@@ -450,6 +589,20 @@ function ribbonDeck(G, S, pts, w, kind, hAt) {
     }
     // underside
     quad(S, [a[0], y0 - 1.2, a[2]], [b[0], y1 - 1.2, b[2]], [c[0], y1 - 1.2, c[2]], [d[0], y0 - 1.2, d[2]], [0, -1, 0], null, [0]);
+  }
+  // abutments: a concrete wall across each end of a deck that stands clear of the ground, facing the span
+  // (the embankment behind it stops at the bridge end)
+  for (const [i, j] of [[0, 1], [pts.length - 1, pts.length - 2]]) {
+    if (j < 0 || j >= pts.length) continue;
+    const [x0, y0, z0] = pts[i], [x1, , z1] = pts[j];
+    const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.05) continue;
+    const ux = dx / l, uz = dz / l, nx = -uz, nz = ux, e = hw + 0.4;
+    const inner = hAt(x0 + ux * Math.min(3, l), z0 + uz * Math.min(3, l));
+    if (y0 - inner < 1.5) continue;
+    const g = Math.min(inner, hAt(x0 + nx * e, z0 + nz * e), hAt(x0 - nx * e, z0 - nz * e)) - 0.6;
+    const a = [x0 + nx * e, y0 - 1.2, z0 + nz * e], b = [x0 - nx * e, y0 - 1.2, z0 - nz * e];
+    quad(S, [a[0], g, a[2]], [b[0], g, b[2]], b, a, [ux, 0, uz], null, [0]);
+    quad(S, b, a, [a[0], g, a[2]], [b[0], g, b[2]], [-ux, 0, -uz], null, [0]);
   }
   // piers every ~22 m where the deck is well above ground
   let acc = 11;
@@ -940,12 +1093,46 @@ function buildMarkings(header, ox, oz, hAt) {
       }
     };
     const total = Math.max(1, lf + lb), lw = w / total;
-    if (!minor && L > 4 && s1 - s0 > 2 && w >= 4.5) {
-      if (!oneway && lf && lb && name !== 'living_street') line(w/2-lf*lw, 0.1, s0, s1, name === 'residential' ? 2.5 : 4, name === 'residential' ? 4 : 5, 0); // centre line
-      // lane lines (forward lanes are left of centre: offset positive = left)
-      for (let k = 1; k < lf; k++) line(oneway ? w / 2 - k * lw : w / 2 - k * lw, 0.1, s0, s1, 2, 7, 0);
-      for (let k = 1; k < lb; k++) line(-(w / 2 - k * lw), 0.1, s0, s1, 2, 7, 0);
+    const hs = NET.shoulder ? NET.shoulder[e] : 0, hst = NET.strip ? NET.strip[e] : 0;
+    // road studs (cat's eyes) every 18 m at a lateral offset: surf 4 red, 5 amber, 6 white
+    const studs = (offset, id, phase = 0) => {
+      for (let sv = s0 + 4 + phase; sv < s1 - 2; sv += 18) {
+        const p = posAt(pts, sv); if (!inTile(p)) continue;
+        const ax = -p[4], az = p[3], cx = p[0] + p[3] * offset, cz = p[2] + p[4] * offset;
+        const y = bridge ? sampleY(pts, sv) + 0.045 : hAt(cx, cz) + 0.09;
+        const q = [[-0.09, -0.06], [0.09, -0.06], [0.09, 0.06], [-0.09, 0.06]].map(([a, l]) => [cx + ax * a + p[3] * l, y, cz + az * a + p[4] * l]);
+        quad(B, q[0], q[1], q[2], q[3], [0, 1, 0], null, [id]);
+      }
+    };
+    const fast = /^(motorway|trunk)/.test(name) || name === 'primary_link';
+    if (!minor && L > 4 && s1 - s0 > 2 && w >= 4.5 && hs > 0) {
+      // motorway (TSRGD 1012.1 / 1005): edge line between the hard shoulder and lane 1, offside edge line
+      // beside the hard strip, 2 m lane lines with 7 m gaps; nothing on the hard shoulder itself
+      const lwm = (w - hs - hst) / Math.max(1, lf);
+      line(w / 2 - hs, 0.2, s0, s1, 1e4, 0, 0);
+      line(-(w / 2 - hst), 0.2, s0, s1, 1e4, 0, 0);
+      for (let k = 1; k < lf; k++) line(w / 2 - hs - k * lwm, 0.15, s0, s1, 2, 7, 0);
+      studs(w / 2 - hs - 0.3, 4); studs(-(w / 2 - hst) + 0.3, 5);
+      for (let k = 1; k < lf; k++) studs(w / 2 - hs - k * lwm, 6, 4.5);
+    } else if (!minor && L > 4 && s1 - s0 > 2 && w >= 4.5) {
+      if (!oneway && lf && lb && name !== 'living_street') {
+        // centre line (TSRGD 1008), turning into a hazard warning line (1004) on the last 30 m before a
+        // junction on the main roads
+        const co = w / 2 - lf * lw, res = name === 'residential' || name === 'unclassified' || name === 'service';
+        const mk = res ? 2.5 : 4, gp = res ? 4 : 5, major = /^(primary|secondary|tertiary|trunk)/.test(name);
+        const hzA = major && NET.cutA[e] > 0 ? Math.min(s1, s0 + 30) : s0, hzB = major && NET.cutB[e] > 0 ? Math.max(hzA, s1 - 30) : s1;
+        if (hzA > s0) line(co, 0.1, s0, hzA, 4, 2, 0);
+        if (hzB > hzA) line(co, 0.1, hzA, hzB, mk, gp, 0);
+        if (hzB < s1) line(co, 0.1, hzB, s1, 4, 2, 0);
+      }
+      // lane lines (forward lanes are left of centre: offset positive = left): 2 m / 7 m on fast roads,
+      // 1 m / 5 m in town (TSRGD 1005)
+      const [ld, lg] = fast ? [2, 7] : [1, 5];
+      for (let k = 1; k < lf; k++) line(w / 2 - k * lw, 0.1, s0, s1, ld, lg, 0);
+      for (let k = 1; k < lb; k++) line(-(w / 2 - k * lw), 0.1, s0, s1, ld, lg, 0);
       if (/motorway|trunk|primary/.test(name)) { line(w / 2 - 0.25, 0.15, s0, s1, 1e4, 0, 0); line(-(w / 2 - 0.25), 0.15, s0, s1, 1e4, 0, 0); }
+      // dual carriageways and slip roads at speed: red studs on the nearside edge, amber offside, white between lanes
+      if (oneway && fast && /motorway|trunk/.test(name)) { studs(w / 2 - 0.45, 4); studs(-(w / 2 - 0.45), 5); for (let k = 1; k < lf; k++) studs(w / 2 - k * lw, 6, 4.5); }
       if (header.core && /primary|secondary|tertiary/.test(name)) { for (const s of [1, -1]) { line(s * (w / 2 - 0.25), 0.08, s0, s1, 1e4, 0, 1); line(s * (w / 2 - 0.42), 0.08, s0, s1, 1e4, 0, 1); } }
     }
     // stop / give-way lines at ends
@@ -966,14 +1153,32 @@ function buildMarkings(header, ox, oz, hAt) {
         quad(B, a, b, c, d, [0, 1, 0], null, [id]);
       };
       if (code === 3 || code === 2) mk(halfFrom, halfTo, code === 2 ? 0.4 : 0.3, 0, 0);
-      else if (code === 1 || code === 4) {
+      else if (code === 1) {   // give way: double broken line (TSRGD 1003)
         for (let o = halfFrom; o < halfTo; o += 0.9) { mk(o, Math.min(halfTo, o + 0.6), 0.2, 0, 0); mk(o, Math.min(halfTo, o + 0.6), 0.2, 0.4, 0); }
+      } else if (code === 4) { // roundabout entry: single broken line (TSRGD 1003.1)
+        for (let o = halfFrom; o < halfTo; o += 0.9) mk(o, Math.min(halfTo, o + 0.6), 0.2, 0, 0);
       }
     };
     const stops = NET.stops.get(e) || [];
     for (const [d, stop] of stops) { if (d === 1) endLine(true, 3, stop); else endLine(false, 3, stop); }
     if (NET.ctrlB[e] && NET.ctrlB[e] !== 3) endLine(true, NET.ctrlB[e]);
     if (NET.ctrlA[e] && NET.ctrlA[e] !== 3 && !oneway) endLine(false, NET.ctrlA[e]);
+    // give-way triangle (TSRGD 1023) 15 m before a give-way line on a road wide enough for one: an outline,
+    // point towards the driver, in the approaching lane
+    if (!minor && w >= 4.5) for (const [atEnd, code] of [[true, NET.ctrlB[e]], [false, oneway ? 0 : NET.ctrlA[e]]]) {
+      if (code !== 1) continue;
+      const dir = atEnd ? 1 : -1, line0 = atEnd ? L - Math.max(1.5, NET.cutB[e] - 0.5) : Math.max(1.5, NET.cutA[e] - 0.5);
+      const tip = line0 - dir * 18.75, base = tip + dir * 3.75;
+      if (Math.min(tip, base) < 2 || Math.max(tip, base) > L - 2) continue;
+      const lane = oneway ? 0 : dir * w / 4, half = Math.min(0.62, w / 8);
+      const A = posAt(pts, tip); if (!inTile(A)) continue;
+      const corner = (sv, o) => { const p = posAt(pts, sv), x = p[0] + p[3] * o, z = p[2] + p[4] * o; return [x, bridge ? p[1] + 0.03 : hAt(x, z) + 0.075, z]; };
+      const T = corner(tip, lane), B1 = corner(base, lane - half), B2 = corner(base, lane + half);
+      for (const [u, v] of [[T, B1], [T, B2], [B1, B2]]) {
+        const dx = v[0] - u[0], dz = v[2] - u[2], l = Math.hypot(dx, dz) || 1, nx = -dz / l * 0.08, nz = dx / l * 0.08;
+        quad(B, [u[0] - nx, u[1], u[2] - nz], [v[0] - nx, v[1], v[2] - nz], [v[0] + nx, v[1], v[2] + nz], [u[0] + nx, u[1], u[2] + nz], [0, 1, 0], null, [0]);
+      }
+    }
     // crossings
     for (const cr of NET.cross.get(e) || []) {
       const idx = cr[1], kind = cr[2];
@@ -999,19 +1204,64 @@ function buildMarkings(header, ox, oz, hAt) {
       }
       if (kind === 'zebra') {
         for (let o = -w / 2 + 0.2; o < w / 2 - 0.4; o += 1.0) put(o, o + 0.5, -1.4, 1.4, 0);
-        zigzags(B, pts, s, w, bridge, hAt, inTile);
+        zigzags(B, pts, s, w, bridge, hAt, inTile, s0, s1);
       } else if (kind === 'signal') {
         for (let o = -w / 2; o < w / 2; o += 0.6) { put(o, o + 0.3, -1.6, -1.45, 0); put(o, o + 0.3, 1.45, 1.6, 0); }
-        zigzags(B, pts, s, w, bridge, hAt, inTile);
+        // zig-zags belong to stand-alone crossings, not to the crossings at a signalled junction
+        const nearJunction = (NET.cutA[e] > 0 && s - s0 < 25) || (NET.cutB[e] > 0 && s1 - s < 25);
+        if (!nearJunction) zigzags(B, pts, s, w, bridge, hAt, inTile, s0, s1);
       }
+    }
+    // bus stop box (TSRGD 1025.1) in the kerbside lane: a broken yellow line with tapered ends from 23 m
+    // before the flag to 3 m past it, and BUS STOP in elongated letters read by the approaching driver
+    for (const [sb, side, laneW, served] of NET.bays.get(e) || []) {
+      if (!served || bridge) continue;
+      const dir = side > 0 ? 1 : -1;                         // +1: buses run a->b with the stop on their left
+      const k0 = w / 2 - 0.2, k1 = Math.max(0.35, w / 2 - laneW + 0.3);
+      const lo = Math.max(1, Math.min(sb - dir * 23, sb + dir * 3)), hi = Math.min(L - 1, Math.max(sb - dir * 23, sb + dir * 3));
+      if (hi - lo < 10 || k0 - k1 < 1.8) continue;
+      if (!inTile(posAt(pts, (lo + hi) / 2))) continue;
+      const P4 = (s, o) => { const p = posAt(pts, s), x = p[0] + p[3] * o, z = p[2] + p[4] * o; return [x, hAt(x, z) + 0.078, z]; };
+      const rect = (sa, oa, sb2, ob) => quad(B, P4(sa, oa), P4(sb2, oa), P4(sb2, ob), P4(sa, ob), [0, 1, 0], null, [1]);
+      line(side * k1, 0.1, lo + 2, hi - 2, 0.9, 0.6, 1);
+      for (const [sA, sB] of [[lo, lo + 2], [hi, hi - 2]]) for (let q = 0; q < 3; q++) {   // tapers, kerb to the broken line
+        const t0 = q / 3, t1 = (q + 0.6) / 3, oA = side * (k0 + (k1 - k0) * t0), oB = side * (k0 + (k1 - k0) * t1);
+        const a = P4(sA + (sB - sA) * t0, oA), b = P4(sA + (sB - sA) * t1, oB);
+        const dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz) || 1, nx = -dz / l * 0.05, nz = dx / l * 0.05;
+        quad(B, [a[0] - nx, a[1], a[2] - nz], [b[0] - nx, b[1], b[2] - nz], [b[0] + nx, b[1], b[2] + nz], [a[0] + nx, a[1], a[2] + nz], [0, 1, 0], null, [1]);
+      }
+      // letters: u across from the driver's left (the kerb), v along the road away from the driver
+      const word = (text, tFrom) => {
+        const lw = 0.55, gap = 0.12, wide = text.length * lw + (text.length - 1) * gap, q0 = (k0 - k1 - wide) / 2;
+        [...text].forEach((ch, i) => {
+          for (const [u0, v0, u1, v1] of GLYPHS[ch] || []) {
+            const qa = q0 + i * (lw + gap) + u0 * lw, qb = q0 + i * (lw + gap) + u1 * lw;
+            const sa = sb + dir * (tFrom + v0 * 1.6), sb2 = sb + dir * (tFrom + v1 * 1.6);
+            rect(sa, side * (k0 - qa), sb2, side * (k0 - qb));
+          }
+        });
+      };
+      word('BUS', -14); word('STOP', -10.5);
     }
   }
   return B.pack();
 }
-function zigzags(B, pts, s, w, bridge, hAt, inTile) {
+// block capitals for road text: [u0, v0, u1, v1] in a unit cell (u across from the reader's left, v away)
+const GLYPHS = {
+  B: [[0, 0, 0.22, 1], [0, 0.86, 0.8, 1], [0, 0.43, 0.8, 0.57], [0, 0, 0.8, 0.14], [0.78, 0.57, 1, 0.86], [0.78, 0.14, 1, 0.43]],
+  U: [[0, 0.14, 0.22, 1], [0.78, 0.14, 1, 1], [0.1, 0, 0.9, 0.14]],
+  S: [[0.1, 0.86, 1, 1], [0, 0.57, 0.22, 0.9], [0.1, 0.43, 0.9, 0.57], [0.78, 0.1, 1, 0.43], [0, 0, 0.9, 0.14]],
+  T: [[0, 0.86, 1, 1], [0.39, 0, 0.61, 0.86]],
+  O: [[0, 0.1, 0.22, 0.9], [0.78, 0.1, 1, 0.9], [0.1, 0.86, 0.9, 1], [0.1, 0, 0.9, 0.14]],
+  P: [[0, 0, 0.22, 1], [0, 0.86, 0.9, 1], [0, 0.43, 0.9, 0.57], [0.78, 0.57, 1, 0.86]],
+};
+// zig-zags (TSRGD 1001.3) along both kerbs either side of a crossing, kept to this road: they stop where it
+// meets a junction instead of piling up across it
+function zigzags(B, pts, s, w, bridge, hAt, inTile, lo = 0, hi = Infinity) {
   for (const dir of [-1, 1]) for (const lat of [w / 2 - 0.3, -(w / 2 - 0.3)]) {
     for (let k = 0; k < 8; k++) {
       const a = s + dir * (3 + k * 2), b = s + dir * (3 + (k + 1) * 2);
+      if (Math.min(a, b) < lo || Math.max(a, b) > hi) continue;
       const pa = posAt(pts, a), pb = posAt(pts, b);
       if (!pa || !pb || !inTile(pa)) continue;
       const oa = lat + (k % 2 ? 0.3 : -0.3) * Math.sign(lat), ob = lat + (k % 2 ? -0.3 : 0.3) * Math.sign(lat);

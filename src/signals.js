@@ -133,6 +133,10 @@ export class SignalRenderer {
         }
       }
     });
+    // one pole per position: approaches mapped twice, or two crossings at one spot, share a head; and no
+    // pole on a carriageway (heads offset from short links inside a junction can land on the road)
+    const onRoad = (x, z) => { const n = net.nearest(x, z, 14, e => (net.flags[e] & 16) && !(net.flags[e] & 4) && !/service|track/.test(net.classes[net.cls[e]])); return n && n.d < net.width[n.e] / 2 + 0.25; };
+    this.heads = this.heads.filter((h, i) => !onRoad(h.x, h.z) && !this.heads.some((o, j) => j < i && o.ped === h.ped && o.ci === h.ci && Math.hypot(o.x - h.x, o.z - h.z) < 1.5));
     this.zebras = [];
     for (const c of net.crossings) if (c[2] === 'zebra') {
       const [e, idx, , x, z, hdg, w] = c;

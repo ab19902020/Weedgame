@@ -48,7 +48,9 @@ export class Landmarks {
       // Local +Z is the open side of the shelter; turn it towards the carriageway.
       return Math.atan2(road.dz,road.dx)+(road.side<0 ? Math.PI : 0);
     });
-    G.net.busStops.forEach(([x,z,,shelter],i)=>{if (shelter) G.canopies.push({ x, z, h: this.stopHeadings[i], l: 3.2, w: 1.4, hh: 2.4, kind: 2, y: null, built: false, bus: true });});
+    // the flag stands at the kerb (roadDetail.js); a shelter sits a metre further back, behind the flag
+    G.net.busStops.forEach(([x,z,,shelter],i)=>{if (!shelter) return; const h=this.stopHeadings[i], sx=x+Math.sin(h)*0.95-Math.cos(h)*2.8, sz=z-Math.cos(h)*0.95-Math.sin(h)*2.8;
+      G.canopies.push({ x: sx, z: sz, h, l: 3.2, w: 1.4, hh: 2.4, kind: 2, y: null, built: false, bus: true });});
     this.stopSigns=new Map();this.nextSigns=0;
     this.group = new THREE.Group(); G.scene.add(this.group);
     this.poles = new THREE.InstancedMesh(mergeGeos([new THREE.CylinderGeometry(0.04, 0.04, 2.7, 6).translate(0, 1.35, 0).toNonIndexed(), box(1.02, .31, .055, 0, 2.55, 0),box(.29,.49,.06,0,1.49,0)]), new THREE.MeshStandardNodeMaterial({ color: 0xd02020, roughness: 0.6 }), G.net.busStops.length);

@@ -3,6 +3,8 @@ import * as THREE from 'three/webgpu';
 import { fog, vec3, float, positionWorld, cameraPosition, length, exp, max, dot, pow, mix, normalize } from 'three/tsl';
 import { fetchContainer } from './data.js';
 import { Network } from './network.js';
+import { repairGaps, alignRoads } from './roadProfile.js';
+import { cleanSignals, motorwayLayout, kerbBusStops, barriers } from './roadDetail.js';
 import { Tiles } from './tiles.js';
 import { U, lightPos, lightCol, NL } from './env.js';
 import { createSky } from './sky.js';
@@ -21,7 +23,14 @@ export async function boot(extra = {}) {
   status('Loading Berkshire…');
   const surfaces = loadSurfaces().catch(e => console.warn('surface textures', e));
   const manifest = await (await fetch('world/manifest.json')).json();
-  const net = new Network(await fetchContainer('world/network.bin'));
+  // roads: rejoin dropped motorway spans, then align bridges, flyovers and their approaches (roadProfile.js)
+  const [netData, rail] = await Promise.all([fetchContainer('world/network.bin'), fetch('world/rail.json').then(r => r.ok ? r.json() : null).catch(() => null)]);
+  const addedBridges = repairGaps(netData);
+  cleanSignals(netData);
+  const net = new Network(netData);
+  net.addedBridges = addedBridges;
+  alignRoads(net, rail);
+  motorwayLayout(net); kerbBusStops(net); barriers(net);
   // ---------------------------------------------------------------- renderer
   const forceWebGL = Q.get('backend') === 'webgl' || !navigator.gpu;
   const quality = Q.get('quality') || (matchMedia('(pointer:coarse)').matches ? 'medium' : 'high');
