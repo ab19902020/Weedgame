@@ -13,6 +13,7 @@ import { bakeFaceAtlas, bakeHairTexture, FACE_ATLAS as FA } from './faceBake.js'
 import { U, cloudShadow } from './env.js';
 import { lightPool } from './materials.js';
 import { worldToView } from './surfaces.js';
+import { RiggedPeople } from './riggedPeople.js';
 
 const MAX0 = 96, MAX1 = 260;          // near (detailed) and far instance capacity
 const LOD_DIST = 30;                  // metres
@@ -447,6 +448,7 @@ function packLook(L, a) {
 export class People {
   constructor(scene, shadows) {
     this.list = [];
+    this.rigs = new RiggedPeople(scene);
     const mat = crowdMaterial();
     this.sets = [MAX0, MAX1].map((max, lod) => {
       const geo = bodyGeometry(lod === 0);
@@ -471,10 +473,11 @@ export class People {
       bag: r() < 0.25, umbrella: 0, umbIdx: Math.floor(r() * 5), h: female ? 0.93 + r() * 0.08 : 0.98 + r() * 0.08,
     };
   }
-  draw(actors, camPos, maxDist = 160) {
+  draw(actors, camPos, maxDist = 160, dt = 0) {
     const cnt = [0, 0];
+    const detailed = this.rigs.update(actors, camPos, dt);
     for (const a of actors) {
-      if (!a.visible) continue;
+      if (!a.visible || detailed.has(a.id)) continue;
       const dx = a.x - camPos.x, dz = a.z - camPos.z, d2 = dx * dx + dz * dz;
       if (d2 > maxDist * maxDist) continue;
       const lod = d2 < LOD_DIST * LOD_DIST ? 0 : 1, S = this.sets[lod];
@@ -485,7 +488,7 @@ export class People {
       const S = this.sets[k]; S.geo.instanceCount = cnt[k]; S.mesh.visible = cnt[k] > 0;
       if (cnt[k]) for (const at of [S.iPos, S.iAnim, S.iCol, S.iSty]) at.needsUpdate = true;
     }
-    return cnt[0] + cnt[1];
+    return cnt[0] + cnt[1] + detailed.size;
   }
   write(S, i, a) {
     const L = a.look || {};

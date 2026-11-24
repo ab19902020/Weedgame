@@ -417,8 +417,8 @@ export class Peds {
   }
   // witnesses near (x,z)
   near(x, z, r) { return this.list.filter(p => Math.hypot(p.x - x, p.z - z) < r && !(p.fallT > 0)); }
-  draw(people, extra, cam) {
+  draw(people, extra, cam, dt) {
     const arr = this.list.concat(extra);
-    return people.draw(arr, cam, this.G.budget?.peopleDist || 170);
+    return people.draw(arr, cam, this.G.budget?.peopleDist || 170, dt);
   }
 }
