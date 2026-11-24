@@ -32,6 +32,18 @@ export class Audio {
       this.voices.push({ o, f, g, p, tg, tf, v: null });
     }
     this.stepT = 0; this.beepT = 0; this.sirenT = 0;
+    // the player's car: engine (two detuned saws, firing frequency from rpm, intake opening with throttle),
+    // tyre squeal on slides and a metal scrape against walls
+    const eng = { g: A.createGain(), f: A.createBiquadFilter(), o1: A.createOscillator(), o2: A.createOscillator(), sub: A.createOscillator() };
+    eng.o1.type = 'sawtooth'; eng.o2.type = 'sawtooth'; eng.sub.type = 'sine'; eng.f.type = 'lowpass'; eng.f.Q.value = 2.5; eng.g.gain.value = 0;
+    for (const o of [eng.o1, eng.o2, eng.sub]) { o.connect(eng.f); o.start(); }
+    eng.f.connect(eng.g); eng.g.connect(this.master);
+    this.eng = eng;
+    const sq = { o: A.createOscillator(), lfo: A.createOscillator(), lg: A.createGain(), g: A.createGain() };
+    sq.o.type = 'triangle'; sq.o.frequency.value = 1150; sq.lfo.frequency.value = 7; sq.lg.gain.value = 60;
+    sq.lfo.connect(sq.lg); sq.lg.connect(sq.o.frequency); sq.o.connect(sq.g); sq.g.gain.value = 0; sq.g.connect(this.master); sq.o.start(); sq.lfo.start();
+    this.squeal = sq;
+    this.scrape = bed('bandpass', 650, 1.6);
   }
   setPos(node, x, y, z) { const p = node; if (p.positionX) { p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z; } else p.setPosition(x, y, z); }
   oneShot(fn, x, z, gain = 1) {
@@ -88,7 +100,7 @@ export class Audio {
     this.murmur.g.gain.setTargetAtTime(crowd * 0.05 * (inCar ? 0.2 : 1), t, 0.4);
     this.murmur.f.frequency.setTargetAtTime(500 + 400 * Math.abs(Math.sin(t * 2.3)), t, 0.05);
     // nearest vehicles get engine voices
-    const near = G.traffic.list.filter(v => !v.parked || v.player).map(v => [v, (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2]).filter(a => a[1] < 90 * 90).sort((a, b) => a[1] - b[1]).slice(0, this.voices.length);
+    const near = G.traffic.list.filter(v => !v.parked && !v.player).map(v => [v, (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2]).filter(a => a[1] < 90 * 90).sort((a, b) => a[1] - b[1]).slice(0, this.voices.length);
     this.voices.forEach((vo, i) => {
       const it = near[i];
       if (!it) { vo.g.gain.setTargetAtTime(0, t, 0.2); vo.tg.gain.setTargetAtTime(0, t, 0.2); return; }
@@ -100,6 +112,21 @@ export class Audio {
       vo.tg.gain.setTargetAtTime(Math.min(0.12, sp / 120) * (G.world.s.wet > 0.3 ? 2 : 1), t, 0.1); // tyre hiss, louder when wet
       vo.tf.frequency.setTargetAtTime(G.world.s.wet > 0.3 ? 2600 : 900, t, 0.2);
     });
+    // the player's own car
+    const pv = inCar ? G.traffic.byId.get(me.vehicle) : null;
+    if (pv && pv.ph) {
+      const ph = pv.ph, rpm = Math.max(700, pv.rpm || 900), thr = ph.thr || 0;
+      const cyl = pv.model === 'sports' || pv.model === 'coupe' ? 8 : pv.model.startsWith('bus') || pv.model === 'van' ? 6 : 4;
+      const f = rpm / 60 * cyl / 2;
+      this.eng.o1.frequency.setTargetAtTime(f, t, 0.03); this.eng.o2.frequency.setTargetAtTime(f * 1.006, t, 0.03); this.eng.sub.frequency.setTargetAtTime(f / 2, t, 0.03);
+      this.eng.f.frequency.setTargetAtTime(280 + thr * 2200 + rpm * 0.12, t, 0.05);
+      this.eng.g.gain.setTargetAtTime(0.045 + thr * 0.06 + Math.min(0.03, rpm / 200000), t, 0.05);
+      this.squeal.g.gain.setTargetAtTime(Math.min(0.09, (ph.slip || 0) * 0.1) * (G.world.s.wet > 0.3 ? 0.3 : 1), t, 0.06);
+      this.squeal.o.frequency.setTargetAtTime(950 + Math.min(500, Math.abs(pv.sp) * 12), t, 0.1);
+      this.scrape.g.gain.setTargetAtTime((ph.scrape || 0) * 0.3, t, 0.05);
+    } else {
+      this.eng.g.gain.setTargetAtTime(0, t, 0.2); this.squeal.g.gain.setTargetAtTime(0, t, 0.1); this.scrape.g.gain.setTargetAtTime(0, t, 0.1);
+    }
     // footsteps
     if (!inCar && (G.brothers.speedNow || 0) > 0.4) {
       this.stepT -= dt * (G.brothers.speedNow > 3 ? 3.2 : 1.9);

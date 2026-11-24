@@ -64,7 +64,14 @@ export class Traffic {
     const t = this.net.at(v.h, v.s, this.tmp);
     const dx = t[3], dz = t[4];
     const off = this.laneOffset(v.h, v.lane) + v.lat;
-    v.x = t[0] + dz * off; v.z = t[2] - dx * off;
+    const tx = t[0] + dz * off, tz = t[2] - dx * off;
+    // a car knocked off its line (carPhysics.js) eases back into lane instead of snapping
+    if (v._offLane && v.x != null) {
+      const d = Math.hypot(tx - v.x, tz - v.z);
+      if (d < 0.25 || d > 40) v._offLane = false;
+      else { const k = Math.min(1, 0.6 / d) * 0.25; v.x += (tx - v.x) * k; v.z += (tz - v.z) * k; }
+    }
+    if (!v._offLane) { v.x = tx; v.z = tz; }
     const ty = t[1] + 0.05;
     v.y = v.y && Math.abs(v.y - ty) < 3 ? v.y + (ty - v.y) * 0.35 : ty;
     const hd = Math.atan2(dz, dx);
@@ -265,6 +272,10 @@ export class Traffic {
       v.rtWait = v.v < 0.5 ? (v.rtWait || 0) + dt : (v.rtWait || 0);
       if (this.oncoming(v, net.endNode(v.h), occ) && v.rtWait < 20) stopAt = Math.min(stopAt, rem - 2);
     } else if (rem > 30) v.rtWait = 0;
+    // indicators: signal the coming turn from ~40 m out (UK left = nearside), and when pulling out to pass
+    const nhI = v.route[v.ri + 1];
+    if (nhI != null && (v._ih !== v.h || v._inh !== nhI)) { v._ih = v.h; v._inh = nhI; v._turn = (net.flags[e] & F_ROUNDABOUT) ? null : this.turnOf(v.h, nhI); }
+    v.ind = v.passing && Math.abs(v.lat - v.latT) > 0.3 ? 2 : nhI != null && rem < 40 && v._turn === 'left' ? 1 : nhI != null && rem < 40 && v._turn === 'right' ? 2 : 0;
     // demand-actuated signals: approaching vehicles register on the detector
     if (sa && sa[2] - v.s < 60 && sa[2] - v.s > -2 && this.sig.detect) this.sig.detect(sa[0], sa[1]);
     // don't block the junction: next half-edge jammed at its entry

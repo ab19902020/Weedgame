@@ -46,7 +46,7 @@ const SPORT_PAINTS = [0xb5121b, 0xe8e8e8, 0x111111, 0x1446a0, 0xf2b705, 0xe25a12
 export function paintFor(model, r) { return (model === 'sports' || model === 'coupe' || model === 'hothatch') ? SPORT_PAINTS[Math.floor(r * SPORT_PAINTS.length)] : PAINTS[Math.floor(r * PAINTS.length)]; }
 
 function buildModel(def, key, lod = 0) {
-  if (CAR_SPECS[key]) return mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1, lod).parts);
+  if (CAR_SPECS[key]) { const g = mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1, lod).parts); if (g.attributes.uv) g.deleteAttribute('uv'); return g; }
   const { L, W, H, prof } = def;
   const isBus = prof === 'decker' || prof === 'single';
   const belt = isBus ? 1.25 : prof === 'van' ? 1.2 : 0.98;
@@ -109,6 +109,7 @@ function buildModel(def, key, lod = 0) {
   }
   if (isBus) add(new THREE.BoxGeometry(0.06, 0.28, 1.6).translate(l + 0.01, H - 0.45, 0), [0.05, 0.05, 0.05], 0, 4); // destination blind
   const g = mergeGeos(parts);
+  if (g.attributes.uv) g.deleteAttribute('uv');   // WebGPU: 8 vertex buffers per pipeline, instancing uses four
   return g;
 }
 
@@ -131,6 +132,8 @@ export class VehicleRenderer {
       g.setAttribute('iState', st);
       const pa = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 3), 3); pa.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute('iPaint', pa);
+      const dg = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 4), 4); dg.setUsage(THREE.DynamicDrawUsage);
+      g.setAttribute('iDmg', dg);
       const m = new THREE.InstancedMesh(g, mat, def.max);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0; m.frustumCulled = false; m.castShadow = shadow; m.receiveShadow = false;
@@ -141,10 +144,37 @@ export class VehicleRenderer {
       this.far[name] = CAR_SPECS[name] ? make(def, buildModel(def, name, 1), false) : this.meshes[name];
     }
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._v = new THREE.Vector3(); this._s = new THREE.Vector3(1, 1, 1); this._c = new THREE.Color(); this._w = new THREE.Matrix4();
+    this._g = new THREE.Matrix4(); this._sm = new THREE.Matrix4(); this._steer = new THREE.Matrix4();
+    // soft contact shadow under every nearby car (one draw call)
+    this.shadows = new THREE.InstancedMesh(contactGeometry(), contactMaterial(), 400);
+    this.shadows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.shadows.frustumCulled = false; this.shadows.count = 0; this.shadows.renderOrder = 1;
+    scene.add(this.shadows);
+    this.t0 = performance.now();
+  }
+  // sprung body: pitch under braking and acceleration, roll in corners, with a little overshoot
+  suspension(v, dt) {
+    const S = v._sus || (v._sus = { p: 0, r: 0, vp: 0, vr: 0, s: v.v ?? Math.abs(v.sp || 0), h: v.heading, steer: 0 });
+    const sp = v.v ?? Math.abs(v.sp || 0);
+    let along, lat;
+    if (v.ph && v.player) { along = v.ph.ax; lat = v.ph.ay; }
+    else {
+      let dh = v.heading - S.h; while (dh > Math.PI) dh -= 2 * Math.PI; while (dh < -Math.PI) dh += 2 * Math.PI;
+      along = Math.max(-11, Math.min(6, (sp - S.s) / dt)); lat = Math.max(-9, Math.min(9, sp * dh / dt));
+      // AI front wheels steer with the path's curvature
+      if (!v.player && sp > 0.5) S.steer += (Math.max(-0.5, Math.min(0.5, Math.atan(dh / dt * MODELS[v.model].wb / sp))) - S.steer) * Math.min(1, dt * 6);
+      if (!v.player) v.steerVis = S.steer;
+    }
+    S.s = sp; S.h = v.heading;
+    const big = MODELS[v.model].mass > 5000 ? 0.6 : 1;
+    const tp = Math.max(-0.05, Math.min(0.05, along * 0.0042 * big)), tr = Math.max(-0.065, Math.min(0.065, -lat * 0.0058 * big));
+    S.vp += ((tp - S.p) * 70 - S.vp * 9) * dt; S.p += S.vp * dt;
+    S.vr += ((tr - S.r) * 55 - S.vr * 8) * dt; S.r += S.vr * dt;
   }
   draw(vehicles, cam, maxDist = 700) {
     const counts = {}, countsFar = {}; for (const k in MODELS) { counts[k] = 0; countsFar[k] = 0; }
-    let wn = 0;
+    let wn = 0, sn = 0;
+    const now = performance.now(), dt = Math.min(0.1, Math.max(0.001, (now - this.t0) / 1000)); this.t0 = now;
     const FAR2 = FAR_LOD * FAR_LOD;
     const md2 = maxDist * maxDist;
     for (const v of vehicles) {
@@ -154,35 +184,65 @@ export class VehicleRenderer {
       const mesh = isFar ? farM : this.meshes[v.model], C = isFar ? countsFar : counts, i = C[v.model];
       if (i >= def.max) continue;
       C[v.model]++;
+      if (d2 < 160 * 160) this.suspension(v, dt);
+      const S = v._sus;
+      // ground pose (wheels), then the sprung body on top of it
       this._e.set(v.roll || 0, -v.heading, v.pitch || 0, 'YXZ');
       this._q.setFromEuler(this._e);
-      this._m.compose(this._v.set(v.x, v.y, v.z), this._q, this._s.set(1, 1, 1));
+      this._g.compose(this._v.set(v.x, v.y, v.z), this._q, this._s.set(1, 1, 1));
+      if (S && d2 < 160 * 160) {
+        this._e.set((v.roll || 0) + S.r, -v.heading, (v.pitch || 0) + S.p, 'YXZ'); this._q.setFromEuler(this._e);
+        this._m.compose(this._v.set(v.x, v.y - Math.abs(S.r) * 0.25 - Math.abs(S.p) * 0.4, v.z), this._q, this._s.set(1, 1, 1));
+      } else this._m.copy(this._g);
       mesh.setMatrixAt(i, this._m);
       this._c.setHex(v.paint).toArray(mesh.geometry.attributes.iPaint.array, i * 3);
+      const dmg = v.dmg, dga = mesh.geometry.attributes.iDmg.array;
+      if (dmg) { dga[i * 4] = dmg[0]; dga[i * 4 + 1] = dmg[1]; dga[i * 4 + 2] = dmg[2]; dga[i * 4 + 3] = dmg[3]; } else dga.fill(0, i * 4, i * 4 + 4);
       const st = mesh.geometry.attributes.iState;
-      st.array[i * 4] = v.brake ? 1 : 0; st.array[i * 4 + 1] = v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
+      const flags = (v.brake ? 1 : 0) | (v.reversing ? 2 : 0) | (v.ind === 1 ? 4 : 0) | (v.ind === 2 ? 8 : 0) | (v.hazard ? 16 : 0);
+      st.array[i * 4] = flags; st.array[i * 4 + 1] = v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
+      if (d2 < 90 * 90 && sn < 400) {
+        this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g);
+        this._sm.elements[13] += 0.035;
+        this.shadows.setMatrixAt(sn++, this._sm);
+      }
       // wheels
       if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
-        const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.12 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
+        const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
         const wsty = sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
         for (const [wx, wz, steer] of [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]]) {
           this.iWheel.array.set(wsty, wn * 4);
           this._w.makeRotationZ(-(v.spin || 0));
-          if (steer && v.steer) this._w.premultiply(new THREE.Matrix4().makeRotationY(-v.steer));
+          const sa = v.player ? v.steer : v.steerVis;
+          if (steer && sa) this._w.premultiply(this._steer.makeRotationY(-sa));
           this._w.scale(this._v.set(r, r, 0.22)).setPosition(wx, r, wz);
-          this.wheels.setMatrixAt(wn++, this._w.premultiply(this._m));
+          this.wheels.setMatrixAt(wn++, this._w.premultiply(this._g));
         }
       }
     }
     const commit = (m, n) => {
       m.count = n; m.visible = n > 0;   // empty instanced meshes cost a draw call
-      if (n) { m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true; }
+      if (n) { m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true; m.geometry.attributes.iDmg.needsUpdate = true; }
     };
     for (const k in MODELS) {
       commit(this.meshes[k], counts[k]);
       if (this.far[k] !== this.meshes[k]) commit(this.far[k], countsFar[k]);
     }
     this.wheels.count = wn; this.wheels.visible = wn > 0; this.wheels.instanceMatrix.needsUpdate = true; this.iWheel.needsUpdate = true;
+    this.shadows.count = sn; this.shadows.visible = sn > 0; this.shadows.instanceMatrix.needsUpdate = true;
   }
+}
+// unit quad on the ground (x along the car, z across); opacity: a soft rounded rectangle, darkest under the tyres
+function contactGeometry() { const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2); return g; }
+function contactMaterial() {
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false });
+  m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -2;
+  const p = positionGeometry, q = vec2(abs(p.x).mul(2), abs(p.z).mul(2));
+  const d = q.x.pow(6).add(q.y.pow(6)).pow(1 / 6);
+  const body = smoothstep(1.0, 0.55, d);
+  const tyres = smoothstep(0.16, 0.0, length(vec2(abs(p.x).sub(0.31).mul(2.2), abs(p.z).sub(0.4).mul(3.0))));
+  m.colorNode = vec3(0, 0, 0);
+  m.opacityNode = body.mul(0.55).add(tyres.mul(0.35)).min(0.8).mul(float(1).sub(U.night.mul(0.35)));
+  return m;
 }
 export const PAINTS = [0xe8e8e8, 0x1a1a1a, 0x9a9da0, 0x3a3d42, 0x6e7378, 0x8a1c1c, 0x1d3d7a, 0x234a33, 0xb8b3a6, 0x3d2b23, 0xc9c9c4, 0x0f2240, 0x5b6770, 0xd4d0c8, 0x7a1f2e, 0x2f2f33];

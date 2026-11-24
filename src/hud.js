@@ -129,7 +129,7 @@ export class Hud {
     const brg = ((Math.atan2(Math.cos(me.heading), -Math.sin(me.heading)) * 180 / Math.PI) + 360) % 360;
     const hdg = DIRS[Math.round(brg / 45) % 8];
     const name = G.roadName(me.x, me.z);
-    this.el('road').textContent = `${name || G.districtName(me.x, me.z)} · ${hdg}${me.vehicle ? ` · ${Math.round((G.brothers.speedNow || 0) * 2.237)} mph` : ''}`;
+    this.el('road').textContent = `${name || G.districtName(me.x, me.z)} · ${hdg}${me.vehicle ? ` · ${Math.round((G.brothers.speedNow || 0) * 2.237)} mph · ${(() => { const v = G.traffic.byId.get(me.vehicle); return !v || v.gear == null ? '' : v.gear < 0 ? 'R' : v.sp < 0.3 && !(v.ph && v.ph.thr) ? 'N' : 'D' + v.gear; })()}` : ''}`;
   }
   // ------------------------------------------------------------------ full map
   setupMap() {
@@ -212,6 +212,8 @@ export class Hud {
       btn('Perf overlay', () => { this.perfOn = !this.perfOn; this.el('perf').hidden = !this.perfOn; }), btn('Save perf log', () => G.perf.export()),
       btn(G.perf.fly.active ? 'Stop flythrough' : 'Perf flythrough', () => G.perf.fly.active ? G.perf.fly.finish(false) : G.perf.fly.start(), 'perf-flythrough'),
       btn(G.backend === 'WebGPU' ? 'Use WebGL2' : 'Retry WebGPU', () => G.backend === 'WebGPU' ? G.useWebGL() : G.retryWebGPU())]);
+    row('Vehicle', [btn('Repair', () => { const v = G.traffic.byId.get(G.brothers.me.vehicle) || G.brothers.nearestVehicle(8); if (v) { v.dmg = [0, 0, 0, 0]; G.save.markVehicle(v); this.toast('Repaired'); } else this.toast('No vehicle nearby'); }, 'repair'),
+      btn('Sports car', () => { const me = G.brothers.me, h = me.heading || 0; const x = me.x + Math.cos(h) * 6, z = me.z + Math.sin(h) * 6; G.traffic.add({ id: 'dev-' + Date.now(), kind: 'parked', model: 'sports', paint: 0xb5121b, x, y: G.tiles.ground(x, z, me.y + 1) ?? me.y, z, heading: h, parked: true, free: true }); this.toast('Sports car delivered'); }, 'spawn-sports')]);
     row('Sim', [1, 2, 4, 8].map(k => btn('×' + k + (G.simSteps === k ? ' ✓' : ''), () => G.simSteps = k, 'sim-' + k)));
     row('Go to', G.manifest.districts.map(di => btn(di.name, () => G.teleport(di.x, di.z), 'goto-' + slug(di.name))));
     row('Test spots', TESTSPOTS.map(([n, x, z, h]) => btn(n, () => G.teleport(x, z, h), 'spot-' + slug(n))));

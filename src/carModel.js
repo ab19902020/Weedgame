@@ -13,9 +13,10 @@
 //   17 exhaust, 18 reversing lens
 import * as THREE from 'three/webgpu';
 import {
-  float, vec2, vec3, vec4, int, mix, step, smoothstep, positionGeometry, positionWorld, cameraPosition, length, atan, fract, floor, abs, sin, cos,
-  attribute, uniformArray, normalize, max, min, select, dot, pow,
+  float, vec2, vec3, vec4, int, mix, step, smoothstep, positionGeometry, positionWorld, positionLocal, cameraPosition, length, atan, fract, floor, abs, sin, cos,
+  attribute, uniformArray, normalize, max, min, select, dot, pow, normalGeometry, normalWorld, Fn,
 } from 'three/tsl';
+import { worldToView } from './surfaces.js';
 import { U } from './env.js';
 import { lightPool } from './materials.js';
 
@@ -86,6 +87,31 @@ class Parts {
   }
 }
 
+// lamp, glass and trim layout per model, shared by the geometry (plates, spoilers) and the shader
+const layoutCache = new Map();
+export function carLayout(def, key) {
+  if (layoutCache.has(key)) return layoutCache.get(key);
+  const S = CAR_SPECS[key] || CAR_SPECS.hatch, l = def.L / 2, hw = def.W / 2;
+  const topF = monotone(S.top.map(([u, y]) => [u * l, y]));
+  let Htop = 0; for (let x = -l; x <= l; x += 0.05) Htop = Math.max(Htop, topF(x));
+  const thin = !!(S.lightBar || S.wing), tall = !!(S.rails || S.panelVan);
+  const hy = Math.max(S.hs + 0.3, topF(l - S.endF * 0.6) - (thin ? 0.05 : 0.075));
+  const hlH = thin ? 0.032 : key === 'van' ? 0.075 : key === 'suv' ? 0.055 : 0.048;
+  const deck = topF(-l + 0.14);
+  const ty = Math.min(S.belt[1] - 0.05, deck - (thin ? 0.06 : 0.09));
+  const tlH = thin ? 0.03 : tall ? (key === 'van' ? 0.16 : 0.1) : 0.06;
+  const boot = key === 'saloon' || key === 'coupe' ? S.top.find(([u, y]) => u > -0.8 && u < -0.5)?.[0] * l : -99;
+  const grY1 = hy - 0.012, grY0 = Math.max(S.hs + 0.22, hy - (key === 'suv' || key === 'van' ? 0.2 : 0.13));
+  const Lo = {
+    l, hw, hy, hlH, hlZ0: hw - (thin ? 0.4 : 0.42), ty, tlH, tlZ0: S.lightBar ? 0 : hw - (tall ? 0.2 : 0.36), Htop, boot,
+    grY0, grY1, grW: hw - 0.47, gstyle: S.wing ? 2 : key === 'suv' || key === 'hothatch' || key === 'coupe' ? 1 : 0,
+    pfy: S.wing ? S.hs + 0.24 : Math.max(S.hs + 0.17, grY0 - 0.08), pry: Math.max(S.hs + 0.22, Math.min(ty - tlH - 0.12, 0.66)),
+    roofBlack: S.wing || key === 'hothatch' ? 1 : 0,
+  };
+  layoutCache.set(key, Lo);
+  return Lo;
+}
+
 export function buildCar(def, key, modelIndex, lod = 0) {
   const S = CAR_SPECS[key] || CAR_SPECS.hatch;
   const { L, W, H, wb, wr } = def, l = L / 2, hw0 = W / 2;
@@ -97,7 +123,7 @@ export function buildCar(def, key, modelIndex, lod = 0) {
   const flareAt = x => wheels.reduce((a, c) => a + S.flare * Math.exp(-(((x - c) / (wr * 1.25)) ** 2)), 0);
   const widthAt = x => {
     const r = x > 0 ? S.endF : S.endR, u = clamp01((Math.abs(x) - (l - r)) / r);
-    return hw0 * Math.max(0.58, Math.pow(1 - Math.pow(u, 2.4), 1 / 2.4));
+    return hw0 * Math.max(0.64, Math.pow(1 - Math.pow(u, 3.0), 1 / 3.0));
   };
   // stations: cosine spacing + profile breaks + dense around arches
   const xs = new Set();
@@ -109,65 +135,68 @@ export function buildCar(def, key, modelIndex, lod = 0) {
   const X = [...xs].filter(x => x >= -l && x <= l).sort((a, b) => a - b);
   const K = 13;
   const ring = x => {
-    const hw = widthAt(x), y0 = bottomAt(x), yt = Math.max(topF(x), y0 + 0.2), yb = Math.min(beltAt(x), yt - 0.025);
-    const gh = clamp01((yt - yb) / 0.22), tb = S.tumble * gh, f = flareAt(x);
+    const hw = widthAt(x), y0 = bottomAt(x), yt = Math.max(topF(x), y0 + 0.25), yb = Math.min(beltAt(x), yt - 0.02);
+    const gh = clamp01((yt - yb - 0.02) / 0.22), f = flareAt(x);
     const end = clamp01((Math.abs(x) - (l - 0.1)) / 0.1);
+    // glasshouse: the side glass leans in (tumblehome), the roof sits ~0.17 m inside the shoulder each side
+    const tumble = (0.1 + 0.055 * S.tumble) * gh, roofW = hw - 0.035 - tumble;
+    const sh = Math.min(yb - 0.05, lerp(y0, yb, 0.82));
     const half = [
-      [y0, hw * 0.86], [y0 + 0.05, hw * 0.97 + f * 0.6], [lerp(y0, yb, 0.3), hw + f], [lerp(y0, yb, 0.62), hw + f * 0.7],
-      [yb - 0.085, hw * 0.996 + f * 0.2], [yb - 0.035, hw * 1.004], [yb, hw * 0.968],
-      [yb + 0.015 * gh, hw * (0.955 - 0.02 * gh)], [lerp(yb, yt, 0.55), hw * (0.95 - 0.1 * tb)], [yt - 0.03 * gh - 0.012, hw * (0.94 - 0.2 * tb)],
-      [yt - 0.004, hw * (0.84 - 0.18 * tb)], [yt + 0.006, hw * (0.5 - 0.1 * gh)], [yt + 0.012 * (1 - end), 0],
+      [y0, hw - 0.13],                                   // 0 underbody edge
+      [y0 + 0.05, hw - 0.03],                            // 1 sill turn-under
+      [y0 + 0.15, hw - 0.006 + f * 0.5],                 // 2 rocker
+      [lerp(y0, yb, 0.42), hw + f],                      // 3 lower door, fullest point
+      [lerp(y0 + 0.15, sh, 0.72), hw + f * 0.55 - 0.004],  // 4 door
+      [sh, hw + f * 0.2],                                // 5 shoulder crease
+      [yb - 0.014, hw - 0.014],                          // 6 shoulder roll-over
+      [yb, hw - 0.045],                                  // 7 belt (window seal) / wing top
+      [lerp(yb, yt - 0.045, 0.5), lerp(hw - 0.07, hw - 0.045 - tumble * 0.55, gh)],   // 8 side glass
+      [yt - lerp(0.035, 0.045, gh), lerp(hw - 0.1, roofW + 0.012, gh)],             // 9 drip rail / bonnet edge
+      [yt - lerp(0.016, 0.014, gh), lerp(hw * 0.78, roofW - 0.06, gh)],            // 10 roof / bonnet turn
+      [yt - 0.004, lerp(hw * 0.42, roofW * 0.5, gh)],                              // 11 crown
+      [yt + 0.002 * (1 - end), 0],                                                 // 12 centre
     ];
     // wheel-arch recesses: lower side points inside the arch circle are pulled in to the inner liner
     const cw = wheels.reduce((a, c) => (Math.abs(x - c) < Math.abs(x - a) ? c : a), wheels[0]);
     for (let k = 0; k <= 4; k++) {
-      const d = Math.hypot(x - cw, half[k][0] - wr), m = clamp01((wr + 0.1 - d) / 0.035);
+      const d = Math.hypot(x - cw, half[k][0] - wr), m = clamp01((wr + 0.065 - d) / 0.03);
       if (m > 0) half[k] = [half[k][0], lerp(half[k][1], hw - 0.3, m)];
     }
     const r = [];
-    for (const [y, w] of half) r.push([x, y, w * (1 - end * 0.04)]);
-    for (let k = K - 2; k >= 0; k--) r.push([x, half[k][0], -half[k][1] * (1 - end * 0.04)]);
+    for (const [y, w] of half) r.push([x, y, w * (1 - end * 0.035)]);
+    for (let k = K - 2; k >= 0; k--) r.push([x, half[k][0], -half[k][1] * (1 - end * 0.035)]);
     return r;
   };
   const R = 2 * K - 1;
   const P = [], I = [], tri = [];
   for (const x of X) for (const v of ring(x)) P.push(...v);
+  const triK = [], triCapK = [], mir = k => (k >= K ? 2 * (K - 1) - k : k);
   for (let s = 0; s < X.length - 1; s++) for (let k = 0; k < R; k++) {
     const k1 = (k + 1) % R, a = s * R + k, b = (s + 1) * R + k, c = (s + 1) * R + k1, d = s * R + k1;
     I.push(a, b, c, a, c, d); tri.push([k, s], [k, s]);
+    triK.push([mir(k), mir(k), mir(k1)], [mir(k), mir(k1), mir(k1)]); triCapK.push(null, null);
   }
   for (const [s, flip] of [[0, true], [X.length - 1, false]]) {
     let cy = 0; for (let k = 0; k < R; k++) cy += P[(s * R + k) * 3 + 1] / R;
     const c = P.length / 3; P.push(X[s] + (flip ? -0.01 : 0.01), cy, 0);
-    for (let k = 0; k < R; k++) { const k1 = (k + 1) % R; if (flip) I.push(c, s * R + k, s * R + k1); else I.push(c, s * R + k1, s * R + k); tri.push([k, -1 - s]); }
+    for (let k = 0; k < R; k++) { const k1 = (k + 1) % R; if (flip) I.push(c, s * R + k, s * R + k1); else I.push(c, s * R + k1, s * R + k); tri.push([k, -1 - s]); triK.push(null); triCapK.push(flip ? [12, k, k1] : [12, k1, k]); }
   }
   let body = new THREE.BufferGeometry();
   body.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); body.setIndex(I);
   body.computeVertexNormals();
   body = body.toNonIndexed();
-  // classify body triangles: glass panels, black sills / lower bumpers / cladding, paint
+  // the whole loft is one part (20); the shader draws glass, pillars, lights, grilles, trim and shut lines
+  // per pixel from the model's layout. color carries (section index 0..12 round the ring, end cap, 0)
   const pos = body.attributes.position, nT = pos.count / 3;
   const col = new Float32Array(pos.count * 3), vd = new Float32Array(pos.count * 4);
-  const va = new THREE.Vector3(), vb = new THREE.Vector3(), vc = new THREE.Vector3();
   const mirror = k => (k >= K ? 2 * (K - 1) - k : k);
-  const bPillar = S.doors[1];
   for (let t = 0; t < nT; t++) {
     const [k, s] = tri[t];
-    va.fromBufferAttribute(pos, t * 3); vb.fromBufferAttribute(pos, t * 3 + 1); vc.fromBufferAttribute(pos, t * 3 + 2);
-    const cx = (va.x + vb.x + vc.x) / 3, cy = (va.y + vb.y + vc.y) / 3;
-    const n = vb.clone().sub(va).cross(vc.clone().sub(va)).normalize();
-    const h = mirror(k);
-    let code = 0, paint = 1, rgb = [1, 1, 1];
-    if (s >= 0) {
-      const belt = beltAt(cx);
-      const sideGlass = (h === 7 || h === 8) && cx < S.gl[0] && cx > S.gl[1] && cy > belt - 0.01 && !(bPillar != null && Math.abs(cx - bPillar) < 0.045);
-      const screen = h >= 9 && h <= 11 && Math.abs(n.x) > 0.38 && cy > belt + 0.02 && cy < topF(cx) + 0.02;
-      if ((sideGlass && !(S.panelVan && cx < S.gl[1] + 0.02)) || screen) { code = 14; paint = 0; rgb = [0.02, 0.025, 0.03]; }
-      else if (h <= 1 && (s >= 0)) { code = 16; paint = 0; rgb = [0.025, 0.025, 0.027]; }                                         // sills
-      else if (S.cladding && h <= 3 && cy < S.hs + 0.22) { code = 16; paint = 0; rgb = [0.03, 0.03, 0.032]; }                     // SUV cladding
-    } else if (cy > beltAt(cx) + 0.03 && Math.abs(n.y) < 0.75 && cy < topF(cx) && !S.panelVan) { code = 14; paint = 0; rgb = [0.02, 0.025, 0.03]; }   // tailgate glass
-    else if (cy < S.hs + 0.1) { code = 16; paint = 0; rgb = [0.025, 0.025, 0.027]; }
-    for (let j = 0; j < 3; j++) { const v = t * 3 + j; col.set(rgb, v * 3); vd.set([paint, code, 0, modelIndex], v * 4); }
+    for (let j = 0; j < 3; j++) {
+      const v = t * 3 + j;
+      col.set([s >= 0 ? triK[t][j] : mirror(triCapK[t][j]), s >= 0 ? 0 : 1, 0], v * 3);
+      vd.set([1, 20, 0, modelIndex], v * 4);
+    }
   }
   body.setAttribute('color', new THREE.BufferAttribute(col, 3));
   body.setAttribute('vdat', new THREE.BufferAttribute(vd, 4));
@@ -175,29 +204,17 @@ export function buildCar(def, key, modelIndex, lod = 0) {
   // ---------------- details
   const noseY = topF(l - 0.02), tailY = topF(-l + 0.02);
   const zH = hw0 - 0.26 - (S.endF > 0.5 ? 0.03 : 0);
-  const xNose = x => l - (1 - Math.pow(Math.max(0, 1 - Math.pow(clamp01(Math.abs(x) / (hw0 * 1.0)), 2.4)), 1 / 2.4)) * S.endF;   // x of the nose surface at lateral offset
-  const xTail = z => -l + (1 - Math.pow(Math.max(0, 1 - Math.pow(clamp01(Math.abs(z) / hw0), 2.4)), 1 / 2.4)) * S.endR;
-  const hy = Math.max(noseY - 0.1, S.hs + 0.25);
+  const xNose = x => l - (1 - Math.pow(Math.max(0, 1 - Math.pow(clamp01(Math.abs(x) / (hw0 * 1.0)), 3.0)), 1 / 3.0)) * S.endF;   // x of the nose surface at lateral offset
+  const xTail = z => -l + (1 - Math.pow(Math.max(0, 1 - Math.pow(clamp01(Math.abs(z) / hw0), 3.0)), 1 / 3.0)) * S.endR;
+  const LO = carLayout(def, key), hy = LO.hy;
   if (lod) {
-    // distant cars: body plus light clusters only (they still light up at night and brake)
-    for (const sd of [-1, 1]) {
-      const hl = new THREE.BoxGeometry(0.1, 0.1, 0.36); hl.translate(xNose(zH) - 0.03, hy, sd * zH); parts.add(hl, 1, 0, [0.85, 0.85, 0.82]);
-      const tl = new THREE.BoxGeometry(0.1, 0.1, 0.32); tl.translate(xTail(hw0 - 0.2) + 0.03, Math.min(tailY - 0.12, S.belt[1] - 0.06), sd * (hw0 - 0.2)); parts.add(tl, 2, 0, [0.45, 0.03, 0.03]);
-    }
+    // distant cars: the body (lights, glass and trim are drawn by the shader) and plates
+    const pf = new THREE.BoxGeometry(0.015, 0.111, 0.52); pf.translate(xNose(0) + 0.004, LO.pfy, 0); parts.add(pf, 10, 0, [LO.pfy, 0, 0]);
+    const pr = new THREE.BoxGeometry(0.015, 0.111, 0.52); pr.translate(xTail(0) - 0.004, LO.pry, 0); parts.add(pr, 11, 0, [LO.pry, 0, 0]);
     if (def.livery) { const g = new THREE.BoxGeometry(0.35, 0.1, 1.2); g.translate(-0.25, H + 0.05, 0); parts.add(g, 3, 0, [0.1, 0.1, 0.12]); }
     return { parts: parts.list, spec: S, wheels };
   }
   for (const sd of [-1, 1]) {
-    // headlight cluster: swept lens following the corner, DRL strip under it, amber indicator outboard
-    const hl = new THREE.SphereGeometry(1, 14, 8); hl.scale(0.09, S.wing ? 0.035 : 0.055, 0.2); hl.rotateY(sd * 0.42);
-    hl.translate(xNose(zH) - 0.05, hy, sd * zH); parts.add(hl, 1, 0, [0.85, 0.85, 0.82]);
-    const drl = new THREE.BoxGeometry(0.03, 0.012, 0.22); drl.rotateY(sd * 0.42); drl.translate(xNose(zH) - 0.03, hy - (S.wing ? 0.03 : 0.05), sd * (zH - 0.02)); parts.add(drl, 6, 0, [0.9, 0.9, 0.9]);
-    const ind = new THREE.BoxGeometry(0.05, 0.03, 0.06); ind.translate(xNose(zH + 0.15) - 0.03, hy, sd * (zH + 0.15)); parts.add(ind, 5, 0, [0.7, 0.4, 0.05]);
-    // tail-light cluster wrapping round the rear corner, clear reversing lens inboard
-    const tl = new THREE.SphereGeometry(1, 14, 8); tl.scale(0.07, S.lightBar ? 0.03 : 0.07, S.lightBar ? 0.24 : 0.17); tl.rotateY(-sd * 0.5);
-    const tz = hw0 - 0.2, ty = Math.min(tailY - 0.12, S.belt[1] - 0.06);
-    tl.translate(xTail(tz) + 0.05, ty, sd * tz); parts.add(tl, 2, 0, [0.45, 0.03, 0.03]);
-    const rv = new THREE.BoxGeometry(0.03, 0.035, 0.08); rv.translate(xTail(tz - 0.2) - 0.005, ty - 0.02, sd * (tz - 0.2)); parts.add(rv, 18, 0, [0.8, 0.8, 0.8]);
     // wing mirror: stalk, body-colour housing, glass facing back
     const mx = S.ws0 - 0.08, my = beltAt(mx) + 0.07, mz = sd * (widthAt(mx) + 0.06);
     const stalk = new THREE.BoxGeometry(0.05, 0.025, 0.09); stalk.translate(mx, my - 0.02, sd * (widthAt(mx) + 0.02)); parts.add(stalk, 16, 0);
@@ -208,15 +225,9 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     for (const x of handles) { const g = new THREE.BoxGeometry(0.14, 0.022, 0.02); g.translate(x, beltAt(x) - 0.075, sd * (widthAt(x) + 0.002)); parts.add(g, S.wheel === 3 ? 13 : 0, S.wheel === 3 ? 0 : 1, [0.6, 0.6, 0.62]); }
     // roof rails
     if (S.rails) { const len = S.ws1 - S.rr0 - 0.2, g = new THREE.BoxGeometry(len, 0.03, 0.03); g.translate((S.ws1 + S.rr0) / 2, topF((S.ws1 + S.rr0) / 2) + 0.03, sd * hw0 * 0.62); parts.add(g, 16, 0, [0.05, 0.05, 0.05]); }
-    // sports side intakes ahead of the rear wheels
-    if (S.sideIntake) { const g = new THREE.SphereGeometry(1, 10, 6); g.scale(0.32, 0.09, 0.03); g.translate(wheels[1] + wr + 0.4, S.hs + 0.32, sd * (widthAt(wheels[1] + wr + 0.4) + 0.012)); parts.add(g, 16, 0, [0.01, 0.01, 0.012]); }
   }
-  // grille / intakes
-  const gw = S.wing ? hw0 * 1.2 : hw0 * 0.75;
-  const grille = new THREE.BoxGeometry(0.03, S.wing ? 0.1 : 0.15, gw); grille.translate(xNose(0) - 0.012, S.wing ? S.hs + 0.18 : hy - 0.09, 0); parts.add(grille, 12, 0, [0.02, 0.02, 0.022]);
-  if (S.intake) { const g = new THREE.BoxGeometry(0.03, 0.08, hw0 * 1.3); g.translate(xNose(0) - 0.02, S.hs + 0.1, 0); parts.add(g, 12, 0, [0.015, 0.015, 0.017]); }
   // number plates: front white, rear yellow (520 x 111 mm)
-  const pfy = S.wing ? S.hs + 0.3 : hy - 0.2, pry = Math.max(S.hs + 0.22, Math.min(tailY - 0.38, 0.62));
+  const pfy = LO.pfy, pry = LO.pry;
   const pf = new THREE.BoxGeometry(0.015, 0.111, 0.52); pf.translate(xNose(0) + 0.004, pfy, 0); parts.add(pf, 10, 0, [pfy, 0, 0]);
   const pr = new THREE.BoxGeometry(0.015, 0.111, 0.52); pr.translate(xTail(0) - 0.004, pry, 0); parts.add(pr, 11, 0, [pry, 0, 0]);
   // wipers at the windscreen base, shark-fin aerial
@@ -225,8 +236,9 @@ export function buildCar(def, key, modelIndex, lod = 0) {
   // spoilers and wings
   if (S.spoiler === 'roof') { const g = new THREE.BoxGeometry(0.22, 0.03, W * 0.8); g.rotateZ(-0.18); g.translate(S.rr0 - 0.02, topF(S.rr0) - 0.005, 0); parts.add(g, 0, 1); }
   if (S.wing) {
-    const g = new THREE.BoxGeometry(0.28, 0.025, W * 0.86); g.rotateZ(-0.08); g.translate(-l + 0.28, tailY + 0.22, 0); parts.add(g, 16, 0, [0.02, 0.02, 0.02]);
-    for (const sd of [-1, 1]) { const p = new THREE.BoxGeometry(0.12, 0.2, 0.025); p.translate(-l + 0.3, tailY + 0.11, sd * W * 0.3); parts.add(p, 16, 0, [0.02, 0.02, 0.02]); }
+    const deck = topF(-l + 0.3);
+    const g = new THREE.BoxGeometry(0.26, 0.02, W * 0.84); g.rotateZ(-0.06); g.translate(-l + 0.22, deck + 0.17, 0); parts.add(g, 16, 0, [0.02, 0.02, 0.02]);
+    for (const sd of [-1, 1]) { const p = new THREE.BoxGeometry(0.1, 0.18, 0.02); p.translate(-l + 0.28, deck + 0.075, sd * W * 0.28); parts.add(p, 16, 0, [0.02, 0.02, 0.02]); }
   }
   // exhausts
   const nEx = S.exhaust || 1;
@@ -244,11 +256,11 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     const bin = new THREE.BoxGeometry(0.16, 0.07, 0.34); bin.translate(S.ws0 - 0.62, sc + 0.02, 0.37); parts.add(bin, 16, 0, [0.02, 0.02, 0.022]);
     const sw = new THREE.TorusGeometry(0.18, 0.02, 6, 20); sw.rotateY(Math.PI / 2); sw.rotateZ(0.42); sw.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(sw, 16, 0, [0.02, 0.02, 0.02]);
     const hub = new THREE.CylinderGeometry(0.06, 0.06, 0.04, 10); hub.rotateZ(Math.PI / 2 - 0.42); hub.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(hub, 16, 0, [0.03, 0.03, 0.03]);
-    const seatX = S.ws0 - 1.35;
+    const seatX = Math.max(S.ws0 - 1.35, S.rr0 + 0.32), headTop = topF(seatX - 0.2) - 0.07;
     for (const z of [0.37, -0.37]) {
       const base = new THREE.BoxGeometry(0.5, 0.12, 0.46); base.translate(seatX + 0.1, fl + 0.2, z); parts.add(base, 16, 0, [0.05, 0.05, 0.055]);
       const back = new THREE.BoxGeometry(0.12, 0.62, 0.46); back.rotateZ(0.22); back.translate(seatX - 0.17, fl + 0.55, z); parts.add(back, 16, 0, [0.05, 0.05, 0.055]);
-      const rest = new THREE.BoxGeometry(0.1, 0.18, 0.26); rest.rotateZ(0.22); rest.translate(seatX - 0.25, fl + 0.95, z); parts.add(rest, 16, 0, [0.06, 0.06, 0.065]);
+      const rest = new THREE.BoxGeometry(0.1, 0.16, 0.26); rest.rotateZ(0.22); rest.translate(seatX - 0.25, Math.min(fl + 0.95, headTop - 0.08), z); parts.add(rest, 16, 0, [0.06, 0.06, 0.065]);
     }
   }
   return { parts: parts.list, spec: S, wheels };
@@ -259,34 +271,134 @@ const sel = (c, a, b) => select(c, a, b).uniformFlow().toVar();
 const eqf = (a, k) => step(k - 0.5, a).mul(step(a, k + 0.5));
 const rotY = (v, a) => { const c = cos(a), s = sin(a); return vec3(v.x.mul(c).add(v.z.mul(s)), v.y, v.z.mul(c).sub(v.x.mul(s))); };
 
+const bitf = (v, k) => step(0.5, fract(floor(v.div(2 ** k)).mul(0.5)));
+const band = (v, a, b) => step(a, v).mul(step(v, b));
+// cheap value noise from a hash of the model-space position (dents, dirt, scratches)
+const hash3 = p => fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
+const vnoise = p => { const i = floor(p), f = fract(p), u = f.mul(f).mul(float(3).sub(f.mul(2)));
+  const n = (o) => hash3(i.add(o));
+  const x0 = mix(mix(n(vec3(0, 0, 0)), n(vec3(1, 0, 0)), u.x), mix(n(vec3(0, 1, 0)), n(vec3(1, 1, 0)), u.x), u.y);
+  const x1 = mix(mix(n(vec3(0, 0, 1)), n(vec3(1, 0, 1)), u.x), mix(n(vec3(0, 1, 1)), n(vec3(1, 1, 1)), u.x), u.y);
+  return mix(x0, x1, u.z); };
+
 // models: ordered list of [key, def] matching vdat.w (index + 1)
+// Per-instance: iPaint (rgb), iState (x flags: 1 brake, 2 reversing, 4 left indicator, 8 right, 16 hazards;
+// y lights, z siren, w heading), iDmg (front, rear, left -z, right +z damage 0..1).
 export function vehicleMaterial(models) {
   const mat = new THREE.MeshPhysicalNodeMaterial({ roughness: 0.35, metalness: 0.25, clearcoat: 1, clearcoatRoughness: 0.05 });
   const vd = attribute('vdat', 'vec4'), vc = attribute('color', 'vec3'), paint = vd.x, part = vd.y, liv = vd.z;
   const ic = attribute('iPaint', 'vec3');
-  const st = attribute('iState', 'vec4');   // x brake, y lights, z siren, w heading
-  const lp = positionGeometry;             // model space (positionLocal is instance-transformed in the fragment)
+  const st = attribute('iState', 'vec4');
+  const dm4 = attribute('iDmg', 'vec4');
+  const lp = positionGeometry, nm = normalGeometry;   // model space (positionLocal is instance-transformed)
   const spec = k => CAR_SPECS[k] || null;
-  const arr = (f, d) => uniformArray([d, ...models.map(([k, def]) => f(k, def))], 'vec4').element(int(vd.w.add(0.5)));
-  // per model: (half wheelbase, wheel radius, half width, wheel x offset) and (door front, B pillar, door rear, belt)
-  const A = arr((k, d) => { const S = spec(k); return S ? new THREE.Vector4(d.wb / 2, d.wr, d.W / 2, (S.wheelX || 0) * d.L / 2) : new THREE.Vector4(); }, new THREE.Vector4());
-  const D = arr((k, d) => { const S = spec(k); return S ? new THREE.Vector4(S.doors[0], S.doors[1] ?? -99, S.doors[2] ?? -99, (S.belt[0] + S.belt[1]) / 2) : new THREE.Vector4(-99, -99, -99, 1); }, new THREE.Vector4(-99, -99, -99, 1));
+  const lay = models.map(([k, def]) => spec(k) ? carLayout(def, k) : null);
+  const V = (a, b, c, d) => new THREE.Vector4(a, b, c, d);
+  const arr = (f, d) => uniformArray([d, ...models.map(([k, def], i) => (lay[i] ? f(lay[i], spec(k), def, k) : d))], 'vec4').element(int(vd.w.add(0.5)));
+  const A = arr((Lo, S, d) => V(d.wb / 2, d.wr, d.W / 2, (S.wheelX || 0) * d.L / 2), V(0, 0, 0, 0));
+  const D = arr((Lo, S) => V(S.doors[0], S.doors[1] ?? -99, S.doors[2] ?? -99, (S.belt[0] + S.belt[1]) / 2), V(-99, -99, -99, 1));
+  const E = arr((Lo, S) => V(Lo.l, Lo.hw, S.hs, S.endF), V(9, 9, 0, 0.4));
+  const F = arr((Lo, S) => V(S.ws0, S.ws1, S.rr0, Lo.Htop), V(0, 0, 0, 9));
+  const Gd = arr((Lo, S) => V(S.gl[0], S.gl[1], Lo.boot, S.endR), V(0, 0, -99, 0.4));
+  const BL = arr((Lo, S) => V(S.belt[0], S.belt[1], S.panelVan ? 1 : 0, S.cladding ? 1 : 0), V(1, 1, 0, 0));
+  const HL = arr(Lo => V(Lo.hy, Lo.hlH, Lo.hlZ0, Lo.roofBlack), V(-9, 0, 9, 0));
+  const TL = arr(Lo => V(Lo.ty, Lo.tlH, Lo.tlZ0, 0), V(-9, 0, 9, 0));
+  const GR = arr(Lo => V(Lo.grY0, Lo.grY1, Lo.grW, Lo.gstyle), V(-9, -9, 0, 0));
   const isCar = step(0.01, A.x);
-  // Battenburg livery
-  const checker = step(0.5, fract(lp.x.div(0.62).add(step(0.72, lp.y).mul(0.5))));
-  const batten = mix(vec3(0.85, 0.82, 0.05), vec3(0.04, 0.1, 0.55), checker);
+  const loft = eqf(part, 20).mul(isCar);
+  const x = lp.x, y = lp.y, z = lp.z, az = abs(z), kq = vc.x, cap = vc.y.mul(loft);
+  const l = E.x, hw = E.y, hs = E.z;
+  const front = step(0, x), rear = float(1).sub(front);
+  const belt = mix(BL.y, BL.x, clamp01n(x.add(l).div(l.mul(2))));
+  // ---------------- damage zones (front, rear, left, right)
+  const wF = smoothstep(l.sub(1.1), l, x), wR = smoothstep(l.negate().add(1.1), l.negate(), x);
+  const wL = smoothstep(hw.negate().add(0.42), hw.negate(), z), wRt = smoothstep(hw.sub(0.42), hw, z);
+  const dmg = clamp01n(dm4.x.mul(wF).add(dm4.y.mul(wR)).add(dm4.z.mul(wL)).add(dm4.w.mul(wRt))).mul(isCar);
+  const dn = vnoise(lp.mul(7.3)), dn2 = vnoise(lp.mul(23.1).add(5.2));
+  // crumple: ends shorten, sides push in, panels buckle (world-space offset from the yaw: instancing runs first)
+  mat.positionNode = Fn(() => {
+    const p = positionGeometry, n0 = vnoise(p.mul(7.3)), n1 = vnoise(p.mul(3.1).add(9.1));
+    const zf = smoothstep(l.sub(1.1), l, p.x), zr = smoothstep(l.negate().add(1.1), l.negate(), p.x);
+    const zl = smoothstep(hw.negate().add(0.42), hw.negate(), p.z), zrt = smoothstep(hw.sub(0.42), hw, p.z);
+    const k = isCar.mul(float(0.55).add(n1.mul(0.9)));
+    const dx = dm4.y.mul(zr.mul(zr)).mul(0.3).sub(dm4.x.mul(zf.mul(zf)).mul(0.34)).mul(k);
+    const dz = dm4.z.mul(zl).mul(0.13).sub(dm4.w.mul(zrt).mul(0.13)).mul(k);
+    const dy = dm4.x.mul(zf).add(dm4.y.mul(zr)).mul(n0.sub(0.35)).mul(0.07).mul(isCar);
+    const h = st.w, c = cos(h), s = sin(h);
+    return positionLocal.add(vec3(dx.mul(c).sub(dz.mul(s)), dy, dx.mul(s).add(dz.mul(c))));
+  })();
+  // ---------------- side glass with pillars and a black surround
+  const tG = clamp01n(kq.sub(7).div(2));
+  const xF = mix(Gd.x, F.y.add(0.1), tG), xR = mix(Gd.y, F.z.add(0.16), tG);
+  const inK = band(kq, 7.14, 8.8).mul(float(1).sub(cap));
+  const bp = step(abs(x.sub(D.y)), 0.048).mul(step(-50, D.y));
+  const vanBack = BL.z.mul(step(x, D.y.add(0.04)));
+  const sideGlass = loft.mul(inK).mul(step(xR.add(0.03), x)).mul(step(x, xF.sub(0.03))).mul(float(1).sub(bp)).mul(float(1).sub(vanBack));
+  const dloTrim = loft.mul(band(kq, 6.92, 9.0)).mul(float(1).sub(cap)).mul(step(xR.sub(0.005), x)).mul(step(x, xF.add(0.012))).mul(float(1).sub(sideGlass)).mul(float(1).sub(vanBack));
+  // windscreen and rear screen (black frit at the edges)
+  const wsc = loft.mul(float(1).sub(cap)).mul(step(F.y.add(0.03), x)).mul(step(x, F.x.sub(0.02))).mul(step(8.75, kq)).mul(step(0.12, nm.x));
+  const frit = wsc.mul(float(1).sub(step(F.y.add(0.075), x).mul(step(x, F.x.sub(0.06))).mul(step(9.1, kq))));
+  const rearGl = loft.mul(step(belt.add(0.045), y)).mul(step(y, F.w.sub(0.065))).mul(step(nm.x, -0.22)).mul(step(x, F.z.add(0.04)))
+    .mul(step(az, hw.sub(0.13))).mul(step(Gd.z.add(0.04), x)).mul(float(1).sub(BL.z.mul(0.0)));
+  const rearFrit = rearGl.mul(float(1).sub(step(az, hw.sub(0.19)).mul(step(belt.add(0.09), y)).mul(step(y, F.w.sub(0.11)))));
+  const glassL = clamp01n(sideGlass.add(wsc).add(rearGl));
+  // ---------------- lamps
+  const hlTop = HL.x.add(HL.y).sub(hw.sub(az).mul(0.07));
+  const inHL = loft.mul(front).mul(step(HL.z, az)).mul(step(az, hw.mul(0.992))).mul(step(HL.x.sub(HL.y), y)).mul(step(y, hlTop)).mul(step(0.1, nm.x)).mul(step(l.sub(E.w).sub(0.12), x));
+  const uz = clamp01n(az.sub(HL.z).div(hw.sub(HL.z)));
+  const bowl = (c) => step(length(vec2(uz.sub(c).mul(hw.sub(HL.z)), y.sub(HL.x).add(0.004))), HL.y.mul(0.62));
+  const bowls = max(bowl(0.33), bowl(0.68));
+  const drl = step(y, HL.x.sub(HL.y).add(0.013)).mul(step(0.08, uz));
+  const indF = step(0.88, uz);
+  const inTL = loft.mul(rear).mul(step(TL.z, az)).mul(step(az, hw.mul(0.992))).mul(step(TL.x.sub(TL.y), y)).mul(step(y, TL.x.add(TL.y))).mul(step(nm.x, -0.1)).mul(step(x, l.negate().add(Gd.w).add(0.16)));
+  const tu = clamp01n(az.sub(TL.z).div(hw.sub(TL.z).max(0.05)));
+  const revL = step(tu, 0.2).mul(step(0.05, TL.z)).add(step(TL.z, 0.05).mul(step(az, 0.12)));
+  const indR = step(0.82, tu).mul(step(TL.x.add(TL.y.mul(0.2)), y));
+  const ledBars = step(0.5, fract(y.sub(TL.x).div(0.014)));
+  // ---------------- front and rear faces: grille, intakes, splitter, diffuser, badges, fog lamps
+  const frontFace = loft.mul(front).mul(step(0.5, nm.x));
+  const rearFace = loft.mul(rear).mul(step(nm.x, -0.5));
+  const grille = frontFace.mul(step(az, GR.z)).mul(band(y, GR.x, GR.y)).mul(step(GR.w, 1.5));
+  const intakeTop = hs.add(mix(float(0.16), float(0.26), step(1.5, GR.w)));
+  const intake = frontFace.mul(step(az, hw.mul(0.74))).mul(band(y, hs.add(0.065), intakeTop));
+  const fog = frontFace.mul(step(length(vec2(az.sub(hw.mul(0.8)), y.sub(hs.add(0.12)))), 0.038)).mul(step(GR.w, 1.5));
+  const splitter = loft.mul(front).mul(step(y, hs.add(0.045))).mul(step(l.sub(0.4), x));
+  const diffuser = loft.mul(rear).mul(step(y, hs.add(0.12))).mul(step(x, l.negate().add(0.32)));
+  const gy = GR.x.add(GR.y).mul(0.5);
+  const badgeF = frontFace.mul(step(length(vec2(z, y.sub(gy).mul(1.5))), 0.038));
+  const badgeR = rearFace.mul(step(length(vec2(z, y.sub(TL.x.add(0.05)).mul(1.5))), 0.034));
+  const slats = step(0.55, fract(y.div(0.018)));
+  const meshP = step(0.5, fract(y.mul(38).add(step(0.5, fract(z.mul(19))).mul(0.5)))).mul(step(0.25, fract(z.mul(38))));
+  const gpat = mix(slats, meshP, step(0.5, GR.w));
+  // ---------------- trims and shut lines
+  const sill = loft.mul(step(kq, 1.6)).mul(float(1).sub(cap));
+  const clad = loft.mul(BL.w).mul(step(kq, 3.4)).mul(step(y, hs.add(0.25))).mul(float(1).sub(cap));
+  const seal = loft.mul(band(kq, 6.7, 7.14)).mul(float(1).sub(cap)).mul(step(xR.sub(0.01), x)).mul(step(x, xF.add(0.02)));
+  const roofBlk = loft.mul(HL.w).mul(step(9.0, kq)).mul(float(1).sub(cap)).mul(step(F.z, x)).mul(step(x, F.y.add(0.02)));
+  const ln = (v, c) => step(abs(v.sub(c)), 0.0042);
+  const sideFace = step(0.5, abs(nm.z)), topFace = step(0.55, nm.y);
+  const inDoorY = band(y, hs.add(0.1), belt.add(0.01));
+  const doors = ln(x, D.x).add(ln(x, D.y)).add(ln(x, D.z)).min(1).mul(inDoorY).mul(sideFace);
+  const bonnet = topFace.mul(front).mul(step(F.x.add(0.04), x)).mul(step(x, l.sub(0.04))).mul(ln(az, hw.sub(0.115)));
+  const bumpF = sideFace.mul(ln(x, l.sub(E.w).sub(0.14))).mul(step(y, HL.x.sub(HL.y).sub(0.01)));
+  const bumpR = sideFace.mul(ln(x, l.negate().add(Gd.w).add(0.18))).mul(step(y, TL.x.sub(TL.y).sub(0.01)));
+  const tailgate = rearFace.mul(step(Gd.z, -50)).mul(ln(az, hw.mul(0.64))).mul(step(TL.x.sub(TL.y).sub(0.04), y));
+  const bumperTop = rearFace.mul(ln(y, TL.x.sub(TL.y).sub(0.045)));
+  const bootLid = topFace.mul(rear).mul(step(-50, Gd.z)).mul(step(x, Gd.z)).mul(ln(az, hw.sub(0.12)));
+  const fuel = sideFace.mul(step(0, z)).mul(ln(length(vec2(x.sub(l.negate().add(Gd.w).add(0.5)), y.sub(belt.sub(0.13)))), 0.085));
+  const shut = loft.mul(clamp01n(doors.add(bonnet).add(bumpF).add(bumpR).add(tailgate).add(bumperTop).add(bootLid).add(fuel))).mul(float(1).sub(glassL));
+  const repeater = loft.mul(sideFace).mul(step(abs(x.sub(l.sub(E.w).sub(0.32))), 0.028)).mul(step(abs(y.sub(HL.x)), 0.011));
   // wheel-arch liners, cut per pixel
-  const ax = abs(lp.x.sub(A.w));
-  const archD = length(vec2(abs(ax.sub(A.x)), lp.y.sub(A.y)));
-  const archM = isCar.mul(step(A.z.sub(0.3), abs(lp.z))).mul(smoothstep(A.y.add(0.09), A.y.add(0.075), archD));
-  // shut lines: doors (verticals and the sill/belt rails of each door), bonnet and boot edges
-  const side = step(A.z.mul(0.82), abs(lp.z)).mul(isCar);
-  const inDoorY = step(0.3, lp.y).mul(step(lp.y, D.w.add(0.02)));
-  const vline = step(abs(lp.x.sub(D.x)), 0.004).add(step(abs(lp.x.sub(D.y)), 0.004)).add(step(abs(lp.x.sub(D.z)), 0.004)).min(1).mul(inDoorY).mul(side);
-  const shut = vline.mul(eqf(part, 0)).mul(paint);
+  const ax = abs(x.sub(A.w));
+  const archD = length(vec2(abs(ax.sub(A.x)), y.sub(A.y)));
+  const archM = isCar.mul(step(A.z.sub(0.3), az)).mul(smoothstep(A.y.add(0.078), A.y.add(0.064), archD));
+  const archLip = loft.mul(BL.w).mul(step(A.z.sub(0.3), az)).mul(smoothstep(A.y.add(0.14), A.y.add(0.12), archD)).mul(float(1).sub(archM));
+  // Battenburg livery
+  const checker = step(0.5, fract(x.div(0.62).add(step(0.72, y).mul(0.5))));
+  const batten = mix(vec3(0.85, 0.82, 0.05), vec3(0.04, 0.1, 0.55), checker);
   // number plates: 3x5 pixel glyphs from a per-car hash (UK layout AB12 CDE); vc.x carries the plate centre height
   const plate = eqf(part, 10).add(eqf(part, 11));
-  const pu = lp.z.add(0.26).div(0.52), pvv = lp.y.sub(vc.x.sub(0.0555)).div(0.111);
+  const pu = z.add(0.26).div(0.52), pvv = y.sub(vc.x.sub(0.0555)).div(0.111);
   const cell = floor(pu.mul(8.5)), cu = fract(pu.mul(8.5)), gap = eqf(cell, 4);
   const seed = fract(sin(dot(ic.xy.add(vec2(vd.w, ic.z)), vec2(12.9898, 78.233))).mul(43758.5453));
   const glyphBits = floor(fract(sin(cell.mul(17.13).add(seed.mul(91.7))).mul(43758.5453)).mul(32768));
@@ -294,49 +406,99 @@ export function vehicleMaterial(models) {
   const bitI = px.add(py.sub(1).mul(3)).max(0);
   const on = step(0.5, fract(floor(glyphBits.div(pow(float(2), bitI))).mul(0.5))).mul(step(px, 2.5)).mul(step(0.5, py)).mul(step(py, 5.5)).mul(float(1).sub(gap)).mul(step(0.04, pu)).mul(step(pu, 0.96)).mul(plate);
   const plateCol = mix(vec3(0.85, 0.85, 0.83), vec3(0.88, 0.7, 0.04), eqf(part, 11));
-  // grille mesh
-  const mesh = eqf(part, 12).mul(step(0.5, fract(lp.y.mul(55).add(step(0.5, fract(lp.z.mul(28))).mul(0.5)))).mul(step(0.5, fract(lp.z.mul(28)))));
-  // glass: parallax cabin (seat backs with headrests, dashboard, wheel on the right) behind the reflections
-  const glass = eqf(part, 14).add(eqf(part, 15).mul(0));
+  // glass: dark tinted, a faint cabin behind (seat backs, headrests) from a parallax ray
+  const glassPart = eqf(part, 14).add(glassL).min(1);
   const vw = normalize(positionWorld.sub(cameraPosition));
-  const vl = rotY(vw, st.w);                                      // world -> model (yaw only)
+  const vl = rotY(vw, st.w);
   const seatPlane = (xs) => {
-    const t = xs.sub(lp.x).div(vl.x.add(step(abs(vl.x), 0.02).mul(0.02)));
-    const h = lp.add(vl.mul(t.max(0)));
-    const back = step(abs(abs(h.z).sub(0.33)), 0.2).mul(step(D.w.sub(0.25), h.y)).mul(step(h.y, D.w.add(0.28)));
-    const rest = step(abs(abs(h.z).sub(0.33)), 0.12).mul(step(D.w.add(0.28), h.y)).mul(step(h.y, D.w.add(0.42)));
+    const t = xs.sub(x).div(vl.x.add(step(abs(vl.x), 0.02).mul(0.02)));
+    const hh = lp.add(vl.mul(t.max(0)));
+    const back = step(abs(abs(hh.z).sub(0.33)), 0.2).mul(step(D.w.sub(0.25), hh.y)).mul(step(hh.y, D.w.add(0.28)));
+    const rest = step(abs(abs(hh.z).sub(0.33)), 0.12).mul(step(D.w.add(0.28), hh.y)).mul(step(hh.y, D.w.add(0.42)));
     return back.add(rest).min(1).mul(step(0.0, t));
   };
   const seats = max(seatPlane(D.y.add(0.05).max(D.z.add(0.3))), seatPlane(D.z.add(-0.25))).mul(isCar);
-  const wheelRing = (() => { const t = D.x.sub(0.45).sub(lp.x).div(vl.x.add(step(abs(vl.x), 0.02).mul(0.02))); const h = lp.add(vl.mul(t.max(0))); const r = length(vec2(h.z.sub(0.37), h.y.sub(D.w.add(0.12)))); return step(abs(r.sub(0.17)), 0.018).mul(isCar); })();
-  const cabin = mix(vec3(0.012, 0.012, 0.014), vec3(0.05, 0.05, 0.055), seats).add(vec3(0.02).mul(wheelRing));
+  const cabin = mix(vec3(0.007, 0.008, 0.01), vec3(0.016, 0.016, 0.018), seats).mul(float(0.8).add(y.sub(D.w).mul(0.8)).clamp(0.6, 1.4));
   const daylight = float(1).sub(U.night.mul(0.85));
+  // ---------------- state
+  const flags = floor(st.x.add(0.5));
+  const brake = bitf(flags, 0), reversing = bitf(flags, 1), hazard = bitf(flags, 4);
+  const blink = step(0.5, fract(U.t.mul(1.5)));
+  const indOn = mix(bitf(flags, 3), bitf(flags, 2), step(z, 0)).add(hazard).min(1).mul(blink);
+  const hlBroken = smoothstep(0.38, 0.6, dm4.x.add(mix(dm4.w, dm4.z, step(z, 0)).mul(0.5)));
+  const tlBroken = smoothstep(0.38, 0.6, dm4.y.add(mix(dm4.w, dm4.z, step(z, 0)).mul(0.5)));
   // ---------------- colour
   let base = mix(vc, ic, paint);
   base = mix(base, batten, liv);
-  base = mix(base, vec3(0.018), archM);
-  base = base.mul(float(1).sub(shut.mul(0.85)));
+  const blackPl = vec3(0.028, 0.028, 0.03), glossBlk = vec3(0.012), chrome = vec3(0.72, 0.73, 0.75);
+  base = mix(base, blackPl, clamp01n(sill.add(clad).add(archLip).add(splitter).add(diffuser).add(intake).add(seal)));
+  base = mix(base, glossBlk, clamp01n(dloTrim.add(roofBlk).add(frit).add(rearFrit)));
+  base = mix(base, vec3(0.015), archM);
+  base = base.mul(float(1).sub(shut.mul(0.82)));
+  base = mix(base, mix(vec3(0.01), vec3(0.06), gpat), grille);
+  base = mix(base, vec3(0.006), intake.mul(step(0.5, fract(y.mul(40)))));
+  base = mix(base, chrome, clamp01n(badgeF.add(badgeR).add(fog)));
+  // headlight: dark chrome housing, two reflector bowls, LED strip, amber indicator
+  const hlCol = mix(mix(vec3(0.06, 0.065, 0.07), chrome, bowls), vec3(0.85), drl);
+  base = mix(base, mix(mix(hlCol, vec3(0.5, 0.28, 0.04), indF), vec3(0.05), hlBroken.mul(step(0.5, dn2))), inHL);
+  base = mix(base, vec3(0.6, 0.35, 0.04), repeater);
+  // tail light: red lens over LED bars, clear reversing section, amber indicator
+  const tlCol = mix(mix(vec3(0.22, 0.012, 0.01), vec3(0.32, 0.02, 0.015), ledBars), vec3(0.55), revL);
+  base = mix(base, mix(mix(tlCol, vec3(0.45, 0.22, 0.03), indR.mul(float(1).sub(revL))), vec3(0.05), tlBroken.mul(step(0.5, dn2))), inTL);
   base = mix(base, plateCol, plate);
   base = mix(base, vec3(0.02, 0.02, 0.02), on);
-  base = mix(base, vec3(0.006), mesh);
-  base = mix(base, cabin.mul(daylight), glass.mul(isCar));
+  // glass, cracked where the zone is smashed
+  const crack = step(0.985, abs(sin(atan(y.sub(D.w), z.add(x.mul(0.3))).mul(13).add(dn.mul(3))))).add(step(0.99, abs(sin(length(vec2(x, y.sub(D.w))).mul(70).add(dn.mul(6)))))).min(1).mul(smoothstep(0.45, 0.7, dmg));
+  base = mix(base, mix(cabin.mul(daylight), vec3(0.2, 0.21, 0.22), crack), glassPart.mul(isCar));
+  // road grime low on the body, heavier in the wet
+  const paintArea = paint.mul(float(1).sub(glassPart)).mul(isCar);
+  const grime = smoothstep(hs.add(0.42), hs, y).mul(float(0.18).add(U.wet.mul(0.3))).mul(dn.mul(0.6).add(0.4)).mul(paintArea);
+  base = mix(base, vec3(0.16, 0.14, 0.12), grime);
+  // damage: dents shade the paint, scratches show primer and bare metal
+  const scratch = step(0.8, vnoise(vec3(x.mul(2.5), y.mul(70), z.mul(2.5)))).mul(step(0.45, dent)).mul(smoothstep(0.1, 0.4, dmg)).mul(paintArea);
+  const dent = vnoise(lp.mul(3.2).add(1.7));
+  base = base.mul(float(1).sub(dmg.mul(smoothstep(0.45, 0.9, dent)).mul(0.35).mul(paintArea)));
+  base = mix(base, mix(vec3(0.42, 0.42, 0.4), vec3(0.62), step(0.5, dn2)), scratch);
   mat.colorNode = base;
-  const paintE = paint.mul(float(1).sub(archM));
-  const chrome = eqf(part, 13).add(eqf(part, 17)).add(eqf(part, 15));
-  mat.roughnessNode = mix(mix(mix(mix(float(0.55), float(0.03), glass), float(0.38), paint), float(0.85), archM), float(0.08), chrome);
-  mat.metalnessNode = paintE.mul(0.5).add(chrome.mul(0.95));
-  mat.clearcoatNode = paintE;
+  // ---------------- surface response
+  const lens = clamp01n(inHL.add(inTL).add(glassPart));
+  const chromeM = clamp01n(eqf(part, 13).add(eqf(part, 17)).add(eqf(part, 15)).add(badgeF).add(badgeR).add(fog).add(inHL.mul(bowls)));
+  const plastic = clamp01n(sill.add(clad).add(archLip).add(splitter).add(diffuser).add(intake).add(grille).add(seal));
+  const paintE = paint.mul(float(1).sub(archM)).mul(float(1).sub(plastic)).mul(float(1).sub(lens));
+  let rough = mix(float(0.55), float(0.45), paint);   // paint gloss lives in the clearcoat (keeps SSR off the paint)
+  rough = mix(rough, float(0.62), plastic);
+  rough = mix(rough, float(0.12), clamp01n(dloTrim.add(roofBlk)));
+  rough = mix(rough, float(0.85), archM);
+  rough = mix(rough, float(0.06), chromeM);
+  rough = mix(rough, float(0.055), lens);
+  rough = mix(rough, float(0.7), scratch.add(grime.mul(1.5)).min(1));
+  rough = mix(rough, float(0.12), U.wet.mul(paintE).mul(0.6));
+  mat.roughnessNode = rough;
+  mat.metalnessNode = paintE.mul(0.45).mul(float(1).sub(dmg.mul(0.5))).add(chromeM.mul(0.95)).add(scratch.mul(step(0.5, dn2)).mul(0.6)).min(1);
+  mat.clearcoatNode = paintE.mul(float(1).sub(dmg.mul(0.8))).add(lens.mul(0.8)).add(dloTrim.mul(0.7)).min(1);
+  mat.clearcoatRoughnessNode = mix(float(0.04), float(0.5), dmg.add(grime).min(1));
+  // dents and crumples bend the reflections
+  const dg = vec3(vnoise(lp.mul(3.6)).sub(0.5), vnoise(lp.mul(3.3).add(3.3)).sub(0.5), vnoise(lp.mul(3.9).add(7.7)).sub(0.5));
+  mat.normalNode = worldToView(normalize(normalWorld.add(dg.mul(dmg.mul(0.75)))));
   // ---------------- lights
-  const head = eqf(part, 1), tail = eqf(part, 2), bar = eqf(part, 3), blind = eqf(part, 4), drl = eqf(part, 6);
-  const flash = step(0.5, fract(U.t.mul(2.6).add(step(0, lp.z).mul(0.5))));
+  const head = eqf(part, 1), tail = eqf(part, 2), bar = eqf(part, 3), blind = eqf(part, 4);
+  const flash = step(0.5, fract(U.t.mul(2.6).add(step(0, z).mul(0.5))));
+  const hlOK = float(1).sub(hlBroken), tlOK = float(1).sub(tlBroken);
+  const beam = inHL.mul(bowls.mul(0.8).add(0.2)).mul(st.y).mul(5).mul(hlOK).mul(float(1).sub(indF));
+  const drlE = inHL.mul(drl).mul(float(1).sub(indF)).mul(1.6).mul(hlOK);
+  const tailE = inTL.mul(float(1).sub(revL)).mul(float(1).sub(indR)).mul(st.y.mul(0.9).add(brake.mul(3.2)).add(0.06)).mul(ledBars.mul(0.5).add(0.5)).mul(tlOK);
+  const revE = inTL.mul(revL).mul(reversing).mul(2.5).mul(tlOK);
+  const indE = clamp01n(inHL.mul(indF).add(inTL.mul(indR)).add(repeater)).mul(indOn).mul(4);
   mat.emissiveNode = vec3(1, 0.95, 0.85).mul(head).mul(st.y).mul(4)
-    .add(vec3(1, 0.05, 0.02).mul(tail).mul(st.y.mul(0.8).add(st.x.mul(3)).add(0.12)))
-    .add(vec3(0.85, 0.9, 1).mul(drl).mul(1.2))
+    .add(vec3(1, 0.05, 0.02).mul(tail).mul(st.y.mul(0.8).add(brake.mul(3)).add(0.12)))
+    .add(vec3(1, 0.96, 0.9).mul(beam)).add(vec3(0.85, 0.9, 1).mul(drlE))
+    .add(vec3(1, 0.04, 0.02).mul(tailE)).add(vec3(1, 0.98, 0.95).mul(revE)).add(vec3(1, 0.5, 0.05).mul(indE))
     .add(vec3(0.05, 0.2, 1).mul(bar).mul(st.z).mul(flash).mul(8))
     .add(vec3(1, 0.65, 0.05).mul(blind).mul(1.5))
     .add(lightPool(positionWorld).mul(base));
   return mat;
 }
+const clamp01n = v => v.clamp(0, 1);
 
 // ------------------------------------------------------------------ wheels
 // unit wheel: radius 1, axle along z, width 1. Per instance iWheel = (rim radius fraction, design, spin, red calipers)
