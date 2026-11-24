@@ -101,7 +101,7 @@ export class Neighbourhood {
   response(dt){
     const s=this.incident;if(!s)return;
     const G=this.G,v=s.engine;s.time+=dt;
-    if(!s.crew && Math.hypot(v.x-s.x,v.z-s.z)<19){
+    if(!s.crew && Math.hypot(v.x-s.x,v.z-s.z)<32){
       v.occupied=true;v.parked=true;v.v=0;v.siren=false;v.target=null;
       s.crew=[0,1].map(k=>actor('firefighter-'+k,0xc79845,v.x,v.y,v.z+k));G.hud.feed('Fire crew on scene');
     }
