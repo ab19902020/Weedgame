@@ -180,7 +180,7 @@ function build(header, A, lod) {
     }
   }
   // ---------------- walls / fences / hedges
-  const wallCol = [];
+  const wallCol = [], hedgeSegs = [];
   {
     const C = A.wlC, M = A.wlM; let ci = 0;
     for (let k = 0; k < M.length; k += 3) {
@@ -191,6 +191,7 @@ function build(header, A, lod) {
       const th = kind === 2 ? 0.8 : kind === 1 ? 0.06 : kind === 5 ? 0.1 : 0.25;
       const id = kind === 2 ? 3 : kind === 1 ? 2 : kind === 5 ? 4 : 1;
       wall(S, pts, th, h, hAt, id);
+      if (id === 3) for (let q = 0; q < pts.length - 1; q++) hedgeSegs.push(pts[q][0], pts[q][1], pts[q + 1][0], pts[q + 1][1], h, th);
       if (id === 3) wall(S, pts, th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id);
       for (let q = 0; q < pts.length - 1; q++) wallCol.push(pts[q][0], pts[q][1], pts[q + 1][0], pts[q + 1][1], h);
     }
@@ -205,7 +206,7 @@ function build(header, A, lod) {
     const P = (s_, o) => [x0 + ux * s_ + nx * o, z0 + uz * s_ + nz * o];
     if (style !== 'open') {
       const h = style === 'hedge' ? 0.95 + r * 0.5 : 0.62, th = style === 'hedge' ? 0.6 : 0.24, id = style === 'hedge' ? 3 : 1;
-      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) { const A0 = P(a, t), B0 = P(b, t); wall(S, [A0, B0], th, h, hAt, id); if (id === 3) wall(S, [A0, B0], th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id); wallCol.push(A0[0], A0[1], B0[0], B0[1], h); }
+      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) { const A0 = P(a, t), B0 = P(b, t); wall(S, [A0, B0], th, h, hAt, id); if (id === 3) { wall(S, [A0, B0], th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id); hedgeSegs.push(A0[0], A0[1], B0[0], B0[1], h, th); } wallCol.push(A0[0], A0[1], B0[0], B0[1], h); }
     }
     // driveway (block paving or tarmac) or front path (flags) from the gap to the house
     const surfId = drive ? (seed % 5 < 3 ? 4 : 0) : 1, lift = drive ? 0.08 : 0.09;
@@ -320,6 +321,12 @@ function build(header, A, lod) {
   const tr = A.tr, trees = new Float32Array(tr.length);
   for (let k = 0; k < tr.length; k += 4) { trees[k] = tr[k]; trees[k + 1] = hAt(tr[k], tr[k + 1]); trees[k + 2] = tr[k + 1]; trees[k + 3] = tr[k + 2] + (tr[k + 3] || 0) * 10; }
   out.trees = trees;
+  // ---------------- planting (inferred): leafy hedges, shrubs and extra trees in open green space
+  if (!lod) {
+    const P = plantings(header, lcAt, hAt, trees, hedgeSegs);
+    out.bushes = P.bushes;
+    if (P.trees.length) { const t2 = new Float32Array(trees.length + P.trees.length); t2.set(trees); t2.set(P.trees, trees.length); out.trees = t2; }
+  }
   const lp = A.lp, lamps = new Float32Array(lp.length);
   for (let k = 0; k < lp.length; k += 4) { lamps[k] = lp[k]; lamps[k + 1] = hAt(lp[k], lp[k + 1]) + 0.17; lamps[k + 2] = lp[k + 1]; lamps[k + 3] = lp[k + 2]; }
   out.lamps = lamps;
@@ -389,6 +396,66 @@ function strip(B, pts, offset, width, yfn, id, dashOn = 0, dashOff = 0) {
     for (const p of [a, b, c, d]) p[1] = yfn([p[0], p[2]]);
     quad(B, a, b, c, d, [0, 1, 0], null, [id]);
   }
+}
+
+// Planting for open ground (inferred). Bushes: [x, y, z, sx, sy, sz, yaw, tint] per instance, drawn by tiles.js
+// with the tree-crown leaf material. Hedges become rows of overlapping leafy bushes over their box core;
+// grass, parks, gardens, scrub, woods, cemeteries and allotments get shrubs and a few extra trees, never
+// within 2.5 m of a road, pavement, path, car park, building, pitch or water.
+const PLANT = { 0: [0.011, 0.0024], 5: [0.03, 0], 6: [0.0015, 0.0004], 7: [0.022, 0.0042], 11: [0.022, 0.0014], 14: [0.012, 0], 15: [0.05, 0.0012], 16: [0.012, 0.002], 18: [0.012, 0.0008] };
+const HARD = new Set([1, 2, 3, 4, 8, 9, 10, 12, 13, 17]);
+function plantings(header, lcAt, hAt, trees, hedgeSegs) {
+  let seed = (header.ix * 73856093 ^ header.iz * 19349663) >>> 0;
+  const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const bushes = [], extra = [];
+  // hedges: elongated leafy bushes every ~1.5 m along each segment, a little taller and wider than the core
+  for (let k = 0; k < hedgeSegs.length; k += 6) {
+    const x0 = hedgeSegs[k], z0 = hedgeSegs[k + 1], x1 = hedgeSegs[k + 2], z1 = hedgeSegs[k + 3], h = hedgeSegs[k + 4], th = hedgeSegs[k + 5];
+    const L = Math.hypot(x1 - x0, z1 - z0); if (L < 0.3) continue;
+    const n = Math.max(1, Math.round(L / 1.5)), yaw = Math.atan2(z1 - z0, x1 - x0);
+    for (let i = 0; i < n; i++) {
+      const f = (i + 0.5) / n, x = x0 + (x1 - x0) * f, z = z0 + (z1 - z0) * f;
+      if (x < 0 || x >= 256 || z < 0 || z >= 256) continue;
+      const hh = h * (1.02 + rnd() * 0.12);
+      bushes.push(x, hAt(x, z) + hh * 0.5, z, L / n * 0.78 + 0.25, hh * 0.56, th * 0.75 + 0.18, yaw, 2);
+    }
+  }
+  // open ground: jittered grid at 3 m, density by landcover class
+  const clear = (x, z, r) => {
+    for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r], [r * 0.7, r * 0.7], [-r * 0.7, r * 0.7], [r * 0.7, -r * 0.7], [-r * 0.7, -r * 0.7]]) {
+      const xx = x + dx, zz = z + dz; if (xx < 0 || zz < 0 || xx >= 256 || zz >= 256) continue;
+      if (HARD.has(lcAt(xx, zz))) return false;
+    }
+    return true;
+  };
+  const nearTree = (x, z, r) => { for (let k = 0; k < trees.length; k += 4) { const dx = trees[k] - x, dz = trees[k + 2] - z; if (dx * dx + dz * dz < r * r) return true; } return false; };
+  for (let gz = 1.5; gz < 256; gz += 3) for (let gx = 1.5; gx < 256; gx += 3) {
+    const x = gx + (rnd() - 0.5) * 2.6, z = gz + (rnd() - 0.5) * 2.6, c = lcAt(x, z), d0 = PLANT[c];
+    if (!d0) continue;
+    // planting gathers along edges (4-10 m from paths, roads, buildings); mown open middles stay mostly clear
+    const edge = !clear(x, z, 9) ? 2.5 : c === 15 || c === 5 ? 0.8 : 0.12, d = [d0[0] * edge, d0[1] * (edge > 1 ? 1.6 : 0.8)];
+    const r = rnd();
+    if (r < d[0] * 9) {
+      if (!clear(x, z, 2.5) || nearTree(x, z, 2.2)) continue;
+      // shrubs in loose clumps of one to four, one species per clump; widths are full widths, the
+      // height is a half-height (tiles.js halves x and z), and each sits a little sunk so no base shows
+      const n = rnd() < 0.55 ? 2 + Math.floor(rnd() * 3) : 1, big = c === 15 || c === 5 ? 1.3 : 1;
+      const tint = c === 16 ? 2 : c === 15 && rnd() < 0.3 ? 4 : rnd() < 0.1 ? 5 : rnd() < 0.12 ? 3 : Math.floor(rnd() * 3);
+      for (let i = 0; i < n; i++) {
+        const bx = x + (rnd() - 0.5) * 2.6 * (n > 1), bz = z + (rnd() - 0.5) * 2.6 * (n > 1);
+        if (n > 1 && !clear(bx, bz, 2)) continue;
+        const w = big * (1.3 + rnd() * 1.5), hy = w * (0.3 + rnd() * 0.16);
+        bushes.push(bx, hAt(bx, bz) + hy * 0.72, bz, w * (0.85 + rnd() * 0.3), hy, w * (0.85 + rnd() * 0.3), rnd() * 6.28, tint);
+      }
+    } else if (r < d[0] * 9 + d[1] * 9) {
+      if (!clear(x, z, 4.5) || nearTree(x, z, 7)) continue;
+      // tree code as in the pipeline: kind (0 broadleaf, 1 tall, 2 small/ornamental, 3 conifer) + 10 x height tag
+      const kind = c === 16 ? 3 : c === 11 ? 2 : rnd() < 0.2 ? 1 : rnd() < 0.35 ? 2 : 0;
+      extra.push(x, hAt(x, z), z, kind);
+      trees = Float32Array.from([...trees, x, 0, z, 0]);   // keep spacing between new trees too
+    }
+  }
+  return { bushes: new Float32Array(bushes), trees: new Float32Array(extra) };
 }
 
 function wall(B, pts, th, h, hAt, id) {

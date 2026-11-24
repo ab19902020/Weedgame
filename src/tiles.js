@@ -45,6 +45,7 @@ export class Tiles {
   buildShared() {
     // tree geometries (leaf-card crowns, forked trunks: vegetation.js)
     this.crownGeo = crownGeometry();
+    this.bushGeo = crownGeometry(26);   // shrubs and hedge bushes (tileWorker plantings), same leaf material
     this.trunkGeo = trunkGeometry();
     // street lamp: pole + arm + head (lampHead attribute = 1 on the luminaire)
     const parts = [];
@@ -130,6 +131,7 @@ export class Tiles {
       const sg = geoFrom(d.struct, 'surf', 1); if (sg) this.addMesh(t, sg, this.mats.struct, { cast: true, receive: true });
       this.addTrees(t, d.trees);
       this.addLamps(t, d.lamps);
+      if (d.bushes && d.bushes.length) this.addBushes(t, d.bushes);
       this.addSigns(t, d.signs);
       this.registerCollision(t);
     }
@@ -168,15 +170,39 @@ export class Tiles {
       const trunkH = Math.max(1.1, H - sy * (si === 4 ? 0.55 : 1.05));
       m.compose(p.set(x, y - 0.15, z), q, s.set(0.85 + H / 18, trunkH, 0.85 + H / 18)); trunks.setMatrixAt(i, m);
       col.setRGB(PAL[si][0], PAL[si][1], PAL[si][2]);
-      crowns.setColorAt(i, col); trunks.setColorAt(i, col);
+      crowns.setColorAt(i, col);
       t.trees.push([x + t.data.ox, z + t.data.oz, H]);
     }
     if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
-    if (trunks.instanceColor) trunks.instanceColor.needsUpdate = true;
     crowns.castShadow = trunks.castShadow = this.shadows;
     crowns.receiveShadow = this.shadows;
     crowns.computeBoundingSphere(); trunks.computeBoundingSphere();
     t.group.add(crowns, trunks);
+  }
+  // shrubs and leafy hedges: [x, y, z, sx, sy, sz, yaw, tint] from the worker; tints as for tree species
+  addBushes(t, b) {
+    const n = b.length / 8, q = this.budget?.bushes ?? 1;
+    const keep = q >= 1 ? n : Math.floor(n * q); if (!keep) return;
+    const im = new THREE.InstancedMesh(this.bushGeo, this.mats.crown, keep);
+    const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+    // half-tints: shrub green, fresh green, dark privet/laurel (hedges), copper-leaved, gorse, flowering
+    const PAL = [[0.46, 0.54, 0.38], [0.58, 0.64, 0.38], [0.36, 0.48, 0.32], [0.6, 0.42, 0.34], [0.72, 0.68, 0.3], [0.7, 0.46, 0.5]];   // + gorse yellow, blossom pink
+    let k = 0;
+    for (let i = 0; i < n && k < keep; i++) {
+      if (q < 1 && b[i * 8 + 7] !== 2 && (i * 0.6180339887 % 1) > q) continue;
+      p.set(b[i * 8], b[i * 8 + 1], b[i * 8 + 2]);   // tile-local, like the trees (the group carries the tile offset)
+      qq.setFromAxisAngle(up, -b[i * 8 + 6]);
+      m.compose(p, qq, s.set(b[i * 8 + 3] * 0.5, b[i * 8 + 4], b[i * 8 + 5] * 0.5));
+      im.setMatrixAt(k, m);
+      const c = PAL[b[i * 8 + 7] | 0] || PAL[0], v = 0.9 + ((i * 0.754877666) % 1) * 0.2;
+      im.setColorAt(k, col.setRGB(c[0] * v, c[1] * v, c[2] * v));
+      k++;
+    }
+    im.count = k;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.castShadow = this.shadows; im.receiveShadow = true;
+    im.computeBoundingSphere();
+    t.group.add(im);
   }
   addLamps(t, lp) {
     const n = lp.length / 4; if (!n) return;
@@ -315,7 +341,7 @@ export class Tiles {
   }
   disposeTile(t, keepSlot) {
     this.scene.remove(t.group);
-    t.group.traverse(o => { if (o.isMesh && o.geometry !== this.crownGeo && o.geometry !== this.trunkGeo && o.geometry !== this.lampGeo) o.geometry.dispose(); if (o.isInstancedMesh) o.dispose(); });
+    t.group.traverse(o => { if (o.isMesh && o.geometry !== this.crownGeo && o.geometry !== this.trunkGeo && o.geometry !== this.lampGeo && o.geometry !== this.bushGeo) o.geometry.dispose(); if (o.isInstancedMesh) o.dispose(); });
     if (t.signs && this.signAtlas) for (const s of t.signs) this.signAtlas.free(s);
     this.unregisterCollision(t);
     if (!keepSlot && t.slot != null) this.freeSlots.push(t.slot);

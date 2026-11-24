@@ -142,7 +142,12 @@ function bodyMaterial(src, C, s) {
   const inScreen = step(S.z0, p.z).mul(step(p.z, S.z1)).mul(step(S.y0, p.y)).mul(step(ax, S.x));
   const inBack = step(p.z, Bk.z).mul(step(Bk.y0, p.y)).mul(step(p.y, Bk.y1)).mul(step(ax, Bk.x));
   const inSide = step(Sd.x, ax).mul(step(Sd.y0, p.y)).mul(step(p.y, Sd.y1)).mul(step(Sd.z0, p.z)).mul(step(p.z, Sd.z1));
-  const glass = max(max(inScreen, inBack), inSide).mul(smoothstep(0.42, 0.22, lum)).mul(smoothstep(0.28, 0.14, sat));
+  // the texture has the cabin (seats, dash) baked into the glass, so the middle of each pane is glass whatever
+  // its colour; only the edges, where frame and seals meet the glass, go by the texture
+  const coreS = inScreen.mul(step(S.z0 + 0.02, p.z)).mul(step(p.z, S.z1 - 0.022)).mul(step(S.y0 + 0.012, p.y)).mul(step(ax, S.x - 0.02));
+  const coreB = inBack.mul(step(Bk.y0 + 0.01, p.y)).mul(step(p.y, Bk.y1 - 0.01)).mul(step(ax, Bk.x - 0.02));
+  const coreSd = inSide.mul(step(Sd.y0 + 0.012, p.y)).mul(step(p.y, Sd.y1 - 0.014)).mul(step(Sd.z0 + 0.025, p.z)).mul(step(p.z, Sd.z1 - 0.02));
+  const glass = max(max(max(inScreen, inBack), inSide).mul(smoothstep(0.42, 0.22, lum)).mul(smoothstep(0.28, 0.14, sat)), max(max(coreS, coreB), coreSd));
   // colour: the baked paint, darker and scuffed where dented
   const scuff = step(0.9, n0).mul(smoothstep(0.15, 0.5, dm)).mul(float(1).sub(glass));
   let col = mix(base, mix(vec3(0.01, 0.013, 0.017), base.mul(0.3), 0.3), glass);   // even dark tint; reflections do the rest

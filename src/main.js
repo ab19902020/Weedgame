@@ -73,6 +73,7 @@ export async function boot(extra = {}) {
     workers: Math.min(3, Math.max(1, (navigator.hardwareConcurrency || 4) - 2)),
   });
   tiles.signAtlas = new SignAtlas();
+  tiles.budget = budget;   // bush density per quality (tiles.addBushes)
   const world = new World(extra.weather);
   const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, budget, Q, U, lightPos, lightCol, NL, frame: 0 };
   window.GC = G;
