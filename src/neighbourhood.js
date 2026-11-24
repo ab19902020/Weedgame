@@ -81,20 +81,22 @@ export class Neighbourhood {
   }
   startFire(){
     const G=this.G, net=G.net;
-    const target=G.traffic.list.find(v=>v.kind==='parked' && !v.owner && !v.free && Math.hypot(v.x-G.focus.x,v.z-G.focus.z)<160);
-    if(!target)return false;
+    const targets=G.traffic.list.filter(v=>v.kind==='parked' && !v.owner && !v.free && Math.hypot(v.x-G.focus.x,v.z-G.focus.z)<160);
+    for(const target of targets){
     const snap=net.nearest(target.x,target.z,20,e=>net.flags[e]&16);
-    if(!snap)return false;
+    if(!snap)continue;
     const dest=snap.e*2,route=[dest],seen=new Set([snap.e]);let length=0;
     while(length<230){
       const h=net.inD[net.startNode(route[0])].find(h=>!seen.has(h>>1));if(h==null)break;
       seen.add(h>>1);route.unshift(h);length+=net.len[h>>1];
     }
-    if(length<65)return false;
+    if(length<65)continue;
     const engine=G.traffic.spawnAt(route[0],0,{kind:'fire',model:'fire',paint:0xa51e1b,route,v:0});
     Object.assign(engine,{siren:true,status:'responding',target:{x:target.x,z:target.z}});
     this.incident={engine,x:target.x,z:target.z,y:target.y,time:0,worked:0};this.fire.visible=true;this.fire.position.set(target.x,target.y+.65,target.z);
     G.hud.feed('Fire brigade called · '+(G.roadName(target.x,target.z)||'vehicle fire'));return true;
+    }
+    return false;
   }
   response(dt){
     const s=this.incident;if(!s)return;
