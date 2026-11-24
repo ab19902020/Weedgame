@@ -14,6 +14,10 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 | Historic England, list entry 1001641 (cited in the v0.5 hand-off, docs/CITY-DESIGN.md, as describing the two lodges and Bath-stone carriage arch) | Historic England list text | Not re-checked in this session | Cemetery Junction | Design reference for the arch/lodges model; no dimensions taken from it | Reference description only |
 | Reading Museum, “Our building history” (cited in docs/CITY-DESIGN.md) | Website text | Not re-checked in this session | Reading Town Hall | Design reference: Waterhouse clock tower, terracotta, contrasting local brick | Reference description only |
 
+## Sound recordings
+
+`www/sfx/berkshire.ogg` holds 124 field-recording and foley cues (traffic, engines, horns, footsteps by surface, crowd, crashes). They are cut from CC0 and CC BY 3.0 recordings on OpenGameArt and Freesound. Each source, author and licence is listed in `www/sfx/CREDITS.txt`, which ships in the APK beside the bank; the CC BY items need that attribution kept. Cue offsets are in `src/soundCues.json`. The player's own engine, tyre squeal and scrape are synthesised (`src/audio.js`).
+
 ## Surface textures (photographic, CC0)
 
 Downloaded from Poly Haven (polyhaven.com) on 2026-11-23 by `tools/assets/fetch_textures.py`. All Poly Haven textures are **CC0 1.0** (public domain, no attribution required; credited here anyway). Each is reduced to 512 px: the albedo has its AO map multiplied in at 35%, and the second image packs the OpenGL normal map (RG) with roughness (B). The files are `www/assets/tex/<layer>_a.jpg` and `<layer>_n.jpg`, about 3.4 MB in total. Colours are re-tinted in the shaders per building, landcover class and weather.
