@@ -1,0 +1,88 @@
+Berkshire sandbox sound recordings
+
+Game edits: excerpting, mono mix, resampling, gain adjustment, fades, loop editing and Ogg Vorbis encoding. Running and kick contacts are individual edits from recorded sequences.
+
+Car Engine Loop 96kHz, 4s — qubodup, CC BY 3.0
+https://opengameart.org/content/car-engine-loop-96khz-4s
+https://creativecommons.org/licenses/by/3.0/
+
+Car Sound Effects Pack — GGBotNet, CC0
+https://opengameart.org/content/car-sound-effects-pack-low-quality
+
+Footsteps boots run on asphalt — YannSauvin, CC0
+https://freesound.org/people/YannSauvin/sounds/777606/
+
+voicesstreet2 — kayaker25, CC0
+https://freesound.org/people/kayaker25/sounds/849952/
+
+Series of Kicks — MoveAwayPodcast, CC BY 4.0
+https://freesound.org/people/MoveAwayPodcast/sounds/555729/
+https://creativecommons.org/licenses/by/4.0/
+
+Car Crash — squareal, CC0
+https://freesound.org/people/squareal/sounds/237375/
+
+Whoosh — qubodup, CC0
+https://freesound.org/people/qubodup/sounds/60013/
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Footsteps and punches edited by the C-Dogs SDL contributors
+Source revision 04a830fe0c53747f9d682f8d880b9a1f38d51422
+https://github.com/cxong/cdogs-sdl/tree/04a830fe0c53747f9d682f8d880b9a1f38d51422/sounds
+
+boots
+Derived from footstep-concrete.wav by swuing
+http://www.freesound.org/people/swuing/sounds/38873/
+
+http://creativecommons.org/licenses/by/3.0/
+
+grass
+Derived from footstep-grass.wav by swuing
+https://freesound.org/people/swuing/sounds/38874/
+
+http://creativecommons.org/licenses/by/3.0/
+
+gravel
+Derived from Pack: Gravel Footsteps by Ali_6868
+https://freesound.org/people/Ali_6868/packs/21608/
+
+https://creativecommons.org/publicdomain/zero/1.0/
+
+water
+Derived from Water Footsteps by EminYILDIRIM
+https://freesound.org/people/EminYILDIRIM/sounds/608663/
+http://creativecommons.org/licenses/by/4.0/
+
+And footstep-concrete.wav by swuing
+http://www.freesound.org/people/swuing/sounds/38873/
+http://creativecommons.org/licenses/by/3.0/
+
+
+wood
+Derived from footstep-wood.wav by swuing
+https://freesound.org/people/swuing/sounds/38876/
+
+http://creativecommons.org/licenses/by/3.0/
+
+metal
+Derived from fboots on aluminum ladder 01 by Eelke
+https://freesound.org/people/Eelke/sounds/462598/
+
+http://creativecommons.org/licenses/by/4.0/
+
+
+tile
+Derived from footstep-concrete.wav by swuing
+http://www.freesound.org/people/swuing/sounds/38873/
+
+And Squeaky footstep.wav from ceberation
+https://freesound.org/people/ceberation/sounds/235524/
+
+http://creativecommons.org/licenses/by/3.0/
+
+punch
+Adapted from Punch, slap, n' kick.wav
+by CGEffex
+http://freesound.org/people/CGEffex/sounds/98341/
+http://creativecommons.org/licenses/by/4.0/
+

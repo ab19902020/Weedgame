@@ -194,6 +194,8 @@ export class Brothers {
       me.x = v.x + rx * (v.def.W / 2 + 0.7); me.z = v.z + rz * (v.def.W / 2 + 0.7);
       me.y = G.tiles.ground(me.x, me.z, v.y + 0.5) ?? v.y; me.heading = v.heading + Math.PI / 2;
       me.vehicle = null;
+      G.audio?.play('Car_Engine_Turning_Off', v.x, v.y, v.z);
+      G.audio?.play('Car_Door_Close', me.x, me.y, me.z);
       G.events.emit('parked', { v, by: me });
       G.hud.toast(`${me.short} parked on ${G.roadName(v.x, v.z) || 'the street'}`);
       G.save.markVehicle(v);
@@ -201,6 +203,8 @@ export class Brothers {
       const n = this.nearestVehicle();
       if (!n) { G.hud.toast('No vehicle within reach'); return; }
       const wasNpc = !n.owner && !n.free;
+      G.audio?.play('Car_Door_Open', n.x, n.y, n.z);
+      if (n.parked) G.audio?.play('Car_Engine_Start_Up', n.x, n.y, n.z);
       n.parked = false; n.player = true; n.free = true; n.hidden = false;
       me.vehicle = n.id; n.sp = 0;
       if (wasNpc) G.events.emit('tookVehicle', { v: n, by: me });

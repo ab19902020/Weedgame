@@ -60,6 +60,7 @@ export class Controller {
     if(hit && !(a.hitTime>0)){
       a.hitTime=.32;
       const target=G.peds.near(me.x,me.z,1.7).find(p=>Math.cos(me.heading)*(p.x-me.x)+Math.sin(me.heading)*(p.z-me.z)>0);
+      G.audio?.play(target ? 'punch' : 'swing', me.x, me.y + 1, me.z, target ? .55 : .16);
       if(target){target.fallT=2;G.peds.disturb(me.x,me.z,12,'hit');}
     }
     if(a.hitTime>0){a.hitTime-=dt;a.pose='point';}
