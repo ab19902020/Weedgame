@@ -462,17 +462,32 @@ function floorHOf(M, bi) {
   return Math.max(2.5, Math.min(5.4, wall / Math.max(1, lv || 1)));
 }
 function mergeSigns(header, A, fascias) {
-  const covered = new Set(fascias.map(f => normName(f.name)));
   const data = [], text = [];
   const sg = A.sg && A.sg.length ? A.sg : new Float32Array(0);
   const sn = header.sn || [];
   const nSign = Math.min(sn.length, Math.floor(sg.length / 7));
+  const closeToFascia = (x0, z0, x1, z1) => {
+    const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+    for (const f of fascias) {
+      const fx = (f.x0 + f.x1) / 2, fz = (f.z0 + f.z1) / 2;
+      const half = Math.hypot(f.x1 - f.x0, f.z1 - f.z0) * 0.5 + 1.6;
+      if (Math.hypot(mx - fx, mz - fz) < half) return true;
+    }
+    return false;
+  };
   for (let i = 0; i < nSign; i++) {
     const name = sn[i] || '';
-    if (!name || covered.has(normName(name))) continue;
+    if (!name) continue;
+    const bi = sg[i * 7 + 5] | 0;
+    const key = normName(name);
+    if (fascias.some(f => f.bi === bi && normName(f.name) === key)) continue;
+    let x0 = sg[i * 7], z0 = sg[i * 7 + 1], x1 = sg[i * 7 + 2], z1 = sg[i * 7 + 3];
+    if (closeToFascia(x0, z0, x1, z1)) continue;
+    const ring = outerRing(A, bi);
+    if (ring) [x0, z0, x1, z1] = faceOut(ring, x0, z0, x1, z1);
     const brand = fasciaBrand(name, true);
-    const box = signBox(brand, floorHOf(A.bM, sg[i * 7 + 5] | 0));
-    data.push(sg[i * 7], sg[i * 7 + 1], sg[i * 7 + 2], sg[i * 7 + 3], sg[i * 7 + 4], box.dy, box.h);
+    const box = signBox(brand, floorHOf(A.bM, bi));
+    data.push(x0, z0, x1, z1, sg[i * 7 + 4], box.dy, box.h);
     text.push(name);
   }
   for (const f of fascias) {
@@ -481,43 +496,64 @@ function mergeSigns(header, A, fascias) {
   }
   return { data: new Float32Array(data), text };
 }
-// Centred wordmark on the street edge. Large stores sit the board on a canopy lip.
-function placeFascia(fascias, outer, edge, baseRel, floorH, brand) {
-  const [x0, z0] = outer[edge], [x1, z1] = outer[(edge + 1) % outer.length];
-  const dx = x1 - x0, dz = z1 - z0, fl = Math.hypot(dx, dz);
-  if (fl < 2.4) return null;
+function outerRing(A, bi) {
+  const P = A.bP, R = A.bR, C = A.bC;
+  if (!P || bi < 0 || bi >= P.length) return null;
+  let ri = 0, ci = 0;
+  for (let i = 0; i < bi; i++) for (let k = 0; k < P[i]; k++) ci += R[ri++];
+  if (ri >= R.length) return null;
+  const n = R[ri], ring = [];
+  for (let q = 0; q < n; q++) ring.push([C[(ci + q) * 2] / 10, C[(ci + q) * 2 + 1] / 10]);
+  return ring.length > 2 ? ring : null;
+}
+function insideRing(ring, x, z) {
+  let c = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0], zi = ring[i][1], xj = ring[j][0], zj = ring[j][1];
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / ((zj - zi) || 1e-9) + xi) c = !c;
+  }
+  return c;
+}
+// Street side of an edge. Returns the segment ordered so (dz, -dx) points out of the footprint.
+function faceOut(ring, x0, z0, x1, z1) {
+  const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz) || 1;
+  const nx = dz / L, nz = -dx / L, mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+  if (insideRing(ring, mx + nx * 0.7, mz + nz * 0.7)) return [x1, z1, x0, z0];
+  return [x0, z0, x1, z1];
+}
+function edgeFrame(ring, q) {
+  const [x0, z0] = ring[q], [x1, z1] = ring[(q + 1) % ring.length];
+  const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
+  if (L < 2.2) return null;
+  let nx = dz / L, nz = -dx / L;
+  const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+  if (insideRing(ring, mx + nx * 0.6, mz + nz * 0.6)) { nx = -nx; nz = -nz; }
+  return { q, L, nx, nz, mx, mz, x0, z0, x1, z1 };
+}
+// Name board on the street face, just proud of the fascia. No canopy — that was hiding the lettering.
+function placeFascia(fascias, ring, edge, baseRel, floorH, brand, bi) {
+  const e = edgeFrame(ring, edge);
+  if (!e || e.L < 2.3) return null;
+  const [ax, az, bx, bz] = faceOut(ring, e.x0, e.z0, e.x1, e.z1);
+  const dx = bx - ax, dz = bz - az, fl = Math.hypot(dx, dz) || 1;
+  const tx = dx / fl, tz = dz / fl, nx = dz / fl, nz = -dx / fl;
+  const box = signBox(brand, floorH);
+  const wide = !!(brand.canopy && fl >= 14);
+  let w = Math.min(fl - 0.3, wide ? Math.min(16, Math.max(9, fl * 0.42)) : fl - 0.2);
+  if (w < 2.1) return null;
+  const c0 = (fl - w) / 2, out = 0.06;
   let uF = 0;
   for (let q = 0; q < edge; q++) {
-    const [ax, az] = outer[q], [bx, bz] = outer[(q + 1) % outer.length];
-    const l = Math.hypot(bx - ax, bz - az); if (l >= 0.02) uF += l;
+    const [px, pz] = ring[q], [qx, qz] = ring[(q + 1) % ring.length];
+    const l = Math.hypot(qx - px, qz - pz); if (l >= 0.02) uF += l;
   }
-  const tx = dx / fl, tz = dz / fl, nx = tz, nz = -tx;
-  const box = signBox(brand, floorH);
-  const canopy = !!(brand.canopy && fl >= 12);
-  let w = canopy ? Math.min(15, Math.max(8, fl * 0.36)) : Math.min(10.5, Math.max(3.3, String(brand.label).length * 0.48));
-  w = Math.min(w, fl - 0.45);
-  if (w < 2.2) return null;
-  const inset = canopy ? 1.52 : 0, c0 = (fl - w) / 2;
+  const doorT = brand.canopy ? 0.5 : 0.72;
   fascias.push({
-    x0: x0 + tx * c0 + nx * inset, z0: z0 + tz * c0 + nz * inset,
-    x1: x0 + tx * (c0 + w) + nx * inset, z1: z0 + tz * (c0 + w) + nz * inset,
-    base: baseRel, dy: box.dy, h: box.h, name: brand.label,
+    x0: ax + tx * c0 + nx * out, z0: az + tz * c0 + nz * out,
+    x1: ax + tx * (c0 + w) + nx * out, z1: az + tz * (c0 + w) + nz * out,
+    base: baseRel, dy: box.dy, h: box.h, name: brand.label, bi,
   });
-  return { x0, z0, x1, z1, fl, box, doorU: uF + fl * 0.5 };
-}
-function addShopCanopy(B, x0, z0, x1, z1, y0, y1, uvY, depth, ex) {
-  const dx = x1 - x0, dz = z1 - z0, L = Math.hypot(dx, dz);
-  if (L < 8 || y1 <= y0) return;
-  const tx = dx / L, tz = dz / L, nx = dz / L, nz = -dx / L, end = 0.04;
-  const A = [x0 - tx * end, z0 - tz * end], C = [x1 + tx * end, z1 + tz * end];
-  const Aw = [A[0] + nx * depth, A[1] + nz * depth], Cw = [C[0] + nx * depth, C[1] + nz * depth];
-  const soffit = [ex[0], ex[1], ex[2], 11];
-  const uv = [[0, uvY], [L, uvY], [L, uvY], [0, uvY]];
-  quad(B, [Aw[0], y0, Aw[1]], [Cw[0], y0, Cw[1]], [Cw[0], y1, Cw[1]], [Aw[0], y1, Aw[1]], [nx, 0, nz], uv, ex);
-  quad(B, [A[0], y1, A[1]], [C[0], y1, C[1]], [Cw[0], y1, Cw[1]], [Aw[0], y1, Aw[1]], [0, 1, 0], uv, ex);
-  quad(B, [Aw[0], y0, Aw[1]], [Cw[0], y0, Cw[1]], [C[0], y0, C[1]], [A[0], y0, A[1]], [0, -1, 0], null, soffit);
-  quad(B, [A[0], y0, A[1]], [Aw[0], y0, Aw[1]], [Aw[0], y1, Aw[1]], [A[0], y1, A[1]], [-tx, 0, -tz], [[0, uvY], [1, uvY], [1, uvY], [0, uvY]], ex);
-  quad(B, [Cw[0], y0, Cw[1]], [C[0], y0, C[1]], [C[0], y1, C[1]], [Cw[0], y1, Cw[1]], [tx, 0, tz], [[0, uvY], [1, uvY], [1, uvY], [0, uvY]], ex);
+  return { fl, box, doorU: uF + e.L * doorT };
 }
 function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   const B = new Buf(4);
@@ -550,17 +586,27 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   const planters = [];
   const fascias = [];
   const colPts = [];
+  const poiOn = new Set();
+  if (!lod && A.sg && header.sn) {
+    const nSign = Math.min(header.sn.length, Math.floor(A.sg.length / 7));
+    for (let i = 0; i < nSign; i++) if (header.sn[i]) poiOn.add(A.sg[i * 7 + 5] | 0);
+  }
   let ci = 0, ri = 0;
   for (let bi = 0; bi < P.length; bi++) {
     const m = M.subarray(bi * NM, bi * NM + NM);
     const base = m[0] + hmin, low = m[1] + hmin - 0.6, wallH = m[2], roof = m[3], rh = m[4];
     const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], seed = m[13];
     const bname = (header.bn && header.bn[bi]) || '';
-    const brand = (!lod && fasciaBrand(bname, m[12] > 0 || cls === 6 || cls === 7)) || null;
+    const retail = m[12] > 0 || cls === 6 || cls === 7;
+    const brand = (!lod && fasciaBrand(bname, retail)) || null;
     // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
-    const shop = m[12] || ((cls === 6 || cls === 7) && bname) || brand ? 1 : 0;
+    const shop = m[12] || ((cls === 6 || cls === 7) && bname) || brand || poiOn.has(bi) ? 1 : 0;
     if (cls === 13) { for (let k = 0; k < P[bi]; k++) ci += R[ri++]; continue; } // canopies are drawn by landmarks.js
-    const floorH = Math.max(2.4, Math.min(5, wallH / Math.max(1, lv)));
+    // a supermarket is one tall retail front, not two floors of brick with a garage door
+    const retailBox = !!(brand && brand.canopy);
+    const floorH = retailBox
+      ? Math.max(3.4, Math.min(9.2, wallH))
+      : Math.max(2.4, Math.min(5, wallH / Math.max(1, lv || 1)));
     const rings = [];
     for (let k = 0; k < P[bi]; k++) {
       const n = R[ri++], ring = [];
@@ -577,75 +623,110 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     const pitched = roof > 0 && rL > 0 && !lod;
     const top = base + wallH + (lod && roof ? rh * 0.45 : 0);
     const parapet = !pitched && !lod && (cls === 3 || cls === 6 || cls === 7 || cls === 11) ? 0.6 : 0;
-    // frontage edge (nearest to a road)
+    // public faces. Sample landcover OUTSIDE the footprint (rings are not always CCW).
     let front = -1;
-    if (!lod && segs.length) {
-      let bd = 1e9;
+    const street = [];
+    if (!lod && outer && outer.length > 2) {
+      const scored = [];
       for (let q = 0; q < outer.length; q++) {
-        const [x0, z0] = outer[q], [x1, z1] = outer[(q + 1) % outer.length];
-        if (Math.hypot(x1 - x0, z1 - z0) < 2.5) continue;
-        const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2, L = Math.hypot(x1 - x0, z1 - z0);
-        const px = mx + (z1 - z0) / L * 2.2, pz = mz - (x1 - x0) / L * 2.2;   // 2.2 m outside the wall
+        const fr = edgeFrame(outer, q);
+        if (!fr || fr.L < 2.4) continue;
+        const px = fr.mx + fr.nx * 2.4, pz = fr.mz + fr.nz * 2.4;
         const c = lcAt(Math.floor(px), Math.floor(pz));
-        let d = segDist(mx, mz);
-        if (shop && walkSegs.length) d = Math.min(d, segDist(mx, mz, walkSegs) - 8);
-        if (shop && (c === 12 || c === 2)) d -= 15;     // shopfronts face the pavement / precinct
-        if (c === 3) d += 50;                           // never a party wall
-        if (d < bd) { bd = d; front = q; }
+        let d = segs.length ? segDist(fr.mx, fr.mz) : 36;
+        if (shop && walkSegs.length) d = Math.min(d, segDist(fr.mx, fr.mz, walkSegs) - 6);
+        if (shop && (c === 12 || c === 2 || c === 17 || c === 8)) d -= 16;
+        if (c === 3) d += 50;
+        scored.push({ q, d, L: fr.L, c });
       }
-      if (bd > 40) front = -1;
+      if (scored.length) {
+        const net = segs.length || walkSegs.length;
+        if (!net) scored.sort((a, b) => b.L - a.L);
+        else scored.sort((a, b) => a.d - b.d);
+        const best = scored[0];
+        if (!net || best.d < 42) front = best.q;
+        if (shop && front >= 0) {
+          const primary = edgeFrame(outer, front);
+          const pool = scored.filter(s => s.c !== 3 && s.L >= 3.4 && (!net || s.d < Math.min(24, best.d + 8)));
+          pool.sort((a, b) => b.L - a.L);
+          street.push(front);
+          for (const s of pool) {
+            if (s.q === front || !primary) continue;
+            const fr = edgeFrame(outer, s.q);
+            if (!fr) continue;
+            const dot = primary.nx * fr.nx + primary.nz * fr.nz;
+            if (Math.abs(dot) > 0.5) continue;
+            street.push(s.q);
+            break;
+          }
+        }
+      }
     }
-    if (!lod && brand && front < 0) {
+    if (!lod && (shop || brand) && front < 0 && outer) {
       let bl = 0, bq = -1;
       for (let q = 0; q < outer.length; q++) {
         const [ax, az] = outer[q], [bx, bz] = outer[(q + 1) % outer.length];
         const l = Math.hypot(bx - ax, bz - az);
         if (l > bl) { bl = l; bq = q; }
       }
-      if (bl >= 2.4) front = bq;
+      if (bl >= 2.4) { front = bq; if (shop && !street.length) street.push(bq); }
     }
     const clsCode = cls + (shop ? 32 : 0) + (brand ? brand.id * 64 : 0);
     // front door and bay window positions are chosen here (so the door hood and bay line up with the
     // painted door); the door's u coordinate along the wall rides in the seed attribute
-    let doorU = 0, seedEnc = seed, frontInfo = null;
-    if (!lod && front >= 0 && (cls === 1 || cls === 2)) {
+    let seedEnc = seed, frontInfo = null;
+    if (!lod && front >= 0 && (cls === 1 || cls === 2) && !shop) {
+      let uF = 0;
+      for (let q = 0; q < front; q++) { const [ax, az] = outer[q], [bx, bz] = outer[(q + 1) % outer.length]; const l = Math.hypot(bx - ax, bz - az); if (l >= 0.02) uF += l; }
+      const [ox0, oz0] = outer[front], [ox1, oz1] = outer[(front + 1) % outer.length], fl = Math.hypot(ox1 - ox0, oz1 - oz0);
+      if (fl >= 2.2) {
+        const dT0 = fl < 4.7 ? 0.5 : (seed % 2 ? 0.27 : 0.73);
+        const doorU = uF + fl * dT0;
+        seedEnc = seed + 1000 * Math.round(doorU * 4);
+        const [x0, z0, x1, z1] = faceOut(outer, ox0, oz0, ox1, oz1);
+        const flipped = x0 !== ox0 || z0 !== oz0;
+        frontInfo = { x0, z0, x1, z1, fl, dT: flipped ? 1 - dT0 : dT0 };
+      }
+    }
+    if (front >= 0 && (cls === 1 || cls === 2) && !shop) {
+      const fr = edgeFrame(outer, front);
+      if (fr && fr.L >= 4) {
+        const ce = segDist(fr.mx, fr.mz, segs, true);
+        const t = ce - 2.1;
+        if (t >= 1.6 && t <= 14) gardens.push([fr.x0, fr.z0, fr.x1, fr.z1, fr.nx, fr.nz, t, seed, cls, base + wallH]);
+      }
+    }
+    if (front >= 0 && shop && !retailBox) {
+      const fr = edgeFrame(outer, front);
+      if (fr && fr.L >= 4 && fr.L <= 22) planters.push([fr.x0, fr.z0, fr.x1, fr.z1, fr.nx, fr.nz, fr.L, seed]);
+    }
+    if (!lod && brand && street.length) {
+      let doorU = 0;
+      for (const q of street) {
+        const placed = placeFascia(fascias, outer, q, m[0], floorH, brand, bi);
+        if (placed && (q === front || !doorU)) doorU = placed.doorU;
+      }
+      if (doorU > 0.4) seedEnc = seed + 1000 * Math.round(doorU * 4);
+    } else if (!lod && shop && front >= 0) {
       let uF = 0;
       for (let q = 0; q < front; q++) { const [ax, az] = outer[q], [bx, bz] = outer[(q + 1) % outer.length]; const l = Math.hypot(bx - ax, bz - az); if (l >= 0.02) uF += l; }
       const [x0, z0] = outer[front], [x1, z1] = outer[(front + 1) % outer.length], fl = Math.hypot(x1 - x0, z1 - z0);
-      if (fl >= 2.2) {
-        const dT = seed % 2 ? 0.27 : 0.73;
-        doorU = uF + fl * (fl < 4.7 ? 0.5 : dT);
-        seedEnc = seed + 1000 * Math.round(doorU * 4);
-        frontInfo = { x0, z0, x1, z1, fl, dT: fl < 4.7 ? 0.5 : dT };
-      }
+      if (fl >= 2.2) seedEnc = seed + 1000 * Math.round((uF + fl * 0.72) * 4);
     }
-    if (front >= 0 && (cls === 1 || cls === 2)) {
-      const [x0, z0] = outer[front], [x1, z1] = outer[(front + 1) % outer.length];
-      const l = Math.hypot(x1 - x0, z1 - z0), nx = (z1 - z0) / l, nz = -(x1 - x0) / l;
-      const ce = segDist((x0 + x1) / 2, (z0 + z1) / 2, segs, true);
-      const t = ce - 2.1;
-      if (t >= 1.6 && t <= 14 && l >= 4) gardens.push([x0, z0, x1, z1, nx, nz, t, seed, cls, base + wallH]);
-    }
-    if (front >= 0 && shop) {
-      const [x0, z0] = outer[front], [x1, z1] = outer[(front + 1) % outer.length];
-      const l = Math.hypot(x1 - x0, z1 - z0);
-      if (l >= 4 && l <= 40 && !(brand && brand.canopy)) planters.push([x0, z0, x1, z1, (z1 - z0) / l, -(x1 - x0) / l, l, seed]);
-    }
-    if (!lod && brand && front >= 0) {
-      const placed = placeFascia(fascias, outer, front, m[0], floorH, brand);
-      if (placed && brand.canopy) seedEnc = seed + 1000 * Math.round(placed.doorU * 4);
-      if (placed && brand.canopy && placed.fl >= 12) {
-        addShopCanopy(B, placed.x0, placed.z0, placed.x1, placed.z1, base + placed.box.dy, base + placed.box.dy + placed.box.h, placed.box.dy + placed.box.h * 0.5, 1.48, [floorH, seedEnc, clsCode, 1]);
-      }
-    }
+    const streetSet = new Set(street);
     // walls
     rings.forEach((ring, k) => {
       let u = 0;
       for (let q = 0; q < ring.length; q++) {
         const [x0, z0] = ring[q], [x1, z1] = ring[(q + 1) % ring.length];
         const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.02) continue;
-        const nrm = [dz / l, 0, -dx / l]; // outward for CCW (x,z) rings; inner rings are CW -> faces courtyard
-        const part = k === 0 && q === front ? 1 : 0;
+        let nx = dz / l, nz = -dx / l;
+        if (k === 0) {
+          const mx = (x0 + x1) * 0.5, mz = (z0 + z1) * 0.5;
+          if (insideRing(ring, mx + nx * 0.55, mz + nz * 0.55)) { nx = -nx; nz = -nz; }
+        }
+        const nrm = [nx, 0, nz];
+        const part = k === 0 && (q === front || streetSet.has(q)) ? 1 : 0;
         const t = top + parapet;
         quad(B, [x0, low, z0], [x1, low, z1], [x1, t, z1], [x0, t, z0], nrm, [[u, low - base], [u + l, low - base], [u + l, t - base], [u, t - base]], [floorH, seedEnc, clsCode, part]);
         if (parapet) quad(B, [x0, top, z0], [x1, top, z1], [x1, t, z1], [x0, t, z0], nrm.map(v => -v), [[u, 0], [u + l, 0], [u + l, 1], [u, 1]], [floorH, seedEnc, clsCode, 6]);

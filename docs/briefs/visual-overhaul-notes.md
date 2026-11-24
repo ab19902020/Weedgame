@@ -87,3 +87,9 @@ WebGL2 shader check: 0 failing programs after this round.
 
 Branch `grok/town-look`. Named shops take their fascia from the OSM name already on the footprint (`bn`) or the POI sign (`sn`). `src/brands.js` matches the chain (Waitrose, Iceland, Tesco, the banks, the high street) and `src/signs.js` paints original lettering in that chain's colours. Large stores get a canopy and deeper glass; the brand id rides in `bA.z` as `id * 64`. No logo image files.
 
+## Round 6 (shop fronts, not brick garage bays)
+
+Branch `grok/town-look`. Still no cars, people, or weather.
+
+The fascia boards were easy to lose: a deep canopy sat in front of the wordmark, a second POI board sat on the same wall, and a clockwise footprint faced the mesh into the building so the street saw a hole. Street faces now point out of the footprint. The ground floor of that face is a shopfront (stall, metal mullions, glazed door, brand fascia) instead of brick piers and black openings. The real name sits on that fascia, one board per street face, and a corner return only when that side also opens onto the pavement. Supermarkets are one tall glazed front with the name in the top band. `src/brands.js`, `src/materials.js`, `src/tileWorker.js`.
+
