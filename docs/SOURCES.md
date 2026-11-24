@@ -14,6 +14,10 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 | Historic England, list entry 1001641 (cited in the v0.5 hand-off, docs/CITY-DESIGN.md, as describing the two lodges and Bath-stone carriage arch) | Historic England list text | Not re-checked in this session | Cemetery Junction | Design reference for the arch/lodges model; no dimensions taken from it | Reference description only |
 | Reading Museum, “Our building history” (cited in docs/CITY-DESIGN.md) | Website text | Not re-checked in this session | Reading Town Hall | Design reference: Waterhouse clock tower, terracotta, contrasting local brick | Reference description only |
 
+## Characters
+
+`www/characters/cal.glb` and `www/characters/leon.glb` are the two playable brothers. Both were supplied by the project owner as Tripo-generated models with their animation sets, and were processed with `tools/characters/prepare-hero.mjs` (see `docs/CLAUDE-CHARACTERS.md`). `officer.glb` and `civilian.glb` come from the earlier character hand-over.
+
 ## Sound recordings
 
 `www/sfx/berkshire.ogg` holds 124 field-recording and foley cues (traffic, engines, horns, footsteps by surface, crowd, crashes). They are cut from CC0 and CC BY 3.0 recordings on OpenGameArt and Freesound. Each source, author and licence is listed in `www/sfx/CREDITS.txt`, which ships in the APK beside the bank; the CC BY items need that attribution kept. Cue offsets are in `src/soundCues.json`. The player's own engine, tyre squeal and scrape are synthesised (`src/audio.js`).
@@ -76,4 +80,4 @@ The leaf-cluster texture for tree crowns is drawn procedurally on a canvas at st
 
 ## Signing
 
-`builds/Green-County-0.12.0-dev.apk` (and v0.6–v0.11 before it) is signed with a **development key** generated in the build container (`CN=Green County Development`, SHA-256 `2e65a803dd6285bca94a1d76cb7ae7dd8ab4475b6d847c957a09bb8c4e2f7ff3`). The key isn't committed (`*.keystore` is git-ignored) and the container is ephemeral, so later builds will have a different key. Android won't install a differently-signed update over the top: uninstall first. The previous v0.5 APK used another key, so v0.6 needs a fresh install too. Prototype saves held by the old file:// WebView origin are handed over by `migrate.html` only when that data is still on the device.
+`builds/Green-County-0.13.0-dev.apk` (and v0.6–v0.12 before it) is signed with a **development key** generated in the build container (`CN=Green County Development`, SHA-256 `2e65a803dd6285bca94a1d76cb7ae7dd8ab4475b6d847c957a09bb8c4e2f7ff3`). The key isn't committed (`*.keystore` is git-ignored) and the container is ephemeral, so later builds will have a different key. Android won't install a differently-signed update over the top: uninstall first. The previous v0.5 APK used another key, so v0.6 needs a fresh install too. Prototype saves held by the old file:// WebView origin are handed over by `migrate.html` only when that data is still on the device.
