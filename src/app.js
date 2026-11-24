@@ -10,6 +10,7 @@ import { Traffic } from './traffic.js';
 import { Signals, SignalRenderer } from './signals.js';
 import { VehicleRenderer } from './vehicles.js';
 import { People } from './characters.js';
+import { Neighbourhood } from './neighbourhood.js';
 import { Peds } from './peds.js';
 import { Police } from './police.js';
 import { Parking, Buses } from './services.js';
@@ -60,6 +61,7 @@ G.people = new People(G.scene, G.renderer.shadowMap.enabled);
 G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
 G.peds = new Peds(G);
 G.police = new Police(G);
+G.neighbourhood=new Neighbourhood(G);
 G.parking = new Parking(G);
 G.buses = new Buses(G);
 G.transit = new Transit(G);
@@ -175,6 +177,7 @@ function step(dt, render) {
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
   G.police.update(dt);
+  G.neighbourhood.update(dt);
   G.atmos.updateCover(me.x, me.z);
   G.atmos.updateLights(me.x, me.z);
   G.atmos.updateNearLights(G.camera.position);
@@ -188,7 +191,7 @@ function step(dt, render) {
   // draw dynamic actors
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.quality === 'low' ? 450 : 700);
-  const actors = [B.actor[B.active],...G.transit.people]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
+  const actors = [B.actor[B.active],...G.transit.people,...G.neighbourhood.actors]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
   const rigs = G.people.rigs;
   if (rigs.previewRole) {
     const heading = B.cam.yaw;

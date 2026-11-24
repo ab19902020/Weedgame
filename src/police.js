@@ -170,7 +170,7 @@ export class Police {
         });
         G.hud.feed(`${u.id} on scene · ${inc.label}`);
       }
-      if (inc.t > 400) { inc.status = 'cleared'; }
+      if (inc.status==='responding' && inc.t > 400) { u.siren=false; u.target=null; u.incident=null; u.status='patrol'; u.dest=this.beatNode(u); inc.status='cleared'; }
     }
     if (inc.status === 'onscene') {
       // officers walk to the scene, talk with drivers, then clear

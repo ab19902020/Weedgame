@@ -13,6 +13,7 @@ export class Peds {
     this.tmp = [0, 0, 0, 0, 0];
     this.timer = 0;
     this.walkEdges = null;
+    this.residents=new Map();
     this.events = [];
     G.events.on('horn', e => this.horn(e));
     G.events.on('vehicleSweep', e => this.sweep(e));
@@ -77,7 +78,7 @@ export class Peds {
   toBusStop(p) {
     const stops = this.G.net.busStops;
     let best = -1, bd = 160;
-    for (let i = 0; i < stops.length; i++) { const d = Math.hypot(stops[i][0] - p.x, stops[i][1] - p.z); if (d < bd) { bd = d; best = i; } }
+    for (let i = 0; i < stops.length; i++) { if(!this.G.transit?.services.has(i))continue; const d = Math.hypot(stops[i][0] - p.x, stops[i][1] - p.z); if (d < bd) { bd = d; best = i; } }
     if (best < 0) return;
     p.goal = { kind: 'stop', i: best, x: stops[best][0], z: stops[best][1] };
   }
@@ -87,12 +88,22 @@ export class Peds {
     if (!this._ef || Math.hypot(this._ef.x - focus.x, this._ef.z - focus.z) > 40) { this._edges = this.pickWalkEdge(focus); this._ef = { x: focus.x, z: focus.z }; }
     if (this.timer <= 0) {
       this.timer = 0.3;
+      for(const [id,p] of this.residents){
+        if(Math.hypot(p.x-focus.x,p.z-focus.z)>R || this.G.tiles.terrain(p.x,p.z)==null || info.visible(p.x,p.y+1,p.z,1))continue;
+        p.t+=Math.max(0,G.time-p.awaySince);p.planAfter=0;p.mode='walk';p.goal=null;
+        this.list.push(p);this.residents.delete(id);
+      }
       const target = Math.min(170, this.density(focus.x, focus.z) * (G.quality === 'low' ? 0.5 : 1));
       if (this.list.length < target) for (let i = 0; i < 3; i++) this.spawn(focus, info, this.list.length < target * 0.3);
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
         const d = Math.hypot(p.x - focus.x, p.z - focus.z);
-        if ((d > KILL && !info.visible(p.x, p.y + 1, p.z, 1)) || p.gone) { this.list.splice(i, 1); this.queueRemove(p); }
+        if ((!p.officer && d > KILL && !info.visible(p.x, p.y + 1, p.z, 1)) || p.gone) { this.list.splice(i, 1); this.queueRemove(p);
+          if(!p.gone && p.job && !p.officer){
+            p.awaySince=G.time;p.leader=null;p.partner=null;p.stopIdx=null;
+            this.residents.set(p.id,p);
+            if(this.residents.size>400)this.residents.delete(this.residents.keys().next().value);
+          } }
       }
     }
     const rain = G.world.cur.rain;
@@ -109,12 +120,33 @@ export class Peds {
       if (p.mode === 'waitCross') { this.waitCross(p, dt); continue; }
       if (p.mode === 'scene') { this.atScene(p, dt); continue; }
       if (p.leader && !p.leader.gone && p.leader.mode === 'walk') { this.follow(p, dt); continue; }
+      if(!p.officer && p.id.startsWith('p') && !p.goal && !(p.planAfter>p.t)){
+        this.planDay(p);p.planAfter=p.t+30;
+      }
       this.walk(p, dt, rain);
     }
     // gentle separation
     for (let i = 0; i < this.list.length; i++) for (let j = i + 1; j < this.list.length; j++) {
       const a = this.list[i], b = this.list[j]; const dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
       if (d2 < 0.36 && d2 > 1e-6 && a.mode !== 'talk' && b.mode !== 'talk') { const d = Math.sqrt(d2), k = (0.6 - d) * 0.5 / d; a.x -= dx * k; a.z -= dz * k; b.x += dx * k; b.z += dz * k; }
+    }
+  }
+  planDay(p){
+    const hour=this.G.world.hours(), role=p.job ||= ['shop assistant','courier','office worker'][Number(p.id.slice(1))%3||0];
+    const kind=hour<7||hour>=18?'home':hour>=12&&hour<14?'shop':role==='shop assistant'?'shop':'work';
+    const places=[];
+    for(const tile of this.G.tiles.tiles.values())for(const site of tile.data?.buildings?.destinations||[]){
+      if(site.kind===kind && Math.hypot(site.x-p.x,site.z-p.z)<500)places.push(site);
+    }
+    for(let attempt=0;attempt<5 && places.length;attempt++){
+      const site=(attempt===0 && p[kind+'Site']) || places[Math.floor(this.rand()*places.length)];
+      const snap=this.net.nearest(site.x,site.z,65,e=>this.net.walkable(e));
+      if(!snap)continue;
+      const h=snap.e*2,path=this.net.route(this.net.endNode(p.h),this.net.startNode(h),{walk:true,limit:2500});
+      if(!path)continue;
+      p[kind+'Site']=site;p.dayPath=[...path,h];p.goal={kind:'routine',x:snap.x,z:snap.z};
+      p.activity=kind==='home'?'Home':kind==='shop'&&hour>=12&&hour<14?'Shopping':role;
+      return;
     }
   }
   ground(p) { const g = this.G.tiles.ground(p.x, p.z, p.y + 0.3); if (g != null) p.y += (g - p.y) * 0.5; }
@@ -128,7 +160,7 @@ export class Peds {
       const c = this.G.coverNear(p.x, p.z, 40);
       if (c) { p.goal = { kind: 'shelter', x: c[0], z: c[1] }; p.sheltered = true; }
     }
-    let sp = p.speed * hurry;
+    let sp = p.hurryUntil>p.t ? 3.8 : p.speed*hurry;
     // crossings on this edge: maybe cross the road
     const crs = net.crossByEdge.get(e);
     if (crs && !p.crossCool) for (const c of crs) {
@@ -144,6 +176,7 @@ export class Peds {
       if (p.goal) { // bias towards the goal
         let bd = 1e9; for (const h of outs) { net.at(h, Math.min(net.len[h >> 1], 30), this.tmp); const d = Math.hypot(this.tmp[0] - p.goal.x, this.tmp[2] - p.goal.z); if (d < bd) { bd = d; next = h; } }
       }
+      if(p.goal?.kind==='routine' && p.dayPath?.length && net.startNode(p.dayPath[0])===end)next=p.dayPath.shift();
       p.s -= L; p.h = next;
       if (!net.walkable(p.h >> 1)) { p.h = p.h ^ 1; p.s = 0; }
       // the pavement side flips sign relative to travel when reversing direction
@@ -157,6 +190,11 @@ export class Peds {
     if (p.goal) {
       const gd = Math.hypot(p.goal.x - p.x, p.goal.z - p.z);
       if (gd < 6) {
+        if(p.goal.kind==='routine'){
+          p.dayPath=null;p.mode='scene';p.sceneT=p.activity==='Shopping'?18:Math.max(65,((p.activity==='Home'?7:18)-this.G.world.hours()+24)%24*3600/Math.max(1,this.G.world.s.scale));
+          p.scenePose=p.activity==='Home'?'idle':p.job==='courier'?'phone':'talk';
+          p.sceneX=p.x+1;p.sceneZ=p.z;p.planAfter=p.t+p.sceneT+1;
+        }
         if (p.goal.kind === 'stop') this.joinQueue(p);
         else if (p.goal.kind === 'shelter') { p.mode = 'shelter'; p.shelterUntil = p.t + 60 + this.rand() * 60; p.x = p.goal.x + (this.rand() - 0.5) * 1.5; p.z = p.goal.z + (this.rand() - 0.5) * 1.5; }
         p.goal = null;

@@ -340,7 +340,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     return best;
   };
   const col = []; // collision: per building [ringStart, ringLen, top, base]
-  const landmarks = [];
+  const landmarks = [], destinations = [];
   const gardens = [];
   const colPts = [];
   let ci = 0, ri = 0;
@@ -350,6 +350,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], seed = m[13];
     // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
     const shop = m[12] || ((cls === 6 || cls === 7) && header.bn[bi] ? 1 : 0);
+
     if (cls === 13) { for (let k = 0; k < P[bi]; k++) ci += R[ri++]; continue; } // canopies are drawn by landmarks.js
     const floorH = Math.max(2.4, Math.min(5, wallH / Math.max(1, lv)));
     const rings = [];
@@ -359,6 +360,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       ci += n; rings.push(ring);
     }
     const outer = rings[0];
+    if(cls<=3 || shop || [6,7,8,10].includes(cls))destinations.push({x:ox+outer.reduce((sum,v)=>sum+v[0],0)/outer.length,z:oz+outer.reduce((sum,v)=>sum+v[1],0)/outer.length,kind:shop||cls===7?'shop':cls<=3?'home':'work',name:header.bn[bi]||''});
     if (m[14] > 0.5) { // hand-authored landmark: hand the footprint over, keep collision
       landmarks.push({ name: header.bn[bi], ring: outer.map(([x, z]) => [x + ox, z + oz]), base, wall: wallH });
       col.push(colPts.length / 2, outer.length, header.bn[bi] === 'Cemetery Arch' ? base - 1 : base + wallH + 4, base);
@@ -424,7 +426,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     for (const [x, z] of outer) colPts.push(x + ox, z + oz);
   }
   const g = B.pack();
-  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.landmarks = landmarks; g.gardens = gardens;
+  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.destinations = destinations; g.landmarks = landmarks; g.gardens = gardens;
   return g;
 }
 
