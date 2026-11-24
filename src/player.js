@@ -157,7 +157,7 @@ export class Brothers {
     const bus = v.model.startsWith('bus'), S = CAR_SPECS[v.model];
     // seat position from the car's own windscreen and belt line
     const eye = bus ? 2.3 : v.model === 'van' ? 1.8 : S ? (S.belt[0] + S.belt[1]) / 2 + 0.26 : 1.2;
-    const fwd = bus ? v.def.L / 2 - 1.2 : S ? S.ws0 - 1.4 : 0, side = bus ? 0.6 : 0.37;
+    const fwd = bus ? v.def.L / 2 - 1.2 : S ? Math.max(S.ws0 - 1.4, S.rr0 + 0.3) : 0, side = bus ? 0.6 : 0.37;
     c.x = v.x + fx * fwd + rx * side; c.y = v.y + eye; c.z = v.z + fz * fwd + rz * side;
     const look = (G.time - c.lastUser < 2.5) ? c.yaw + Math.PI - h : 0;     // drag to look around, eases back
     c.yaw = G.time - c.lastUser < 2.5 ? c.yaw : h + Math.PI;

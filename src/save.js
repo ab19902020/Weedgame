@@ -39,7 +39,7 @@ export class Save {
   markVehicle(v) { v.free = true; if (v.id.startsWith('p:')) this.taken.add(v.id); this.dirty = true; }
   collect() {
     const G = this.G, B = G.brothers;
-    const vehicles = G.traffic.list.filter(v => v.free || v.owner).map(v => ({ id: v.id, model: v.model, paint: v.paint, x: +v.x.toFixed(2), y: +v.y.toFixed(2), z: +v.z.toFixed(2), heading: +v.heading.toFixed(3), owner: v.owner || null, parkedBy: v.parkedBy || null }));
+    const vehicles = G.traffic.list.filter(v => v.free || v.owner).map(v => ({ id: v.id, model: v.model, paint: v.paint, x: +v.x.toFixed(2), y: +v.y.toFixed(2), z: +v.z.toFixed(2), heading: +v.heading.toFixed(3), owner: v.owner || null, parkedBy: v.parkedBy || null, dmg: v.dmg && v.dmg.some(d => d > 0.01) ? v.dmg.map(d => +d.toFixed(2)) : undefined }));
     return {
       version: 1, mode: 'sandbox', savedAt: new Date().toISOString(),
       brothers: B.b.map(b => ({ ...b })), active: B.active, camYaw: B.cam.yaw,

@@ -1,8 +1,9 @@
 // Green County · living Berkshire sandbox. Free roam only: no missions, objectives or calls.
-import { CarDynamics } from './carPhysics.js';
 import * as THREE from 'three/webgpu';
 import { boot } from './main.js';
 import { Controller } from './controller.js';
+import { CarDynamics } from './carPhysics.js';
+import { TyreFx } from './skidmarks.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import { Brothers } from './player.js';
@@ -59,6 +60,7 @@ G.input = new Input(document.body);
 G.signals = new Signals(G.net);
 G.traffic = new Traffic(G.net, G.signals, { seed: (Math.random() * 1e9) | 0 });
 G.carDyn = new CarDynamics(G);   // player driving, collisions, struck cars sliding (carPhysics.js)
+G.tyreFx = new TyreFx(G.scene);   // skid marks and tyre smoke
 G.traffic.maxVehicles = G.budget.vehicles;
 G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled);
 G.people = new People(G.scene, G.renderer.shadowMap.enabled);
@@ -112,7 +114,7 @@ G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
 G.controller=new Controller(G);
 for (const sv of G.save.vehicles) {
-  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy });
+  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined });
   if (sv.id.startsWith('p:')) G.save.taken.add(sv.id);
 }
 if (!G.traffic.byId.has('cal-car')) {
@@ -192,6 +194,7 @@ function step(dt, render) {
   G.traffic.obstacles = G.transit.ride ? [] : [pv ? { x: pv.x, z: pv.z, r: pv.def.L / 2, v: Math.abs(pv.sp || 0) } : { x: me.x, z: me.z, r: 0.5, v: 0 }];
   G.traffic.update(dt, G.focus, camInfo);
   G.carDyn.update(dt);
+  G.tyreFx.update(dt, G.world.wind);
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
   G.police.update(dt);

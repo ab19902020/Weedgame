@@ -110,7 +110,7 @@ export class CarDynamics {
     if (!this.loose.has(o)) {
       const sp = o.parked ? 0 : (o.v || 0);
       ph.vx = Math.cos(o.heading) * sp; ph.vz = Math.sin(o.heading) * sp; ph.w = 0;
-      this.loose.add(o);
+      this.loose.add(o); o._offLane = !o.parked;
     }
     return ph;
   }
@@ -406,11 +406,11 @@ export class CarDynamics {
   }
   // dent the zone nearest the contact; dv is the change of velocity the hit caused (m/s)
   damage(v, P, x, z, dv) {
-    if (dv < 1.6) return;
+    if (dv < 2.2) return;
     const d = v.dmg || (v.dmg = [0, 0, 0, 0]);
     const fx = Math.cos(v.heading), fz = Math.sin(v.heading), dx = x - v.x, dz = z - v.z;
     const lx = dx * fx + dz * fz, lz = -dx * fz + dz * fx;
-    const amt = Math.min(0.55, (dv - 1.6) / 16);
+    const amt = Math.min(0.45, (dv - 2.2) / 20);
     const ex = Math.abs(lx) / (P.L / 2), ez = Math.abs(lz) / (P.W / 2);
     const end = Math.max(0, Math.min(1, (ex - 0.55) / 0.35)), side = Math.max(0, Math.min(1, (ez - 0.5) / 0.4));
     const wEnd = end * (1 - side * 0.4), wSide = side * (1 - end * 0.4);
@@ -434,6 +434,7 @@ export class CarDynamics {
     v.steer = ph.steer;
     v.rpm = ph.rpm; v.gear = ph.gear;
     ph.scrape *= Math.max(0, 1 - dt * 4);
+    if (G.tyreFx) G.tyreFx.track(v, P, ph, G.world?.s?.wet || 0);
   }
 }
 
