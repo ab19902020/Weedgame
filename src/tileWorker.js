@@ -387,6 +387,20 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       if (bd > 40) front = -1;
     }
     const clsCode = cls + (shop ? 32 : 0);
+    // front door and bay window positions are chosen here (so the door hood and bay line up with the
+    // painted door); the door's u coordinate along the wall rides in the seed attribute
+    let doorU = 0, seedEnc = seed, frontInfo = null;
+    if (!lod && front >= 0 && (cls === 1 || cls === 2)) {
+      let uF = 0;
+      for (let q = 0; q < front; q++) { const [ax, az] = outer[q], [bx, bz] = outer[(q + 1) % outer.length]; const l = Math.hypot(bx - ax, bz - az); if (l >= 0.02) uF += l; }
+      const [x0, z0] = outer[front], [x1, z1] = outer[(front + 1) % outer.length], fl = Math.hypot(x1 - x0, z1 - z0);
+      if (fl >= 2.2) {
+        const dT = seed % 2 ? 0.27 : 0.73;
+        doorU = uF + fl * (fl < 4.7 ? 0.5 : dT);
+        seedEnc = seed + 1000 * Math.round(doorU * 4);
+        frontInfo = { x0, z0, x1, z1, fl, dT: fl < 4.7 ? 0.5 : dT };
+      }
+    }
     if (front >= 0 && (cls === 1 || cls === 2)) {
       const [x0, z0] = outer[front], [x1, z1] = outer[(front + 1) % outer.length];
       const l = Math.hypot(x1 - x0, z1 - z0), nx = (z1 - z0) / l, nz = -(x1 - x0) / l;
@@ -403,8 +417,8 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
         const nrm = [dz / l, 0, -dx / l]; // outward for CCW (x,z) rings; inner rings are CW -> faces courtyard
         const part = k === 0 && q === front ? 1 : 0;
         const t = top + parapet;
-        quad(B, [x0, low, z0], [x1, low, z1], [x1, t, z1], [x0, t, z0], nrm, [[u, low - base], [u + l, low - base], [u + l, t - base], [u, t - base]], [floorH, seed, clsCode, part]);
-        if (parapet) quad(B, [x0, top, z0], [x1, top, z1], [x1, t, z1], [x0, t, z0], nrm.map(v => -v), [[u, 0], [u + l, 0], [u + l, 1], [u, 1]], [floorH, seed, clsCode, 6]);
+        quad(B, [x0, low, z0], [x1, low, z1], [x1, t, z1], [x0, t, z0], nrm, [[u, low - base], [u + l, low - base], [u + l, t - base], [u, t - base]], [floorH, seedEnc, clsCode, part]);
+        if (parapet) quad(B, [x0, top, z0], [x1, top, z1], [x1, t, z1], [x0, t, z0], nrm.map(v => -v), [[u, 0], [u + l, 0], [u + l, 1], [u, 1]], [floorH, seedEnc, clsCode, 6]);
         u += l;
       }
     });
@@ -415,10 +429,11 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       const t = earcut(flat, holes.length ? holes : null);
       for (let q = 0; q < t.length; q += 3) {
         const v = [t[q], t[q + 1], t[q + 2]].map(i => [flat[i * 2], top + (pitched ? -0.02 : 0), flat[i * 2 + 1]]);
-        tri(B, v[0], v[1], v[2], [0, 1, 0], v.map(p => [p[0], p[2]]), [floorH, seed, clsCode, 3]);
+        tri(B, v[0], v[1], v[2], [0, 1, 0], v.map(p => [p[0], p[2]]), [floorH, seedEnc, clsCode, 3]);
       }
     }
-    if (pitched) addRoof(B, rcx, rcz, rang, rL, rW, base + wallH, rh, roof, [floorH, seed, clsCode], cls, seed);
+    if (pitched) addRoof(B, rcx, rcz, rang, rL, rW, base + wallH, rh, roof, [floorH, seedEnc, clsCode], cls, seed, base);
+    if (frontInfo) addFrontage(B, frontInfo, base, low, wallH, floorH, [floorH, seedEnc, clsCode], seed);
     // collision ring (world coords)
     col.push(colPts.length / 2, outer.length, base + wallH + (roof ? rh : 0), base);
     for (const [x, z] of outer) colPts.push(x + ox, z + oz);
@@ -428,8 +443,23 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   return g;
 }
 
-function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed) {
+// box between two points (a beam): width across, height up; parts 7 trim, 8 gutter, 9 ridge, 10 pot
+function beam(B, a, b, wid, hgt, ex, up = [0, 1, 0]) {
+  const d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], L = Math.hypot(...d); if (L < 0.01) return;
+  const t = d.map(v => v / L);
+  let s = [t[1] * up[2] - t[2] * up[1], t[2] * up[0] - t[0] * up[2], t[0] * up[1] - t[1] * up[0]]; const sl = Math.hypot(...s) || 1; s = s.map(v => v / sl);
+  const u = [s[1] * t[2] - s[2] * t[1], s[2] * t[0] - s[0] * t[2], s[0] * t[1] - s[1] * t[0]];
+  const off = (p, i, j) => [p[0] + s[0] * i * wid / 2 + u[0] * j * hgt / 2, p[1] + s[1] * i * wid / 2 + u[1] * j * hgt / 2, p[2] + s[2] * i * wid / 2 + u[2] * j * hgt / 2];
+  const C = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+  for (let k = 0; k < 4; k++) {
+    const [i0, j0] = C[k], [i1, j1] = C[(k + 1) % 4];
+    const nm = [s[0] * (i0 + i1) + u[0] * (j0 + j1), s[1] * (i0 + i1) + u[1] * (j0 + j1), s[2] * (i0 + i1) + u[2] * (j0 + j1)];
+    quad(B, off(a, i0, j0), off(b, i0, j0), off(b, i1, j1), off(a, i1, j1), nm, [[0, 0], [L, 0], [L, 1], [0, 1]], ex);
+  }
+}
+function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed, base = 0) {
   const ca = Math.cos(ang), sa = Math.sin(ang), o = 0.3;
+  const part = k => [...ex.slice(0, 3), k];
   const P = (u, v, y) => [cx + u * ca - v * sa, y, cz + u * sa + v * ca];
   const l = L / 2, w = W / 2, slope = rh / w;
   const ye = eave - o * slope; // eave lowered by overhang
@@ -451,6 +481,32 @@ function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed) {
     for (const s of [-1, 1]) quad(B, P(-l - o, s * (w + o), ye), P(l + o, s * (w + o), ye), P(ridge, 0, top), P(-ridge, 0, top), [-sa * s, 1, ca * s], [[0, 0], [L, 0], [L - 1, sl], [1, sl]], R);
     for (const s of [-1, 1]) tri(B, P(s * (l + o), -w - o, ye), P(s * (l + o), w + o, ye), P(s * ridge, 0, top), [ca * s, 1, sa * s], [[0, 0], [W, 0], [W / 2, sl]], R);
   }
+  // eaves: fascia boards, white soffits under the overhang, gutters with downpipes at the corners
+  {
+    const fh = 0.2, edges = type === 1 ? [[-1, 1], [1, 1]] : [[-1, 1], [1, 1], [-1, 0], [1, 0]];
+    for (const [sd, along] of edges) {
+      const a = along ? P(-l - o, sd * (w + o), ye) : P(sd * (l + o), -w - o, ye), b = along ? P(l + o, sd * (w + o), ye) : P(sd * (l + o), w + o, ye);
+      const nOut = along ? [-sa * sd, 0, ca * sd] : [ca * sd, 0, sa * sd];
+      const len = Math.hypot(b[0] - a[0], b[2] - a[2]);
+      quad(B, [a[0], ye - fh, a[2]], [b[0], ye - fh, b[2]], [b[0], ye, b[2]], [a[0], ye, a[2]], nOut, [[0, 0], [len, 0], [len, fh], [0, fh]], part(7));
+      const ai = along ? P(-l - o, sd * w, ye) : P(sd * l, -w - o, ye), bi = along ? P(l + o, sd * w, ye) : P(sd * l, w + o, ye);
+      quad(B, [ai[0], ye - fh, ai[2]], [bi[0], ye - fh, bi[2]], [b[0], ye - fh, b[2]], [a[0], ye - fh, a[2]], [0, -1, 0], null, part(11));
+      const g = 0.07, gx = nOut[0] * g, gz = nOut[2] * g;
+      beam(B, [a[0] + gx, ye - 0.1, a[2] + gz], [b[0] + gx, ye - 0.1, b[2] + gz], 0.11, 0.09, part(8));
+      if (along && sd === -1) for (const e of [a, b]) beam(B, [e[0] + gx * 1.2, ye - 0.12, e[2] + gz * 1.2], [e[0] + gx * 1.2, base - 0.2, e[2] + gz * 1.2], 0.07, 0.07, part(8), [ca, 0, sa]);
+    }
+  }
+  if (type === 1) {
+    // bargeboards on the gable rakes and ridge tiles along the ridge
+    for (const s of [-1, 1]) for (const v of [-1, 1]) {
+      const a = P(s * (l + o + 0.03), v * (w + o), ye), b = P(s * (l + o + 0.03), 0, top + 0.02);
+      beam(B, [a[0], a[1] - 0.09, a[2]], [b[0], b[1] - 0.09, b[2]], 0.05, 0.2, part(7), [0, 1, 0]);
+    }
+    beam(B, P(-l - o, 0, top + 0.04), P(l + o, 0, top + 0.04), 0.22, 0.12, part(9));
+  } else if (type !== 4) {
+    if (ridge > 0.05) beam(B, P(-ridge, 0, top + 0.04), P(ridge, 0, top + 0.04), 0.22, 0.12, part(9));
+    for (const s of [-1, 1]) for (const v of [-1, 1]) beam(B, P(s * ridge, 0, top + 0.03), P(s * (l + o), v * (w + o), ye + 0.03), 0.2, 0.1, part(9));
+  }
   // chimney on houses
   if ((cls === 1 || cls === 2) && seed % 3 !== 0) {
     const u = (seed % 2 ? 1 : -1) * Math.max(0, (type === 1 ? l : ridge) - 0.7), v = 0.2;
@@ -462,7 +518,42 @@ function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed) {
       quad(B, [ax, h0, az], [bx, h0, bz], [bx, h1, bz], [ax, h1, az], [(ax + bx) / 2 - c[0], 0, (az + bz) / 2 - c[2]], [[0, 0], [.7, 0], [.7, 1.9], [0, 1.9]], Cx);
     }
     quad(B, [pts[0][0], h1, pts[0][1]], [pts[1][0], h1, pts[1][1]], [pts[2][0], h1, pts[2][1]], [pts[3][0], h1, pts[3][1]], [0, 1, 0], null, Cx);
+    // oversailing cap course and clay pots
+    beam(B, [c[0] - ca * (r + 0.05), h1 - 0.06, c[2] - sa * (r + 0.05)], [c[0] + ca * (r + 0.05), h1 - 0.06, c[2] + sa * (r + 0.05)], 2 * r + 0.1, 0.12, Cx, [0, 1, 0]);
+    for (const k of seed % 2 ? [-0.15, 0.15] : [0]) beam(B, [c[0] + ca * k, h1, c[2] + sa * k], [c[0] + ca * k, h1 + 0.42, c[2] + sa * k], 0.17, 0.17, part(10), [ca, 0, sa]);
   }
+}
+
+// canted bay window (ground floor, or both floors on some houses) and a hood over the front door
+function addFrontage(B, F, base, low, wallH, floorH, ex, seed) {
+  const part = k => [...ex.slice(0, 3), k];
+  const tx = (F.x1 - F.x0) / F.fl, tz = (F.z1 - F.z0) / F.fl, nx = tz, nz = -tx;          // along the wall, outward
+  const at = (t, d) => [F.x0 + tx * t + nx * d, F.z0 + tz * t + nz * d];
+  if (F.fl >= 4.7 && seed % 5 !== 0) {
+    const bt = (F.dT < 0.5 ? 0.7 : 0.3) * F.fl, back = 1.15, frontW = 0.72, dep = 0.62;
+    const twoStorey = wallH > 4.6 && seed % 3 === 0;
+    const yTop = base + (twoStorey ? Math.min(wallH - 0.25, floorH * 2 - 0.1) : Math.min(floorH - 0.1, 2.62));
+    const C = [at(bt - back, 0), at(bt - frontW, dep), at(bt + frontW, dep), at(bt + back, 0)];
+    // three glazed faces: u runs 0..1 across each side face and 0..2 across the front (two lights)
+    const faces = [[C[0], C[1], 1], [C[1], C[2], 2], [C[2], C[3], 1]];
+    for (const [a, b, n] of faces) {
+      const nm = [(b[1] - a[1]), 0, -(b[0] - a[0])];
+      quad(B, [a[0], low, a[1]], [b[0], low, b[1]], [b[0], yTop, b[1]], [a[0], yTop, a[1]], nm, [[0, low - base], [n, low - base], [n, yTop - base], [0, yTop - base]], part(12));
+    }
+    // lean-to roof over the bay
+    const rT = yTop + 0.42, rF = yTop + 0.08, o = 0.08;
+    const R = [at(bt - back - o, 0), at(bt - frontW - o, dep + o), at(bt + frontW + o, dep + o), at(bt + back + o, 0)];
+    quad(B, [R[0][0], rT, R[0][1]], [R[1][0], rF, R[1][1]], [R[2][0], rF, R[2][1]], [R[3][0], rT, R[3][1]], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], part(13));
+    quad(B, [R[1][0], rF - 0.16, R[1][1]], [R[2][0], rF - 0.16, R[2][1]], [R[2][0], rF, R[2][1]], [R[1][0], rF, R[1][1]], [nx, 0, nz], null, part(7));
+    quad(B, [C[1][0], yTop, C[1][1]], [C[2][0], yTop, C[2][1]], [R[2][0], rF - 0.16, R[2][1]], [R[1][0], rF - 0.16, R[1][1]], [0, -1, 0], null, part(11));
+  }
+  // door hood on brackets
+  const dt = F.dT * F.fl, hw = 0.78, dep = 0.75, y = base + 2.38;
+  const A0 = at(dt - hw, 0), A1 = at(dt + hw, 0), B0 = at(dt - hw, dep), B1 = at(dt + hw, dep);
+  quad(B, [A0[0], y + 0.32, A0[1]], [A1[0], y + 0.32, A1[1]], [B1[0], y + 0.06, B1[1]], [B0[0], y + 0.06, B0[1]], [0, 1, 0], [[0, 0], [1, 0], [1, 1], [0, 1]], part(13));
+  quad(B, [B0[0], y - 0.04, B0[1]], [B1[0], y - 0.04, B1[1]], [B1[0], y + 0.06, B1[1]], [B0[0], y + 0.06, B0[1]], [nx, 0, nz], null, part(7));
+  quad(B, [A0[0], y - 0.04, A0[1]], [A1[0], y - 0.04, A1[1]], [B1[0], y - 0.04, B1[1]], [B0[0], y - 0.04, B0[1]], [0, -1, 0], null, part(11));
+  for (const e of [-hw + 0.06, hw - 0.06]) { const p = at(dt + e, 0.02), q = at(dt + e, dep - 0.05); beam(B, [p[0], y - 0.35, p[1]], [q[0], y - 0.04, q[1]], 0.06, 0.1, part(7), [0, 1, 0]); }
 }
 
 // ------------------------------------------------------------------ road markings

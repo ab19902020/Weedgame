@@ -216,14 +216,20 @@ export function structMaterial() {
 export function buildingMaterial() {
   const m = std();
   const A = attribute('bA', 'vec4');
-  const floorH = A.x, seed = floor(A.y.add(0.5)), code = floor(A.z.add(0.5)), part = floor(A.w.add(0.5));
+  // the tile worker places front doors and passes their position along the wall in the seed: seed + 1000 * (u * 4)
+  const seedRaw = floor(A.y.add(0.5)), doorU = floor(seedRaw.div(1000)).mul(0.25);
+  const floorH = A.x, seed = seedRaw.sub(floor(seedRaw.div(1000)).mul(1000)), code = floor(A.z.add(0.5)), part = floor(A.w.add(0.5));
+  const pEq = k => step(k - 0.5, part).mul(step(part, k + 0.5));
   const cls = code.sub(floor(code.div(32)).mul(32));
   const shop = step(31.5, code);
   const u = uv();
   const p = positionWorld;
   const r0 = h1(seed), r1 = h1(seed.add(17.3)), r2 = h1(seed.add(3.1)), r3 = h1(seed.add(41.7));
-  const isWall = step(part, 1.5).add(step(3.5, part).mul(step(part, 4.5))).add(step(5.5, part));
-  const isRoof = step(1.5, part).mul(step(part, 2.5));
+  // parts: 0/1 wall/frontage, 2 pitched roof, 3 flat roof, 4 gable, 5 chimney, 6 parapet, 7 trim (fascia,
+  // bargeboard, hood), 8 gutter/downpipe, 9 ridge/hip tiles, 10 chimney pot, 11 soffit, 12 bay glazing, 13 bay/hood roof
+  const isWall = step(part, 1.5).add(pEq(4)).add(pEq(6));
+  const isRoof = pEq(2).add(pEq(9)).add(pEq(13));
+  const isTrim = pEq(7), isGutter = pEq(8), isPot = pEq(10), isSoffit = pEq(11), isBay = pEq(12);
   const isFlat = step(2.5, part).mul(step(part, 3.5));
   const isChim = step(4.5, part).mul(step(part, 5.5));
   const isHouse = step(0.5, cls).mul(step(cls, 2.5));
@@ -237,7 +243,7 @@ export function buildingMaterial() {
     sel(cls.equal(9), int(L.stone), sel(r0.lessThan(0.4), int(L.brick_red), sel(r0.lessThan(0.6), int(L.brick_dark), int(L.render))))));
   const wallLayer = sel(isHouse.greaterThan(0.5), houseLayer, otherLayer);
   const roofLayer = sel(isFlat.greaterThan(0.5), int(L.felt), sel(r3.lessThan(mix(float(0.45), float(0.85), isTerrace)), int(L.roof_slate), int(L.roof_clay)));
-  const layer = sel(isWall.greaterThan(0.5), wallLayer, sel(isChim.greaterThan(0.5), int(L.brick_red), roofLayer));
+  const layer = sel(isWall.add(isBay).greaterThan(0.5), wallLayer, sel(isChim.greaterThan(0.5), int(L.brick_red), roofLayer));
   const uvm = vec2(u.x, u.y);
   const wallTex = sAlbedo(layer, uvm);
   const isRender = sel(wallLayer.equal(int(L.render)), float(1), float(0)).mul(isWall);
@@ -247,6 +253,8 @@ export function buildingMaterial() {
   const cladTint = mix(vec3(0.75, 0.8, 0.85), vec3(0.45, 0.55, 0.7), r1);
   let wallCol = wallTex.mul(mix(vec3(1), paint, isRender)).mul(mix(vec3(1), vec3(1.5), isPeb)).mul(mix(vec3(1), cladTint.mul(1.3), sel(wallLayer.equal(int(L.cladding)), float(1), float(0))));
   wallCol = wallCol.mul(h1(seed.add(2.2)).mul(0.18).add(0.91));   // per-building weathering / batch variation
+  // plinth course below the damp-proof line, and a rain-darkened band at the foot of the wall
+  wallCol = wallCol.mul(mix(float(1), float(0.68), step(u.y, 0.32).mul(step(-2, u.y)))).mul(smoothstep(-0.4, 0.6, u.y).mul(0.12).add(0.88));
   // ---- windows / doors / shopfronts
   const fh = max(floorH, 2.4);
   const fi = floor(max(u.y, 0).div(fh));
@@ -280,10 +288,22 @@ export function buildingMaterial() {
   const front = step(0.5, part).mul(step(part, 1.5));
   const shopFront = shop.mul(front).mul(step(fi, 0.5)).mul(step(0.06, fv)).mul(step(fv, 0.82)).mul(step(0.04, fract(u.x.div(2.6))));
   const doorCol = h1(seed.add(5.5)).mul(5).floor();
-  const isDoor = isHouse.mul(front).mul(step(fi, 0.5)).mul(sel(ci.equal(floor(r2.mul(2))), float(1), float(0))).mul(step(abs(cu.sub(0.5)), 0.2)).mul(step(fv, 0.78));
+  const hasDoor = isHouse.mul(front).mul(step(0.1, doorU));
+  const du = abs(u.x.sub(doorU));
+  const isDoor = hasDoor.mul(step(du, 0.46)).mul(step(u.y, 2.05)).mul(step(0, u.y));
+  const doorFrame = hasDoor.mul(step(du, 0.54)).mul(step(u.y, 2.13)).mul(step(-0.05, u.y)).mul(float(1).sub(isDoor));
+  const doorGlass = isDoor.mul(step(du, 0.28)).mul(step(1.25, u.y)).mul(step(u.y, 1.85));
+  const doorZone = hasDoor.mul(step(du, 0.8)).mul(step(fi, 0.5));
   const doorRGB = sel(doorCol.lessThan(1), vec3(0.04, 0.06, 0.16), sel(doorCol.lessThan(2), vec3(0.32, 0.04, 0.05), sel(doorCol.lessThan(3), vec3(0.02, 0.02, 0.02),
     sel(doorCol.lessThan(4), vec3(0.06, 0.16, 0.08), vec3(0.82, 0.82, 0.8)))));
-  const glass = max(inWin.mul(inner).mul(float(1).sub(bar)), shopFront).mul(float(1).sub(isDoor));
+  // bay window panels: u 0..1 per light, v in metres per storey; stall riser, stone sill, frames, transom, lintel
+  const bv = u.y.sub(floor(u.y.div(fh)).mul(fh)), bfu = fract(u.x);
+  const bRiser = isBay.mul(step(bv, 0.5)), bSill = isBay.mul(step(0.5, bv)).mul(step(bv, 0.57));
+  const bHead = isBay.mul(step(min(fh.sub(0.3), float(2.32)), bv));
+  const bFrame = isBay.mul(float(1).sub(bRiser)).mul(float(1).sub(bSill)).mul(float(1).sub(bHead))
+    .mul(step(bfu, 0.06).add(step(0.94, bfu)).add(step(abs(bv.sub(1.85)), 0.035)).min(1));
+  const bGlass = isBay.mul(float(1).sub(bRiser)).mul(float(1).sub(bSill)).mul(float(1).sub(bHead)).mul(float(1).sub(bFrame));
+  const glass = max(max(inWin.mul(inner).mul(float(1).sub(bar)), shopFront).mul(float(1).sub(isDoor)).mul(float(1).sub(doorZone)), max(bGlass, doorGlass));
   // ---- room interiors behind the glass (parallax box: back wall, side walls, floor, ceiling)
   const depth = sel(shopFront.greaterThan(0.5), float(6), float(3.2));
   const halfW = sp.mul(0.5);
@@ -324,21 +344,29 @@ export function buildingMaterial() {
   const flatCol = wallTex.mul(sel(step(3.5, cls).mul(step(0.5, r1)).greaterThan(0.5), vec3(1.5), vec3(0.85)));
   let albedo = wallCol.mul(isWall);
   const frameCol = sel(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), sel(r3.lessThan(0.85), vec3(0.9, 0.9, 0.88), vec3(0.15, 0.12, 0.1)));
-  albedo = mix(albedo, frameCol, frame);
+  albedo = mix(albedo, frameCol, frame.mul(float(1).sub(doorZone)));
   albedo = mix(albedo, wallCol.mul(mix(float(0.55), float(0.8), step(0, ry))), reveal.mul(float(1).sub(shopFront)));
-  const sill = step(abs(cu.sub(0.5)), ww.mul(0.5).add(0.06)).mul(step(winBot.sub(0.05), fv)).mul(step(fv, winBot)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(isDoor)).mul(step(0, u.y));
+  const sill = step(abs(cu.sub(0.5)), ww.mul(0.5).add(0.06)).mul(step(winBot.sub(0.05), fv)).mul(step(fv, winBot)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(doorZone)).mul(step(0, u.y));
   albedo = mix(albedo, vec3(0.7, 0.68, 0.62), sill);
   albedo = mix(albedo, vec3(0.012, 0.014, 0.016), glass);
-  albedo = mix(albedo, doorRGB, isDoor);
-  albedo = albedo.add(roofCol.mul(isRoof)).add(flatCol.mul(isFlat)).add(wallTex.mul(isChim));
+  albedo = mix(albedo, doorRGB, isDoor.mul(float(1).sub(doorGlass)));
+  albedo = mix(albedo, frameCol, doorFrame);
+  albedo = mix(albedo, vec3(0.012, 0.014, 0.016), doorGlass);
+  albedo = albedo.add(roofCol.mul(isRoof).mul(float(1).sub(pEq(9).mul(0.3)))).add(flatCol.mul(isFlat)).add(wallTex.mul(isChim));
+  // trims (uPVC white mostly; black or stained timber on some), gutters, soffits, clay pots, bay windows
+  const trimCol = sel(r3.lessThan(0.8), vec3(0.8, 0.8, 0.78), sel(r3.lessThan(0.93), vec3(0.035, 0.035, 0.04), vec3(0.17, 0.1, 0.055)));
+  const gutterCol = sel(r1.lessThan(0.22), vec3(0.75), vec3(0.03, 0.03, 0.032));
+  albedo = albedo.add(trimCol.mul(isTrim)).add(gutterCol.mul(isGutter)).add(trimCol.mul(0.92).mul(isSoffit)).add(vec3(0.42, 0.2, 0.1).mul(isPot));
+  albedo = albedo.add(isBay.mul(mix(mix(mix(vec3(0.012, 0.014, 0.016), trimCol, bFrame.add(bHead).min(1)), vec3(0.68, 0.66, 0.6), bSill), wallCol, bRiser)));
+  const trimAll = isTrim.add(isGutter).add(isSoffit).add(isPot).add(bFrame).add(bHead).add(bSill).add(doorFrame).min(1);
   // wetness: roofs collect rain first and darken / gloss
   const wet = U.wet;
   albedo = albedo.mul(mix(float(1), mix(float(0.8), float(0.6), isRoof.add(isFlat)), wet));
   const d = sDetail(layer, uvm);
   m.colorNode = albedo.mul(cloudShadow(p));
-  m.roughnessNode = mix(mix(d.b.mul(0.3).add(0.62), float(0.35), wet.mul(isRoof.add(isFlat).add(isWall.mul(0.4)))), float(0.04), glass.add(isDoor.mul(0.6)).min(1));
+  m.roughnessNode = mix(mix(mix(d.b.mul(0.3).add(0.62), float(0.35), wet.mul(isRoof.add(isFlat).add(isWall.mul(0.4)))), float(0.42), trimAll), float(0.04), glass.add(isDoor.mul(0.6)).min(1));
   m.metalnessNode = float(0);
-  const plain = glass.add(frame).add(isDoor).add(sill).min(1);
+  const plain = glass.add(frame).add(isDoor).add(sill).add(trimAll).min(1);
   m.normalNode = perturb(nW, d, mix(float(1.0), float(0.7), isRender).mul(float(1).sub(plain)));
   const refl = skyReflection(p, nW, glass.mul(0.6).add(wet.mul(isRoof).mul(0.25)));
   const daylight = float(1).sub(U.night).mul(mix(float(0.07), float(0.04), U.cover));
