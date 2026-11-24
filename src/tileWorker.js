@@ -474,7 +474,7 @@ function buildMarkings(header, ox, oz, hAt) {
     const c = NET.cls[e];
     if (!NET.driveCls.has(c)) continue;
     const name = NET.classes[c];
-    if (name === 'service' || name === 'track') continue;
+    const minor = name === 'service' || name === 'track';
     const f = NET.flags[e];
     if (f & 8) continue;
     const bridge = !!(f & 4);
@@ -505,7 +505,7 @@ function buildMarkings(header, ox, oz, hAt) {
       }
     };
     const total = Math.max(1, lf + lb), lw = w / total;
-    if (L > 4 && s1 - s0 > 2 && w >= 4.5) {
+    if (!minor && L > 4 && s1 - s0 > 2 && w >= 4.5) {
       if (!oneway && lf && lb && name !== 'living_street') line(w/2-lf*lw, 0.1, s0, s1, name === 'residential' ? 2.5 : 4, name === 'residential' ? 4 : 5, 0); // centre line
       // lane lines (forward lanes are left of centre: offset positive = left)
       for (let k = 1; k < lf; k++) line(oneway ? w / 2 - k * lw : w / 2 - k * lw, 0.1, s0, s1, 2, 7, 0);
@@ -530,8 +530,8 @@ function buildMarkings(header, ox, oz, hAt) {
         for (const v of [a, b, c, d]) v[1] = bridge ? p[1] + 0.03 : hAt(v[0], v[2]) + 0.075;
         quad(B, a, b, c, d, [0, 1, 0], null, [id]);
       };
-      if (code === 3) mk(halfFrom, halfTo, 0.3, 0, 0);
-      else if (code === 1 || code === 4 || code === 2) {
+      if (code === 3 || code === 2) mk(halfFrom, halfTo, code === 2 ? 0.4 : 0.3, 0, 0);
+      else if (code === 1 || code === 4) {
         for (let o = halfFrom; o < halfTo; o += 0.9) { mk(o, Math.min(halfTo, o + 0.6), 0.2, 0, 0); mk(o, Math.min(halfTo, o + 0.6), 0.2, 0.4, 0); }
       }
     };
@@ -553,6 +553,15 @@ function buildMarkings(header, ox, oz, hAt) {
         });
         quad(B, v[0], v[1], v[2], v[3], [0, 1, 0], null, [id]);
       };
+      // Tactile landings are inferred only on mapped/inferred pavement sides.
+      for (const [side,bit] of [[1,1],[-1,2]]) if (NET.pav?.[e] & bit) {
+        const o0=side*(w/2+.12), o1=side*(w/2+1.05);
+        const landing=[[o0,-.9],[o1,-.9],[o1,.9],[o0,.9]].map(([o,a])=>{
+          const x=p[0]+lat[0]*o+along[0]*a,z=p[2]+lat[1]*o+along[1]*a;
+          return [x,(bridge?p[1]:hAt(x,z))+.185,z];
+        });
+        quad(B,...landing,[0,1,0],null,[kind==='uncontrolled'?3:2]);
+      }
       if (kind === 'zebra') {
         for (let o = -w / 2 + 0.2; o < w / 2 - 0.4; o += 1.0) put(o, o + 0.5, -1.4, 1.4, 0);
         zigzags(B, pts, s, w, bridge, hAt, inTile);

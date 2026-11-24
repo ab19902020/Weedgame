@@ -222,15 +222,18 @@ export class Peds {
     let go = false;
     if (c.kind === 'signal') {
       const ci = this.controllerFor(c);
-      if (ci >= 0) { G.signals.press(ci); const a = G.signals.ped(ci); go = a === 'walk'; }
+      if (ci >= 0) { const a = G.signals.ped(ci); go = a === 'walk'; if (!go) G.signals.press(ci); }
       else go = this.clearRoad(p, c);
     } else if (c.kind === 'zebra') {
-      go = this.clearRoad(p, c, 14) || p.crossT > 3 && this.slowTraffic(p, c);
+      G.traffic.zebraBusy.set((p.h >> 1) + ':' + Math.round(c.s), G.signals.t + 1);
+      go = this.clearRoad(p, c, 14);
     } else go = this.clearRoad(p, c, 28);
-    if (p.crossT > 50) go = true;
+
     if (go) { p.mode = 'cross'; p.crossProg = 0; p.cx0 = p.x; p.cz0 = p.z; const w = this.net.width[p.h >> 1] / 2 + 1.05; const [, , tdx, tdz] = this.pos(p); p.cdx = -2 * w * p.sideSign * tdz; p.cdz = 2 * w * p.sideSign * tdx; if (c.kind === 'zebra' || c.kind === 'uncontrolled') G.traffic.zebraBusy.set((p.h >> 1) + ':' + Math.round(c.s), G.signals.t + 12); }
   }
   cross(p, dt) {
+    const c = p.cross;
+    this.G.traffic.zebraBusy.set((p.h >> 1) + ':' + Math.round(c.s), this.G.signals.t + 1);
     const len = Math.hypot(p.cdx, p.cdz) || 1;
     p.crossProg += p.speed * 1.1 * dt / len;
     p.x = p.cx0 + p.cdx * Math.min(1, p.crossProg); p.z = p.cz0 + p.cdz * Math.min(1, p.crossProg);
@@ -241,7 +244,7 @@ export class Peds {
   controllerFor(c) {
     if (c._ci !== undefined) return c._ci;
     let best = -1, bd = 70;
-    this.net.controllers.forEach((k, i) => { if (!k.peds.length) return; const d = Math.hypot(k.x - c.x, k.z - c.z); if (d < bd) { bd = d; best = i; } });
+    this.net.controllers.forEach((k, i) => { for (const [x,z] of k.peds) { const d=Math.hypot(x-c.x,z-c.z); if(d<bd){bd=d;best=i;} } });
     return (c._ci = best);
   }
   clearRoad(p, c, dist = 22) {

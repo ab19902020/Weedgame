@@ -10,3 +10,21 @@ for(let t=0;t<2000;t++){if(t%200===0)sig.ctl.forEach(c=>sig.press(c.i));sig.upda
 console.log({roads:n.nEdges,signals:sig.ctl.length,routes:bs.routes.length,withStops:bs.routes.filter(r=>r.stops.length).length,invalid,breaks});
 
 if(invalid || breaks) throw Error('Disconnected or disallowed service traversal');
+
+// Waiting for a long signal cycle must never override a red pedestrian aspect.
+const {Peds}=await import('../../src/peds.js');
+const busy=new Map();
+const peds=Object.create(Peds.prototype);
+peds.net={width:[8]};
+peds.pos=()=>[0,0,1,0];
+peds.controllerFor=()=>0;
+peds.G={signals:{t:60,press(){},ped:()=> 'wait'},traffic:{list:[{x:0,z:0,v:8}],zebraBusy:busy}};
+const pedestrian={h:0,x:0,z:0,sideSign:1,mode:'waitCross',crossT:60,cross:{kind:'signal',s:4,x:0,z:0}};
+peds.waitCross(pedestrian,.1);
+if(pedestrian.mode!=='waitCross')throw Error('Entered on red after long wait');
+pedestrian.cross.kind='zebra';
+peds.waitCross(pedestrian,.1);
+if(!busy.has('0:4') || pedestrian.mode!=='waitCross')throw Error('Zebra demand failed');
+peds.G.traffic.list[0].v=0;
+peds.waitCross(pedestrian,.1);
+if(pedestrian.mode!=='cross')throw Error('Failed to cross after traffic stopped');

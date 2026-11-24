@@ -154,6 +154,10 @@ export function markingMaterial() {
   const p = positionWorld;
   const wear = nz(p.xz, 1 / 0.5).r.mul(0.35).add(0.7);
   let albedo = mix(vec3(0.78, 0.78, 0.74), vec3(0.75, 0.6, 0.1), step(0.5, s)).mul(wear);
+  const blister = length(fract(p.xz.mul(16)).sub(.5));
+  const relief = float(1).sub(smoothstep(.18,.31,blister)).mul(float(1).sub(smoothstep(.018,.09,fwidth(p.x).add(fwidth(p.z)))));
+  const tactile = mix(vec3(.37,.115,.075),vec3(.54,.39,.20),step(2.5,s)).mul(relief.mul(.22).add(.91));
+  albedo = mix(albedo,tactile,step(1.5,s));
   const expo = float(1).sub(shelter(p));
   const wet = U.wet.mul(expo);
   albedo = albedo.mul(mix(float(1), float(0.8), wet));
