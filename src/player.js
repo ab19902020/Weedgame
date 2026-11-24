@@ -25,7 +25,7 @@ export class Brothers {
     const o = this.b[i].outfit;
     // Cal: short crop, dark trousers, black shoes. Leon: hoodie, jeans, white trainers, a little taller and heavier
     return { skin: SKINS[o.skin] ?? SKINS[0], hair: 0x2b1d14, top: JACKETS[o.jacket] ?? JACKETS[0], legs: i ? 0x2b3a55 : 0x22252b, bald: o.hair === 1, bag: false, umbrella: 0x1a1a1a, h: i ? 1.02 : 1.0,
-      style: 1, female: false, build: i ? 0.55 : 0.38, shoe: i ? 2 : 0, hood: !!i, cap: false, umbIdx: 0 };
+      style: 1, female: false, face: i ? 0 : 1, build: i ? 0.55 : 0.38, shoe: i ? 2 : 0, hood: !!i, cap: false, umbIdx: 0 };
   }
   get me() { return this.b[this.active]; }
   vehicleOf(b) { return b.vehicle ? this.G.traffic.byId.get(b.vehicle) : null; }

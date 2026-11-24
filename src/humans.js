@@ -7,8 +7,9 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, float, vec2, vec3, vec4, int, attribute, positionGeometry, normalGeometry, positionWorld, varyingProperty,
-  sin, cos, abs, max, min, mix, step, smoothstep, clamp, floor, fract, pow, length, normalize, select,
+  sin, cos, abs, max, min, mix, step, smoothstep, clamp, floor, fract, pow, length, normalize, select, texture,
 } from 'three/tsl';
+import { bakeFaceAtlas, bakeHairTexture, FACE_ATLAS as FA } from './faceBake.js';
 import { U, cloudShadow } from './env.js';
 import { lightPool } from './materials.js';
 import { worldToView } from './surfaces.js';
@@ -117,13 +118,7 @@ function bodyGeometry(q) {
   // --- head: skull with jaw, chin, cheekbones; nose; ears
   const head = new THREE.SphereGeometry(0.1, q ? 22 : 10, q ? 16 : 8);
   { const p = head.attributes.position; for (let i = 0; i < p.count; i++) {
-    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const jaw = y < 0 ? 1 - 0.24 * Math.min(1, -y / 0.1) : 1;
-    x *= 0.88 * jaw * (y > 0.05 ? 1 - (y - 0.05) * 0.6 : 1);
-    z *= (z > 0 ? 1.02 : 1.08) * (y < -0.03 ? 0.96 : 1);
-    if (z > 0 && y < -0.05) z += 0.012 * Math.min(1, (-y - 0.05) / 0.04) * Math.max(0, 1 - Math.abs(x) / 0.04);   // chin
-    y *= 1.17;
-    p.setXYZ(i, x, y + 1.66, z + 0.008);
+    p.setXYZ(i, ...headShape(p.getX(i), p.getY(i), p.getZ(i)));
   } }
   B.add(head, () => [0, 0, 0, 0]);
   if (q) {
@@ -168,20 +163,35 @@ function bodyGeometry(q) {
   // --- hair styles (only the instance's style survives the vertex shader)
   const capShell = (r, cut, sx, sy, sz, oy, oz) => { const g = new THREE.SphereGeometry(r, q ? 20 : 9, q ? 10 : 5, 0, Math.PI * 2, 0, Math.PI * cut); g.scale(sx, sy, sz); g.translate(0, oy, oz); return g; };
   const hairTag = t => () => [0, 0, 4, t];
-  // short crop with a fringe line
-  B.add(capShell(0.104, 0.53, 0.93, 1.12, 1.07, 1.672, -0.008), hairTag(TAG.hairShort));
+  // hair shells follow the skull at a small offset and dip under the skin below a hairline (forehead,
+  // temples, sideburns, over the ears, nape), so the hairline is a clean edge rather than two
+  // nearly coincident surfaces fighting
+  const hairShell = (off, line, bump = 0) => {
+    const g = new THREE.SphereGeometry(0.1, q ? 28 : 12, q ? 22 : 9), p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) {
+      const [x, y, z] = headShape(p.getX(i), p.getY(i), p.getZ(i)), dx = x, dy = y - 1.66, dz = z - 0.008, l = Math.hypot(dx, dy, dz) || 1;
+      const a = Math.abs(Math.atan2(x, z)), yl = lerpTable(line, a);
+      let o = y > yl ? off : -0.004;
+      if (bump && y > yl) o += bump * (0.5 + 0.5 * Math.sin(x * 160) * Math.sin(y * 170) * Math.sin(z * 150));
+      p.setXYZ(i, x + dx / l * o, y + dy / l * o, z + dz / l * o);
+    }
+    g.computeVertexNormals();
+    return g;
+  };
+  const LINE_SHORT = [[0, 1.718], [0.45, 1.712], [0.9, 1.69], [1.18, 1.645], [1.38, 1.645], [1.55, 1.695], [1.85, 1.695], [2.25, 1.605], [Math.PI, 1.59]];
+  const LINE_LONG = [[0, 1.716], [0.45, 1.708], [0.9, 1.685], [1.2, 1.64], [1.5, 1.62], [Math.PI, 1.6]];
+  // short crop
+  B.add(hairShell(0.0065, LINE_SHORT), hairTag(TAG.hairShort));
   // long: cap + fall to the shoulders behind and at the sides
-  B.add(capShell(0.107, 0.56, 0.95, 1.14, 1.08, 1.672, -0.01), hairTag(TAG.hairLong));
+  B.add(hairShell(0.009, LINE_LONG), hairTag(TAG.hairLong));
   { const pts = [[0.104, 1.7], [0.111, 1.64], [0.108, 1.57], [0.1, 1.5], [0.088, 1.45]].map(([r, y]) => new THREE.Vector2(r, y));
     const g = new THREE.LatheGeometry(pts, q ? 18 : 8, Math.PI * 0.62, Math.PI * 0.76); g.scale(0.95, 1, 1.05); g.translate(0, 0, -0.012);
     B.add(doubleSided(g), hairTag(TAG.hairLong)); }
   // bun
-  B.add(capShell(0.105, 0.55, 0.94, 1.13, 1.07, 1.672, -0.01), hairTag(TAG.hairBun));
+  B.add(hairShell(0.008, LINE_LONG), hairTag(TAG.hairBun));
   { const g = new THREE.SphereGeometry(0.042, q ? 10 : 6, q ? 8 : 4); g.translate(0, 1.71, -0.105); B.add(g, hairTag(TAG.hairBun)); }
   // curly / afro: bumpy, fuller shell
-  { const g = capShell(0.122, 0.6, 0.96, 1.05, 1.02, 1.668, -0.012); const p = g.attributes.position;
-    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i) - 1.668, z = p.getZ(i) + 0.012, k = 1 + 0.06 * Math.sin(x * 140) * Math.sin(y * 150) * Math.sin(z * 130); p.setXYZ(i, x * k, y * k + 1.668, z * k - 0.012); }
-    B.add(g, hairTag(TAG.hairCurly)); }
+  B.add(hairShell(0.016, LINE_SHORT.map(([a, y]) => [a, y - 0.004]), 0.008), hairTag(TAG.hairCurly));
   // --- headwear and accessories
   { // custodian helmet
     const pts = [[0.0, 1.97], [0.045, 1.96], [0.092, 1.9], [0.113, 1.81], [0.117, 1.73], [0.148, 1.72], [0.15, 1.71], [0.112, 1.715]].map(([r, y]) => new THREE.Vector2(r, y));
@@ -218,6 +228,19 @@ function bodyGeometry(q) {
   return B.build();
 }
 
+// skull shape (jaw, chin, narrower crown) applied to a 0.1 m sphere; shared by the head and the hair shells
+function headShape(x, y, z) {
+  const jaw = y < 0 ? 1 - 0.24 * Math.min(1, -y / 0.1) : 1;
+  x *= 0.88 * jaw * (y > 0.05 ? 1 - (y - 0.05) * 0.6 : 1);
+  z *= (z > 0 ? 1.02 : 1.08) * (y < -0.03 ? 0.96 : 1);
+  if (z > 0 && y < -0.05) z += 0.012 * Math.min(1, (-y - 0.05) / 0.04) * Math.max(0, 1 - Math.abs(x) / 0.04);   // chin
+  return [x, y * 1.17 + 1.66, z + 0.008];
+}
+function lerpTable(t, a) {
+  for (let k = 1; k < t.length; k++) if (a <= t[k][0]) { const [a0, y0] = t[k - 1], [a1, y1] = t[k]; return y0 + (y1 - y0) * (a - a0) / (a1 - a0); }
+  return t[t.length - 1][1];
+}
+
 // ------------------------------------------------------------------ material (skinning + appearance)
 const rotX = (v, a) => { const c = cos(a), s = sin(a); return vec3(v.x, v.y.mul(c).sub(v.z.mul(s)), v.y.mul(s).add(v.z.mul(c))); };
 const rotY = (v, a) => { const c = cos(a), s = sin(a); return vec3(v.x.mul(c).add(v.z.mul(s)), v.y, v.z.mul(c).sub(v.x.mul(s))); };
@@ -236,9 +259,13 @@ function crowdMaterial() {
   // packed per-person data is decoded here, where it is exact (interpolated varyings would scramble the bits)
   const vSkinC = varyingProperty('vec3', 'vSkinC'), vTopC = varyingProperty('vec3', 'vTopC'), vLegC = varyingProperty('vec3', 'vLegC'), vHairC = varyingProperty('vec4', 'vHairC');
   const vMisc = varyingProperty('vec4', 'vMisc');   // hi-vis, shoe index, umbrella index, umbrella up
+  const vFace = varyingProperty('float', 'vFace');  // face atlas cell (0-3 men, 4-7 women)
+  const faceTex = bakeFaceAtlas(), hairTex = bakeHairTexture();
   m.positionNode = Fn(() => {
     const limb = sk.x, s = sk.y, tag = sk.w;
-    const style = iSty.x, flags = floor(iSty.y.add(0.5)), hgt = iSty.z;
+    // iSty.x = hair style + 0.05 x face index
+    const style = floor(iSty.x.add(0.01)), flags = floor(iSty.y.add(0.5)), hgt = iSty.z;
+    vFace.assign(floor(fract(iSty.x).mul(20).add(0.5)));
     vSkinC.assign(unpack(iCol.x)); vTopC.assign(unpack(iCol.y)); vLegC.assign(unpack(iCol.z));
     vHairC.assign(vec4(unpack(iCol.w), step(0.6, fract(iCol.x.mul(0.000031)))));
     vMisc.assign(vec4(bit(flags, 3), floor(flags.div(64)).sub(floor(flags.div(256)).mul(4)), floor(flags.div(256)), bit(flags, 1)));
@@ -355,20 +382,28 @@ function crowdMaterial() {
   const zip = front.mul(step(abs(rp.x), 0.004)).mul(step(0.96, rp.y)).mul(step(rp.y, 1.45)).mul(eq(region, 1)).mul(eq(sk.x, 0));
   const weave = sin(rp.y.mul(780)).mul(sin(rp.x.add(rp.z).mul(780))).mul(0.035).add(1);
   const knees = eq(region, 2).mul(front).mul(smoothstep(0.08, 0.0, abs(rp.y.sub(0.5)))).mul(0.12);
-  // face: eyes, irises, brows, lips, socket shading
-  const face = eq(region, 0).mul(eq(sk.x, 0)).mul(step(1.57, rp.y)).mul(step(0.06, rp.z));
-  const ex = abs(rp.x).sub(0.034), ey = rp.y.sub(1.662);
-  const eyeD = length(vec2(ex, ey.mul(1.7)));
-  const white = smoothstep(0.0125, 0.0095, eyeD).mul(face);
-  const iris = smoothstep(0.0062, 0.0048, length(vec2(ex, ey))).mul(face);
-  const brow = step(abs(rp.y.sub(1.69)), 0.0045).mul(step(0.014, abs(rp.x))).mul(step(abs(rp.x), 0.052)).mul(face);
-  const lips = step(abs(rp.y.sub(1.603)), 0.0042).mul(step(abs(rp.x), 0.022)).mul(face);
-  const socket = smoothstep(0.03, 0.012, eyeD).mul(face).mul(0.18);
-  let skinD = skinC.mul(float(1).sub(socket)).mul(float(1).sub(lips.mul(0.3))).mul(mix(vec3(1), vec3(1.0, 0.82, 0.8), lips));
-  skinD = mix(skinD, vec3(0.75, 0.74, 0.72), white);
+  // face: baked atlas (faceBake.js) projected from the front onto the head. R shading, G facial hair,
+  // B lip / blush tint, A eye mask (sclera, iris, pupil)
+  const face = eq(region, 0).mul(eq(sk.x, 0)).mul(step(1.5, rp.y)).mul(smoothstep(0.012, 0.05, rp.z));
+  const fuv = vec2(rp.x.sub(FA.x0).div(FA.w), rp.y.sub(FA.y0).div(FA.h)).clamp(0.004, 0.996);
+  const fcell = vec2(vFace.sub(floor(vFace.div(FA.cols)).mul(FA.cols)), float(FA.rows - 1).sub(floor(vFace.div(FA.cols))));
+  const ft = texture(faceTex, fuv.add(fcell).div(vec2(FA.cols, FA.rows)));
+  const shade = mix(float(1), ft.r.mul(2), face), tint = ft.b.mul(face), eyeA = ft.a.mul(face);
+  const white = smoothstep(0.17, 0.3, eyeA), iris = smoothstep(0.45, 0.6, eyeA), pupil = smoothstep(0.8, 0.95, eyeA);
+  let skinD = skinC.mul(mix(vec3(1), vec3(1.0, 0.6, 0.58), tint.mul(0.8)));
+  skinD = mix(skinD, hairC.mul(0.72), ft.g.mul(face));
+  skinD = mix(skinD, vec3(0.72, 0.7, 0.68), white);
   skinD = mix(skinD, mix(vec3(0.05, 0.03, 0.015), vec3(0.08, 0.12, 0.16), vHairC.w), iris);
-  skinD = mix(skinD, hairC.mul(0.8), brow);
-  const strands = sin(rp.y.mul(260).add(sin(rp.x.mul(90)).mul(2))).mul(0.12).add(0.92);
+  skinD = mix(skinD, vec3(0.006), pupil).mul(shade);
+  // hair: baked strand map, tri-planar in head space (strands run down the sides and front to back on top)
+  const hw = pow(abs(normalGeometry), vec3(4)), hwn = hw.div(hw.x.add(hw.y).add(hw.z).add(1e-4));
+  // curly hair: the same map, finer and rotated, reads as tight coils instead of combed strands
+  const curly = eq(sk.w, TAG.hairCurly);
+  const huv = (a, b) => mix(vec2(a.mul(12.5), b.mul(10)), vec2(a.mul(34).add(b.mul(22)), b.mul(34).sub(a.mul(22))), curly);
+  const ht = texture(hairTex, huv(rp.x, rp.y)).mul(hwn.z)
+    .add(texture(hairTex, huv(rp.z, rp.y)).mul(hwn.x))
+    .add(texture(hairTex, huv(rp.x, rp.z)).mul(hwn.y));
+  const strands = ht.r.mul(1.15).add(0.42).mul(ht.g.mul(0.9).add(0.55));
   const sole = eq(region, 3).mul(step(rp.y, 0.016));
   const shoeD = mix(shoeC, sel(shoeI.greaterThan(1.5).and(shoeI.lessThan(2.5)), vec3(0.85), vec3(0.03)), sole);
   let col = sel(region.lessThan(0.5), skinD,
@@ -385,8 +420,8 @@ function crowdMaterial() {
   const soak = U.wet.mul(float(1).sub(step(0.5, vMisc.w))).mul(step(0.5, region)).mul(step(region, 2.5)).mul(0.28);
   col = col.mul(float(1).sub(soak));
   m.colorNode = col.mul(cloudShadow(positionWorld));
-  m.roughnessNode = sel(region.lessThan(0.5), mix(float(0.48), float(0.25), white.add(iris).min(1)),
-    sel(region.lessThan(2.5), mix(float(0.86), float(0.55), soak.mul(3)), sel(region.lessThan(3.5), float(0.42), sel(region.lessThan(4.5), float(0.5),
+  m.roughnessNode = sel(region.lessThan(0.5), mix(mix(float(0.5), float(0.36), tint), float(0.2), white.add(iris).min(1)),
+    sel(region.lessThan(2.5), mix(float(0.86), float(0.55), soak.mul(3)), sel(region.lessThan(3.5), float(0.42), sel(region.lessThan(4.5), float(0.62).sub(ht.r.mul(0.22)),
     sel(region.lessThan(6.5), float(0.3), sel(region.lessThan(7.5), float(0.28), float(0.5)))))));
   m.metalnessNode = eq(region, 11).mul(0.9);
   // faint subsurface warmth on skin; retro-reflective bands glow under headlights at night
@@ -396,6 +431,7 @@ function crowdMaterial() {
 
 // ------------------------------------------------------------------ crowd
 const SKINS = [0xf1c7a5, 0xe8b893, 0xe0ac86, 0xc68a62, 0xa86f4c, 0x8d5a3b, 0x5e3a26, 0xf5d0b5];
+const GREYS = [0x6b6b6b, 0x8f8b85, 0xb8b2a8, 0xd8d0c0];
 const HAIRS = [0x2a1d14, 0x4a3122, 0x8b6a3e, 0x1b1b1b, 0xb9a27a, 0x6b6b6b, 0xd8d0c0, 0x6e2f1a, 0x3a2a20];
 const TOPS = [0x2d3e50, 0x6b2737, 0x2f4f2f, 0x8a6d3b, 0x444444, 0xbfb8a5, 0x1f2f55, 0x7a7a7a, 0x9e3a2b, 0x3c5a6e, 0x111111, 0xd9d4c7, 0x5a6b3c, 0x7b5c8a, 0x2b2b30, 0xa88a5a];
 const LEGS = [0x22252b, 0x2b3a55, 0x3e3a33, 0x111111, 0x5a5348, 0x3a4a63, 0x1d2840, 0x6b6156];
@@ -404,7 +440,8 @@ function packLook(L, a) {
   const style = L.bald ? 0 : (L.style ?? 1);
   let flags = (a.hat ? 1 : 0) | (a.pose === 'umbrella' ? 2 : 0) | (L.bag && !a.hiVis ? 4 : 0) | (a.hiVis ? 8 : 0) | (L.cap && !a.hat ? 16 : 0) | (L.hood ? 32 : 0);
   flags += 64 * ((L.shoe ?? 0) & 3) + 256 * (L.umbIdx ?? 0);
-  return [style, flags, L.h || 1, Math.min(0.999, Math.max(0, L.build ?? 0.35)) + (L.female ? 2 : 0)];
+  const face = (L.female ? 4 : 0) + ((L.face ?? 0) & 3);
+  return [style + face * 0.05, flags, L.h || 1, Math.min(0.999, Math.max(0, L.build ?? 0.35)) + (L.female ? 2 : 0)];
 }
 
 export class People {
@@ -426,8 +463,10 @@ export class People {
     const pick = a => a[Math.floor(r() * a.length)];
     const female = r() < 0.48;
     const style = female ? [2, 2, 2, 3, 1, 4][Math.floor(r() * 6)] : [1, 1, 1, 1, 4, 0][Math.floor(r() * 6)];
+    // face (faceBake.js): men clean shaven / stubble / beard / older; women young / natural / made up / older
+    const face = female ? [0, 0, 1, 1, 2, 3][Math.floor(r() * 6)] : [0, 0, 1, 1, 2, 3][Math.floor(r() * 6)];
     return {
-      skin: pick(SKINS), hair: pick(HAIRS), top: pick(TOPS), legs: pick(LEGS), bald: style === 0, style, female,
+      face, skin: pick(SKINS), hair: face === 3 && r() < 0.7 ? pick(GREYS) : pick(HAIRS), top: pick(TOPS), legs: pick(LEGS), bald: style === 0, style, female,
       build: Math.min(1, Math.max(0, 0.3 + (r() - 0.5) * 0.7)), shoe: Math.floor(r() * 4), cap: !female && r() < 0.12, hood: r() < 0.18,
       bag: r() < 0.25, umbrella: 0, umbIdx: Math.floor(r() * 5), h: female ? 0.93 + r() * 0.08 : 0.98 + r() * 0.08,
     };
