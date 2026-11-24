@@ -156,8 +156,6 @@ export class Transit {
     me.x=v.x;me.z=v.z;me.y=v.y;me.heading=v.heading;
     B.actor[B.active].visible=false;
     this.riderLook=I.takeLook();
-    const text=(v===this?'Rail':('Bus '+(v.ref||'')))+' · '+(stop?'At '+stop.name+' · ':'')+'Next stop: '+this.nextName()+(this.request?' · Stop requested':'');
-    if(text!==this.lastText){G.hud.feed(text);this.lastText=text;}
     return true;
   }
 }

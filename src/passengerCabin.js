@@ -1,7 +1,7 @@
 // A hollow shell and its furniture share a single vertex-colour geometry per model.
 import * as T from 'three/webgpu';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
-const cache=new Map(), material=new T.MeshStandardMaterial({vertexColors:true,roughness:.78});
+const cache=new Map(), material=new T.MeshStandardMaterial({vertexColors:true,roughness:.78,emissive:0x272a2a});
 const glass=new T.MeshStandardMaterial({color:0xc3e4ec,transparent:true,opacity:.11,depthWrite:false,side:T.DoubleSide});
 function layout(type){
   if(cache.has(type))return cache.get(type);

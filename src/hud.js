@@ -85,8 +85,9 @@ export class Hud {
     this.el('bUse').disabled=!!waiting;
     this.el('bUse').classList.toggle('dim',!inCar&&!near&&!G.transit.ride&&!boardable);
     this.el('bRun').textContent = inCar ? 'Brake' : 'Run';
+    this.el('bRun').hidden=this.el('bSwap').hidden=!!G.transit.ride;
     this.el('bHorn').hidden = !inCar;
-    for(const id of ['bJump','bHit','bPickup'])this.el(id).hidden=inCar;
+    for(const id of ['bJump','bHit','bPickup'])this.el(id).hidden=inCar || !!G.transit.ride;
     // run button doubles as brake in a vehicle
     if (inCar) { if (I.held.has('run')) I.held.add('brake'); else if (!I.keys.has('Space')) I.held.delete('brake'); }
     this._acc = (this._acc || 0) + dt;
