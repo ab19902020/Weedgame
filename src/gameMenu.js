@@ -20,6 +20,13 @@ export class GameMenu {
       select.value=values.includes(this.settings[id])?this.settings[id]:values[0];
       select.onchange=()=>{this.settings[id]=select.value;this.apply();try{localStorage.setItem(key,JSON.stringify(this.settings));}catch{}};
     }
+    const credits = document.createElement('a');
+    credits.textContent = 'Sound recording credits';
+    credits.href = 'sfx/CREDITS.txt';
+    credits.target = '_blank';
+    credits.rel = 'noopener';
+    credits.style.color = 'inherit';
+    prefs.append(credits);
     const back=document.createElement('button'); back.textContent='Back';prefs.append(back);
     const page=settings=>{prefs.hidden=!settings;menu.querySelector('nav').hidden=settings;};
     back.onclick=()=>page(false);

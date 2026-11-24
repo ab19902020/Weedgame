@@ -1,5 +1,7 @@
-// Procedural WebAudio soundscape (no sampled assets): rain with shelter muffling, wind and
-// trees, spatial traffic, footsteps by surface, local voices, horns, sirens, crossing beeps.
+import cues from './soundCues.json';
+
+// These indices follow the landcover palette in the world builder.
+const groundSounds = ['grass','boots','boots','tile','water','grass','grass','grass','boots','gravel','gravel','grass','boots','grass','grass','grass','grass','boots','gravel','gravel'];
 export class Audio {
   constructor(G) {
     this.G = G; this.on = false;
@@ -21,16 +23,19 @@ export class Audio {
     this.wind = bed('bandpass', 420, 0.6);
     this.leaves = bed('bandpass', 2600, 1.2);
     this.hum = bed('lowpass', 240, 0.8);            // distant traffic rumble
-    this.murmur = bed('bandpass', 700, 3);          // crowd voices
+    this.murmur = {g:A.createGain()}; this.murmur.g.gain.value=0; this.murmur.g.connect(this.master);          // crowd voices
     // per-vehicle engine voices
     this.voices = [];
     for (let i = 0; i < 6; i++) {
-      const o = A.createOscillator(); o.type = 'sawtooth'; const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500;
+      const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500;
       const g = A.createGain(); g.gain.value = 0; const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = 6; p.rolloffFactor = 1.3;
       const tn = A.createBufferSource(); tn.buffer = noise; tn.loop = true; const tf = A.createBiquadFilter(); tf.type = 'bandpass'; tf.frequency.value = 900; const tg = A.createGain(); tg.gain.value = 0;
-      o.connect(f); f.connect(g); g.connect(p); tn.connect(tf); tf.connect(tg); tg.connect(p); p.connect(this.master); o.start(); tn.start();
-      this.voices.push({ o, f, g, p, tg, tf, v: null });
+      f.connect(g); g.connect(p); tn.connect(tf); tf.connect(tg); tg.connect(p); p.connect(this.master); tn.start();
+      this.voices.push({ f, g, p, tg, tf });
     }
+    this.lastCue = new Map();
+    this.pedSteps = new WeakMap();
+    this.ready = this.loadRecordings().catch(error => console.warn('Sound recordings unavailable', error));
     this.stepT = 0; this.beepT = 0; this.sirenT = 0;
     // the player's car: engine (two detuned saws, firing frequency from rpm, intake opening with throttle),
     // tyre squeal on slides and a metal scrape against walls
@@ -45,6 +50,40 @@ export class Audio {
     this.squeal = sq;
     this.scrape = bed('bandpass', 650, 1.6);
   }
+  async loadRecordings() {
+    const response = await fetch('sfx/berkshire.ogg');
+    if (!response.ok) throw Error('Sound bank HTTP ' + response.status);
+    this.bank = await this.ctx.decodeAudioData(await response.arrayBuffer());
+    this.loop('pedestrians', this.murmur.g);
+    for (const voice of this.voices) voice.engine = this.loop('engine', voice.f);
+  }
+  loop(name, output) {
+    const [start, length] = cues[name][0];
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.bank;
+    source.loop = true;
+    source.loopStart = start;
+    source.loopEnd = start + length;
+    source.connect(output);
+    source.start(0, start + Math.random() * length);
+    return source;
+  }
+  play(name, x, y, z, gain = 0.4) {
+    if (!this.bank) return;
+    const options = cues[name];
+    let index = Math.floor(Math.random() * options.length);
+    if (options.length > 1 && index === this.lastCue.get(name)) index = (index + 1) % options.length;
+    this.lastCue.set(name, index);
+    const [start, length] = options[index];
+    const source = this.ctx.createBufferSource(), volume = this.ctx.createGain(), pan = this.ctx.createPanner();
+    source.buffer = this.bank;
+    volume.gain.value = gain;
+    pan.refDistance = 5;
+    this.setPos(pan, x, y, z);
+    source.connect(volume); volume.connect(pan); pan.connect(this.master);
+    source.onended = () => { source.disconnect(); volume.disconnect(); pan.disconnect(); };
+    source.start(0, start, length);
+  }
   setPos(node, x, y, z) { const p = node; if (p.positionX) { p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z; } else p.setPosition(x, y, z); }
   oneShot(fn, x, z, gain = 1) {
     if (!this.on) return;
@@ -53,27 +92,19 @@ export class Audio {
     g.connect(p); p.connect(this.master); fn(A, g);
   }
   crash(x, z, k = 1) {
-    this.oneShot((A, out) => {
-      const s = A.createBufferSource(); s.buffer = this.noise; const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 1800; const g = A.createGain();
-      g.gain.setValueAtTime(1.2 * k, A.currentTime); g.gain.exponentialRampToValueAtTime(0.001, A.currentTime + 0.9);
-      s.connect(f); f.connect(g); g.connect(out); s.start(); s.stop(A.currentTime + 1);
-    }, x, z);
+    const y = this.G.tiles.terrain(x,z) ?? this.G.brothers.me.y;
+    this.play('crash', x, y + .5, z, .85 * k);
   }
   horn(x, z) {
-    this.oneShot((A, out) => {
-      for (const fr of [415, 520]) { const o = A.createOscillator(); o.type = 'square'; o.frequency.value = fr; const g = A.createGain(); g.gain.value = 0.08; o.connect(g); g.connect(out); o.start(); o.stop(A.currentTime + 0.45); }
-    }, x, z);
+    this.play('Car_Horn', x, this.G.tiles.terrain(x,z) ?? this.G.brothers.me.y, z, .55);
   }
-  step(surface, wet, x, z, run) {
-    this.oneShot((A, out) => {
-      const s = A.createBufferSource(); s.buffer = this.noise; s.playbackRate.value = 0.8 + Math.random() * 0.4;
-      const f = A.createBiquadFilter();
-      const soft = surface === 'grass' || surface === 'garden';
-      f.type = soft ? 'lowpass' : 'bandpass'; f.frequency.value = soft ? 700 : wet ? 2400 : 1500; f.Q.value = soft ? 0.5 : 1.4;
-      const g = A.createGain(); const t = A.currentTime;
-      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime((run ? 0.35 : 0.2) * (soft ? 0.6 : 1), t + 0.008); g.gain.exponentialRampToValueAtTime(0.001, t + (wet ? 0.16 : 0.09));
-      s.connect(f); f.connect(g); g.connect(out); s.start(t, Math.random()); s.stop(t + 0.2);
-    }, x, z);
+  step(actor, run, level) {
+    let name = groundSounds[this.G.tiles.landcover(actor.x, actor.z)] || 'boots';
+    if (run && name === 'boots') name = 'run';
+    if ((name === 'run' || name === 'boots') && this.G.world.s.puddle > .1 && Math.random() < this.G.world.s.puddle * .4) {
+      this.play('water', actor.x, actor.y, actor.z, level * .5);
+    }
+    this.play(name, actor.x, actor.y, actor.z, level);
   }
   update(dt, G) {
     if (!this.on) return;
@@ -98,7 +129,7 @@ export class Audio {
     this.hum.g.gain.setTargetAtTime(0.03 + busy * 0.08, t, 0.5);
     const crowd = Math.min(1, G.peds.list.filter(p => Math.abs(p.x - cam.x) < 25 && Math.abs(p.z - cam.z) < 25).length / 10);
     this.murmur.g.gain.setTargetAtTime(crowd * 0.05 * (inCar ? 0.2 : 1), t, 0.4);
-    this.murmur.f.frequency.setTargetAtTime(500 + 400 * Math.abs(Math.sin(t * 2.3)), t, 0.05);
+
     // nearest vehicles get engine voices
     const near = G.traffic.list.filter(v => !v.parked && !v.player).map(v => [v, (v.x - cam.x) ** 2 + (v.z - cam.z) ** 2]).filter(a => a[1] < 90 * 90).sort((a, b) => a[1] - b[1]).slice(0, this.voices.length);
     this.voices.forEach((vo, i) => {
@@ -106,9 +137,9 @@ export class Audio {
       if (!it) { vo.g.gain.setTargetAtTime(0, t, 0.2); vo.tg.gain.setTargetAtTime(0, t, 0.2); return; }
       const v = it[0], sp = v.v || Math.abs(v.sp || 0), big = v.model.startsWith('bus') || v.model === 'van';
       this.setPos(vo.p, v.x, v.y + 0.6, v.z);
-      vo.o.frequency.setTargetAtTime((big ? 32 : 45) + sp * (big ? 3 : 5.5), t, 0.1);
-      vo.f.frequency.setTargetAtTime(250 + sp * 40, t, 0.1);
-      vo.g.gain.setTargetAtTime((v.player ? 0.05 : 0.035) * (0.4 + Math.min(1, sp / 12)), t, 0.1);
+      vo.engine?.playbackRate.setTargetAtTime((big ? .72 : .9) + Math.min(1.5, Math.abs(sp) * .048), t, .15);
+      vo.f.frequency.setTargetAtTime(1000 + Math.abs(sp) * 85, t, 0.1);
+      vo.g.gain.setTargetAtTime((v.player ? .48 : .32) * (0.4 + Math.min(1, sp / 12)), t, 0.1);
       vo.tg.gain.setTargetAtTime(Math.min(0.12, sp / 120) * (G.world.s.wet > 0.3 ? 2 : 1), t, 0.1); // tyre hiss, louder when wet
       vo.tf.frequency.setTargetAtTime(G.world.s.wet > 0.3 ? 2600 : 900, t, 0.2);
     });
@@ -128,9 +159,19 @@ export class Audio {
       this.eng.g.gain.setTargetAtTime(0, t, 0.2); this.squeal.g.gain.setTargetAtTime(0, t, 0.1); this.scrape.g.gain.setTargetAtTime(0, t, 0.1);
     }
     // footsteps
-    if (!inCar && (G.brothers.speedNow || 0) > 0.4) {
-      this.stepT -= dt * (G.brothers.speedNow > 3 ? 3.2 : 1.9);
-      if (this.stepT <= 0) { this.stepT = 1; const lc = G.tiles.landcover(me.x, me.z); const surface = [, 'road', 'pave', , , , , 'grass', , , 'gravel', 'garden'][lc] || 'pave'; this.step(surface, G.world.s.wet > 0.2, me.x, me.z, G.brothers.speedNow > 3); }
+    const running = G.brothers.speedNow > 3;
+    if (!inCar && !G.transit.ride && !(G.brothers.actor[G.brothers.active].jumpTime > 0) && G.brothers.speedNow > .4) {
+      this.stepT -= dt * (running ? 3.2 : 1.9);
+      if (this.stepT <= 0) { this.stepT = 1; this.step(me, running, running ? .48 : .32); }
+    }
+    for (const ped of G.peds.list) {
+      if (!ped.visible || ped.gone || ped.fallT > 0 || !(ped.speedNow > .4) || Math.hypot(ped.x-cam.x,ped.z-cam.z)>14) continue;
+      const next = this.pedSteps.get(ped);
+      if (next === undefined) this.pedSteps.set(ped, t + Math.random() * .5);
+      else if (t >= next) {
+        this.step(ped, ped.speedNow > 3, .13);
+        this.pedSteps.set(ped, t + (ped.speedNow > 3 ? .32 : .53));
+      }
     }
     // pelican crossing beeps when the green man shows nearby
     this.beepT -= dt;
