@@ -104,7 +104,7 @@ export class Brothers {
   }
   drive(dt, input, v) {
     const G = this.G, me = this.me;
-    const ax = input.axis();
+    const ax = input.driveAxis ? input.driveAxis() : input.axis();
     // carPhysics.js: tyre model, gearbox, assists and impulse collisions
     const ctl = { throttle: -ax.y, steer: ax.x, handbrake: input.padBrake || input.held.has('brake') };
     G.carDyn.drive(v, dt, ctl);

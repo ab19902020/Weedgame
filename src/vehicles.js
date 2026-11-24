@@ -52,12 +52,12 @@ function buildModel(def, key, lod = 0) {
   const isBus = prof === 'decker' || prof === 'single';
   const belt = isBus ? 1.25 : prof === 'van' ? 1.2 : 0.98;
   let body;
-  if (isBus) {
+  if (true) {   // buses and the fire engine: extruded side profile (cars come from carModel.js)
     const shape = new THREE.Shape(profile(prof, L, H).map(([x, y]) => new THREE.Vector2(x, y)));
     body = new THREE.ExtrudeGeometry(shape, { depth: W - 0.08, bevelEnabled: true, bevelThickness: 0.04, bevelSize: 0.04, bevelSegments: 1, steps: 1 });
     body.translate(0, 0, -(W - 0.08) / 2);
     body = body.toNonIndexed(); body.computeVertexNormals();
-  } else body = loftBody(def, profile(prof, L, H), belt);   // rounded, smooth-shaded (carModel.js)
+  }
   // per-vertex classification: paint / glass / trim / lights
   const pos = body.attributes.position, nor = body.attributes.normal, n = pos.count;
   const col = new Float32Array(n * 3), paint = new Float32Array(n), lit = new Float32Array(n), liv = new Float32Array(n);

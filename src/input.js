@@ -63,6 +63,16 @@ export class Input {
     const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
     return { x, y };
   }
+  // driving: throttle/brake and steering stay independent (a trigger plus a stick must not cancel each other)
+  driveAxis() {
+    let x = this.move.x + (this.padX || 0), y = this.move.y + (this.padY || 0);
+    const k = this.keys;
+    if (k.has('KeyA') || k.has('ArrowLeft')) x -= 1;
+    if (k.has('KeyD') || k.has('ArrowRight')) x += 1;
+    if (k.has('KeyW') || k.has('ArrowUp')) y -= 1;
+    if (k.has('KeyS') || k.has('ArrowDown')) y += 1;
+    return { x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) };
+  }
   takeLook() { const d = { dx: this.look.dx, dy: this.look.dy }; this.look.dx = this.look.dy = 0; if (this.keys.has('KeyQ')) d.dx -= 6; if (this.keys.has('KeyE')) d.dx += 6; return d; }
   consume(name) { const has = this.pressed.has(name); this.pressed.delete(name); return has; }
   // on-screen button wiring

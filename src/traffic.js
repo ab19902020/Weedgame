@@ -276,7 +276,7 @@ export class Traffic {
     if (nhI != null && (v._ih !== v.h || v._inh !== nhI)) { v._ih = v.h; v._inh = nhI; v._turn = (net.flags[e] & F_ROUNDABOUT) ? null : this.turnOf(v.h, nhI); }
     v.ind = v.passing && Math.abs(v.lat - v.latT) > 0.3 ? 2 : nhI != null && rem < 40 && v._turn === 'left' ? 1 : nhI != null && rem < 40 && v._turn === 'right' ? 2 : 0;
     // demand-actuated signals: approaching vehicles register on the detector
-    if (sa && sa[2] - v.s < 60 && sa[2] - v.s > -2 && this.sig.detect) this.sig.detect(sa[0], sa[1]);
+    if (approaches && this.sig.detect) for (const [ci, g, stop] of approaches) if (stop - v.s < 60 && stop - v.s > -2) this.sig.detect(ci, g);
     // don't block the junction: next half-edge jammed at its entry
     const nh = v.route[v.ri + 1];
     if (nh != null && rem < 25) {

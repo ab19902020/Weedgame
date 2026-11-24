@@ -35,7 +35,7 @@ export class Controller {
       if(tap(13))I.pressed.add('swap');
       if(tap(11))G.brothers.cam.yaw=G.brothers.me.heading+Math.PI;
       if(tap(14)||tap(15))G.brothers.cam.yaw+=(tap(14)?-1:1)*Math.PI/2;
-      if(car){if(tap(10)||tap(1)||tap(5))I.pressed.add('horn');}
+      if(car){if(tap(10)||tap(1))I.pressed.add('horn');if(tap(5))I.pressed.add('camera');}
       else{
         if(tap(2))I.pressed.add('jump');
         if(tap(1)||tap(7))I.pressed.add('hit');
