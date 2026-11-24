@@ -113,6 +113,12 @@ export class Peds {
       if (p.fallT > 0) { p.fallT -= dt; p.fall = p.fallT > 1.2 ? Math.min(1, (p.fall || 0) + dt * 6) : Math.max(0, p.fall - dt * 1.5); p.speedNow = 0; if (p.fallT <= 0) { p.mode = 'walk'; p.pose = 'phone'; p.phoneT = 6; } continue; }
       if (p.reactT > 0) { p.reactT -= dt; p.heading = lerpAngle(p.heading, p.reactHeading, dt * 6); p.pose = p.reactPose; p.speedNow = p.reactPose === 'flee' ? 3.5 : 0; if (p.reactPose === 'flee') { p.x += Math.cos(p.reactHeading + Math.PI) * 3.5 * dt; p.z += Math.sin(p.reactHeading + Math.PI) * 3.5 * dt; } this.ground(p); continue; }
       if (p.phoneT > 0) { p.phoneT -= dt; p.pose = 'phone'; p.speedNow = 0; continue; }
+      if(p.mode==='greeting'){
+        p.timer-=dt;p.speedNow=0;p.pose='talk';
+        if(p.partner)p.heading=Math.atan2(p.partner.z-p.z,p.partner.x-p.x);
+        if(p.timer<=0||p.partner?.gone){p.mode='walk';p.partner=null;}
+        continue;
+      }
       if (p.mode === 'talk') { this.talk(p, dt); continue; }
       if (p.mode === 'queue') { this.queue(p, dt); continue; }
       if (p.mode === 'shelter') { if (rain < 0.15 || p.t > p.shelterUntil) p.mode = 'walk'; p.pose = 'idle'; p.speedNow = 0; continue; }

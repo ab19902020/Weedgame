@@ -6,7 +6,7 @@ function actor(id,top,x,y,z){
 }
 export class Neighbourhood {
   constructor(G){
-    this.G=G;this.cooldown=50;this.turn=0;this.check=0;this.actors=[];this.elapsed=0;
+    this.G=G;this.cooldown=65+Math.random()*90;this.social=4;this.check=0;this.actors=[];this.elapsed=0;
     const mesh=(geometry,colour)=>new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:colour}));
     this.ball=mesh(new THREE.SphereGeometry(.13,10,8),0xf3ead3);
     this.fire=new THREE.Group();
@@ -69,8 +69,8 @@ export class Neighbourhood {
   }
   robbery(){
     const G=this.G, civilians=G.peds.near(G.focus.x,G.focus.z,155).filter(p=>!p.officer&&p.mode==='walk'&&!p.leader);
-    for(const victim of civilians){
-      const thief=civilians.find(p=>p!==victim&&Math.hypot(p.x-victim.x,p.z-victim.z)<6);
+    for(const victim of civilians.filter(p=>p.look.bag)){
+      const thief=civilians.find(p=>p!==victim&&!p.look.bag&&Math.hypot(p.x-victim.x,p.z-victim.z)<2.4);
       if(!thief)continue;
       G.police.createIncident('theft',victim.x,victim.z,[],{label:'Reported bag snatch'});
       victim.look.bag=false;thief.look.bag=true;victim.reactT=0;victim.phoneT=12;
@@ -157,9 +157,24 @@ export class Neighbourhood {
   update(dt){
     this.elapsed+=dt;this.check-=dt;this.cooldown-=dt;
     this.football(dt);if(this.check<=0)this.check=5;
-    if(this.cooldown<=0&&!this.incident&&!this.retiring){
-      const ok=this.turn%2?this.robbery():this.startFire();
-      if(ok){this.turn++;this.cooldown=240;}else{this.turn++;this.cooldown=30;}
+    this.social-=dt;
+    if(this.social<=0){
+      this.social=6+Math.random()*18;
+      const walkers=this.G.peds.near(this.G.focus.x,this.G.focus.z,130).filter(p=>!p.officer && p.mode==='walk' && !p.leader && !p.phoneT && !(p.socialAfter>p.t) && !(p.hurryUntil>p.t));
+      for(const a of walkers){
+        const b=walkers.find(b=>b!==a && (b.h>>1)===(a.h>>1) && Math.hypot(b.x-a.x,b.z-a.z)<2.8);
+        if(!b)continue;
+        const duration=3+Math.random()*8;
+        for(const [p,other] of [[a,b],[b,a]]){
+          p.mode='greeting';p.partner=other;p.timer=duration;p.socialAfter=p.t+90;
+        }
+        break;
+      }
+    }
+    if(this.cooldown<=0&&!this.incident){
+      const theftChance=this.G.world.hours()>17?.72:.52;
+      const ok=Math.random()<theftChance?this.robbery():!this.retiring&&this.startFire();
+      this.cooldown=ok?180+Math.random()*360:18+Math.random()*42;
     }
     this.response(dt);
     this.commuter();

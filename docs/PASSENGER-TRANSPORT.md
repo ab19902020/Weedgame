@@ -7,3 +7,7 @@ The local shuttle serves Reading, Earley, Winnersh Triangle, Winnersh and Woking
 Station reference coordinates come from [UK Railway Stations](https://github.com/davwheat/uk-railway-stations). Station order and typical journey intervals were checked against [South Western Railway timetable 2](https://www.southwesternrailway.com/-/media/files/plan-my-journey/timetables/may-2026/ptt02-may-2026.pdf). Map data attribution is in SOURCES.md.
 
 Bus rides use the traffic simulation's bus objects, directed routes, scheduled stop indices and dwell state. Stop calls are inferred where the imported route lacks explicit calls. A bus section needs at least two calls to offer an onward passenger journey. Passenger journeys and onboard NPCs are session state.
+
+## Inside the vehicle
+
+Boarding puts the camera in the passenger aisle. Use the normal camera control to look out of the windows, and move forward or back to explore. On a double-decker, follow the stairs at the front to change decks. NPCs who boarded appear in the saloon. The train opens its platform-side doors during the station dwell. The next-stop and alighting controls work from inside.

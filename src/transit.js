@@ -1,3 +1,4 @@
+import {PassengerCabin} from './passengerCabin.js';
 import * as THREE from 'three/webgpu';
 import {People} from './characters.js';
 import line from './railLine.json';
@@ -17,19 +18,6 @@ function box(parent,l,h,w,x,y,z,colour){
   const m=new THREE.Mesh(new THREE.BoxGeometry(l,h,w),new THREE.MeshStandardMaterial({color:colour}));
   m.position.set(x,y,z);parent.add(m);return m;
 }
-function carriage(){
-  const g=new THREE.Group();
-  box(g,18,2.8,2.7,0,2.03,0,0xd6d7ce);
-  box(g,17.8,.45,2.65,0,3.55,0,0x68757c);
-  box(g,17,.55,2.05,0,.53,0,0x313b42);
-  for(const side of [-1,1]){
-    box(g,.14,2.35,2.65,side*9,2.05,0,0xeeb536);
-    box(g,.17,.91,2.1,side*9,2.55,0,0x263947);
-    box(g,17.8,.24,.04,0,1.06,side*1.36,0x347e90);
-    for(let i=-3;i<=3;i++)box(g,1.4,.85,.05,i*2.35,2.52,side*1.36,0x314654);
-    for(const x of [-5.9,5.9])box(g,1.05,2.15,.07,x,1.86,side*1.37,0x276e81);
-  }return g;
-}
 export class Transit {
   constructor(G){
     this.G=G;this.ride=null;this.request=false;this.people=[];this.seq=0;
@@ -47,7 +35,7 @@ export class Transit {
       if(!this.services.has(si))this.services.set(si,[]);
       this.services.get(si).push({r,k});
     }
-    this.cars=[carriage(),carriage()];for(const car of this.cars)G.scene.add(car);
+    this.busCabins=new Map();this.cars=[new PassengerCabin("rail",0x488185),new PassengerCabin("rail",0x488185)];for(const car of this.cars)G.scene.add(car);
     this.index=0;this.dir=1;this.at=0;this.s=0;this.elapsed=0;this.dwell=24;
     this.seedQueue(0);this.exchange(0);this.place();
   }
@@ -66,7 +54,7 @@ export class Transit {
   place(){
     const centre=position(this.s);Object.assign(this,centre);
     for(let i=0;i<2;i++){
-      const p=position(this.s+(i?9.2:-9.2));this.cars[i].position.set(p.x,p.y+.16,p.z);this.cars[i].rotation.y=-p.heading;
+      const offset=this.s+(i?9.2:-9.2),clipped=Math.max(0,Math.min(distances.at(-1),offset)),p=position(clipped);this.cars[i].position.set(p.x+Math.cos(p.heading)*(offset-clipped),p.y+.16,p.z+Math.sin(p.heading)*(offset-clipped));this.cars[i].rotation.y=-p.heading;
     }
   }
   tick(dt){
@@ -80,6 +68,31 @@ export class Transit {
     const fraction=u<.1?5*u*u/.9:u>.9?1-5*(1-u)**2/.9:(u-.05)/.9;
     this.s=a.s+(b.s-a.s)*fraction;this.place();
     if(u===1){this.at=this.index=next;if(!next||next===this.stations.length-1)this.dir*=-1;this.dwell=next===0||next===this.stations.length-1?72:24;this.exchange(next);}
+  }
+  syncCabins(dt){
+    const G=this.G,me=G.brothers.me,seen=new Set();
+    for(const b of G.traffic.list){
+      if(b.hidden || !['bus','busS'].includes(b.model) || (b!==this.ride && Math.hypot(b.x-me.x,b.z-me.z)>50))continue;
+      seen.add(b);let c=this.busCabins.get(b);
+      if(!c){c=new PassengerCabin(b.model,b.paint);G.scene.add(c);this.busCabins.set(b,c);}
+      b.hasCabin=true;c.position.set(b.x,b.y,b.z);c.rotation.set(b.roll||0,-b.heading,b.pitch||0,'YXZ');c.passengers(b.passengers||[]);c.doorState(b.served && b.v<.3,dt);
+    }
+    for(const [b,c] of this.busCabins)if(!seen.has(b)){b.hasCabin=false;G.scene.remove(c);c.dispose();this.busCabins.delete(b);}
+    const rail=this.people.filter(p=>p.destination!=null);
+    this.cars.forEach((c,i)=>{c.passengers(rail.filter((_,k)=>k%2===i));c.doorState(this.at!=null,dt);});
+  }
+  riderView(dt,look){
+    const rail=this.ride===this, c=rail?this.cars[0]:this.busCabins.get(this.ride);
+    if(!c)return;
+    const {L,floor,double}=c.layout,axis=this.G.input.axis();
+    this.viewYaw-=look.dx*.005;this.viewPitch=Math.max(-1,Math.min(1,this.viewPitch-look.dy*.005));
+    this.aisle=Math.max(-L/2+.65,Math.min(L/2-.55,this.aisle-axis.y*Math.cos(this.viewYaw)*dt*1.9));
+    if(double && this.aisle>L/2-.65 && !this.stairLatch){this.upper=!this.upper;this.stairLatch=true;}
+    if(this.aisle<L/2-2)this.stairLatch=false;
+    const stair=double?Math.max(0,Math.min(1,(this.aisle-(L/2-2))/1.45)):0;
+    const base=double && this.upper?2.37:floor+stair*(2.37-floor);
+    const eye=new THREE.Vector3(this.aisle,base+1.38,0),target=eye.clone().add(new THREE.Vector3(Math.cos(this.viewYaw)*Math.cos(this.viewPitch),Math.sin(this.viewPitch),-Math.sin(this.viewYaw)*Math.cos(this.viewPitch)));
+    const camera=this.G.camera;camera.position.copy(c.localToWorld(eye));camera.lookAt(c.localToWorld(target));
   }
   nearby(me){
     if(me.vehicle)return null;
@@ -131,7 +144,7 @@ export class Transit {
     if(!candidate && I.pressed.has('use') && (this.platform(me)||this.busStop(me)) && !B.nearestVehicle()) I.consume('use');
     if(candidate && I.consume('use')){
       if(this.ride)this.request=true;
-      else {this.ride=candidate;this.boarded=this.currentStop()?.name;this.lastText='';}
+      else {this.aisle=-1;this.viewYaw=.12;this.viewPitch=0;this.upper=false;this.stairLatch=false;this.ride=candidate;this.boarded=this.currentStop()?.name;this.lastText='';}
     }
     if(!this.ride)return false;
     const v=this.ride,stop=this.currentStop(),lastBusStop=v!==this && v.busData && v.served && v.nextStop===v.busData.stops.length-1;
@@ -142,8 +155,7 @@ export class Transit {
     I.consume('swap');I.consume('jump');I.consume('hit');I.consume('pickup');
     me.x=v.x;me.z=v.z;me.y=v.y;me.heading=v.heading;
     B.actor[B.active].visible=false;
-    const look=I.takeLook();B.cam.yaw+=look.dx*.006;B.cam.pitch=Math.max(.05,Math.min(1,B.cam.pitch+look.dy*.004));
-    B.followCam(dt,v.x,v.y+2.2,v.z,v===this?13:9,null);
+    this.riderLook=I.takeLook();
     const text=(v===this?'Rail':('Bus '+(v.ref||'')))+' · '+(stop?'At '+stop.name+' · ':'')+'Next stop: '+this.nextName()+(this.request?' · Stop requested':'');
     if(text!==this.lastText){G.hud.feed(text);this.lastText=text;}
     return true;

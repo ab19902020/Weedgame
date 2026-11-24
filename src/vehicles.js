@@ -150,14 +150,16 @@ export class VehicleRenderer {
       const dx = v.x - cam.x, dz = v.z - cam.z; if (dx * dx + dz * dz > md2) continue;
       const def = MODELS[v.model]; const mesh = this.meshes[v.model]; const i = counts[v.model];
       if (i >= def.max) continue;
-      counts[v.model]++;
       this._e.set(v.roll || 0, -v.heading, v.pitch || 0, 'YXZ');
       this._q.setFromEuler(this._e);
       this._m.compose(this._v.set(v.x, v.y, v.z), this._q, this._s.set(1, 1, 1));
+      if(!v.hasCabin){
+      counts[v.model]++;
       mesh.setMatrixAt(i, this._m);
       this._c.setHex(v.paint).toArray(mesh.geometry.attributes.iPaint.array, i * 3);
       const st = mesh.geometry.attributes.iState;
       st.array[i * 4] = v.brake ? 1 : 0; st.array[i * 4 + 1] = v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = 0;
+      }
       // wheels
       if (dx * dx + dz * dz < 160 * 160 && wn < 1496) {
         const r = def.wr, hw = def.W / 2 - 0.12, a = def.wb / 2;

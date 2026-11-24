@@ -189,6 +189,8 @@ function step(dt, render) {
   }
   if (!render) return;
   // draw dynamic actors
+  G.transit.syncCabins(dt);
+  if(G.transit.ride)G.transit.riderView(dt,G.transit.riderLook||{dx:0,dy:0});
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.quality === 'low' ? 450 : 700);
   const actors = [B.actor[B.active],...G.transit.people,...G.neighbourhood.actors]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
