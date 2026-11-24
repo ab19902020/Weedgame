@@ -1,4 +1,5 @@
 // A hollow shell and its furniture share a single vertex-colour geometry per model.
+import {TransitSign} from './transitSign.js';
 import * as T from 'three/webgpu';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 const cache=new Map(), material=new T.MeshStandardMaterial({vertexColors:true,roughness:.78,emissive:0x272a2a});
@@ -36,10 +37,14 @@ function layout(type){
       box(0,top-.28,side*.62,L-.55,.045,.045,rail?0xacb6b5:0xe7b746);
       for(let x=-L/2+1;x<L/2-2;x+=rail?1.18:1.03){
         if(hasDoor && Math.abs(x-doorX)<1.15)continue;
+        if(!rail && base===floor && side<0 && x>0 && x<2.2)continue; // wheelchair / pushchair space
         const sz=side*.82, blue=rail?0x34606e:0x304d72;
         box(x,base+.48,sz,.48,.14,.66,blue);
         box(x-.23,base+.82,sz,.10,.67,.66,blue);
         box(x,base+.23,sz,.16,.42,.21,0x586268);
+        box(x-.22,base+1.16,sz,.13,.13,.57,rail?0x96aba3:0x65839a);
+        for(const dz of [-.19,0,.19])box(x-.172,base+.84,sz+dz,.014,.47,.028,rail?0x62998b:0x597c9f);
+        box(x,base+.68,side*.50,.34,.055,.047,0x414957);
         seats.push([x,base,sz]);
       }
       for(let x=-L/2+1;x<L/2;x+=3.1)box(x,(base+top)/2,side*.45,.035,top-base,.035,rail?0x9caeae:0xf1b844);
@@ -48,7 +53,18 @@ function layout(type){
       box(end*(L/2-.04),base+.41,0,.09,.82,W,rail?0xe1ad41:0x586268);
       box(end*(L/2-.04),(top+base+.62)/2,0,.025,top-base-.92,W-.14,0xffffff,panes);
     }
-    box(0,top-.11,0,L-1,.035,.14,0xfff2c6);
+    for(let x=-L/2+1.2;x<L/2-.8;x+=2.4){
+      box(x,top-.11,0,1.8,.045,.19,0xffefd3);
+      box(x,top-.12,.25,.85,.035,.085,0x697074);
+    }
+    if(!rail){
+      for(const x of [-L/2+1,-L/2+4.1])box(x,base+1.15,-.42,.085,.13,.06,0xe04436);
+      if(base===floor){
+        box(1.1,base+.91,-W/2+.14,1.3,.05,.06,0xe7b746);
+        box(1.48,base+.69,-W/2+.14,.64,.43,.11,0x304d72);
+        box(L/2-1.5,base+.022,-W/2+.12,1.25,.03,.19,0xe3bc57);
+      }
+    }
   }
   if(rail){
     for(const end of [-1,1]){
@@ -83,6 +99,10 @@ export class PassengerCabin extends T.Group {
       const leaf=new T.Mesh(doorPanel,doorSurface);leaf.position.set(x+sign*.31,y+.95,z);this.add(leaf);
       this.leaves.push({leaf,x:x+sign*.31,sign});
     }
+    const {L,H,double}=this.layout;
+    this.insideSign=new TransitSign(1.18,.29,true);this.insideSign.position.set(L/2-.18,double?2.14:H-.37,0);this.insideSign.rotation.y=-Math.PI/2;
+    this.frontSign=new TransitSign(1.8,.34,true);this.frontSign.position.set(L/2+.018,H-.32,0);this.frontSign.rotation.y=Math.PI/2;
+    this.add(this.insideSign,this.frontSign);
     this.openAmount=0;
     this.seatMatrix=new T.Matrix4();this.heads.frustumCulled=this.bodies.frustumCulled=false;
   }
@@ -101,5 +121,5 @@ export class PassengerCabin extends T.Group {
     }
     for(const m of [this.heads,this.bodies]){m.count=n;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
   }
-  dispose(){this.paint.dispose();this.heads.dispose();this.bodies.dispose();}
+  dispose(){this.insideSign.dispose();this.frontSign.dispose();this.paint.dispose();this.heads.dispose();this.bodies.dispose();}
 }

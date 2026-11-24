@@ -1,3 +1,4 @@
+import {TransitSign} from './transitSign.js';
 import {PassengerCabin} from './passengerCabin.js';
 import * as THREE from 'three/webgpu';
 import {People} from './characters.js';
@@ -27,6 +28,13 @@ export class Transit {
       const platform=new THREE.Group();platform.position.set(st.x,st.y,st.z);platform.rotation.y=-p.heading;
       box(platform,42,.55,2.8,0,.27,0,0x878880);
       box(platform,41,.015,.14,0,.56,-1.07,0xe6c969);
+      for(const x of [-12,12]){
+        box(platform,.10,2.1,.1,x,1.57,.9,0x455858);
+        const board=new TransitSign(2.3,.58);board.write('GREEN COUNTY RAIL',st.name);
+        board.rotation.y=Math.PI;board.position.set(x,2.35,.84);platform.add(board);
+      }
+      box(platform,2.1,.10,.45,4,1.04,.67,0x556563);
+      for(const x of [3.25,4.75])box(platform,.10,.46,.28,x,.78,.67,0x424a48);
       G.scene.add(platform);return st;
     });
     this.services=new Map();
@@ -75,9 +83,14 @@ export class Transit {
       if(b.hidden || !['bus','busS'].includes(b.model) || (b!==this.ride && Math.hypot(b.x-me.x,b.z-me.z)>50))continue;
       seen.add(b);let c=this.busCabins.get(b);
       if(!c){c=new PassengerCabin(b.model,b.paint);G.scene.add(c);this.busCabins.set(b,c);}
+      const r=b.busData,stops=G.net.busStops;
+      const next=r?.stops[b.nextStop+(b.served?1:0)],last=r?.stops.at(-1);
+      c.frontSign.write('BUS  '+(b.ref||''),last?stops[last.si][2]:'Out of service');
+      c.insideSign.write('NEXT STOP',next?stops[next.si][2]:'Terminus');
       b.hasCabin=true;c.position.set(b.x,b.y,b.z);c.rotation.set(b.roll||0,-b.heading,b.pitch||0,'YXZ');c.passengers(b.passengers||[]);c.doorState(b.served && b.v<.3,dt);
     }
     for(const [b,c] of this.busCabins)if(!seen.has(b)){b.hasCabin=false;G.scene.remove(c);c.dispose();this.busCabins.delete(b);}
+    for(const c of this.cars){c.insideSign.write("NEXT STATION",this.stations[this.index+this.dir].name);c.frontSign.write("LOCAL SERVICE",this.stations[this.dir>0?this.stations.length-1:0].name);}
     const rail=this.people.filter(p=>p.destination!=null);
     this.cars.forEach((c,i)=>{c.passengers(rail.filter((_,k)=>k%2===i));c.doorState(this.at!=null,dt);});
   }

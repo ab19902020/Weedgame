@@ -1,5 +1,6 @@
 // Hand-authored landmarks placed on their OSM footprints (dimensions estimated; see
 // docs/COVERAGE.md), canopies (rain shelter) and street furniture: bus stops and shelters.
+import {TransitSign} from './transitSign.js';
 import * as THREE from 'three/webgpu';
 import { Fn, uv, vec3, float, fract, step, mix, max, positionWorld, normalWorld } from 'three/tsl';
 import { mergeGeos } from './tiles.js';
@@ -48,8 +49,9 @@ export class Landmarks {
       return Math.atan2(road.dz,road.dx)+(road.side<0 ? Math.PI : 0);
     });
     G.net.busStops.forEach(([x,z,,shelter],i)=>{if (shelter) G.canopies.push({ x, z, h: this.stopHeadings[i], l: 3.2, w: 1.4, hh: 2.4, kind: 2, y: null, built: false, bus: true });});
+    this.stopSigns=new Map();this.nextSigns=0;
     this.group = new THREE.Group(); G.scene.add(this.group);
-    this.poles = new THREE.InstancedMesh(mergeGeos([new THREE.CylinderGeometry(0.04, 0.04, 2.7, 6).translate(0, 1.35, 0).toNonIndexed(), box(0.45, 0.45, 0.04, 0, 2.55, 0)]), new THREE.MeshStandardNodeMaterial({ color: 0xd02020, roughness: 0.6 }), G.net.busStops.length);
+    this.poles = new THREE.InstancedMesh(mergeGeos([new THREE.CylinderGeometry(0.04, 0.04, 2.7, 6).translate(0, 1.35, 0).toNonIndexed(), box(1.02, .31, .055, 0, 2.55, 0),box(.29,.49,.06,0,1.49,0)]), new THREE.MeshStandardNodeMaterial({ color: 0xd02020, roughness: 0.6 }), G.net.busStops.length);
     this.poles.count = 0; this.group.add(this.poles);
   }
   onTile(t) {
@@ -67,7 +69,7 @@ export class Landmarks {
       c.y = g + 0.17 + c.hh; c.built = true;
       this.group.add(this.canopy(c));
     }
-    if (t.lod === 0) this.placePoles();
+    if(t.lod===0)this.placePoles();
   }
   placePoles() {
     const G = this.G, m = new THREE.Matrix4(); let n = 0;
@@ -81,6 +83,12 @@ export class Landmarks {
     const grp = new THREE.Group();
     grp.position.set(c.x, c.y, c.z); grp.rotation.y = -c.h;
     if (c.bus) {
+      const frame=[];
+      for(const x of [-c.l/2,0,c.l/2])frame.push(box(.055,2.3,.055,x,-1.16,-c.w/2+.025));
+      for(const h of [-.86,-1.08])frame.push(box(c.l,.035,.045,0,h,-c.w/2+.034));
+      for(const x of [-1,1])frame.push(box(.09,.44,.3,x,-2.13,-c.w/2+.25));
+      grp.add(new THREE.Mesh(mergeGeos(frame),this.metal));
+
       grp.add(new THREE.Mesh(box(c.l, 0.08, c.w, 0, 0, 0), this.metal));
       grp.add(new THREE.Mesh(mergeGeos([box(c.l, 2.2, 0.03, 0, -1.15, -c.w / 2), box(0.03, 2.2, c.w, -c.l / 2, -1.15, 0), box(0.03, 2.2, c.w, c.l / 2, -1.15, 0)]), this.glass));
       grp.add(new THREE.Mesh(mergeGeos([box(c.l - 0.4, 0.06, 0.35, 0, -1.9, -c.w / 2 + 0.25)]), this.metal));
@@ -195,6 +203,21 @@ export class Landmarks {
     return grp;
   }
   update() {
+    if(this.G.time>=this.nextSigns){
+      this.nextSigns=this.G.time+1;
+      const G=this.G,f=G.focus,keep=new Set();
+      G.net.busStops.forEach(([x,z,name],i)=>{
+        if(Math.hypot(x-f.x,z-f.z)>85)return;
+        const y=G.tiles.terrain(x,z);if(y==null)return;
+        keep.add(i);if(this.stopSigns.has(i))return;
+        const sign=new TransitSign(.99,.29);
+        const refs=[...new Set((G.transit.services.get(i)||[]).map(c=>c.r.ref).filter(Boolean))];
+        sign.write('BUS STOP'+(refs.length?'   '+refs.join(' · '):''),name||'Bus stop');
+        const h=this.stopHeadings[i];sign.rotation.y=-h;sign.position.set(x-.04*Math.sin(h),y+2.72,z+.04*Math.cos(h));
+        this.group.add(sign);this.stopSigns.set(i,sign);
+      });
+      for(const [id,sign] of this.stopSigns)if(!keep.has(id)){this.group.remove(sign);sign.dispose();this.stopSigns.delete(id);}
+    }
     if (!this.hands) return;
     const h = this.G.world.hours();
     for (const [m, minute] of this.hands) m.rotation.z = -(minute ? (h % 1) * Math.PI * 2 : (h % 12) / 12 * Math.PI * 2);

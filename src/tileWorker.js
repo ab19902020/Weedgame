@@ -166,6 +166,7 @@ function build(header, A, lod) {
     const pts = []; for (let q = 0; q < n; q++) pts.push([bp[(off + q) * 3], bp[(off + q) * 3 + 1], bp[(off + q) * 3 + 2]]);
     off += n;
     ribbonDeck(G, S, pts, w, kind, hAt);
+    if(kind===2) permanentWay(S,pts);
   }
   // ---------------- rails
   {
@@ -173,7 +174,7 @@ function build(header, A, lod) {
     for (const n of A.railN) {
       const pts = []; for (let q = 0; q < n; q++) pts.push([C[(ci + q) * 2] / 10, C[(ci + q) * 2 + 1] / 10]);
       ci += n;
-      for (const side of [-0.7175, 0.7175]) strip(S, pts, side, 0.08, p => hAt(p[0], p[1]) + 0.32, 6, 0.12);
+      permanentWay(S,pts.map(([x,z])=>[x,hAt(x,z)+.12,z]));
       strip(G, pts, 0, 3.2, p => hAt(p[0], p[1]) + 0.12, 9);
     }
   }
@@ -264,6 +265,27 @@ function wall(B, pts, th, h, hAt, id) {
   }
 }
 
+// Batched top faces follow the same elevation profile as each mapped track section.
+function permanentWay(buf,pts){
+  let nextSleeper=.3;
+  for(let i=1;i<pts.length;i++){
+    const [x,y,z]=pts[i-1],[ex,ey,ez]=pts[i],len=Math.hypot(ex-x,ez-z);
+    if(len<.01)continue;
+    const dx=(ex-x)/len,dz=(ez-z)/len;
+    function panel(start,end,left,right,lift,id){
+      const vertex=(a,b)=>[x+a*dx-b*dz,y+(ey-y)*a/len+lift,z+a*dz+b*dx];
+      quad(buf,vertex(start,left),vertex(start,right),vertex(end,right),vertex(end,left),[0,1,0],null,[id]);
+    }
+    for(;nextSleeper<len;nextSleeper+=.68){
+      panel(nextSleeper,Math.min(len,nextSleeper+.22),-1.22,1.22,.055,0);
+    }
+    nextSleeper-=len;
+    for(const gauge of [-.7175,.7175]){
+      panel(0,len,gauge-.07,gauge+.07,.08,2);
+      panel(0,len,gauge-.034,gauge+.034,.15,6);
+    }
+  }
+}
 function ribbonDeck(G, S, pts, w, kind, hAt) {
   // deck surface (ground mesh, surf 5 road / 6 foot / 7 rail deck) + sides, parapets, piers (struct)
   const surfId = kind === 0 ? 5 : kind === 1 ? 6 : 7;
