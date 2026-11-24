@@ -445,8 +445,20 @@ export function buildingMaterial() {
   albedo = mix(albedo, fasciaRGB, fascia);
   const crown = shopG.mul(step(fascia1, fv));
   albedo = mix(albedo, vec3(0.8, 0.81, 0.82), crown);
+  // big stores and sheds: profiled steel cladding (vertical ribs every 30 cm) in two tones split by a
+  // brand-coloured stripe, over a brick plinth with a flashing on top, rather than one flat pale slab
+  const ribs = smoothstep(0.3, 0.46, abs(fract(u.x.div(0.3)).sub(0.5)));
+  const ribShade = float(1.04).sub(ribs.mul(0.13)).sub(step(fract(u.x.div(0.3)), 0.06).mul(0.06));
+  const splitY = mix(float(4.2), float(5.4), r2);
+  const stripeB = step(abs(u.y.sub(splitY)), 0.2);
+  const cladTop = mix(vec3(0.78, 0.79, 0.8), vec3(0.62, 0.66, 0.7), step(0.6, r1));
+  const cladLow = mix(vec3(0.42, 0.44, 0.47), vec3(0.2, 0.26, 0.24), step(0.7, r3));
+  let cladCol = mix(cladTop, cladLow, step(u.y, splitY)).mul(ribShade);
+  cladCol = mix(cladCol, mix(vec3(0.16, 0.3, 0.42), fasciaCol.mul(0.85), hasBrand), stripeB);
+  cladCol = mix(cladCol, vec3(0.62, 0.63, 0.64), step(abs(u.y.sub(2.05)), 0.05));      // plinth flashing
+  cladCol = mix(cladCol, wallCol.mul(0.9), step(u.y, 2.0));                            // brick plinth
   const bigTop = big.mul(front).mul(step(0.5, fi)).mul(isWall);
-  albedo = mix(albedo, vec3(0.8, 0.81, 0.82), bigTop);
+  albedo = mix(albedo, cladTop.mul(ribShade), bigTop);
   const stallCol = mix(mix(mix(vec3(0.16, 0.16, 0.17), fasciaCol.mul(0.55), big), vec3(0.45, 0.43, 0.4), bank), vec3(0.1, 0.09, 0.08), isPub);
   const stall = shopG.mul(step(0.0, u.y)).mul(step(fv, gBot));
   albedo = mix(albedo, mix(vec3(0.2, 0.2, 0.21), stallCol, hasBrand), stall);
@@ -457,9 +469,9 @@ export function buildingMaterial() {
   albedo = mix(albedo, frameB, shopFrame.add(sFrame).min(1));
   albedo = mix(albedo, vec3(0.07, 0.08, 0.085), shopFront.add(sDoor).min(1));
   const shed = blankSide.mul(isWall).mul(float(1).sub(min(glass.add(frame), float(1))));
-  albedo = mix(albedo, vec3(0.74, 0.75, 0.76), shed.mul(0.94));
-  const mossFoot = isWall.mul(float(1).sub(shopG)).mul(float(1).sub(glass.add(frame).min(1))).mul(smoothstep(1.15, -0.1, u.y)).mul(smoothstep(0.38, 0.78, nz(p.xz, 1 / 0.65).g));
-  albedo = mix(albedo, vec3(0.12, 0.22, 0.08), mossFoot.mul(0.7));
+  albedo = mix(albedo, cladCol, shed);
+  const mossFoot = isWall.mul(float(1).sub(shopG)).mul(float(1).sub(glass.add(frame).min(1))).mul(smoothstep(1.15, -0.1, u.y)).mul(smoothstep(0.42, 0.8, nz(vec2(u.x, u.y.mul(1.7)), 1 / 0.65).g));   // façade uv: p.xz is constant down a wall and drew stripes
+  albedo = mix(albedo, vec3(0.14, 0.2, 0.09), mossFoot.mul(0.5));
   const trimAll = isTrim.add(isGutter).add(isSoffit).add(isPot).add(bFrame).add(bHead).add(bSill).add(doorFrame).min(1);
   // wetness: roofs collect rain first and darken / gloss
   const wet = U.wet;

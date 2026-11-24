@@ -45,7 +45,7 @@ export class Tiles {
   buildShared() {
     // tree geometries (leaf-card crowns, forked trunks: vegetation.js)
     this.crownGeo = crownGeometry();
-    this.bushGeo = crownGeometry(26);   // shrubs and hedge bushes (tileWorker plantings), same leaf material
+    this.bushGeo = crownGeometry(16);   // shrubs and hedge bushes (tileWorker plantings), same leaf material; few cards: there are thousands
     this.trunkGeo = trunkGeometry();
     // street lamp: pole + arm + head (lampHead attribute = 1 on the luminaire)
     const parts = [];
@@ -200,7 +200,8 @@ export class Tiles {
     }
     im.count = k;
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
-    im.castShadow = this.shadows; im.receiveShadow = true;
+    // shrubs only cast shadows on high quality (GTAO grounds them otherwise): the shadow pass doubles their cost
+    im.castShadow = this.shadows && q >= 1; im.receiveShadow = true;
     im.computeBoundingSphere();
     t.group.add(im);
   }

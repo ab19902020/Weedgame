@@ -111,7 +111,7 @@ function bodyMaterial(src, C, s) {
   // double-sided: from inside (driver's view) and through any gap the inside of the shell reads as a dark
   // cabin interior instead of letting you see straight through the car
   const m = new THREE.MeshPhysicalNodeMaterial({ side: THREE.DoubleSide });
-  const inside = float(1).sub(float(frontFacing));
+  const back = float(1).sub(float(frontFacing));
   const p = positionGeometry, ax = abs(p.x);
   const base = texture(src.map, uv()).rgb;
   const rm = src.metalnessMap ? texture(src.metalnessMap, uv()) : vec4(1, 0.5, 0, 1);
@@ -147,7 +147,16 @@ function bodyMaterial(src, C, s) {
   const coreS = inScreen.mul(step(S.z0 + 0.02, p.z)).mul(step(p.z, S.z1 - 0.022)).mul(step(S.y0 + 0.012, p.y)).mul(step(ax, S.x - 0.02));
   const coreB = inBack.mul(step(Bk.y0 + 0.01, p.y)).mul(step(p.y, Bk.y1 - 0.01)).mul(step(ax, Bk.x - 0.02));
   const coreSd = inSide.mul(step(Sd.y0 + 0.012, p.y)).mul(step(p.y, Sd.y1 - 0.014)).mul(step(Sd.z0 + 0.025, p.z)).mul(step(p.z, Sd.z1 - 0.02));
-  const glass = max(max(max(inScreen, inBack), inSide).mul(smoothstep(0.42, 0.22, lum)).mul(smoothstep(0.28, 0.14, sat)), max(max(coreS, coreB), coreSd));
+  const glass0 = max(max(max(inScreen, inBack), inSide).mul(smoothstep(0.42, 0.22, lum)).mul(smoothstep(0.28, 0.14, sat)), max(max(coreS, coreB), coreSd));
+  // the windows are two layers, and the outer one has gaps: from outside, the inner layer shows through them
+  // from behind. Seen from outside the car, back faces in (and just inboard of) the glasshouse are glass too,
+  // not cabin trim (which drew grey blotches all over the windows)
+  const inScreenL = step(S.z0 - 0.01, p.z).mul(step(p.z, S.z1 + 0.01)).mul(step(S.y0 - 0.01, p.y)).mul(step(ax, S.x + 0.01));
+  const inBackL = step(p.z, Bk.z + 0.03).mul(step(Bk.y0 - 0.01, p.y)).mul(step(p.y, Bk.y1 + 0.01)).mul(step(ax, Bk.x + 0.01));
+  const inSideL = step(Sd.x - 0.025, ax).mul(step(Sd.y0 - 0.01, p.y)).mul(step(p.y, Sd.y1 + 0.01)).mul(step(Sd.z0 - 0.01, p.z)).mul(step(p.z, Sd.z1 + 0.01));
+  const innerGlass = back.mul(max(max(inScreenL, inBackL), inSideL)).mul(float(1).sub(s.camIn));
+  const inside = back.sub(innerGlass);
+  const glass = max(glass0, innerGlass);
   // colour: the baked paint, darker and scuffed where dented
   const scuff = step(0.9, n0).mul(smoothstep(0.15, 0.5, dm)).mul(float(1).sub(glass));
   let col = mix(base, mix(vec3(0.01, 0.013, 0.017), base.mul(0.3), 0.3), glass);   // even dark tint; reflections do the rest
