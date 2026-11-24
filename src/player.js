@@ -79,6 +79,7 @@ export class Brothers {
     // on foot, only re-centre behind the brother while the stick is pushed mostly forward
     const forward = ax.y < -0.55 && Math.abs(ax.x) < 0.35;
     const fm = this.cam.foot;
+    if (this.cam.baseFov && Math.abs(G.camera.fov - this.cam.baseFov) > 0.05) { G.camera.fov += (this.cam.baseFov - G.camera.fov) * Math.min(1, dt * 3); G.camera.updateProjectionMatrix(); }
     this.followCam(dt, me.x, me.y + 1.55 + (fm === 2 ? 0.6 : 0), me.z, [4.3, 7.4, 13][fm], sp > 0.5 && forward ? me.heading : null, 0.7, fm === 0 ? null : [0.28, 0.36, 0.85][fm]);
   }
   collideCircle(x, z, r, y) {
@@ -102,59 +103,18 @@ export class Brothers {
     return [x, z];
   }
   drive(dt, input, v) {
-    const G = this.G, me = this.me, def = MODELS[v.model];
+    const G = this.G, me = this.me;
     const ax = input.axis();
-    const throttle = -ax.y, steerIn = ax.x;
-    v.sp = v.sp || 0;
-    const braking = input.held.has('brake');
-    const maxV = v.model.startsWith('bus') ? 18 : v.model === 'van' ? 33 : 50;
-    let acc = 0;
-    if (throttle > 0.05) acc = v.sp < -0.5 ? 9 * throttle : (v.model.startsWith('bus') ? 1.4 : 3.6) * throttle * (1 - Math.max(0, v.sp) / maxV);
-    else if (throttle < -0.05) acc = v.sp > 0.5 ? -9 * -throttle : -2.5 * -throttle;
-    if (braking) acc = -Math.sign(v.sp) * Math.min(Math.abs(v.sp) / dt, 10);
-    acc -= v.sp * Math.abs(v.sp) * 0.0012 + Math.sign(v.sp) * 0.25;
-    v.sp += acc * dt;
-    if (Math.abs(v.sp) < 0.05 && Math.abs(throttle) < 0.05) v.sp = 0;
-    v.sp = Math.max(-8, Math.min(maxV, v.sp));
-    const maxSteer = 0.6 / (1 + Math.abs(v.sp) / 11);
-    v.steer = (v.steer || 0) + (steerIn * maxSteer - (v.steer || 0)) * Math.min(1, dt * 6);
-    const yawRate = v.sp / def.wb * Math.tan(v.steer) * (braking && Math.abs(v.sp) > 8 ? 1.6 : 1);
-    v.heading += yawRate * dt;
-    let nx = v.x + Math.cos(v.heading) * v.sp * dt, nz = v.z + Math.sin(v.heading) * v.sp * dt;
-    // collisions: buildings via three circles along the body
-    const r = def.W / 2, fx = Math.cos(v.heading), fz = Math.sin(v.heading);
-    let impact = 0;
-    for (const off of [-(def.L / 2 - r), 0, def.L / 2 - r]) {
-      const cx = nx + fx * off, cz = nz + fz * off;
-      const [px, pz] = this.collideCircle(cx, cz, r, v.y);
-      if (px !== cx || pz !== cz) { nx += px - cx; nz += pz - cz; impact = Math.max(impact, Math.abs(v.sp)); }
-    }
-    // NPC vehicles
-    for (const o of G.traffic.list) {
-      if (o === v) continue;
-      const dx = o.x - nx, dz = o.z - nz; if (dx * dx + dz * dz > 100) continue;
-      const hit = obbOverlap(nx, nz, v.heading, def.L, def.W, o.x, o.z, o.heading, o.def.L, o.def.W);
-      if (hit) {
-        nx -= hit[0]; nz -= hit[1];
-        const rel = Math.abs(v.sp - (o.v || 0) * Math.cos(o.heading - v.heading));
-        if (rel > 2.5) { impact = Math.max(impact, rel); G.events.emit('vehicleHit', { by: v, other: o, speed: rel }); }
-        if (o.parked) { o.x += hit[0] * 0.3; o.z += hit[1] * 0.3; }
-      }
-    }
+    // carPhysics.js: tyre model, gearbox, assists and impulse collisions
+    const ctl = { throttle: -ax.y, steer: ax.x, handbrake: input.held.has('brake') };
+    G.carDyn.drive(v, dt, ctl);
+    const hit = G.carDyn.flush(v);
+    if (hit > 2) this.cam.shake = Math.max(this.cam.shake || 0, Math.min(1, hit / 14));
     // pedestrians
-    G.events.emit('vehicleSweep', { v, x: nx, z: nz, speed: Math.abs(v.sp) });
-    if (impact > 0.5) { v.sp *= impact > 6 ? -0.25 : 0.3; G.events.emit('impact', { speed: impact, x: nx, z: nz, v }); }
-    v.x = nx; v.z = nz;
-    // ground: sample under axles for height, pitch and roll
-    const a = def.wb / 2, w = def.W / 2 - 0.1, rx = -fz, rz = fx;
-    const yf = G.tiles.ground(nx + fx * a, nz + fz * a, v.y + 0.5) ?? v.y, yb = G.tiles.ground(nx - fx * a, nz - fz * a, v.y + 0.5) ?? v.y;
-    const yl = G.tiles.ground(nx + rx * w, nz + rz * w, v.y + 0.5) ?? v.y, yr = G.tiles.ground(nx - rx * w, nz - rz * w, v.y + 0.5) ?? v.y;
-    const ty = (yf + yb + yl + yr) / 4;
-    v.y += (ty - v.y) * Math.min(1, dt * 12);
-    v.pitch = Math.atan2(yf - yb, 2 * a); v.roll = Math.atan2(yl - yr, 2 * w) * 0.6;
-    v.spin = ((v.spin || 0) + v.sp * dt / def.wr) % (Math.PI * 2);
-    v.v = Math.abs(v.sp);
-    v.brake = braking || (throttle < -0.05 && v.sp > 0.5);
+    G.events.emit('vehicleSweep', { v, x: v.x, z: v.z, speed: Math.abs(v.sp) });
+    const ph = v.ph;
+    v.brake = ph.brk > 0.05 || (ph.hb && Math.abs(v.sp) > 0.5);
+    v.reversing = ph.gear < 0 && v.sp < -0.1;
     v.lights = G.world.day < 0.6 || G.world.cur.rain > 0.4;
     me.x = v.x; me.y = v.y; me.z = v.z; me.heading = v.heading;
     this.speedNow = Math.abs(v.sp);
@@ -162,9 +122,24 @@ export class Brothers {
     const big = v.model.startsWith('bus') ? 13 : v.model === 'van' ? 8.5 : 7.2;
     const camY = v.y + (v.model.startsWith('bus') ? 3 : 1.5), mh = Math.abs(v.sp) > 1 ? (v.sp > 0 ? v.heading : v.heading + Math.PI) : null;
     const mode = this.cam.car;
+    const vel = Math.hypot(ph.vx, ph.vz);
+    const mhv = mh != null && vel > 4 && v.sp > 0 ? lerpAngle(v.heading, Math.atan2(ph.vz, ph.vx), 0.55) : mh;
     if (mode === 3) this.driverCam(v);
     else if (mode === 4) this.cineCam(dt, v);
-    else this.followCam(dt, v.x, camY + (mode === 1 ? 0.4 : mode === 2 ? 1 : 0), v.z, big * [1, 1.65, 2.7][mode], mh, mode === 2 ? 2.2 : 1.6, [0.22, 0.3, 0.78][mode]);
+    else this.followCam(dt, v.x, camY + (mode === 1 ? 0.4 : mode === 2 ? 1 : 0), v.z, big * [1, 1.65, 2.7][mode] * (1 + Math.min(0.18, vel / 260)), mhv, mode === 2 ? 2.2 : 1.6 + Math.min(1.2, vel / 30), [0.22, 0.3, 0.78][mode]);
+    this.cameraFx(dt, vel, mode);
+  }
+  // speed widens the field of view a little; hard impacts shake the camera
+  cameraFx(dt, vel, mode) {
+    const G = this.G, c = this.cam, cam = G.camera;
+    c.baseFov = c.baseFov || cam.fov;
+    const want = c.baseFov + (mode === 3 ? 0.5 : 1) * Math.min(12, Math.max(0, vel - 8) * 0.3);
+    if (Math.abs(cam.fov - want) > 0.05) { cam.fov += (want - cam.fov) * Math.min(1, dt * 2.5); cam.updateProjectionMatrix(); }
+    if (c.shake > 0.01) {
+      const k = c.shake * 0.22, t = G.time * 37;
+      cam.position.x += Math.sin(t * 1.3) * k; cam.position.y += Math.sin(t * 1.7 + 1) * k * 0.6; cam.position.z += Math.sin(t * 1.1 + 2) * k;
+      c.shake *= Math.exp(-dt * 5);
+    }
   }
   // ------------------------------------------------------------------ camera modes
   static CAR_MODES = ['Chase', 'Far chase', 'High', 'Driver', 'Cinematic'];
@@ -237,7 +212,8 @@ export class Brothers {
     const G = this.G, me = this.me, v = this.vehicleOf(me);
     if (v) {
       if (Math.abs(v.sp || 0) > 2) { G.hud.toast('Slow down to get out'); return; }
-      v.sp = 0; v.v = 0; v.player = false; v.parked = true; v.owner = v.owner || me.short; v.brake = false;
+      v.sp = 0; v.v = 0; v.player = false; v.parked = true; v.owner = v.owner || me.short; v.brake = false; v.reversing = false;
+      if (v.ph) { v.ph.vx = v.ph.vz = v.ph.w = 0; v.ph.gear = 1; }
       v.parkedBy = me.short; v.parkedAt = G.world.time;
       const rx = -Math.sin(v.heading), rz = Math.cos(v.heading);
       me.x = v.x + rx * (v.def.W / 2 + 0.7); me.z = v.z + rz * (v.def.W / 2 + 0.7);
@@ -252,6 +228,7 @@ export class Brothers {
       const wasNpc = !n.owner && !n.free;
       n.parked = false; n.player = true; n.free = true; n.hidden = false;
       me.vehicle = n.id; n.sp = 0;
+      G.carDyn.loose.delete(n); if (n.ph) { n.ph.vx = n.ph.vz = n.ph.w = 0; n.ph.gear = 1; n.ph.rpm = 900; }
       if (wasNpc) G.events.emit('tookVehicle', { v: n, by: me });
       G.save.markVehicle(n);
       this.cam.lastUser = -10;
@@ -262,7 +239,7 @@ export class Brothers {
     const from = this.me;
     const fv = this.vehicleOf(from);
     if (fv && Math.abs(fv.sp || 0) > 1.5) { G.hud.toast('Stop the vehicle before switching'); return; }
-    if (fv) { fv.sp = 0; fv.v = 0; fv.player = false; fv.parked = true; fv.occupied = from.short; G.save.markVehicle(fv); }
+    if (fv) { fv.sp = 0; fv.v = 0; fv.player = false; fv.parked = true; fv.occupied = from.short; if (fv.ph) { fv.ph.vx = fv.ph.vz = fv.ph.w = 0; } G.save.markVehicle(fv); }
     this.active = 1 - this.active;
     const to = this.me;
     const tv = this.vehicleOf(to);
@@ -285,19 +262,4 @@ function pushFromBox(x, z, r, v) {
   let ox = 0, oz = 0;
   if (px < pz) ox = Math.sign(lx) * px; else oz = Math.sign(lz) * pz;
   return [x + ox * c - oz * s, z + ox * s + oz * c];
-}
-// separating-axis overlap of two oriented rectangles; returns push vector for A
-function obbOverlap(ax, az, ah, aL, aW, bx, bz, bh, bL, bW) {
-  const axes = [[Math.cos(ah), Math.sin(ah)], [-Math.sin(ah), Math.cos(ah)], [Math.cos(bh), Math.sin(bh)], [-Math.sin(bh), Math.cos(bh)]];
-  const dx = bx - ax, dz = bz - az;
-  let minO = 1e9, best = null;
-  for (const [ux, uz] of axes) {
-    const ra = Math.abs(aL / 2 * (Math.cos(ah) * ux + Math.sin(ah) * uz)) + Math.abs(aW / 2 * (-Math.sin(ah) * ux + Math.cos(ah) * uz));
-    const rb = Math.abs(bL / 2 * (Math.cos(bh) * ux + Math.sin(bh) * uz)) + Math.abs(bW / 2 * (-Math.sin(bh) * ux + Math.cos(bh) * uz));
-    const dist = dx * ux + dz * uz;
-    const o = ra + rb - Math.abs(dist);
-    if (o <= 0) return null;
-    if (o < minO) { minO = o; best = [ux * o * Math.sign(dist), uz * o * Math.sign(dist)]; }
-  }
-  return best;
 }

@@ -1,4 +1,5 @@
 // Green County · living Berkshire sandbox. Free roam only: no missions, objectives or calls.
+import { CarDynamics } from './carPhysics.js';
 import * as THREE from 'three/webgpu';
 import { boot } from './main.js';
 import { Input } from './input.js';
@@ -54,6 +55,7 @@ if (G.Q.get('scale')) G.world.s.scale = Number(G.Q.get('scale'));
 G.input = new Input(document.body);
 G.signals = new Signals(G.net);
 G.traffic = new Traffic(G.net, G.signals, { seed: (Math.random() * 1e9) | 0 });
+G.carDyn = new CarDynamics(G);   // player driving, collisions, struck cars sliding (carPhysics.js)
 G.traffic.maxVehicles = G.budget.vehicles;
 G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled);
 G.people = new People(G.scene, G.renderer.shadowMap.enabled);
@@ -181,6 +183,7 @@ function step(dt, render) {
   const pv = B.vehicleOf(me);
   G.traffic.obstacles = [pv ? { x: pv.x, z: pv.z, r: pv.def.L / 2, v: Math.abs(pv.sp || 0) } : { x: me.x, z: me.z, r: 0.5, v: 0 }];
   G.traffic.update(dt, G.focus, camInfo);
+  G.carDyn.update(dt);
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
   G.police.update(dt);
