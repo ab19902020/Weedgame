@@ -135,6 +135,9 @@ G.events.on('parked', () => G.save.now());
 G.simSteps = Number(G.Q.get('sim')) || 1;   // extra simulation substeps per rendered frame (dev/testing)
 function frame() {
   const now = performance.now();
+  // at a 30 fps target, render every other display frame for even pacing
+  if (G._fps && G._fps < 50 && now - (G._lastFrame || 0) < 1000 / G._fps - 4) return;
+  G._lastFrame = now;
   let dt = Math.min(0.1, (now - last) / 1000); last = now;
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
   for (let k = 1; k < G.simSteps; k++) step(dt, false);
@@ -207,19 +210,28 @@ function step(dt, render) {
   G.save.tick();
   G.perf.frame(dt);
   G.perf.render.update();   // batching + distance culling within the quality budget
-  // dynamic resolution: hold ~30 fps on unknown phones (pixel ratio 0.7 .. cap)
+  // dynamic resolution. With FSR the internal render scale moves (the canvas stays at device resolution);
+  // otherwise the canvas pixel ratio does. If the frame budget can't be held at the lowest sharp scale,
+  // the target drops to 30 fps instead of pixelating further, and returns to 60 when there is headroom.
   if (!G.Q.get('fixedres')) {
     const ms = dt * 1000; G._ema = G._ema ? G._ema * 0.95 + ms * 0.05 : ms;
     G._resT = (G._resT || 0) + dt;
-    if (G._resT > 4) {
+    if (G._resT > 3) {
       G._resT = 0;
-      const [minPr, , maxPr] = G.budget.pixelRatio, cap = Math.min(devicePixelRatio, maxPr), pr = G.renderer.getPixelRatio();
-      let next = pr;
-      // hold the target frame rate (60 by default, ?fps=30 to relax): drop resolution above ~115% of the frame
-      // budget, raise it again below ~80%
-      const T = 1000 / (Number(G.Q.get('fps')) || G.budget.targetFps || 60);
-      if (G._ema > T * 1.15) next = Math.max(minPr, pr - 0.15); else if (G._ema < T * 0.8) next = Math.min(cap, pr + 0.1);
-      if (Math.abs(next - pr) > 0.01) { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth, innerHeight); }
+      const want = Number(G.Q.get('fps')) || G.budget.targetFps || 60;
+      G._fps = G._fps || want;
+      const T = 1000 / G._fps, over = G._ema > T * 1.15, under = G._ema < T * 0.8;
+      if (G.post?.fsr) {
+        const [lo, , hi] = G.budget.scale, sc = G.post.scale;
+        if (over) { if (sc > lo + 0.01) G.post.setScale(Math.max(lo, sc - 0.06)); else if (G._fps > 30) G._fps = 30; }
+        else if (under) { if (sc < hi - 0.01) G.post.setScale(Math.min(hi, sc + 0.04)); else if (G._fps < want && G._ema < 1000 / want * 0.85) G._fps = want; }
+      } else {
+        const [minPr, , maxPr] = G.budget.pixelRatio, cap = Math.min(devicePixelRatio, maxPr), pr = G.renderer.getPixelRatio();
+        let next = pr;
+        if (over) { if (pr > minPr + 0.01) next = Math.max(minPr, pr - 0.1); else if (G._fps > 30) G._fps = 30; }
+        else if (under) next = Math.min(cap, pr + 0.1);
+        if (Math.abs(next - pr) > 0.01) { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth, innerHeight); }
+      }
     }
   }
   // first time the world is in: let tiles copy landcover blocks straight to the GPU, and compile every

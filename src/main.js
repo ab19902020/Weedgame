@@ -30,7 +30,9 @@ export async function boot(extra = {}) {
   const renderer = new THREE.WebGPURenderer({ antialias: msaa, forceWebGL, powerPreference: 'high-performance' });
   await renderer.init();
   const backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2';
-  renderer.setPixelRatio(Math.min(devicePixelRatio, budget.pixelRatio[1]));
+  // with FSR the canvas runs at device resolution (capped) and only the 3D scene is rendered smaller
+  const fsrOn = budget.fsr && budget.post && Q.get('post') !== '0' && Q.get('fsr') !== '0';
+  renderer.setPixelRatio(fsrOn ? Math.min(devicePixelRatio, budget.outPr) : Math.min(devicePixelRatio, budget.pixelRatio[1]));
   renderer.setSize(innerWidth, innerHeight);
   // AgX: filmic highlight roll-off without ACES's hue shifts and over-saturation (?tm=aces to compare)
   renderer.toneMapping = Q.get('tm') === 'aces' ? THREE.ACESFilmicToneMapping : THREE.AgXToneMapping;

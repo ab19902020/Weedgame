@@ -5,11 +5,12 @@
 //         prefiltered (PMREM) as scene.environment, so every PBR surface picks up sky light
 //         and glossy reflections that follow the weather.
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, vec2, vec3, vec4, float, uniform, mix, renderOutput, screenUV, normalWorld, positionWorld, Fn, smoothstep, max, metalness, roughness } from 'three/tsl';
+import { pass, mrt, output, normalView, vec2, vec3, vec4, float, uniform, mix, renderOutput, screenUV, normalWorld, positionWorld, Fn, smoothstep, max, metalness, roughness, rtt } from 'three/tsl';
 import { ssr } from 'three/examples/jsm/tsl/display/SSRNode.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
+import { fsr1 } from 'three/examples/jsm/tsl/display/FSR1Node.js';
 import { createSky } from './sky.js';
 import { U } from './env.js';
 
@@ -18,6 +19,11 @@ export function createPost(G) {
   if (!B.post || G.Q.get('post') === '0') return null;
   const { renderer, scene, camera } = G;
   const scenePass = pass(scene, camera);
+  // internal render scale (FSR path): the scene and its effects render at s x the output size and are
+  // upscaled to the device resolution, instead of shrinking the whole canvas (which looked pixelated)
+  const useFSR = !!B.fsr && G.Q.get('fsr') !== '0';
+  let s = useFSR ? (Number(G.Q.get('scale')) || B.scale[1]) : 1;
+  scenePass.setResolutionScale(s);
   const useSSR = !!B.ssr && G.Q.get('ssr') !== '0';
   scenePass.setMRT(useSSR ? mrt({ output, normal: normalView, metalrough: vec2(metalness, roughness) }) : mrt({ output, normal: normalView }));
   const colour = scenePass.getTextureNode('output');
@@ -26,7 +32,7 @@ export function createPost(G) {
   const useAO = B.ao.scale > 0 && G.Q.get('ao') !== '0';
   const aoPass = useAO ? ao(depth, normal, camera) : null;
   if (aoPass) {
-  aoPass.resolutionScale = B.ao.scale;
+  aoPass.resolutionScale = B.ao.scale * s;
   aoPass.samples.value = B.ao.samples;
   aoPass.radius.value = 1.1;          // metres: contact shadows at kerbs, eaves, window reveals, under cars
   aoPass.distanceExponent.value = 1.4;
@@ -41,7 +47,7 @@ export function createPost(G) {
   if (useSSR) {
     const mr = scenePass.getTextureNode('metalrough');
     ssrPass = ssr(colour, depth, normal, { metalnessNode: mr.r, roughnessNode: mr.g, reflectNonMetals: true, camera });
-    ssrPass.resolutionScale = B.ssr.scale ?? 0.5;
+    ssrPass.resolutionScale = (B.ssr.scale ?? 0.5) * s;
     ssrPass.quality.value = B.ssr.quality ?? 0.45;
     ssrPass.maxDistance.value = 60;
     ssrPass.thickness.value = 0.35;
@@ -70,9 +76,24 @@ export function createPost(G) {
   let g = mix(vec3(lum), disp, 1.2);
   g = g.add(g.sub(0.5).mul(0.11));
   g = g.mul(mix(vec3(0.97, 1.0, 1.05), vec3(1.035, 1.0, 0.955), smoothstep(0.2, 0.8, lum))).clamp(0, 1);
-  pipe.outputNode = fxaa(vec4(g.mul(vig), 1));
+  const graded = vec4(g.mul(vig), 1);
+  let lowA = null, lowB = null;
+  if (useFSR) {
+    // grade + FXAA at the internal resolution, then FSR 1 (edge-adaptive upsampling + contrast-adaptive
+    // sharpening) to the full drawing-buffer size
+    lowA = rtt(graded, null, null, { resolutionScale: s });
+    lowB = rtt(fxaa(lowA), null, null, { resolutionScale: s });
+    pipe.outputNode = fsr1(lowB, 0.3);
+  } else pipe.outputNode = fxaa(graded);
   return {
-    pipe, aoPass, ssrPass, strength,
+    pipe, aoPass, ssrPass, strength, fsr: useFSR,
+    get scale() { return s; },
+    setScale(v) {
+      if (!useFSR || Math.abs(v - s) < 0.005) return;
+      s = v; scenePass.setResolutionScale(v); lowA.setResolutionScale(v); lowB.setResolutionScale(v);
+      if (aoPass) aoPass.resolutionScale = B.ao.scale * v;
+      if (ssrPass) ssrPass.resolutionScale = (B.ssr.scale ?? 0.5) * v;
+    },
     render() { pipe.render(); },
   };
 }

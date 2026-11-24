@@ -7,7 +7,8 @@ import * as THREE from 'three/webgpu';
 // ------------------------------------------------------------------ quality budgets
 // r0/r1: LOD0 / LOD1 streaming radii (m). tiles: soft cap on loaded tiles. drawCalls / tris: per-frame
 // targets including the shadow pass. people / vehicles: simulated actor caps. cloudSteps: sky raymarch
-// steps. pixelRatio: [min, start, max] for dynamic resolution. shadow: map size and half-extent (m) of the
+// steps. pixelRatio: [min, start, max] for dynamic resolution without post. fsr/outPr/scale: with post-processing the canvas
+// runs at min(devicePixelRatio, outPr) and the scene renders at scale [min, start, max] of that, upscaled by FSR 1. shadow: map size and half-extent (m) of the
 // sun's shadow box (0 = off). *Dist: draw distance (m) for per-tile detail meshes.
 // Look (post.js, grass.js): post = scene pass + FXAA; ao = GTAO resolution scale and samples (0 = off);
 // bloom = strength (0 = off); ibl = sky PMREM cube size (0 = off); grass = blades near the camera;
@@ -15,19 +16,19 @@ import * as THREE from 'three/webgpu';
 export const BUDGETS = {
   low: {
     r0: 300, r1: 750, tiles: 45, drawCalls: 120, tris: 300e3, people: 60, vehicles: 120, cloudSteps: 4,
-    pixelRatio: [0.6, 0.9, 1.0], shadow: { size: 0, extent: 0, far: 0 }, antialias: false,
+    pixelRatio: [0.8, 1.0, 1.25], shadow: { size: 0, extent: 0, far: 0 }, antialias: false,
     treeDist: 200, lampDist: 160, signDist: 120, markDist: 260, vehicleDist: 420, peopleDist: 120,
     post: false, ao: { scale: 0, samples: 0 }, bloom: 0, ibl: 0, grass: false, ssr: null, targetFps: 60,
   },
   medium: {
     r0: 360, r1: 1150, tiles: 75, drawCalls: 220, tris: 600e3, people: 120, vehicles: 220, cloudSteps: 8,
-    pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 70, far: 450 }, antialias: true,
+    pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 70, far: 450 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.42, 0.62, 0.9],
     treeDist: 320, lampDist: 260, signDist: 180, markDist: 380, vehicleDist: 650, peopleDist: 160,
     post: true, ao: { scale: 0.4, samples: 6 }, bloom: 0.22, ibl: 64, grass: false, ssr: null, targetFps: 60,
   },
   high: {
     r0: 420, r1: 1150, tiles: 85, drawCalls: 320, tris: 900e3, people: 170, vehicles: 260, cloudSteps: 12,
-    pixelRatio: [0.8, 1.5, 1.5], shadow: { size: 2048, extent: 100, far: 600 }, antialias: true,
+    pixelRatio: [0.8, 1.5, 1.5], shadow: { size: 2048, extent: 100, far: 600 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.5, 0.78, 1.0],
     treeDist: 480, lampDist: 360, signDist: 260, markDist: 480, vehicleDist: 700, peopleDist: 170,
     post: true, ao: { scale: 0.5, samples: 12 }, bloom: 0.3, ibl: 128, grass: true, ssr: { scale: 0.5, quality: 0.45 }, targetFps: 60,
   },
