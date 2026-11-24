@@ -489,12 +489,11 @@ function buildMarkings(header, ox, oz, hAt) {
       for (let s = from; s < to; s += dash + gap) {
         const a = s, b = Math.min(to, s + dash);
         if (b - a < 0.2) continue;
-        const pa = posAt(pts, a), pb = posAt(pts, b);
-        const mid = posAt(pts, (a + b) / 2);
-        if (!inTile(mid)) continue;
+
         const segs = Math.max(1, Math.ceil((b - a) / 3));
         for (let k = 0; k < segs; k++) {
           const ta = a + (b - a) * k / segs, tb = a + (b - a) * (k + 1) / segs;
+          if (!inTile(posAt(pts,(ta+tb)/2))) continue;
           const A1 = posAt(pts, ta), B1 = posAt(pts, tb);
           const q = [[A1, -1], [B1, -1], [B1, 1], [A1, 1]].map(([p, sd]) => {
             const x = p[0] + p[3] * (offset + sd * width / 2), z = p[2] + p[4] * (offset + sd * width / 2);
@@ -507,7 +506,7 @@ function buildMarkings(header, ox, oz, hAt) {
     };
     const total = Math.max(1, lf + lb), lw = w / total;
     if (L > 4 && s1 - s0 > 2 && w >= 4.5) {
-      if (!oneway && lf && lb && name !== 'living_street') line(0, 0.1, s0, s1, name === 'residential' ? 2.5 : 4, name === 'residential' ? 4 : 5, 0); // centre line
+      if (!oneway && lf && lb && name !== 'living_street') line(w/2-lf*lw, 0.1, s0, s1, name === 'residential' ? 2.5 : 4, name === 'residential' ? 4 : 5, 0); // centre line
       // lane lines (forward lanes are left of centre: offset positive = left)
       for (let k = 1; k < lf; k++) line(oneway ? w / 2 - k * lw : w / 2 - k * lw, 0.1, s0, s1, 2, 7, 0);
       for (let k = 1; k < lb; k++) line(-(w / 2 - k * lw), 0.1, s0, s1, 2, 7, 0);

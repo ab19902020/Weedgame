@@ -86,6 +86,8 @@ export function terrainMaterial() {
   const n1 = nz(p.xz, 1 / 7).r, n2 = nz(p.xz, 1 / 61).a, n3 = nz(p.xz, 1 / 2.3).r;
   const field = step(5.5, c0).mul(step(c0, 6.5)).mul(sin(p.x.mul(0.8).add(p.z.mul(0.25))).mul(0.06));
   let albedo = col.mul(n1.mul(0.35).add(0.8)).mul(n2.mul(0.4).add(0.8)).mul(n3.mul(0.2).add(0.9)).add(field);
+  const grass = step(c0,0.5).add(step(6.5,c0).mul(step(c0,7.5)));
+  albedo = albedo.mul(float(1).add(grass.mul(nz(p.xz,2.7).g.sub(.5)).mul(.23)));
   const sh = shelter(p);
   const wet = U.wet.mul(float(1).sub(sh));
   albedo = albedo.mul(mix(float(1), float(0.78), wet.mul(isGreen)));
@@ -112,9 +114,12 @@ export function groundMaterial() {
   const isBallast = step(6.5, s);
   const fine = nz(p.xz, 1 / 0.9).r, fine2 = nz(p.xz, 1 / 0.21).r, big = nz(p.xz, 1 / 37).a, patch = nz(p.xz, 1 / 23).g;
   // asphalt with aggregate and repair patches
-  const asphalt = vec3(0.105, 0.105, 0.11).mul(fine2.mul(0.5).add(0.75)).mul(smoothstep(0.62, 0.66, patch).mul(-0.25).add(1.05)).mul(big.mul(0.25).add(0.88));
+  // Sparse world-anchored surface wear; purely visual and deterministic across tiles.
+  const wearField = nz(p.xz,0.48).g.mul(.76).add(fine.mul(.24));
+  const wear = smoothstep(.70,.81,wearField).mul(smoothstep(.57,.72,patch));
+  const asphalt = vec3(0.105, 0.105, 0.11).mul(fine2.mul(0.5).add(0.75)).mul(smoothstep(0.62, 0.66, patch).mul(-0.25).add(1.05)).mul(big.mul(0.25).add(0.88)).mul(float(1).sub(wear.mul(.64)));
   // UK concrete flags 600x900 / tarmac pavements
-  const gx = fract(p.x.div(0.9)), gz = fract(p.z.div(0.6));
+  const gx = fract(p.x.div(0.9).add(step(.5,fract(p.z.div(1.2))).mul(.5))), gz = fract(p.z.div(0.6));
   const joint = max(smoothstep(0.035, 0.0, min(gx, float(1).sub(gx))), smoothstep(0.05, 0.0, min(gz, float(1).sub(gz))));
   const fwG = fwidth(p.x).add(fwidth(p.z));
   const aaG = smoothstep(0.03, 0.12, fwG);
