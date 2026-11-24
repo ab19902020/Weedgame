@@ -1,4 +1,4 @@
-# Green County · Berkshire sandbox (v0.11.0)
+# Green County · Berkshire sandbox (v0.12.0)
 
 A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Earley, Woodley, Winnersh, Wokingham and Bracknell, joined by the A329 and A329(M). It starts in **sandbox mode**: you control Cal or Leon Ward and can explore indefinitely. There are no missions, objectives, phone calls, deliveries or sales. The cannabis-empire layer from the v0.3–v0.5 prototype will sit on this world later; its save data is carried along untouched.
 
@@ -7,13 +7,13 @@ A free-roam, 1:1 slice of Berkshire: Reading town centre, Cemetery Junction, Ear
 * `docs/SOURCES.md`: asset and source register (licences, dates, signing key).
 * `docs/verification.json`: computed comparisons of the world against its inputs.
 * `docs/captures/`: gameplay captures, `acceptance-run-8x.mp4` (the whole touch-driven run at 8× speed; software rendering here ran at ~1 fps), `acceptance.json` (step log) and landmark views (`L*.png`).
-* `builds/Green-County-0.11.0-dev.apk`: signed development APK. v0.7 added the visual overhaul; v0.8 Grok's simulation and performance work; v0.9 detailed people and cars (with sports models), camera modes, summer lighting with screen-space reflections, 60 fps streaming work and LIDAR-measured buildings; v0.10 FSR upscaling with dynamic resolution, a baked cloud sky, distant car LODs, procedural house detail, street furniture with telegraph wires, and baked faces and hair; v0.11 real driving physics, impulse collisions with damage, rebuilt car bodies with per-pixel lamps and glass, tyre marks and smoke, headlight pools and engine sound.
+* `builds/Green-County-0.12.0-dev.apk`: signed development APK. v0.7 added the visual overhaul; v0.8 Grok's simulation and performance work; v0.9 detailed people and cars (with sports models), camera modes, summer lighting with screen-space reflections, 60 fps streaming work and LIDAR-measured buildings; v0.10 FSR upscaling with dynamic resolution, a baked cloud sky, distant car LODs, procedural house detail, street furniture with telegraph wires, and baked faces and hair; v0.11 real driving physics, impulse collisions with damage, rebuilt car bodies with per-pixel lamps and glass, tyre marks and smoke, headlight pools and engine sound; v0.12 merges every agent's work: GPT's Road Atlas and sat-nav, start/pause menu, DualShock controller, rideable buses and trains with interiors, resident routines and fire crews; Grok's lived-in town look (roads, gardens, trees, chain shop fascias); the physically based sky, stars and rain.
 * `docs/PERF-CHECKLIST.md`: how to record real frame times on a phone with the perf flythrough.
 * `docs/handoff/grok.md` and `docs/briefs/visual-overhaul-notes.md`: hand-off notes for the simulation/performance and visual work.
 
 ## Play
 
-* **Android**: install `builds/Green-County-0.11.0-dev.apk`. It uses the same development key as v0.6–v0.10, so it installs over them; builds older than v0.6 must be uninstalled first. Landscape only.
+* **Android**: install `builds/Green-County-0.12.0-dev.apk`. It uses the same development key as v0.6–v0.11, so it installs over them; builds older than v0.6 must be uninstalled first. Landscape only.
 * **Browser**: `npm run serve`, then open http://localhost:8080. Chrome or Edge recommended; WebGPU is used when available, otherwise WebGL2.
 
 Touch controls (landscape): drag on the **left side** to move (a floating stick appears under your thumb). Driving: push the stick up for throttle, pull it back to brake and then reverse, and steer sideways. Drag on the **right side** to orbit the camera. **Run** (on foot) doubles as the **handbrake** in a vehicle (it locks the rear wheels, so it swings the tail round at speed). **Get in / Exit** works on any parked car. **Horn** appears while driving. **Swap** switches between Cal and Leon wherever each is. **Map** opens the full map, **Dev** the developer panel.
