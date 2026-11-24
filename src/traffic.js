@@ -225,7 +225,7 @@ export class Traffic {
       v.h = nh2;
       v.lane = Math.min(v.lane, net.laneCount(v.h) - 1);
       if (v.fixedRoute && v.onEdge) v.onEdge(v);
-      if (v.route.length > 64 && v.ri > 32) { v.route = v.route.slice(v.ri); v.ri = 0; }
+      if (!v.fixedRoute && v.route.length > 64 && v.ri > 32) { v.route = v.route.slice(v.ri); v.ri = 0; }
     }
     this.place(v);
   }
