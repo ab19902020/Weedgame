@@ -49,21 +49,59 @@ export class Buses {
   constructor(G) {
     this.G = G; this.timer = 2; this.rand = mulberry(31);
     const net = G.net;
-    this.routes = net.routes.map((r, i) => {
-      const hs = r.seq.map(([e, d]) => e * 2 + (d === 1 ? 0 : 1));
+    // Index mapped kerbside stops once. Infer calls only on matching directed roads.
+    const stopsByDirection = new Map();
+    net.busStops.forEach(([x,z],si) => {
+      const snap = net.nearest(x,z,22,e => (net.flags[e]&(16|128)) && !/motorway|trunk/.test(net.clsName(e)));
+      if (!snap || snap.d > net.width[snap.e]/2+9) return;
+      const reverse = snap.side < 0;
+      if (reverse && (net.flags[snap.e]&1)) return;
+      const h = snap.e*2+Number(reverse);
+      if (!stopsByDirection.has(h)) stopsByDirection.set(h,[]);
+      stopsByDirection.get(h).push({si,s:reverse ? net.len[snap.e]-snap.s : snap.s});
+    });
+    // Some imported relations traverse ordinary one-way streets backwards. Bridge each
+    // illegal run over directed roads, or keep its two valid sections separate.
+    const sections=[];
+    for (const r of net.routes) {
+      const input=r.seq.map(([e,d])=>2*e+(d===1?0:1));
+      const allowed=h=>net.outD[net.startNode(h)].includes(h) || ((net.flags[h>>1]&128) && !(h&1));
+      let hs=[], changed=false;
+      const flush=()=>{if(hs.length)sections.push({...r,hs,stops:changed?[]:r.stops});hs=[];};
+      for(let k=0;k<input.length;) {
+        if(allowed(input[k])) {hs.push(input[k++]);continue;}
+        changed=true;
+        const start=k;
+        while(k<input.length && !allowed(input[k]))k++;
+        const path=net.route(net.startNode(input[start]),net.endNode(input[k-1]));
+        if(path)hs.push(...path);else flush();
+      }
+      flush();
+    }
+    this.cursor=0;
+    this.routes = sections.map((r, i) => {
+      const hs=r.hs;
       const cum = [0]; for (const h of hs) cum.push(cum[cum.length - 1] + net.len[h >> 1]);
       // stop positions -> route distance (fallback: snap bus_stop nodes near the path)
       let stops = r.stops.map(([si, d]) => ({ si, d }));
+      if (!stops.length) {
+        hs.forEach((h,k) => {
+          for (const stop of stopsByDirection.get(h) || []) stops.push({si:stop.si,d:cum[k]+stop.s,inferred:true});
+        });
+      }
+      stops.sort((a,b)=>a.d-b.d);
       return { i, ref: r.ref, name: r.name, colour: parseColour(r.colour), hs, cum, stops, len: cum[cum.length - 1] };
-    }).filter(r => r.hs.length > 5 && r.len > 600);
+    }).filter(r => r.hs.length > 0 && r.len > 0);
   }
   update(dt, focus, info) {
     this.timer -= dt; if (this.timer > 0) return; this.timer = 6;
     const G = this.G, net = G.net;
     const buses = G.traffic.list.filter(v => v.kind === 'bus');
-    for (const b of buses) if (b.ri >= b.route.length - 1 && b.v < 0.1 && !info.visible(b.x, b.y, b.z, 4)) G.traffic.remove(b);
+    for (const b of buses) if ((b.notInService || (b.ri >= b.route.length - 1 && b.v < 0.1)) && !b.player && !info.visible(b.x, b.y, b.z, 4)) G.traffic.remove(b);
     if (buses.length >= 14) return;
-    for (const r of this.routes) {
+    for (let count=0;count<this.routes.length;count++) {
+      const r=this.routes[this.cursor];
+      this.cursor=(this.cursor+1)%this.routes.length;
       if (buses.some(b => b.busRoute === r.i && Math.hypot(b.x - focus.x, b.z - focus.z) < 900)) continue;
       // find route points near the focus; spawn ~350-550 m upstream, out of view
       let best = null;
@@ -83,7 +121,8 @@ export class Buses {
       v.fixedRoute = true; v.busRoute = r.i; v.ref = r.ref; v.persistent = true; v.v0f = 0.85;
       v.nextStop = r.stops.findIndex(s => s.d > r.cum[best] + 5);
       v.busData = r;
-      if (buses.length + 1 >= 14) break;
+      buses.push(v);
+      if (buses.length >= 14) break;
     }
   }
   // called from traffic.drive through stopAtFn
@@ -92,7 +131,7 @@ export class Buses {
     const pos = r.cum[v.ri] + v.s, st = r.stops[v.nextStop];
     const d = st.d - pos;
     if (d < -3) { v.nextStop++; return 1e9; }
-    if (d < 1.2 && v.v < 0.3) {
+    if (d < (v.s0 || 2) + 1.2 && v.v < 0.3) {
       v.dwell = (v.dwell || 0) + this.G.dt;
       if (!v.served) { v.served = true; const n = this.G.peds.board(st.si, v); v.dwellFor = 8 + n * 2.5; }
       if (v.dwell > (v.dwellFor || 10)) { v.nextStop++; v.dwell = 0; v.served = false; return 1e9; }

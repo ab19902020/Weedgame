@@ -107,7 +107,7 @@ export class Navigation {
         c.lineTo(X(b.x),Z(b.z));
       }
       c.lineJoin=c.lineCap='round'; c.strokeStyle='#173a39'; c.lineWidth=7*unit;c.stroke();
-      c.strokeStyle='#5df4c2';c.lineWidth=4*unit;c.stroke();
+      c.strokeStyle=this.colour || '#5df4c2';c.lineWidth=4*unit;c.stroke();
     }
     const x=X(this.pin.x),z=Z(this.pin.z);
     c.translate(x,z);c.scale(unit,unit);c.fillStyle='#ff785d';c.strokeStyle='#31241e';c.lineWidth=2;

@@ -446,7 +446,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     return best;
   };
   const col = []; // collision: per building [ringStart, ringLen, top, base]
-  const landmarks = [];
+  const landmarks = [], destinations = [];
   const gardens = [];
   const colPts = [];
   let ci = 0, ri = 0;
@@ -456,6 +456,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], seed = m[13];
     // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
     const shop = m[12] || ((cls === 6 || cls === 7) && header.bn[bi] ? 1 : 0);
+
     if (cls === 13) { for (let k = 0; k < P[bi]; k++) ci += R[ri++]; continue; } // canopies are drawn by landmarks.js
     const floorH = Math.max(2.4, Math.min(5, wallH / Math.max(1, lv)));
     const rings = [];
@@ -465,6 +466,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       ci += n; rings.push(ring);
     }
     const outer = rings[0];
+    if(cls<=3 || shop || [6,7,8,10].includes(cls))destinations.push({x:ox+outer.reduce((sum,v)=>sum+v[0],0)/outer.length,z:oz+outer.reduce((sum,v)=>sum+v[1],0)/outer.length,kind:shop||cls===7?'shop':cls<=3?'home':'work',name:header.bn[bi]||''});
     if (m[14] > 0.5) { // hand-authored landmark: hand the footprint over, keep collision
       landmarks.push({ name: header.bn[bi], ring: outer.map(([x, z]) => [x + ox, z + oz]), base, wall: wallH });
       col.push(colPts.length / 2, outer.length, header.bn[bi] === 'Cemetery Arch' ? base - 1 : base + wallH + 4, base);
@@ -545,7 +547,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     for (const [x, z] of outer) colPts.push(x + ox, z + oz);
   }
   const g = B.pack();
-  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.landmarks = landmarks; g.gardens = gardens;
+  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.destinations = destinations; g.landmarks = landmarks; g.gardens = gardens;
   return g;
 }
 
@@ -671,7 +673,7 @@ function buildMarkings(header, ox, oz, hAt) {
     const c = NET.cls[e];
     if (!NET.driveCls.has(c)) continue;
     const name = NET.classes[c];
-    if (name === 'service' || name === 'track') continue;
+    const minor = name === 'service' || name === 'track';
     const f = NET.flags[e];
     if (f & 8) continue;
     const bridge = !!(f & 4);
@@ -686,12 +688,11 @@ function buildMarkings(header, ox, oz, hAt) {
       for (let s = from; s < to; s += dash + gap) {
         const a = s, b = Math.min(to, s + dash);
         if (b - a < 0.2) continue;
-        const pa = posAt(pts, a), pb = posAt(pts, b);
-        const mid = posAt(pts, (a + b) / 2);
-        if (!inTile(mid)) continue;
+
         const segs = Math.max(1, Math.ceil((b - a) / 3));
         for (let k = 0; k < segs; k++) {
           const ta = a + (b - a) * k / segs, tb = a + (b - a) * (k + 1) / segs;
+          if (!inTile(posAt(pts,(ta+tb)/2))) continue;
           const A1 = posAt(pts, ta), B1 = posAt(pts, tb);
           const q = [[A1, -1], [B1, -1], [B1, 1], [A1, 1]].map(([p, sd]) => {
             const x = p[0] + p[3] * (offset + sd * width / 2), z = p[2] + p[4] * (offset + sd * width / 2);
@@ -703,8 +704,8 @@ function buildMarkings(header, ox, oz, hAt) {
       }
     };
     const total = Math.max(1, lf + lb), lw = w / total;
-    if (L > 4 && s1 - s0 > 2 && w >= 4.5) {
-      if (!oneway && lf && lb && name !== 'living_street') line(0, 0.1, s0, s1, name === 'residential' ? 2.5 : 4, name === 'residential' ? 4 : 5, 0); // centre line
+    if (!minor && L > 4 && s1 - s0 > 2 && w >= 4.5) {
+      if (!oneway && lf && lb && name !== 'living_street') line(w/2-lf*lw, 0.1, s0, s1, name === 'residential' ? 2.5 : 4, name === 'residential' ? 4 : 5, 0); // centre line
       // lane lines (forward lanes are left of centre: offset positive = left)
       for (let k = 1; k < lf; k++) line(oneway ? w / 2 - k * lw : w / 2 - k * lw, 0.1, s0, s1, 2, 7, 0);
       for (let k = 1; k < lb; k++) line(-(w / 2 - k * lw), 0.1, s0, s1, 2, 7, 0);
@@ -728,8 +729,8 @@ function buildMarkings(header, ox, oz, hAt) {
         for (const v of [a, b, c, d]) v[1] = bridge ? p[1] + 0.03 : hAt(v[0], v[2]) + 0.075;
         quad(B, a, b, c, d, [0, 1, 0], null, [id]);
       };
-      if (code === 3) mk(halfFrom, halfTo, 0.3, 0, 0);
-      else if (code === 1 || code === 4 || code === 2) {
+      if (code === 3 || code === 2) mk(halfFrom, halfTo, code === 2 ? 0.4 : 0.3, 0, 0);
+      else if (code === 1 || code === 4) {
         for (let o = halfFrom; o < halfTo; o += 0.9) { mk(o, Math.min(halfTo, o + 0.6), 0.2, 0, 0); mk(o, Math.min(halfTo, o + 0.6), 0.2, 0.4, 0); }
       }
     };
@@ -751,6 +752,15 @@ function buildMarkings(header, ox, oz, hAt) {
         });
         quad(B, v[0], v[1], v[2], v[3], [0, 1, 0], null, [id]);
       };
+      // Tactile landings are inferred only on mapped/inferred pavement sides.
+      for (const [side,bit] of [[1,1],[-1,2]]) if (NET.pav?.[e] & bit) {
+        const o0=side*(w/2+.12), o1=side*(w/2+1.05);
+        const landing=[[o0,-.9],[o1,-.9],[o1,.9],[o0,.9]].map(([o,a])=>{
+          const x=p[0]+lat[0]*o+along[0]*a,z=p[2]+lat[1]*o+along[1]*a;
+          return [x,(bridge?p[1]:hAt(x,z))+.185,z];
+        });
+        quad(B,...landing,[0,1,0],null,[kind==='uncontrolled'?3:2]);
+      }
       if (kind === 'zebra') {
         for (let o = -w / 2 + 0.2; o < w / 2 - 0.4; o += 1.0) put(o, o + 0.5, -1.4, 1.4, 0);
         zigzags(B, pts, s, w, bridge, hAt, inTile);

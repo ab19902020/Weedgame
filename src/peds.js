@@ -34,6 +34,7 @@ export class Peds {
     this.tmp = [0, 0, 0, 0, 0];
     this.timer = 0;
     this.walkEdges = null;
+    this.residents=new Map();
     this.events = [];
     this.graph = G.walkGraph = new WalkGraph(G.net);
     G.events.on('horn', e => this.horn(e));
@@ -104,7 +105,7 @@ export class Peds {
   toBusStop(p) {
     const stops = this.G.net.busStops;
     let best = -1, bd = 160;
-    for (let i = 0; i < stops.length; i++) { const d = Math.hypot(stops[i][0] - p.x, stops[i][1] - p.z); if (d < bd) { bd = d; best = i; } }
+    for (let i = 0; i < stops.length; i++) { if(!this.G.transit?.services.has(i))continue; const d = Math.hypot(stops[i][0] - p.x, stops[i][1] - p.z); if (d < bd) { bd = d; best = i; } }
     if (best < 0) return;
     p.goal = { kind: 'stop', i: best, x: stops[best][0], z: stops[best][1] };
   }
@@ -114,12 +115,22 @@ export class Peds {
     if (!this._ef || Math.hypot(this._ef.x - focus.x, this._ef.z - focus.z) > 40) { this._edges = this.pickWalkEdge(focus); this._ef = { x: focus.x, z: focus.z }; }
     if (this.timer <= 0) {
       this.timer = 0.3;
+      for(const [id,p] of this.residents){
+        if(Math.hypot(p.x-focus.x,p.z-focus.z)>R || this.G.tiles.terrain(p.x,p.z)==null || info.visible(p.x,p.y+1,p.z,1))continue;
+        p.t+=Math.max(0,G.time-p.awaySince);p.planAfter=0;p.mode='walk';p.goal=null;
+        this.list.push(p);this.residents.delete(id);
+      }
       const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z) * (G.quality === 'low' ? 0.5 : 1));
       if (this.list.length < target) for (let i = 0; i < 3; i++) { if (this.rand() < 0.18) this.spawnAtDoor(focus, info); else this.spawn(focus, info, this.list.length < target * 0.3); }
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
         const d = Math.hypot(p.x - focus.x, p.z - focus.z);
-        if ((d > KILL && !info.visible(p.x, p.y + 1, p.z, 1)) || p.gone) { this.list.splice(i, 1); this.queueRemove(p); }
+        if ((!p.officer && d > KILL && !info.visible(p.x, p.y + 1, p.z, 1)) || p.gone) { this.list.splice(i, 1); this.queueRemove(p);
+          if(!p.gone && p.job && !p.officer){
+            p.awaySince=G.time;p.leader=null;p.partner=null;p.stopIdx=null;
+            this.residents.set(p.id,p);
+            if(this.residents.size>400)this.residents.delete(this.residents.keys().next().value);
+          } }
       }
     }
     const rain = G.world.cur.rain;
@@ -129,6 +140,12 @@ export class Peds {
       if (p.fallT > 0) { p.fallT -= dt; p.fall = p.fallT > 1.2 ? Math.min(1, (p.fall || 0) + dt * 6) : Math.max(0, p.fall - dt * 1.5); p.speedNow = 0; if (p.fallT <= 0) { p.mode = 'walk'; p.pose = 'phone'; p.phoneT = 6; } continue; }
       if (p.reactT > 0) { p.reactT -= dt; p.heading = lerpAngle(p.heading, p.reactHeading, dt * 6); p.pose = p.reactPose; p.speedNow = p.reactPose === 'flee' ? 3.5 : 0; if (p.reactPose === 'flee') { p.x += Math.cos(p.reactHeading + Math.PI) * 3.5 * dt; p.z += Math.sin(p.reactHeading + Math.PI) * 3.5 * dt; } this.ground(p); continue; }
       if (p.phoneT > 0) { p.phoneT -= dt; p.pose = 'phone'; p.speedNow = 0; continue; }
+      if(p.mode==='greeting'){
+        p.timer-=dt;p.speedNow=0;p.pose='talk';
+        if(p.partner)p.heading=Math.atan2(p.partner.z-p.z,p.partner.x-p.x);
+        if(p.timer<=0||p.partner?.gone){p.mode='walk';p.partner=null;}
+        continue;
+      }
       if (p.mode === 'talk') { this.talk(p, dt); continue; }
       if (p.mode === 'queue') { this.queue(p, dt); continue; }
       if (p.mode === 'shelter') { if (rain < 0.15 || p.t > p.shelterUntil) p.mode = 'walk'; p.pose = 'idle'; p.speedNow = 0; continue; }
@@ -139,12 +156,33 @@ export class Peds {
       if (p.mode === 'toDoor' || p.mode === 'atDoor' || p.mode === 'fromDoor' || p.mode === 'link') { this.doorWalk(p, dt); continue; }
       if (p.corner) { this.corner(p, dt, rain); continue; }
       if (p.leader && !p.leader.gone && p.leader.mode === 'walk') { this.follow(p, dt); continue; }
+      if(!p.officer && p.id.startsWith('p') && !p.goal && !(p.planAfter>p.t)){
+        this.planDay(p);p.planAfter=p.t+30;
+      }
       this.walk(p, dt, rain);
     }
     // gentle separation
     for (let i = 0; i < this.list.length; i++) for (let j = i + 1; j < this.list.length; j++) {
       const a = this.list[i], b = this.list[j]; const dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
       if (d2 < 0.36 && d2 > 1e-6 && a.mode !== 'talk' && b.mode !== 'talk') { const d = Math.sqrt(d2), k = (0.6 - d) * 0.5 / d; a.x -= dx * k; a.z -= dz * k; b.x += dx * k; b.z += dz * k; }
+    }
+  }
+  planDay(p){
+    const hour=this.G.world.hours(), role=p.job ||= ['shop assistant','courier','office worker'][Number(p.id.slice(1))%3||0];
+    const kind=hour<7||hour>=18?'home':hour>=12&&hour<14?'shop':role==='shop assistant'?'shop':'work';
+    const places=[];
+    for(const tile of this.G.tiles.tiles.values())for(const site of tile.data?.buildings?.destinations||[]){
+      if(site.kind===kind && Math.hypot(site.x-p.x,site.z-p.z)<500)places.push(site);
+    }
+    for(let attempt=0;attempt<5 && places.length;attempt++){
+      const site=(attempt===0 && p[kind+'Site']) || places[Math.floor(this.rand()*places.length)];
+      const snap=this.net.nearest(site.x,site.z,65,e=>this.net.walkable(e));
+      if(!snap)continue;
+      const h=snap.e*2,path=this.net.route(this.net.endNode(p.h),this.net.startNode(h),{walk:true,limit:2500});
+      if(!path)continue;
+      p[kind+'Site']=site;p.dayPath=[...path,h];p.goal={kind:'routine',x:snap.x,z:snap.z};
+      p.activity=kind==='home'?'Home':kind==='shop'&&hour>=12&&hour<14?'Shopping':role;
+      return;
     }
   }
   ground(p) { const g = this.G.tiles.ground(p.x, p.z, p.y + 0.3); if (g != null) p.y += (g - p.y) * 0.5; }
@@ -158,7 +196,7 @@ export class Peds {
       const c = this.G.coverNear(p.x, p.z, 40);
       if (c) { p.goal = { kind: 'shelter', x: c[0], z: c[1] }; p.sheltered = true; }
     }
-    let sp = p.speed * hurry;
+    let sp = p.hurryUntil>p.t ? 3.8 : p.speed*hurry;
     // crossings on this edge: maybe cross the road
     const crs = net.crossByEdge.get(e);
     if (crs && !p.crossCool) for (const c of crs) {
@@ -173,7 +211,8 @@ export class Peds {
     if (p.nextH != null && p.nextH.link != null) { if (p.s >= L) { p.mode = 'link'; p.door = { ...p.nextH }; p.nextH = null; } }
     else if (p.nextH != null && cr > 0 && p.s >= L - cr && this.side(p.nextH >> 1) && this.startCorner(p, p.nextH, cr)) { p.nextH = null; return; }
     if (p.s >= L) {
-      const next = p.nextH != null && p.nextH.link == null ? p.nextH : this.chooseNext(p); p.nextH = null;
+      let next = p.nextH != null && p.nextH.link == null ? p.nextH : this.chooseNext(p); p.nextH = null;
+      if (p.goal?.kind === 'routine' && p.dayPath?.length && net.startNode(p.dayPath[0]) === net.endNode(p.h)) next = p.dayPath.shift();
       if (next && next.link != null) { p.mode = 'link'; p.door = { ...next }; p.s = L; return; }
       p.s = Math.max(0, p.s - L); p.h = next;
       if (!net.walkable(p.h >> 1)) { p.h = p.h ^ 1; p.s = 0; }
@@ -189,6 +228,11 @@ export class Peds {
       const gd = Math.hypot(p.goal.x - p.x, p.goal.z - p.z);
       if (gd < (p.goal.kind === 'door' ? 14 : 6)) {
         if (p.goal.kind === 'door') { p.mode = 'toDoor'; return; }
+        if(p.goal.kind==='routine'){
+          p.dayPath=null;p.mode='scene';p.sceneT=p.activity==='Shopping'?18:Math.max(65,((p.activity==='Home'?7:18)-this.G.world.hours()+24)%24*3600/Math.max(1,this.G.world.s.scale));
+          p.scenePose=p.activity==='Home'?'idle':p.job==='courier'?'phone':'talk';
+          p.sceneX=p.x+1;p.sceneZ=p.z;p.planAfter=p.t+p.sceneT+1;
+        }
         if (p.goal.kind === 'stop') this.joinQueue(p);
         else if (p.goal.kind === 'shelter') { p.mode = 'shelter'; p.shelterUntil = p.t + 60 + this.rand() * 60; p.x = p.goal.x + (this.rand() - 0.5) * 1.5; p.z = p.goal.z + (this.rand() - 0.5) * 1.5; }
         p.goal = null;
@@ -336,18 +380,29 @@ export class Peds {
   queueRemove(p) { if (this.queues && p.stopIdx != null) { const q = this.queues.get(p.stopIdx); if (q) { const i = q.indexOf(p); if (i >= 0) q.splice(i, 1); } } }
   // a bus arrived at stop i: board everyone queued, return count
   board(i, bus) {
-    const q = this.queues?.get(i); if (!q || !q.length) return 0;
-    const n = q.length;
-    for (const p of q) { p.gone = true; }
-    q.length = 0;
-    // a few alight
-    const st = this.net.busStops[i];
-    const off = Math.floor(this.rand() * 3);
-    for (let k = 0; k < off; k++) {
-      const p = { id: 'p' + this.nextId++, h: bus.h, s: bus.s, sideSign: 1, lane: 0, look: People.randomLook(this.rand), speed: 1.3, mode: 'walk', t: 0, phase: 0, heading: bus.heading, x: st[0] + k * 0.6, y: bus.y, z: st[1], visible: true, alpha: 0 };
+    const q=this.queues?.get(i)||[], st=this.net.busStops[i];
+    bus.passengers ||= [];
+    const here=bus.nextStop, remaining=bus.busData.stops.length-1-here;
+    const road=this.net.nearest(st[0],st[1],65,e=>this.net.walkable(e));
+    for(const trip of bus.passengers.filter(t=>t.to<=here)){
+      if(!road)continue;
+      const p=trip.actor;
+      Object.assign(p,{h:road.e*2,s:road.s,sideSign:road.side||1,lane:0,x:st[0],z:st[1],y:bus.y,
+        mode:'walk',goal:null,stopIdx:null,leader:null,partner:null,visible:true,gone:false,crossCool:4});
       this.list.push(p);
     }
-    return n;
+    bus.passengers=bus.passengers.filter(t=>t.to>here);
+    if(!remaining)return 0;
+    let boarded=0;
+    for(const p of q.splice(0)){
+      if(p.gone)continue;
+      this.queueRemove(p);
+      const index=this.list.indexOf(p);if(index<0)continue;
+      this.list.splice(index,1);p.visible=false;
+      bus.passengers.push({actor:p,to:here+1+Math.floor(this.rand()*Math.min(remaining,5))});
+      boarded++;
+    }
+    return boarded;
   }
   // ---------------- crossings
   waitCross(p, dt) {
@@ -357,15 +412,18 @@ export class Peds {
     let go = false;
     if (c.kind === 'signal') {
       const ci = this.controllerFor(c);
-      if (ci >= 0) { G.signals.press(ci); const a = G.signals.ped(ci); go = a === 'walk'; }
+      if (ci >= 0) { const a = G.signals.ped(ci); go = a === 'walk'; if (!go) G.signals.press(ci); }
       else go = this.clearRoad(p, c);
     } else if (c.kind === 'zebra') {
-      go = this.clearRoad(p, c, 14) || p.crossT > 3 && this.slowTraffic(p, c);
+      G.traffic.zebraBusy.set((p.h >> 1) + ':' + Math.round(c.s), G.signals.t + 1);
+      go = this.clearRoad(p, c, 14);
     } else go = this.clearRoad(p, c, 28);
-    if (p.crossT > 50) go = true;
+
     if (go) { p.mode = 'cross'; p.crossProg = 0; p.cx0 = p.x; p.cz0 = p.z; const w = this.net.width[p.h >> 1] / 2 + 1.05; const [, , tdx, tdz] = this.pos(p); p.cdx = -2 * w * p.sideSign * tdz; p.cdz = 2 * w * p.sideSign * tdx; if (c.kind === 'zebra' || c.kind === 'uncontrolled') G.traffic.zebraBusy.set((p.h >> 1) + ':' + Math.round(c.s), G.signals.t + 12); }
   }
   cross(p, dt) {
+    const c = p.cross;
+    this.G.traffic.zebraBusy.set((p.h >> 1) + ':' + Math.round(c.s), this.G.signals.t + 1);
     const len = Math.hypot(p.cdx, p.cdz) || 1;
     p.crossProg += p.speed * 1.1 * dt / len;
     p.x = p.cx0 + p.cdx * Math.min(1, p.crossProg); p.z = p.cz0 + p.cdz * Math.min(1, p.crossProg);
@@ -376,7 +434,7 @@ export class Peds {
   controllerFor(c) {
     if (c._ci !== undefined) return c._ci;
     let best = -1, bd = 70;
-    this.net.controllers.forEach((k, i) => { if (!k.peds.length) return; const d = Math.hypot(k.x - c.x, k.z - c.z); if (d < bd) { bd = d; best = i; } });
+    this.net.controllers.forEach((k, i) => { for (const [x,z] of k.peds) { const d=Math.hypot(x-c.x,z-c.z); if(d<bd){bd=d;best=i;} } });
     return (c._ci = best);
   }
   clearRoad(p, c, dist = 22) {

@@ -2,13 +2,16 @@
 import { CarDynamics } from './carPhysics.js';
 import * as THREE from 'three/webgpu';
 import { boot } from './main.js';
+import { Controller } from './controller.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import { Brothers } from './player.js';
+import { Transit } from './transit.js';
 import { Traffic } from './traffic.js';
 import { Signals, SignalRenderer } from './signals.js';
 import { VehicleRenderer, MODELS } from './vehicles.js';
 import { People } from './characters.js';
+import { Neighbourhood } from './neighbourhood.js';
 import { Peds } from './peds.js';
 import { Police } from './police.js';
 import { Parking, Buses } from './services.js';
@@ -62,8 +65,10 @@ G.people = new People(G.scene, G.renderer.shadowMap.enabled);
 G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
 G.peds = new Peds(G);
 G.police = new Police(G);
+G.neighbourhood=new Neighbourhood(G);
 G.parking = new Parking(G);
 G.buses = new Buses(G);
+G.transit = new Transit(G);
 G.traffic.busStop = v => G.buses.stopFor(v);
 G.trains = new Trains(G);
 G.landmarks = new Landmarks(G);
@@ -105,6 +110,7 @@ G.teleport = (x, z, heading) => {
 const init = G.save.initialBrothers(START);
 G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
+G.controller=new Controller(G);
 for (const sv of G.save.vehicles) {
   const v = G.traffic.add({ id: sv.id, kind: 'parked', model: sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy });
   if (sv.id.startsWith('p:')) G.save.taken.add(sv.id);
@@ -141,6 +147,8 @@ function frame() {
   if (G._fps && G._fps < 50 && now - (G._lastFrame || 0) < 1000 / G._fps - 4) return;
   G._lastFrame = now;
   let dt = Math.min(0.1, (now - last) / 1000); last = now;
+  G.controller.poll(dt);
+  if (!G.hud.menu.el.hidden) return;
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
   for (let k = 1; k < G.simSteps; k++) step(dt, false);
   step(dt, true);
@@ -163,7 +171,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else B.update(dt, G.input); }
+  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt)) { B.update(dt, G.input); G.controller.actions(dt); } }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3) {
@@ -181,13 +189,14 @@ function step(dt, render) {
   G.signals.update(dt);
   // player as an obstacle for NPC traffic
   const pv = B.vehicleOf(me);
-  G.traffic.obstacles = [pv ? { x: pv.x, z: pv.z, r: pv.def.L / 2, v: Math.abs(pv.sp || 0) } : { x: me.x, z: me.z, r: 0.5, v: 0 }];
+  G.traffic.obstacles = G.transit.ride ? [] : [pv ? { x: pv.x, z: pv.z, r: pv.def.L / 2, v: Math.abs(pv.sp || 0) } : { x: me.x, z: me.z, r: 0.5, v: 0 }];
   G.traffic.update(dt, G.focus, camInfo);
   G.carDyn.update(dt);
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
   G.police.update(dt);
   G.trains.update(dt);
+  G.neighbourhood.update(dt);
   G.atmos.updateCover(me.x, me.z);
   G.atmos.updateLights(me.x, me.z);
   G.atmos.updateNearLights(G.camera.position);
@@ -199,10 +208,12 @@ function step(dt, render) {
   }
   if (!render) return;
   // draw dynamic actors
+  G.transit.syncCabins(dt);
+  if(G.transit.ride)G.transit.riderView(dt,G.transit.riderLook||{dx:0,dy:0});
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.budget.vehicleDist);
   G.trains.draw(cam, Math.max(600, G.budget.vehicleDist * 2));
-  const actors = [B.actor[B.active]]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
+  const actors = [B.actor[B.active], ...G.transit.people, ...G.neighbourhood.actors]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
   const rigs = G.people.rigs;
   if (rigs.previewRole) {
     const heading = B.cam.yaw;

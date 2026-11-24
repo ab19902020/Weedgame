@@ -1,4 +1,5 @@
 // HUD: minimap, full map, buttons, notices, developer panel and performance overlay.
+import { GameMenu } from './gameMenu.js';
 import { Navigation, distanceLabel } from './navigation.js';
 import { STATES } from './weather.js';
 
@@ -24,24 +25,25 @@ export class Hud {
         <button id="bHorn" class="big" hidden>Horn</button>
         <button id="bCam" data-act="camera">Cam</button>
         <button id="bSwap">Swap</button>
-        <button id="bMap">Map</button>
+        <button id="bJump">Jump</button><button id="bHit">Hit</button><button id="bPickup">Pick up</button><button id="bMenu">Menu</button><button id="bMap">Map</button>
         <button id="bDev">Dev</button>
       </div>
       <div id="map" hidden><canvas id="mapC"></canvas><div class="maptools"><div class="atlasTitle">Green County <em>Road Atlas</em></div><button id="mClose">Close</button></div>
-      <div class="atlasPlaces"><select id="mPlaces" aria-label="Route to a place"><option value="">Route to a place…</option></select><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
+      <div class="atlasPlaces"><select id="mPlaces" aria-label="Route to a place"><option value="">Route to a place…</option></select><button id="mFit" hidden>Route</button><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
       <div class="atlasFooter"><span id="mInfo"></span><button id="mClear">Clear waypoint</button></div></div>
       <div id="dev" class="panel" hidden></div>
       <div id="perf" hidden></div>`;
     this.mini = root.querySelector('#miniC').getContext('2d');
     this.el = id => root.querySelector('#' + id);
     const I = G.input;
+    for(const [id,action] of [['bJump','jump'],['bHit','hit'],['bPickup','pickup']])I.bindButton(this.el(id),action);
     I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn');
     I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
     this.el('mClose').onclick = () => this.toggleMap(false);
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
     this.mapView = { x: 0, z: 0, s: 0.25 };
     this.nav = new Navigation(G.net);
-    const places = [...G.manifest.districts, ...TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))];
+    const places = [...G.transit.stations.map(s=>({...s,name:s.name+" station"})),...G.manifest.districts, ...TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))];
     const select = this.el('mPlaces');
     places.forEach((place,index)=>select.add(new Option(place.name,String(index))));
     select.onchange = () => {
@@ -53,7 +55,14 @@ export class Hud {
     this.el('mOut').onclick=()=>this.zoomMap(.65);
     this.el('mIn').onclick=()=>this.zoomMap(1.5);
     this.el('miniC').onclick=()=>this.toggleMap(true);
+    this.el('mFit').onclick=()=>{
+      const points=[G.brothers.me,this.nav.pin,...(this.nav.route?.pts || [])].filter(Boolean);
+      let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+      for(const p of points){left=Math.min(left,p.x);right=Math.max(right,p.x);top=Math.min(top,p.z);bottom=Math.max(bottom,p.z);}
+      this.mapView={x:(left+right)/2,z:(top+bottom)/2,s:Math.max(.025,Math.min(2,(innerWidth-64)/Math.max(1,right-left),(innerHeight-160)/Math.max(1,bottom-top)))};
+    };
     this.setupMap();
+    this.menu=new GameMenu(this);
     this.overview = new Map();
     this.feedItems = [];
     this.perfOn = G.Q.has('perf');
@@ -71,14 +80,20 @@ export class Hud {
     if (I.consume('dev')) this.toggleDev();
     const inCar = !!me.vehicle;
     const near = !inCar && G.brothers.nearestVehicle();
-    this.el('bUse').textContent = inCar ? 'Exit' : near ? (near.owner ? `Get in (${near.owner}'s)` : 'Get in') : 'Get in';
-    this.el('bUse').classList.toggle('dim', !inCar && !near);
+    const boardable=G.transit.nearby(me);
+    const waiting=!inCar && !near && !boardable && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
+    this.el('bUse').textContent=G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":'Get in');
+    this.el('bUse').disabled=!!waiting;
+    this.el('bUse').classList.toggle('dim',!inCar&&!near&&!G.transit.ride&&!boardable);
     this.el('bRun').textContent = inCar ? 'Brake' : 'Run';
+    this.el('bRun').hidden=this.el('bSwap').hidden=!!G.transit.ride;
     this.el('bHorn').hidden = !inCar;
+    for(const id of ['bJump','bHit','bPickup'])this.el(id).hidden=inCar || !!G.transit.ride;
     // run button doubles as brake in a vehicle
     if (inCar) { if (I.held.has('run')) I.held.add('brake'); else if (!I.keys.has('Space')) I.held.delete('brake'); }
     this._acc = (this._acc || 0) + dt;
     if (this._acc > 0.1) { this._acc = 0; const notice=this.nav.update(me); if(notice) this.toast(notice); this.drawMini(); this.renderFeed(); this.drawClock(); if (!this.el('map').hidden) this.drawMap(); }
+    if(G.transit.ride){this.el('guidance').hidden=false;this.el('guidance').firstChild.textContent=G.transit.ride===G.transit?'RAIL':'BUS '+G.transit.ride.ref;this.el('guidance').lastChild.textContent='Next: '+G.transit.nextName()+(G.transit.request?' · Stop requested':'');}
     if (this.perfOn) this.el('perf').textContent = G.perf.text();
   }
   drawClock() {
@@ -92,7 +107,7 @@ export class Hud {
   drawMini() {
     const G = this.G, c = this.mini, W = 220, me = G.brothers.me, net = G.net;
     const scale = me.vehicle ? Math.max(.35,.92-(G.brothers.speedNow || 0)*.018) : 1.6; // px per metre
-    const rot = me.vehicle ? -me.heading-Math.PI/2 : -(G.brothers.cam.yaw + Math.PI / 2) - Math.PI; // map rotates with camera
+    const rot = this.menu.settings.orientation === 'North up' ? 0 : me.vehicle ? -me.heading-Math.PI/2 : -(G.brothers.cam.yaw + Math.PI / 2) - Math.PI; // map rotates with camera
     c.save(); c.clearRect(0, 0, W, W);
     c.fillStyle = 'rgba(28,36,32,0.88)'; c.beginPath(); c.arc(W / 2, W / 2, W / 2 - 2, 0, 7); c.fill(); c.clip();
     c.translate(W / 2, W / 2); c.rotate(rot); c.scale(scale, scale); c.translate(-me.x, -me.z);
@@ -231,13 +246,19 @@ export class Hud {
     // districts
     c.font = 'bold 15px system-ui';
     for (const d of G.manifest.districts) { c.strokeText(d.name, X(d.x), Z(d.z) - 20); c.fillText(d.name, X(d.x), Z(d.z) - 20); }
+    G.transit.drawMap(c,X,Z,V.s);
     this.nav.draw(c,X,Z);
     // vehicles & brothers
     for (const v of G.traffic.list) { if (v.owner || v.free) dot(c, X(v.x), Z(v.z), 6, '#4fb7ff'); if (v.kind === 'police') dot(c, X(v.x), Z(v.z), 4, '#2a4cff'); }
     G.brothers.b.forEach((b, i) => { dot(c, X(b.x), Z(b.z), 8, i === G.brothers.active ? '#ffffff' : '#ffb347'); c.fillStyle = '#111'; c.font = 'bold 13px system-ui'; c.fillText(b.short, X(b.x), Z(b.z) - 12); });
     const nav=this.nav;
     this.el('mInfo').textContent=nav.pin ? nav.pin.name+' · '+(nav.route ? distanceLabel(nav.route.length-nav.progress)+' remaining' : nav.instruction()) : 'Tap a street to set a waypoint · drag to explore';
-    this.el('mClear').hidden=!nav.pin;
+    this.el('mClear').hidden=this.el('mFit').hidden=!nav.pin;
+    const metres=[10,25,50,100,250,500,1000,2500].find(n=>n*V.s>=45)||2500;
+    const width=metres*V.s;
+    c.fillStyle='#19372e';c.fillRect(14,H-85,width+12,29);c.fillStyle='#fff5d9';
+    c.font='bold 11px system-ui';c.textAlign='left';c.fillText(metres>=1000?metres/1000+' km':metres+' m',20,H-70);
+    c.fillRect(20,H-65,width,2);
   }
   // ------------------------------------------------------------------ developer panel
   toggleDev() {

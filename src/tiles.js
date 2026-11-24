@@ -30,7 +30,7 @@ export class Tiles {
       w.onmessage = ev => this.onResult(ev.data);
       w.postMessage({
         type: 'init', pts: net.pts, pstart: net.pstart, pcount: net.pcount, width: net.width, flags: net.flags, cls: net.cls,
-        lanesF: net.lanesF, lanesB: net.lanesB, cutA: net.cutA, cutB: net.cutB, ctrlA: net.ctrlA, ctrlB: net.ctrlB,
+        pav: net.pav, lanesF: net.lanesF, lanesB: net.lanesB, cutA: net.cutA, cutB: net.cutB, ctrlA: net.ctrlA, ctrlB: net.ctrlB,
         classes: net.classes, crossings: net.crossings,
         approaches: net.controllers.flatMap(c => c.approaches.map(a => [a[0], a[1], a[2]])),
         driveCls: net.classes.map((c, i) => [c, i]).filter(([c]) => !/footway|path|pedestrian|steps|cycleway|bridleway|corridor/.test(c)).map(([, i]) => i),

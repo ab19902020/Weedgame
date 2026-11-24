@@ -14,6 +14,7 @@ export const MODELS = {
   estate: { L: 4.75, W: 1.8, H: 1.5, wb: 2.8, wr: 0.32, prof: 'estate', max: 120, mass: 1500 },
   suv: { L: 4.45, W: 1.85, H: 1.66, wb: 2.65, wr: 0.36, prof: 'suv', max: 100, mass: 1700 },
   van: { L: 5.3, W: 2.02, H: 2.35, wb: 3.3, wr: 0.34, prof: 'van', max: 60, mass: 2200 },
+  fire: { L:7.3,W:2.38,H:3.15,wb:4.1,wr:.44,prof:"van",max:3,mass:8000,livery:2 },
   police: { L: 4.75, W: 1.8, H: 1.5, wb: 2.8, wr: 0.32, prof: 'estate', max: 16, mass: 1550, livery: 1 },
   hothatch: { L: 4.28, W: 1.79, H: 1.45, wb: 2.63, wr: 0.33, prof: 'hatch', max: 40, mass: 1350 },
   coupe: { L: 4.64, W: 1.83, H: 1.38, wb: 2.81, wr: 0.34, prof: 'saloon', max: 30, mass: 1550 },
@@ -107,6 +108,14 @@ function buildModel(def, key, lod = 0) {
   if (def.livery) {
     add(new THREE.BoxGeometry(0.35, 0.1, 1.2).translate(-0.4, H + 0.05, 0), [0.1, 0.1, 0.12], 0, 3); // light bar
   }
+  if(def.livery===2){
+    for(const side of [-1,1]){
+      add(new THREE.BoxGeometry(4.1,1.25,.04).translate(-.65,1.62,side*W/2),[.54,.56,.58],0,0);
+      add(new THREE.BoxGeometry(4.9,.12,.04).translate(-.65,.88,side*W/2),[.95,.82,.19],0,0);
+      add(new THREE.BoxGeometry(4.9,.10,.10).translate(-.65,H+.12,side*.4),[.62,.64,.67],0,0);
+    }
+    for(let x=-2.9;x<1.8;x+=.48)add(new THREE.BoxGeometry(.07,.08,.82).translate(x,H+.12,0),[.55,.57,.59],0,0);
+  }
   if (isBus) add(new THREE.BoxGeometry(0.06, 0.28, 1.6).translate(l + 0.01, H - 0.45, 0), [0.05, 0.05, 0.05], 0, 4); // destination blind
   const g = mergeGeos(parts);
   return g;
@@ -153,14 +162,16 @@ export class VehicleRenderer {
       const def = MODELS[v.model], d2 = dx * dx + dz * dz, farM = this.far[v.model], isFar = d2 > FAR2 && farM !== this.meshes[v.model];
       const mesh = isFar ? farM : this.meshes[v.model], C = isFar ? countsFar : counts, i = C[v.model];
       if (i >= def.max) continue;
-      C[v.model]++;
       this._e.set(v.roll || 0, -v.heading, v.pitch || 0, 'YXZ');
       this._q.setFromEuler(this._e);
       this._m.compose(this._v.set(v.x, v.y, v.z), this._q, this._s.set(1, 1, 1));
+      if (!v.hasCabin) {
+      C[v.model]++;
       mesh.setMatrixAt(i, this._m);
       this._c.setHex(v.paint).toArray(mesh.geometry.attributes.iPaint.array, i * 3);
       const st = mesh.geometry.attributes.iState;
       st.array[i * 4] = v.brake ? 1 : 0; st.array[i * 4 + 1] = v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
+      }
       // wheels
       if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
         const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.12 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;

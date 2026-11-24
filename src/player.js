@@ -50,7 +50,7 @@ export class Brothers {
   walk(dt, input) {
     const G = this.G, me = this.me, a = this.actor[this.active];
     const ax = input.axis();
-    const run = input.held.has('run') || Math.hypot(ax.x, ax.y) > 0.92 && input.held.has('run');
+    const run = input.padRun || input.held.has('run') || Math.hypot(ax.x, ax.y) > 0.92 && input.held.has('run');
     const speed = (run ? 5.4 : 1.7) * Math.min(1, Math.hypot(ax.x, ax.y));
     const fx = -Math.cos(this.cam.yaw), fz = -Math.sin(this.cam.yaw);
     const dx = (-ax.y) * fx + ax.x * -fz, dz = (-ax.y) * fz + ax.x * fx;
@@ -106,7 +106,7 @@ export class Brothers {
     const G = this.G, me = this.me;
     const ax = input.axis();
     // carPhysics.js: tyre model, gearbox, assists and impulse collisions
-    const ctl = { throttle: -ax.y, steer: ax.x, handbrake: input.held.has('brake') };
+    const ctl = { throttle: -ax.y, steer: ax.x, handbrake: input.padBrake || input.held.has('brake') };
     G.carDyn.drive(v, dt, ctl);
     const hit = G.carDyn.flush(v);
     if (hit > 2) this.cam.shake = Math.max(this.cam.shake || 0, Math.min(1, hit / 14));

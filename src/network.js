@@ -77,7 +77,11 @@ export class Network {
     // signal approach lookup: per half-edge -> [controller, group, stopDistance]
     this.stopAt = new Map();
     this.controllers.forEach((c, ci) => {
-      for (const [e, d, stop, g] of c.approaches) this.stopAt.set(e * 2 + (d === 1 ? 0 : 1), [ci, g, stop]);
+      for (const [e, d, stop, g] of c.approaches) {
+        const h=e*2+(d===1 ? 0 : 1);
+        if (!this.stopAt.has(h)) this.stopAt.set(h,[]);
+        this.stopAt.get(h).push([ci,g,stop]);
+      }
     });
     this.crossByEdge = new Map();
     for (const c of this.crossings) {
