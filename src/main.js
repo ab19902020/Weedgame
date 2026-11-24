@@ -10,6 +10,7 @@ import { World } from './weather.js';
 import { SignAtlas } from './signs.js';
 import { createPost, createIBL } from './post.js';
 import { createGrass } from './grass.js';
+import { createSkyBake } from './skybake.js';
 import { loadSurfaces } from './surfaces.js';
 import { budgetFor } from './perf.js';
 
@@ -80,6 +81,7 @@ export async function boot(extra = {}) {
   G.post = createPost(G);
   G.ibl = createIBL(G);
   G.grass = createGrass(G);
+  G.skyBake = createSkyBake(G);
   G.updateLighting = () => {
     sun.intensity = 4.3 * world.sunIntensity + 0.12 * U.night.value;   // AgX rolls off highlights, so daylight can run brighter
     sun.color.copy(U.sunCol.value).lerp(new THREE.Color(0.6, 0.68, 0.9), U.night.value);

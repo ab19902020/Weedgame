@@ -237,6 +237,7 @@ function step(dt, render) {
   // first time the world is in: let tiles copy landcover blocks straight to the GPU, and compile every
   // material (all car models, both people LODs, trees, grass, post) up front instead of mid-play
   if (!G._warm && !G._needGround && G.tiles.pending.size === 0 && G.frame > 3) { G._warm = true; G.tiles.gpuReady = true; warmup(); }
+  G.skyBake?.update(dt);
   G.ibl?.update(dt);
   G.grass?.update(G.camera.position);
   if (G.post) G.post.render(); else G.renderer.render(G.scene, G.camera);

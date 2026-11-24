@@ -86,7 +86,7 @@ class Parts {
   }
 }
 
-export function buildCar(def, key, modelIndex) {
+export function buildCar(def, key, modelIndex, lod = 0) {
   const S = CAR_SPECS[key] || CAR_SPECS.hatch;
   const { L, W, H, wb, wr } = def, l = L / 2, hw0 = W / 2;
   const topF = monotone(S.top.map(([u, y]) => [u * l, y]));
@@ -101,10 +101,10 @@ export function buildCar(def, key, modelIndex) {
   };
   // stations: cosine spacing + profile breaks + dense around arches
   const xs = new Set();
-  const NS = 26;
+  const NS = lod ? 10 : 26;
   for (let i = 0; i <= NS; i++) xs.add(+(-l * Math.cos(Math.PI * i / NS)).toFixed(4));
   for (const [u] of S.top) xs.add(+(u * l).toFixed(4));
-  for (const c of wheels) for (let k = -4; k <= 4; k++) xs.add(+(c + k / 4 * (wr + 0.14)).toFixed(4));
+  for (const c of wheels) for (let k = -4; k <= 4; k += lod ? 2 : 1) xs.add(+(c + k / 4 * (wr + 0.14)).toFixed(4));
   for (const d of S.doors) if (d != null) for (const o of [-0.03, 0.03]) xs.add(+(d + o).toFixed(4));
   const X = [...xs].filter(x => x >= -l && x <= l).sort((a, b) => a - b);
   const K = 13;
@@ -178,6 +178,15 @@ export function buildCar(def, key, modelIndex) {
   const xNose = x => l - (1 - Math.pow(Math.max(0, 1 - Math.pow(clamp01(Math.abs(x) / (hw0 * 1.0)), 2.4)), 1 / 2.4)) * S.endF;   // x of the nose surface at lateral offset
   const xTail = z => -l + (1 - Math.pow(Math.max(0, 1 - Math.pow(clamp01(Math.abs(z) / hw0), 2.4)), 1 / 2.4)) * S.endR;
   const hy = Math.max(noseY - 0.1, S.hs + 0.25);
+  if (lod) {
+    // distant cars: body plus light clusters only (they still light up at night and brake)
+    for (const sd of [-1, 1]) {
+      const hl = new THREE.BoxGeometry(0.1, 0.1, 0.36); hl.translate(xNose(zH) - 0.03, hy, sd * zH); parts.add(hl, 1, 0, [0.85, 0.85, 0.82]);
+      const tl = new THREE.BoxGeometry(0.1, 0.1, 0.32); tl.translate(xTail(hw0 - 0.2) + 0.03, Math.min(tailY - 0.12, S.belt[1] - 0.06), sd * (hw0 - 0.2)); parts.add(tl, 2, 0, [0.45, 0.03, 0.03]);
+    }
+    if (def.livery) { const g = new THREE.BoxGeometry(0.35, 0.1, 1.2); g.translate(-0.25, H + 0.05, 0); parts.add(g, 3, 0, [0.1, 0.1, 0.12]); }
+    return { parts: parts.list, spec: S, wheels };
+  }
   for (const sd of [-1, 1]) {
     // headlight cluster: swept lens following the corner, DRL strip under it, amber indicator outboard
     const hl = new THREE.SphereGeometry(1, 14, 8); hl.scale(0.09, S.wing ? 0.035 : 0.055, 0.2); hl.rotateY(sd * 0.42);

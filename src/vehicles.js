@@ -7,6 +7,7 @@ import { lightPool } from './materials.js';
 import { buildCar, vehicleMaterial, wheelGeometry, wheelMaterial, CAR_SPECS } from './carModel.js';
 import { positionWorld } from 'three/tsl';
 
+const FAR_LOD = 70;   // metres: beyond this cars use the light body
 export const MODELS = {
   hatch: { L: 4.05, W: 1.74, H: 1.47, wb: 2.5, wr: 0.31, prof: 'hatch', max: 220, mass: 1150 },
   saloon: { L: 4.65, W: 1.8, H: 1.45, wb: 2.75, wr: 0.32, prof: 'saloon', max: 160, mass: 1400 },
@@ -44,8 +45,8 @@ export function randomModel(r) {
 const SPORT_PAINTS = [0xb5121b, 0xe8e8e8, 0x111111, 0x1446a0, 0xf2b705, 0xe25a12, 0x2f6d3a, 0x7d8085];
 export function paintFor(model, r) { return (model === 'sports' || model === 'coupe' || model === 'hothatch') ? SPORT_PAINTS[Math.floor(r * SPORT_PAINTS.length)] : PAINTS[Math.floor(r * PAINTS.length)]; }
 
-function buildModel(def, key) {
-  if (CAR_SPECS[key]) return mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1).parts);
+function buildModel(def, key, lod = 0) {
+  if (CAR_SPECS[key]) return mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1, lod).parts);
   const { L, W, H, prof } = def;
   const isBus = prof === 'decker' || prof === 'single';
   const belt = isBus ? 1.25 : prof === 'van' ? 1.2 : 0.98;
@@ -123,29 +124,36 @@ export class VehicleRenderer {
     this.wheels = new THREE.InstancedMesh(wheelGeo, wm, 1500);
     this.wheels.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.wheels.frustumCulled = false; this.wheels.count = 0; scene.add(this.wheels);
-    for (const [name, def] of Object.entries(MODELS)) {
-      const g = buildModel(def, name);
+    // two levels of detail per car model: full detail near the camera, a light body beyond FAR_LOD m
+    this.far = {};
+    const make = (def, g, shadow) => {
       const st = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 4), 4); st.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute('iState', st);
       const pa = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 3), 3); pa.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute('iPaint', pa);
       const m = new THREE.InstancedMesh(g, mat, def.max);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      m.count = 0; m.frustumCulled = false; m.castShadow = shadows; m.receiveShadow = false;
-      scene.add(m); this.meshes[name] = m;
+      m.count = 0; m.frustumCulled = false; m.castShadow = shadow; m.receiveShadow = false;
+      scene.add(m); return m;
+    };
+    for (const [name, def] of Object.entries(MODELS)) {
+      this.meshes[name] = make(def, buildModel(def, name), shadows);
+      this.far[name] = CAR_SPECS[name] ? make(def, buildModel(def, name, 1), false) : this.meshes[name];
     }
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._v = new THREE.Vector3(); this._s = new THREE.Vector3(1, 1, 1); this._c = new THREE.Color(); this._w = new THREE.Matrix4();
   }
   draw(vehicles, cam, maxDist = 700) {
-    const counts = {}; for (const k in MODELS) counts[k] = 0;
+    const counts = {}, countsFar = {}; for (const k in MODELS) { counts[k] = 0; countsFar[k] = 0; }
     let wn = 0;
+    const FAR2 = FAR_LOD * FAR_LOD;
     const md2 = maxDist * maxDist;
     for (const v of vehicles) {
       if (v.hidden) continue;
       const dx = v.x - cam.x, dz = v.z - cam.z; if (dx * dx + dz * dz > md2) continue;
-      const def = MODELS[v.model]; const mesh = this.meshes[v.model]; const i = counts[v.model];
+      const def = MODELS[v.model], d2 = dx * dx + dz * dz, farM = this.far[v.model], isFar = d2 > FAR2 && farM !== this.meshes[v.model];
+      const mesh = isFar ? farM : this.meshes[v.model], C = isFar ? countsFar : counts, i = C[v.model];
       if (i >= def.max) continue;
-      counts[v.model]++;
+      C[v.model]++;
       this._e.set(v.roll || 0, -v.heading, v.pitch || 0, 'YXZ');
       this._q.setFromEuler(this._e);
       this._m.compose(this._v.set(v.x, v.y, v.z), this._q, this._s.set(1, 1, 1));
@@ -154,7 +162,7 @@ export class VehicleRenderer {
       const st = mesh.geometry.attributes.iState;
       st.array[i * 4] = v.brake ? 1 : 0; st.array[i * 4 + 1] = v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
       // wheels
-      if (dx * dx + dz * dz < 160 * 160 && wn < 1496) {
+      if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
         const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.12 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
         const wsty = sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
         for (const [wx, wz, steer] of [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]]) {
@@ -166,9 +174,13 @@ export class VehicleRenderer {
         }
       }
     }
+    const commit = (m, n) => {
+      m.count = n; m.visible = n > 0;   // empty instanced meshes cost a draw call
+      if (n) { m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true; }
+    };
     for (const k in MODELS) {
-      const m = this.meshes[k]; m.count = counts[k]; m.visible = counts[k] > 0;   // empty instanced meshes cost a draw call
-      m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true;
+      commit(this.meshes[k], counts[k]);
+      if (this.far[k] !== this.meshes[k]) commit(this.far[k], countsFar[k]);
     }
     this.wheels.count = wn; this.wheels.visible = wn > 0; this.wheels.instanceMatrix.needsUpdate = true; this.iWheel.needsUpdate = true;
   }
