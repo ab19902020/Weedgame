@@ -1,17 +1,20 @@
 // Rain particles, shelter raster, night light-pool map and the nearest-lights list used for
 // wet reflections. All driven from the single weather clock.
 import * as THREE from 'three/webgpu';
-import { Fn, float, vec2, vec3, vec4, attribute, positionLocal, texture, mix, fract, step, max, sin, cameraPosition, instanceIndex, floor, positionWorld } from 'three/tsl';
+import { Fn, float, vec2, vec3, vec4, attribute, positionLocal, texture, mix, fract, step, max, min, sin, cos, abs, cameraPosition, instanceIndex, floor, positionWorld, normalize, cross, length, smoothstep, uv, uniform, varyingProperty, sqrt } from 'three/tsl';
 import { U, coverData, coverTex, COVER_N, lightData, lightTex, LIGHT_N, LIGHT_RES, lightPos, lightCol, NL } from './env.js';
 import { pointInRing } from './tiles.js';
 
-const DROPS = 9000, BOX = 36, HGT = 22;
+const DROPS = 9000, BOX = 36, HGT = 22, SPLASHES = 700, SPLASH_BOX = 22;
+const splashAt = uniform(new THREE.Vector3(0, -1000, 0));   // the active brother's ground point
 
 export class Atmos {
   constructor(G) {
     this.G = G;
-    // rain: instanced thin quads that wrap inside a box around the camera
-    const g = new THREE.PlaneGeometry(0.012, 0.55);
+    // rain: streaks that wrap inside a box around the camera. Each drop has its own fall speed, length and
+    // width, falls along the wind, faces the camera about its own axis, has a soft profile, and catches
+    // the sky light by day and the street lights at night. Hidden under roofs, canopies and shelters.
+    const g = new THREE.PlaneGeometry(1, 1);
     const seeds = new Float32Array(DROPS * 4);
     for (let i = 0; i < DROPS; i++) { seeds[i * 4] = Math.random(); seeds[i * 4 + 1] = Math.random(); seeds[i * 4 + 2] = Math.random(); seeds[i * 4 + 3] = Math.random(); }
     const ig = new THREE.InstancedBufferGeometry().copy(g);
@@ -20,23 +23,68 @@ export class Atmos {
     const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
     this.camU = { pos: U.coverOrigin }; // placeholder
     const sd = attribute('seed', 'vec4');
-    const fall = float(9.5);
     const t = U.t;
-    const wind = U.wind.mul(0.18);
-    const lx = fract(sd.x.sub(cameraPosition.x.div(BOX)).add(wind.x.mul(t).div(BOX))).sub(0.5).mul(BOX);
-    const lz = fract(sd.y.sub(cameraPosition.z.div(BOX)).add(wind.y.mul(t).div(BOX))).sub(0.5).mul(BOX);
-    const ly = fract(sd.z.sub(t.mul(fall).div(HGT))).sub(0.35).mul(HGT);
-    const wx = cameraPosition.x.add(lx), wz = cameraPosition.z.add(lz), wy = cameraPosition.y.add(ly);
-    // shelter: hide drops below the cover height at their column
-    const cov = texture(coverTex, vec2(wx, wz).sub(U.coverOrigin).div(COVER_N)).level(0).r;
-    const visible = step(sd.w, U.rain).mul(step(cov, wy));
-    const slant = vec3(wind.x.div(fall), 0, wind.y.div(fall));
-    const local = positionLocal;
-    m.positionNode = vec3(wx, wy, wz).add(vec3(local.x, local.y, 0).mul(visible)).add(slant.mul(local.y).mul(visible));
-    m.colorNode = vec4(mix(vec3(0.62, 0.66, 0.7), vec3(0.25, 0.27, 0.3), U.night), mix(float(0.16), float(0.32), U.rain).mul(visible));
+    const vLit = varyingProperty('vec3', 'vRainLit'), vVis = varyingProperty('float', 'vRainVis');
+    m.positionNode = Fn(() => {
+      const r1 = fract(sd.x.mul(7.131)), r2 = fract(sd.y.mul(5.317)), r3 = fract(sd.z.mul(3.713));
+      const fall = r1.mul(2.2).add(7.8);                                   // terminal velocity, m/s
+      const wind = U.wind.mul(0.55);
+      const lx = fract(sd.x.sub(cameraPosition.x.div(BOX)).add(wind.x.mul(t).div(BOX))).sub(0.5).mul(BOX);
+      const lz = fract(sd.y.sub(cameraPosition.z.div(BOX)).add(wind.y.mul(t).div(BOX))).sub(0.5).mul(BOX);
+      const ly = fract(sd.z.sub(t.mul(fall).div(HGT))).sub(0.35).mul(HGT);
+      const c = vec3(cameraPosition.x.add(lx), cameraPosition.y.add(ly), cameraPosition.z.add(lz));
+      const cov = texture(coverTex, c.xz.sub(U.coverOrigin).div(COVER_N)).level(0).r;
+      const vis = step(sd.w, U.rain).mul(step(cov, c.y));
+      // streak: motion-blurred along the fall direction, longer and heavier in a downpour
+      const axis = normalize(vec3(wind.x, fall.negate(), wind.y));
+      const len = r2.mul(0.45).add(0.3).mul(U.rain.mul(0.6).add(0.55));
+      const wid = r3.mul(0.006).add(0.008).mul(U.rain.mul(0.4).add(0.6));
+      const side = normalize(cross(axis, normalize(cameraPosition.sub(c))));
+      const lp = positionLocal;
+      // light: the sky by day; at night street-lamp and shop-window pools light the drops orange
+      const pool = texture(lightTex, c.xz.sub(U.lightOrigin).div(LIGHT_N * LIGHT_RES)).level(0).rgb;
+      const sky = mix(vec3(U.horizon), vec3(U.zenith), 0.4).mul(0.95).add(0.06);
+      vLit.assign(sky.add(pool.mul(U.night).mul(2.2)));
+      const dist = length(c.sub(cameraPosition));
+      vVis.assign(vis.mul(smoothstep(1.2, 3.0, dist)).mul(smoothstep(BOX * 0.5, BOX * 0.3, dist)));
+      return c.add(side.mul(lp.x.mul(wid)).mul(vis)).add(axis.mul(lp.y.mul(len)).mul(vis));
+    })();
+    {
+      const q = uv(), across = abs(q.x.sub(0.5)).mul(2), along = q.y;
+      const prof = float(1).sub(across.mul(across)).mul(sin(along.mul(Math.PI)));
+      m.colorNode = vec4(vLit, prof.mul(mix(float(0.16), float(0.36), U.rain)).mul(vVis));
+    }
     this.rain = new THREE.Mesh(ig, m);
     this.rain.frustumCulled = false; this.rain.renderOrder = 5;
     G.scene.add(this.rain);
+    // splashes: little crowns that ring out on the ground around the active brother, each one living a
+    // fraction of a second at a fresh random spot; none under cover
+    {
+      const sg = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
+      const ss = new Float32Array(SPLASHES * 4);
+      for (let i = 0; i < SPLASHES; i++) for (let k = 0; k < 4; k++) ss[i * 4 + k] = Math.random();
+      sg.setAttribute('seed', new THREE.InstancedBufferAttribute(ss, 4)); sg.instanceCount = SPLASHES;
+      const sm = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false });
+      const se = attribute('seed', 'vec4');
+      const vAge = varyingProperty('float', 'vSplashAge'), vOn = varyingProperty('float', 'vSplashOn');
+      sm.positionNode = Fn(() => {
+        const life = se.z.mul(0.12).add(0.22), cyc = t.div(life).add(se.w.mul(7));
+        const k = floor(cyc), age = fract(cyc);
+        const h1 = fract(sin(k.mul(12.9898).add(se.x.mul(78.233))).mul(43758.5453)), h2 = fract(sin(k.mul(39.346).add(se.y.mul(11.135))).mul(24634.6345));
+        const px = splashAt.x.add(h1.sub(0.5).mul(SPLASH_BOX)), pz = splashAt.z.add(h2.sub(0.5).mul(SPLASH_BOX));
+        const cov = texture(coverTex, vec2(px, pz).sub(U.coverOrigin).div(COVER_N)).level(0).r;
+        const on = step(se.y, U.rain).mul(step(cov, splashAt.y.add(0.3)));
+        vAge.assign(age); vOn.assign(on);
+        const r = age.mul(0.045).add(0.008).mul(se.x.mul(0.6).add(0.7));   // crowns of a few centimetres
+        return vec3(px, splashAt.y.add(0.025), pz).add(positionLocal.mul(r.mul(2)).mul(on));
+      })();
+      const q = uv().sub(0.5).mul(2), d = length(q);
+      const ring = smoothstep(0.55, 0.8, d).mul(smoothstep(1.0, 0.82, d));
+      sm.colorNode = vec4(mix(vec3(U.horizon), vec3(U.zenith), 0.4).mul(0.6).add(vec3(0.05)), ring.mul(float(1).sub(vAge)).mul(0.22).mul(vOn).mul(U.rain.mul(0.6).add(0.4)));
+      this.splash = new THREE.Mesh(sg, sm);
+      this.splash.frustumCulled = false; this.splash.renderOrder = 4;
+      G.scene.add(this.splash);
+    }
     this.coverAt = { x: 1e9, z: 1e9 };
     this.lightAt = { x: 1e9, z: 1e9 };
     this.lightsDirty = true;
@@ -47,6 +95,9 @@ export class Atmos {
   // cell, by scanline-filling building footprints into a back buffer a few milliseconds per frame; the
   // previous raster stays valid until the new one is complete, so driving no longer stalls.
   updateCover(x, z) {
+    const me = this.G.brothers?.me, inCar = me?.vehicle;
+    splashAt.value.set(x, inCar ? -1000 : (me?.y ?? 0), z);
+    this.rain.visible = U.rain.value > 0.005; this.splash.visible = this.rain.visible && !inCar;
     const ox = Math.floor(x / 32) * 32 - COVER_N / 2, oz = Math.floor(z / 32) * 32 - COVER_N / 2;
     const moved = ox !== this.coverAt.x || oz !== this.coverAt.z;
     if ((moved && (!this._cov || this._cov.ox !== ox || this._cov.oz !== oz)) || (this._coverDirty && !this._cov)) {

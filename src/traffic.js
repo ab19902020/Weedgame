@@ -249,9 +249,8 @@ export class Traffic {
     let stopAt = 1e9;
     const rem = L - v.s;
     // signals
-    const sa = net.stopAt.get(v.h);
-    if (sa && !v.siren) {
-      const [ci, g, stop] = sa;
+    const approaches = net.stopAt.get(v.h);
+    if (approaches && !v.siren) for (const [ci,g,stop] of approaches) {
       const a = this.sig.aspect(ci, g);
       const dStop = stop - v.s;
       if (dStop > -0.5 && (a === 'R' || a === 'RA' || (a === 'A' && dStop > v.v * v.v / (2 * 3.5)))) stopAt = Math.min(stopAt, dStop);
@@ -341,7 +340,7 @@ export class Traffic {
       v.h = nh2;
       v.lane = Math.min(v.lane, net.laneCount(v.h) - 1);
       if (v.fixedRoute && v.onEdge) v.onEdge(v);
-      if (v.route.length > 64 && v.ri > 32) { v.route = v.route.slice(v.ri); v.ri = 0; }
+      if (!v.fixedRoute && v.route.length > 64 && v.ri > 32) { v.route = v.route.slice(v.ri); v.ri = 0; }
     }
     this.place(v);
   }

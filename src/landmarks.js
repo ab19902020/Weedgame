@@ -41,7 +41,13 @@ export class Landmarks {
       return { x: (x0 + x1) / 2 + lx * d / 2, z: (z0 + z1) / 2 + lz * d / 2, h: a, l, w: d, hh: h, kind, y: null, x0, z0, built: false };
     });
     // bus stops: all get a flag pole; tagged shelters get a shelter (also a rain shelter)
-    for (const [x, z, name, shelter] of G.net.busStops) if (shelter) G.canopies.push({ x, z, h: 0, l: 3.2, w: 1.4, hh: 2.4, kind: 2, y: null, built: false, bus: true });
+    this.stopHeadings=G.net.busStops.map(([x,z])=>{
+      const road=G.net.nearest(x,z,25,e=>!!(G.net.flags[e] & (16|128)));
+      if (!road) return 0;
+      // Local +Z is the open side of the shelter; turn it towards the carriageway.
+      return Math.atan2(road.dz,road.dx)+(road.side<0 ? Math.PI : 0);
+    });
+    G.net.busStops.forEach(([x,z,,shelter],i)=>{if (shelter) G.canopies.push({ x, z, h: this.stopHeadings[i], l: 3.2, w: 1.4, hh: 2.4, kind: 2, y: null, built: false, bus: true });});
     this.group = new THREE.Group(); G.scene.add(this.group);
     this.poles = new THREE.InstancedMesh(mergeGeos([new THREE.CylinderGeometry(0.04, 0.04, 2.7, 6).translate(0, 1.35, 0).toNonIndexed(), box(0.45, 0.45, 0.04, 0, 2.55, 0)]), new THREE.MeshStandardNodeMaterial({ color: 0xd02020, roughness: 0.6 }), G.net.busStops.length);
     this.poles.count = 0; this.group.add(this.poles);
@@ -65,11 +71,11 @@ export class Landmarks {
   }
   placePoles() {
     const G = this.G, m = new THREE.Matrix4(); let n = 0;
-    for (const [x, z] of G.net.busStops) {
+    for (const [i,[x,z]] of G.net.busStops.entries()) {
       const g = G.tiles.terrain(x, z); if (g == null) continue;
-      m.makeTranslation(x, g + 0.17, z); this.poles.setMatrixAt(n++, m);
+      m.makeRotationY(-this.stopHeadings[i]); m.setPosition(x,g+.17,z); this.poles.setMatrixAt(n++, m);
     }
-    this.poles.count = n; this.poles.instanceMatrix.needsUpdate = true;
+    this.poles.count = n; this.poles.instanceMatrix.needsUpdate = true; this.poles.computeBoundingSphere();
   }
   canopy(c) {
     const grp = new THREE.Group();

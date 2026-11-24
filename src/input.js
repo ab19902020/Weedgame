@@ -54,7 +54,7 @@ export class Input {
   release() { this.stick.id = null; this.lookId = null; this.move.x = this.move.y = 0; this.base.style.display = 'none'; }
   // merged movement vector (stick + keys), y forward-negative like screen space
   axis() {
-    let x = this.move.x, y = this.move.y;
+    let x = this.move.x+(this.padX||0), y = this.move.y+(this.padY||0);
     const k = this.keys;
     if (k.has('KeyA') || k.has('ArrowLeft')) x -= 1;
     if (k.has('KeyD') || k.has('ArrowRight')) x += 1;

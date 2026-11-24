@@ -642,7 +642,7 @@ def build_run(ways):
     return seq, []
 for rid, t, members in relations:
     allw = [ref for typ, ref, role in members if typ == 'w' and role in ('', 'forward', 'backward', 'route')]
-    stops = [ref for typ, ref, role in members if typ == 'n' and role.startswith('stop')]
+    stops = [ref for typ, ref, role in members if typ == 'n' and role.startswith(('stop', 'platform'))]
     best = []
     run = []
     for w in allw + [None]:
