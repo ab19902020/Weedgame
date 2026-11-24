@@ -5,6 +5,7 @@ import { Controller } from './controller.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
 import { Brothers } from './player.js';
+import { Transit } from './transit.js';
 import { Traffic } from './traffic.js';
 import { Signals, SignalRenderer } from './signals.js';
 import { VehicleRenderer } from './vehicles.js';
@@ -61,6 +62,7 @@ G.peds = new Peds(G);
 G.police = new Police(G);
 G.parking = new Parking(G);
 G.buses = new Buses(G);
+G.transit = new Transit(G);
 G.traffic.busStop = v => G.buses.stopFor(v);
 G.landmarks = new Landmarks(G);
 G.atmos = new Atmos(G);
@@ -155,7 +157,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) { B.update(dt, G.input); G.controller.actions(dt); }
+  if (!G._needGround && !G.transit.update(dt)) { B.update(dt, G.input); G.controller.actions(dt); }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3) {
@@ -168,7 +170,7 @@ function step(dt, render) {
   G.signals.update(dt);
   // player as an obstacle for NPC traffic
   const pv = B.vehicleOf(me);
-  G.traffic.obstacles = [pv ? { x: pv.x, z: pv.z, r: pv.def.L / 2, v: Math.abs(pv.sp || 0) } : { x: me.x, z: me.z, r: 0.5, v: 0 }];
+  G.traffic.obstacles = G.transit.ride ? [] : [pv ? { x: pv.x, z: pv.z, r: pv.def.L / 2, v: Math.abs(pv.sp || 0) } : { x: me.x, z: me.z, r: 0.5, v: 0 }];
   G.traffic.update(dt, G.focus, camInfo);
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
@@ -186,7 +188,7 @@ function step(dt, render) {
   // draw dynamic actors
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.quality === 'low' ? 450 : 700);
-  const actors = [B.actor[B.active]]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
+  const actors = [B.actor[B.active],...G.transit.people]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
   const rigs = G.people.rigs;
   if (rigs.previewRole) {
     const heading = B.cam.yaw;

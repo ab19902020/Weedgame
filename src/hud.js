@@ -42,7 +42,7 @@ export class Hud {
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
     this.mapView = { x: 0, z: 0, s: 0.25 };
     this.nav = new Navigation(G.net);
-    const places = [...G.manifest.districts, ...TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))];
+    const places = [...G.transit.stations.map(s=>({...s,name:s.name+" station"})),...G.manifest.districts, ...TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))];
     const select = this.el('mPlaces');
     places.forEach((place,index)=>select.add(new Option(place.name,String(index))));
     select.onchange = () => {
@@ -79,8 +79,8 @@ export class Hud {
     if (I.consume('dev')) this.toggleDev();
     const inCar = !!me.vehicle;
     const near = !inCar && G.brothers.nearestVehicle();
-    this.el('bUse').textContent = inCar ? 'Exit' : near ? (near.owner ? `Get in (${near.owner}'s)` : 'Get in') : 'Get in';
-    this.el('bUse').classList.toggle('dim', !inCar && !near);
+    this.el('bUse').textContent = G.transit.ride ? (G.transit.currentStop()?'Alight':'Request stop') : G.transit.nearby(me) ? 'Board' : G.transit.platform(me) ? 'Wait for train' : G.transit.busStop(me) ? 'Wait for bus' : inCar ? 'Exit' : near ? (near.owner ? `Get in (${near.owner}'s)` : 'Get in') : 'Get in';
+    this.el('bUse').classList.toggle('dim', !inCar && !near && !G.transit.ride && !G.transit.nearby(me) && !G.transit.platform(me) && !G.transit.busStop(me));
     this.el('bRun').textContent = inCar ? 'Brake' : 'Run';
     this.el('bHorn').hidden = !inCar;
     for(const id of ['bJump','bHit','bPickup'])this.el(id).hidden=inCar;
@@ -88,6 +88,7 @@ export class Hud {
     if (inCar) { if (I.held.has('run')) I.held.add('brake'); else if (!I.keys.has('Space')) I.held.delete('brake'); }
     this._acc = (this._acc || 0) + dt;
     if (this._acc > 0.1) { this._acc = 0; const notice=this.nav.update(me); if(notice) this.toast(notice); this.drawMini(); this.renderFeed(); this.drawClock(); if (!this.el('map').hidden) this.drawMap(); }
+    if(G.transit.ride){this.el('guidance').hidden=false;this.el('guidance').firstChild.textContent=G.transit.ride===G.transit?'RAIL':'BUS '+G.transit.ride.ref;this.el('guidance').lastChild.textContent='Next: '+G.transit.nextName()+(G.transit.request?' · Stop requested':'');}
     if (this.perfOn) this.el('perf').textContent = G.perf.text();
   }
   drawClock() {
@@ -240,6 +241,7 @@ export class Hud {
     // districts
     c.font = 'bold 15px system-ui';
     for (const d of G.manifest.districts) { c.strokeText(d.name, X(d.x), Z(d.z) - 20); c.fillText(d.name, X(d.x), Z(d.z) - 20); }
+    G.transit.drawMap(c,X,Z,V.s);
     this.nav.draw(c,X,Z);
     // vehicles & brothers
     for (const v of G.traffic.list) { if (v.owner || v.free) dot(c, X(v.x), Z(v.z), 6, '#4fb7ff'); if (v.kind === 'police') dot(c, X(v.x), Z(v.z), 4, '#2a4cff'); }

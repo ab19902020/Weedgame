@@ -201,18 +201,29 @@ export class Peds {
   queueRemove(p) { if (this.queues && p.stopIdx != null) { const q = this.queues.get(p.stopIdx); if (q) { const i = q.indexOf(p); if (i >= 0) q.splice(i, 1); } } }
   // a bus arrived at stop i: board everyone queued, return count
   board(i, bus) {
-    const q = this.queues?.get(i); if (!q || !q.length) return 0;
-    const n = q.length;
-    for (const p of q) { p.gone = true; }
-    q.length = 0;
-    // a few alight
-    const st = this.net.busStops[i];
-    const off = Math.floor(this.rand() * 3);
-    for (let k = 0; k < off; k++) {
-      const p = { id: 'p' + this.nextId++, h: bus.h, s: bus.s, sideSign: 1, lane: 0, look: People.randomLook(this.rand), speed: 1.3, mode: 'walk', t: 0, phase: 0, heading: bus.heading, x: st[0] + k * 0.6, y: bus.y, z: st[1], visible: true, alpha: 0 };
+    const q=this.queues?.get(i)||[], st=this.net.busStops[i];
+    bus.passengers ||= [];
+    const here=bus.nextStop, remaining=bus.busData.stops.length-1-here;
+    const road=this.net.nearest(st[0],st[1],65,e=>this.net.walkable(e));
+    for(const trip of bus.passengers.filter(t=>t.to<=here)){
+      if(!road)continue;
+      const p=trip.actor;
+      Object.assign(p,{h:road.e*2,s:road.s,sideSign:road.side||1,lane:0,x:st[0],z:st[1],y:bus.y,
+        mode:'walk',goal:null,stopIdx:null,leader:null,partner:null,visible:true,gone:false,crossCool:4});
       this.list.push(p);
     }
-    return n;
+    bus.passengers=bus.passengers.filter(t=>t.to>here);
+    if(!remaining)return 0;
+    let boarded=0;
+    for(const p of q.splice(0)){
+      if(p.gone)continue;
+      this.queueRemove(p);
+      const index=this.list.indexOf(p);if(index<0)continue;
+      this.list.splice(index,1);p.visible=false;
+      bus.passengers.push({actor:p,to:here+1+Math.floor(this.rand()*Math.min(remaining,5))});
+      boarded++;
+    }
+    return boarded;
   }
   // ---------------- crossings
   waitCross(p, dt) {
