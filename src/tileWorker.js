@@ -189,6 +189,7 @@ function build(header, A, lod) {
       const th = kind === 2 ? 0.8 : kind === 1 ? 0.06 : kind === 5 ? 0.1 : 0.25;
       const id = kind === 2 ? 3 : kind === 1 ? 2 : kind === 5 ? 4 : 1;
       wall(S, pts, th, h, hAt, id);
+      if (id === 3) wall(S, pts, th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id);
       for (let q = 0; q < pts.length - 1; q++) wallCol.push(pts[q][0], pts[q][1], pts[q + 1][0], pts[q + 1][1], h);
     }
   }
@@ -202,7 +203,7 @@ function build(header, A, lod) {
     const P = (s_, o) => [x0 + ux * s_ + nx * o, z0 + uz * s_ + nz * o];
     if (style !== 'open') {
       const h = style === 'hedge' ? 0.95 + r * 0.5 : 0.62, th = style === 'hedge' ? 0.6 : 0.24, id = style === 'hedge' ? 3 : 1;
-      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) { const A0 = P(a, t), B0 = P(b, t); wall(S, [A0, B0], th, h, hAt, id); wallCol.push(A0[0], A0[1], B0[0], B0[1], h); }
+      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) { const A0 = P(a, t), B0 = P(b, t); wall(S, [A0, B0], th, h, hAt, id); if (id === 3) wall(S, [A0, B0], th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id); wallCol.push(A0[0], A0[1], B0[0], B0[1], h); }
     }
     // driveway (block paving or tarmac) or front path (flags) from the gap to the house
     const surfId = drive ? (seed % 5 < 3 ? 4 : 0) : 1, lift = drive ? 0.08 : 0.09;
@@ -215,6 +216,21 @@ function build(header, A, lod) {
       for (let k = 0; k < (seed % 3 ? 2 : 1); k++) {
         const [bx, bz] = P(sb + k * 0.68, 0.55), y = hAt(bx, bz);
         wheelieBin(S, bx, y, bz, ang, k ? [11, 12][seed % 2] : (seed % 4 ? 10 : 17));
+      }
+    }
+    // shrubs and a flower bed in the front garden, kept off the driveway
+    if (!lod && style !== 'open') {
+      const spots = [];
+      if (gs > 1.3) spots.push(Math.max(0.4, gs * 0.45));
+      if (l - (gs + gw) > 1.3) spots.push(Math.min(l - 0.4, gs + gw + (l - gs - gw) * 0.55));
+      spots.forEach((sv, i) => {
+        const [sx, sz] = P(sv, Math.min(Math.max(t * 0.42, 0.8), 2.2));
+        shrub(S, sx, hAt(sx, sz), sz, 0.46 + ((seed + i) % 4) * 0.07);
+      });
+      if (seed % 4 !== 0) {
+        const sv = Math.min(l - 0.35, Math.max(0.35, drive ? gs + gw + 0.55 : l * 0.5));
+        const [sx, sz] = P(sv, 0.45);
+        bloom(S, sx, hAt(sx, sz), sz, Math.atan2(uz, ux), drive ? 0.75 : 1.2, [19, 20, 21][seed % 3]);
       }
     }
   }
@@ -276,6 +292,15 @@ function build(header, A, lod) {
         }
       }
     }
+    // shop planters on the pavement in front of a retail frontage
+    for (const [x0, z0, x1, z1, nx, nz, len, seed] of out.buildings.planters || []) {
+      const ux = (x1 - x0) / len, uz = (z1 - z0) / len, ang = Math.atan2(uz, ux);
+      for (const f of [0.22, 0.78]) {
+        const x = x0 + ux * len * f + nx * 0.45, z = z0 + uz * len * f + nz * 0.45;
+        if (x < 0 || z < 0 || x >= TILE || z >= TILE) continue;
+        bloom(S, x, hAt(x, z), z, ang, 0.85, [19, 21, 20][seed % 3]);
+      }
+    }
   }
   if (wallCol.length) {
     const B = out.buildings, col = Array.from(B.col), pts = Array.from(B.colPts);
@@ -304,6 +329,14 @@ function build(header, A, lod) {
 }
 
 // ---- street props (struct mesh; surf ids 10.. map to colours in materials.structMaterial)
+function shrub(B, x, y, z, s) {
+  box(B, x, y, z, 0.4, s * 0.48, s * 0.34, s * 0.42, 18);
+  box(B, x + s * 0.08, y + s * 0.5, z, 1.2, s * 0.32, s * 0.24, s * 0.3, 18);
+}
+function bloom(B, x, y, z, ang, len, id) {
+  box(B, x, y, z, ang, len * 0.5, 0.06, 0.18, 18);
+  box(B, x, y + 0.1, z, ang, len * 0.42, 0.06, 0.14, id);
+}
 function box(B, x, y, z, ang, hx, hy, hz, id) {
   const ca = Math.cos(ang), sa = Math.sin(ang), P = (u, v, w) => [x + u * ca - w * sa, y + v, z + u * sa + w * ca];
   const c = [[-hx, -hz], [hx, -hz], [hx, hz], [-hx, hz]];
@@ -448,6 +481,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   const col = []; // collision: per building [ringStart, ringLen, top, base]
   const landmarks = [];
   const gardens = [];
+  const planters = [];
   const colPts = [];
   let ci = 0, ri = 0;
   for (let bi = 0; bi < P.length; bi++) {
@@ -514,6 +548,11 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       const t = ce - 2.1;
       if (t >= 1.6 && t <= 14 && l >= 4) gardens.push([x0, z0, x1, z1, nx, nz, t, seed, cls, base + wallH]);
     }
+    if (front >= 0 && shop) {
+      const [x0, z0] = outer[front], [x1, z1] = outer[(front + 1) % outer.length];
+      const l = Math.hypot(x1 - x0, z1 - z0);
+      if (l >= 4 && l <= 40) planters.push([x0, z0, x1, z1, (z1 - z0) / l, -(x1 - x0) / l, l, seed]);
+    }
     // walls
     rings.forEach((ring, k) => {
       let u = 0;
@@ -545,7 +584,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     for (const [x, z] of outer) colPts.push(x + ox, z + oz);
   }
   const g = B.pack();
-  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.landmarks = landmarks; g.gardens = gardens;
+  g.col = new Float32Array(col); g.colPts = new Float32Array(colPts); g.landmarks = landmarks; g.gardens = gardens; g.planters = planters;
   return g;
 }
 
@@ -612,6 +651,15 @@ function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed, base = 0) 
   } else if (type !== 4) {
     if (ridge > 0.05) beam(B, P(-ridge, 0, top + 0.04), P(ridge, 0, top + 0.04), 0.22, 0.12, part(9));
     for (const s of [-1, 1]) for (const v of [-1, 1]) beam(B, P(s * ridge, 0, top + 0.03), P(s * (l + o), v * (w + o), ye + 0.03), 0.2, 0.1, part(9));
+  }
+  // television aerial on some pitched roofs (lived-in streets, not every house)
+  if ((cls === 1 || cls === 2) && seed % 5 === 2) {
+    const u = (seed % 2 ? 0.4 : -0.4) * Math.max(0.4, l * 0.5);
+    const yA = type === 1 ? top - rh * 0.45 : eave + 0.15;
+    const c = P(u, w * 0.2, yA);
+    beam(B, c, [c[0], c[1] + 1.05, c[2]], 0.025, 0.025, part(8), [0, 1, 0]);
+    beam(B, [c[0] - ca * 0.42, c[1] + 0.9, c[2] - sa * 0.42], [c[0] + ca * 0.42, c[1] + 0.9, c[2] + sa * 0.42], 0.015, 0.015, part(8));
+    beam(B, [c[0] - sa * 0.26, c[1] + 0.72, c[2] + ca * 0.26], [c[0] + sa * 0.26, c[1] + 0.72, c[2] - ca * 0.26], 0.015, 0.015, part(8));
   }
   // chimney on houses
   if ((cls === 1 || cls === 2) && seed % 3 !== 0) {

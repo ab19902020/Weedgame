@@ -3,25 +3,25 @@
 // metres, using the streamed landcover and terrain; height fades out towards the edge so there is
 // no visible border. Blades sway with the wind and darken when wet.
 import * as THREE from 'three/webgpu';
-import { float, vec3, mix, sin, uv, positionLocal, positionGeometry, positionWorld, cameraPosition, length, smoothstep, instanceIndex, fract, normalize, vec4 } from 'three/tsl';
+import { float, vec3, mix, sin, uv, positionLocal, positionGeometry, positionWorld, cameraPosition, length, smoothstep, step, instanceIndex, fract, normalize, vec4 } from 'three/tsl';
 import { U, cloudShadow } from './env.js';
 import { worldToView } from './surfaces.js';
 
 const LAWN = new Set([0, 7, 11, 13, 16]);   // grass, park, garden, pitch, cemetery
-const R = 20, STEP = 0.42, MAXN = Math.ceil((2 * R / STEP) ** 2 * 0.8);
+const R = 22, STEP = 0.36, MAXN = Math.ceil((2 * R / STEP) ** 2 * 0.55);
 
-function clumpGeometry(blades = 7) {
+function clumpGeometry(blades = 9) {
   const P = [], UV = [], I = [];
   let s = 9876;
   const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
   for (let b = 0; b < blades; b++) {
-    const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 0.17, h = 0.07 + rnd() * 0.1, w = 0.008 + rnd() * 0.006;
-    const ox = Math.cos(a) * r, oz = Math.sin(a) * r, yaw = rnd() * Math.PI, lean = (rnd() - 0.3) * 0.5;
+    const a = rnd() * Math.PI * 2, r = Math.sqrt(rnd()) * 0.2, h = 0.05 + rnd() * 0.16, w = 0.006 + rnd() * 0.007;
+    const ox = Math.cos(a) * r, oz = Math.sin(a) * r, yaw = rnd() * Math.PI, lean = (rnd() - 0.25) * 0.7;
     const cx = Math.cos(yaw), cz = Math.sin(yaw), lx = Math.cos(a) * lean, lz = Math.sin(a) * lean;
     const base = P.length / 3;
     const segs = 3;
     for (let k = 0; k <= segs; k++) {
-      const f = k / segs, y = f * h, ww = w * (1 - f * 0.85), bend = f * f * h;
+      const f = k / segs, y = f * h, ww = w * (1 - f * 0.9), bend = f * f * h * 1.15;
       for (const sd of [-1, 1]) {
         P.push(ox + cx * ww * sd + lx * bend, y, oz + cz * ww * sd + lz * bend);
         UV.push(sd * 0.5 + 0.5, f);
@@ -50,9 +50,12 @@ export function createGrass(G) {
   const sway = sin(U.t.mul(2.1).add(positionWorld.x.mul(0.7)).add(positionWorld.z.mul(0.5))).mul(0.5).add(0.5).mul(wind.mul(0.006).add(0.004)).mul(f.mul(f));
   // positionLocal is already instance-transformed here; shorten the blade by its own height to fade
   m.positionNode = vec3(positionLocal.x.add(sway.mul(U.wind.x.sign())), positionLocal.y.sub(positionGeometry.y.mul(float(1).sub(fade))), positionLocal.z.add(sway.mul(0.6)));
-  const root = vec3(0.045, 0.075, 0.02), tip = vec3(0.13, 0.2, 0.055);
-  let col = mix(root, tip, f).mul(rnd.mul(0.4).add(0.8)).mul(mix(vec3(1), vec3(1.15, 1.05, 0.7), rnd.mul(rnd)));
-  col = col.mul(mix(float(1), float(0.75), U.wet));
+  const root = vec3(0.035, 0.062, 0.016), tip = vec3(0.16, 0.24, 0.05);
+  const seedHead = step(0.86, rnd), daisy = step(0.94, rnd);
+  let col = mix(root, tip, f).mul(rnd.mul(0.35).add(0.82));
+  col = mix(col, vec3(0.42, 0.38, 0.12), seedHead.mul(smoothstep(0.55, 1.0, f)));
+  col = mix(col, vec3(0.72, 0.7, 0.55), daisy.mul(smoothstep(0.7, 0.95, f)));
+  col = col.mul(mix(float(1), float(0.7), U.wet));
   m.colorNode = col.mul(cloudShadow(positionWorld));
   // lit like the lawn underneath (mostly up-facing), not like thin vertical cards
   m.normalNode = worldToView(normalize(vec3(0, 1, 0)));
@@ -82,8 +85,9 @@ export function createGrass(G) {
         const c = T.landcover(x, z); if (c == null || !LAWN.has(c)) continue;
         const y = T.terrain(x, z); if (y == null) continue;
         q.setFromAxisAngle(Yax, jx * 6.283);
-        const s = 0.75 + jz * 0.6;
-        mtx.compose(pv.set(x, y, z), q, sc.set(s, s * (c === 13 ? 0.7 : 1), s));
+        const verge = c === 0 || c === 15 ? 1.55 : c === 11 ? 0.8 : 1;
+        const s = (0.7 + jz * 0.7) * (c === 13 ? 0.72 : 1);
+        mtx.compose(pv.set(x, y, z), q, sc.set(s, s * verge, s));
         mesh.setMatrixAt(n++, mtx);
       }
       mesh.count = n; mesh.instanceMatrix.needsUpdate = true;

@@ -68,3 +68,18 @@ Merged with `grok/sim-perf` (`f378e4c`). The visual features are now part of you
 | Buildings | `src/tileWorker.js` (`addRoof`, `addFrontage`, `beam`), `src/materials.js` | New building parts 7–13 (trim, gutter, ridge, pot, soffit, bay glazing, bay/hood roof). The door position along the wall is encoded in the seed: `seed + 1000·round(u·4)`. |
 | Street props | `src/tileWorker.js` (`wheelieBin`, `pillarBox`, `litterBin`, `bench`, `sagWire`), `structMaterial` | Struct-mesh `surf` ids 10–17. `gardens` entries carry the eave height (10th field) for the drop wires. |
 | Faces and hair | `src/faceBake.js` (new), `src/humans.js` | The atlas has 8 faces (4 × 2 cells of 256 px; channels: shading, facial hair, tint, eye mask). The face index travels in `iSty.x` as `style + 0.05·face`. Hair is a tileable strand map applied tri-planar in head space. `headShape()` is shared by the skull and the hair shells; each hair style has a hairline table, and the shell drops 4 mm under the skin below it. `look.face` is 0–3; women use cells 4–7. |
+
+## Round 4 (town graphics only — buildings, roads, plants)
+
+Branch `grok/town-look`, based on `ccr-0546346a-2h4fov` @ `589d23fe`. Cars, people, weather, sky and post are untouched.
+
+| Area | Where | Notes |
+|---|---|---|
+| Roads and pavements | `src/materials.js` `groundMaterial` | Aggregate chips, tar repair patches, flag joints, weeds in pavement cracks, moss on kerbs. |
+| Lawns | `terrainMaterial`, `src/grass.js` | Clover and daisies in the lawn albedo. Near grass is taller on verges, shorter in gardens, with seed heads. On for high quality or `?grass=1`. |
+| Hedges, shrubs, flowers | `structMaterial`, `src/tileWorker.js` | Hedge caps and flower flecks. Front gardens get privet shrubs and a flower bed (struct surf 18–21). Shops get two pavement planters. |
+| Houses | `buildingMaterial`, `addRoof` | Rain streaks on render, ivy on some frontages, moss at the wall foot, a painted shop fascia, TV aerials on some roofs. |
+| Trees | `src/vegetation.js`, `src/tiles.js` `addTrees` | Fuller leaf cards (oak, lime, copper, yew), species tint via `instanceColor`, broader or columnar crowns, root flare and lichen on bark. |
+
+WebGL2 shader check: 0 failing programs after this round.
+

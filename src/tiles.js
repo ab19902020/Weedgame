@@ -149,7 +149,9 @@ export class Tiles {
     const n = tr.length / 4; if (!n) return;
     const crowns = new THREE.InstancedMesh(this.crownGeo, this.mats.crown, n);
     const trunks = new THREE.InstancedMesh(this.trunkGeo, this.mats.trunk, n);
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3();
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color();
+    // half-tints (shader multiplies by 2): oak, lime, plane, copper beech, yew
+    const PAL = [[0.48, 0.52, 0.40], [0.56, 0.58, 0.36], [0.50, 0.55, 0.42], [0.64, 0.36, 0.32], [0.30, 0.42, 0.32]];
     t.trees = [];
     for (let i = 0; i < n; i++) {
       const x = tr[i * 4], y = tr[i * 4 + 1], z = tr[i * 4 + 2], code = tr[i * 4 + 3];
@@ -157,12 +159,20 @@ export class Tiles {
       const r = hash(x * 13.1 + z * 7.7);
       let H = kind === 1 ? 11 + r * 8 : kind === 2 ? 5 + r * 4 : kind === 3 ? 9 + r * 6 : 8 + r * 6;
       if (hTag > 2) H = hTag;
-      const cw = H * (0.28 + r * 0.1);
+      const si = kind === 1 ? (r < 0.45 ? 2 : 1) : kind === 2 ? (r < 0.22 ? 3 : 0) : kind === 3 ? 4 : (r < 0.12 ? 3 : 0);
+      const cw = H * (si === 4 ? 0.22 + r * 0.05 : 0.30 + r * 0.1);
+      let sx = cw, sy = cw * (si === 4 ? 1.55 : si === 1 ? 0.86 : 1.02), sz = cw * (si === 1 ? 1.14 : 1);
+      if (kind === 2) { sx *= 1.18; sy *= 0.78; sz *= 1.18; }
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r * 6.28);
-      m.compose(p.set(x, y + H - cw * 0.95, z), q, s.set(cw, cw * 1.05, cw)); crowns.setMatrixAt(i, m);
-      m.compose(p.set(x, y - 0.2, z), q, s.set(1 + H / 14, H - cw * 1.2, 1 + H / 14)); trunks.setMatrixAt(i, m);
+      m.compose(p.set(x, y + H - sy * 0.9, z), q, s.set(sx, sy, sz)); crowns.setMatrixAt(i, m);
+      const trunkH = Math.max(1.1, H - sy * (si === 4 ? 0.55 : 1.05));
+      m.compose(p.set(x, y - 0.15, z), q, s.set(0.85 + H / 18, trunkH, 0.85 + H / 18)); trunks.setMatrixAt(i, m);
+      col.setRGB(PAL[si][0], PAL[si][1], PAL[si][2]);
+      crowns.setColorAt(i, col); trunks.setColorAt(i, col);
       t.trees.push([x + t.data.ox, z + t.data.oz, H]);
     }
+    if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
+    if (trunks.instanceColor) trunks.instanceColor.needsUpdate = true;
     crowns.castShadow = trunks.castShadow = this.shadows;
     crowns.receiveShadow = this.shadows;
     crowns.computeBoundingSphere(); trunks.computeBoundingSphere();
