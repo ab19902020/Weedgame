@@ -83,8 +83,12 @@ export class Transit {
   }
   nearby(me){
     if(me.vehicle)return null;
-    if(this.at!=null && Math.hypot(me.x-this.stations[this.at].x,me.z-this.stations[this.at].z)<16)return this;
-    return this.G.traffic.list.find(v=>v.busData && v.served && v.nextStop+1<v.busData.stops.length && Math.hypot(me.x-v.x,me.z-v.z)<10);
+    if(this.at!=null && this.dwell>0 && this.platform(me)?.index===this.at && Math.abs(me.y-this.y)<3)return this;
+    return this.G.traffic.list.find(v=>{
+      if(!v.busData || !v.served || Math.abs(v.v)>.3 || v.nextStop+1>=v.busData.stops.length)return false;
+      const st=this.G.net.busStops[v.busData.stops[v.nextStop].si];
+      return Math.hypot(me.x-st[0],me.z-st[1])<7 && Math.hypot(me.x-v.x,me.z-v.z)<10 && Math.abs(me.y-v.y)<3;
+    });
   }
   busStop(me){
     if(me.vehicle)return null;
@@ -95,15 +99,6 @@ export class Transit {
       if(d<best){best=d;stop={si,calls,name};}
     }
     this.stopCache={x:me.x,z:me.z,stop};return stop;
-  }
-  waitForBus(stop){
-    // Represent a skipped wait with the next vehicle at the mapped route distance.
-    const G=this.G,{r,k}=stop.calls[0],d=r.stops[k].d;
-    let ri=0;while(ri+1<r.hs.length && r.cum[ri+1]<d)ri++;
-    const v=G.traffic.spawnAt(r.hs[ri],d-r.cum[ri],{kind:'bus',model:'bus',paint:r.colour,route:r.hs,ri,v:0});
-    Object.assign(v,{busData:r,nextStop:k,fixedRoute:true,busRoute:r.i,ref:r.ref,persistent:true,served:true,dwell:0,v0f:.85});
-    v.dwellFor=10+2*G.peds.board(stop.si,v);
-    this.ride=v;this.request=false;this.lastText='';
   }
   drawMap(c,X,Z,scale){
     c.save();c.strokeStyle='#50455f';c.lineWidth=2;c.setLineDash([5,3]);c.beginPath();
@@ -119,14 +114,6 @@ export class Transit {
   platform(me){
     return !me.vehicle && this.stations.find(s=>Math.hypot(me.x-s.x,me.z-s.z)<13);
   }
-  waitForTrain(st){
-    // Skip the waiting player's station interval without stepping world traffic.
-    for(let legs=0;legs<12 && this.at!==st.index;legs++){
-      if(this.dwell>0)this.tick(this.dwell+.001);
-      this.tick(400);
-    }
-    this.G.hud.toast('Train at '+st.name+' · press Board');
-  }
   currentStop(){
     if(this.ride===this)return this.at==null?null:this.stations[this.at];
     const b=this.ride;if(!b?.served||!b.busData)return null;
@@ -141,11 +128,7 @@ export class Transit {
     this.tick(dt);
     const G=this.G,B=G.brothers,me=B.me,I=G.input;
     const candidate=this.ride||this.nearby(me);
-    if(!candidate && I.pressed.has('use')){
-      const station=this.platform(me);
-      if(station){I.consume('use');this.waitForTrain(station);return false;}
-      const stop=this.busStop(me);if(stop){I.consume('use');this.waitForBus(stop);}
-    }
+    if(!candidate && I.pressed.has('use') && (this.platform(me)||this.busStop(me)) && !B.nearestVehicle()) I.consume('use');
     if(candidate && I.consume('use')){
       if(this.ride)this.request=true;
       else {this.ride=candidate;this.boarded=this.currentStop()?.name;this.lastText='';}

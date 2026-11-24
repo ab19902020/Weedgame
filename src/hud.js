@@ -79,8 +79,11 @@ export class Hud {
     if (I.consume('dev')) this.toggleDev();
     const inCar = !!me.vehicle;
     const near = !inCar && G.brothers.nearestVehicle();
-    this.el('bUse').textContent = G.transit.ride ? (G.transit.currentStop()?'Alight':'Request stop') : G.transit.nearby(me) ? 'Board' : G.transit.platform(me) ? 'Wait for train' : G.transit.busStop(me) ? 'Wait for bus' : inCar ? 'Exit' : near ? (near.owner ? `Get in (${near.owner}'s)` : 'Get in') : 'Get in';
-    this.el('bUse').classList.toggle('dim', !inCar && !near && !G.transit.ride && !G.transit.nearby(me) && !G.transit.platform(me) && !G.transit.busStop(me));
+    const boardable=G.transit.nearby(me);
+    const waiting=!inCar && !near && !boardable && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
+    this.el('bUse').textContent=G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":'Get in');
+    this.el('bUse').disabled=!!waiting;
+    this.el('bUse').classList.toggle('dim',!inCar&&!near&&!G.transit.ride&&!boardable);
     this.el('bRun').textContent = inCar ? 'Brake' : 'Run';
     this.el('bHorn').hidden = !inCar;
     for(const id of ['bJump','bHit','bPickup'])this.el(id).hidden=inCar;
