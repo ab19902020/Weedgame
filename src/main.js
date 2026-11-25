@@ -77,7 +77,9 @@ export async function boot(extra = {}) {
   const S = budget.shadow.size || 512, E = budget.shadow.extent || 60;
   sun.shadow.mapSize.set(S, S);
   const sc = sun.shadow.camera; sc.left = -E; sc.right = E; sc.top = E; sc.bottom = -E; sc.near = 10; sc.far = budget.shadow.far || 450;
-  sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.6;
+  // normal offset of about two shadow texels (it was 0.6 m: shadows started a hand's breadth from feet and wheels,
+  // and nothing shorter than 60 cm cast one; with the map snapped to its texels, two texels show no acne)
+  sun.shadow.bias = -0.0006; sun.shadow.normalBias = Math.max(0.2, (2 * E / S) * 2.2);
   scene.add(hemi, sun, sun.target);
   // ---------------------------------------------------------------- world
   // station platforms: the tile worker cuts the ground under them down to the track (stations.js)
