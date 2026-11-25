@@ -94,7 +94,15 @@ export class Network {
   roadName(e) { return this.names[this.name[e]] || this.names[this.ref[e]] || ''; }
   endNode(h) { const e = h >> 1; return (h & 1) ? this.ea[e] : this.eb[e]; }
   startNode(h) { const e = h >> 1; return (h & 1) ? this.eb[e] : this.ea[e]; }
-  laneCount(h) { const e = h >> 1; return Math.max(1, (h & 1) ? this.lanesB[e] : this.lanesF[e]); }
+  // lanes in this direction (UK). A two-way road that only tags one direction still splits in half,
+  // so neither direction is given the whole carriageway.
+  laneCount(h) {
+    const e = h >> 1, f = this.lanesF[e] | 0, b = this.lanesB[e] | 0;
+    if (this.flags[e] & F_ONEWAY) return Math.max(1, f + b);
+    if (f > 0 && b > 0) return Math.max(1, (h & 1) ? b : f);
+    const tot = Math.max(f, b, 2), backN = Math.max(1, Math.floor(tot / 2)), fwdN = Math.max(1, tot - backN);
+    return (h & 1) ? backN : fwdN;
+  }
   // position along half-edge h at distance s from its start; writes [x,y,z,dirx,dirz]
   at(h, s, out) {
     const e = h >> 1, rev = h & 1, L = this.len[e];

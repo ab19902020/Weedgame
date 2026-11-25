@@ -65,6 +65,7 @@ function initNet(m) {
   }
   initEmbankments(m);
   initCuttings(m);
+  initProfile(m);
   initPlatforms(m.platforms || []);
   initRailLines(m.railLines || []);
   initBarriers(m.barriers);
@@ -241,6 +242,46 @@ function initCuttings(m) {
     }
   }
   if (seg.length) NET.cut = { seg: new Float32Array(seg), grid };
+}
+// Every driveable centreline, bridges included, so the drawn carriageway can follow the road profile
+// instead of the 4 m terrain grid (that grid is what put a diagonal crease across the lanes).
+function initProfile(m) {
+  const seg = [], grid = new Map(), P = m.pts, CELL = 32;
+  for (let e = 0; e < m.flags.length; e++) {
+    if ((m.flags[e] & 8) || !NET.driveCls.has(m.cls[e])) continue;
+    const s = m.pstart[e], c = m.pcount[e], hw = m.width[e] / 2;
+    for (let k = 0; k + 1 < c; k++) {
+      const a = (s + k) * 3, b = a + 3, id = seg.length / 8, R = hw + 6;
+      seg.push(P[a], P[a + 1], P[a + 2], P[b], P[b + 1], P[b + 2], hw, m.flags[e]);
+      for (let cx = Math.floor((Math.min(P[a], P[b]) - R) / CELL); cx <= Math.floor((Math.max(P[a], P[b]) + R) / CELL); cx++)
+        for (let cz = Math.floor((Math.min(P[a + 2], P[b + 2]) - R) / CELL); cz <= Math.floor((Math.max(P[a + 2], P[b + 2]) + R) / CELL); cz++) {
+          const key = cx * 65536 + cz; let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(id);
+        }
+    }
+  }
+  NET.profile = seg.length ? { seg: new Float32Array(seg), grid } : null;
+}
+// Nearest ground carriageway and nearest bridge, kept apart. A road under a span keeps the ground
+// line; the bridge's own polygon is left out and the deck ribbon draws the span.
+function profileAt(wx, wz) {
+  const R = NET && NET.profile; if (!R) return null;
+  const S = R.seg, cx = Math.floor(wx / 32), cz = Math.floor(wz / 32);
+  let ground = null, bridge = null, gd = 1e9, bd = 1e9;
+  for (let ix = cx - 1; ix <= cx + 1; ix++) for (let iz = cz - 1; iz <= cz + 1; iz++) {
+    const ids = R.grid.get(ix * 65536 + iz); if (!ids) continue;
+    for (let n = 0; n < ids.length; n++) {
+      const o = ids[n] * 8, ax = S[o], ay = S[o + 1], az = S[o + 2], bx = S[o + 3], by = S[o + 4], bz = S[o + 5], hw = S[o + 6];
+      const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1e-6;
+      let t = ((wx - ax) * vx + (wz - az) * vz) / L2; if (t < -0.08 || t > 1.08) continue;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const d = Math.hypot(ax + vx * t - wx, az + vz * t - wz);
+      if (d > hw + 2.2) continue;
+      const rec = { y: ay + (by - ay) * t, d, hw };
+      if (S[o + 7] & 4) { if (d < bd) { bd = d; bridge = rec; } }
+      else if (d < gd) { gd = d; ground = rec; }
+    }
+  }
+  return ground || bridge ? { ground, bridge } : null;
 }
 function cut(H, ox, oz, lcAt, A) {
   const C = NET && NET.cut; if (!C) return { floor: null, low: null, near: null };
@@ -529,8 +570,19 @@ function build(header, A, lod) {
       }
       const t = earcut(flat, holes.length ? holes : null);
       for (let q = 0; q < t.length; q += 3) {
-        const P3 = [t[q], t[q + 1], t[q + 2]].map(i => [flat[i * 2], hAt(flat[i * 2], flat[i * 2 + 1]) + lift, flat[i * 2 + 1]]);
-        tri(G, P3[0], P3[1], P3[2], [0, 1, 0], null, [id]);
+        const P3 = [t[q], t[q + 1], t[q + 2]].map(i => {
+          const x = flat[i * 2], z = flat[i * 2 + 1];
+          const pr = id === 0 ? profileAt(x + ox, z + oz) : null;
+          const g = pr && pr.ground && pr.ground.d <= pr.ground.hw + 0.8 ? pr.ground : null;
+          const br = pr && pr.bridge && pr.bridge.d <= pr.bridge.hw + 0.4 ? pr.bridge : null;
+          // one height from the centreline, the same all the way across, so the earcut diagonal
+          // is not a kink. A point on a road under a bridge stays on that road.
+          const onGround = !!(g && g.d <= g.hw + 0.35);
+          const y = onGround ? g.y + 0.04 : hAt(x, z) + lift;
+          return { x, y, z, bridge: !!(br && !onGround) };
+        });
+        if (id === 0 && P3.filter(v => v.bridge).length >= 2) continue;
+        tri(G, [P3[0].x, P3[0].y, P3[0].z], [P3[1].x, P3[1].y, P3[1].z], [P3[2].x, P3[2].y, P3[2].z], [0, 1, 0], null, [id]);
       }
       if (kerb) for (const ring of rings) for (let q = 0; q < ring.length; q++) {
         const [x0, z0] = ring[q], [x1, z1] = ring[(q + 1) % ring.length];
@@ -670,7 +722,7 @@ function build(header, A, lod) {
         for (const [sv, req] of need) for (let q = 0; q < n; q++) if (!on[q]) pts[q][1] = Math.max(pts[q][1], req - Math.abs(cm[q] - sv) / 50);
       }
     }
-    ribbonDeck(G, S, pts, w, kind, hAt, true, 3, site);
+    ribbonDeck(G, S, pts, w, kind, hAt, true, 3, site, kind === 0 && w >= 6.5 && e >= 0 && NET && !(NET.flags[e] & 1));
     deckLines.push(n, kind, w); for (const p of pts) deckLines.push(p[0], p[1], p[2]);
     if(kind===2) permanentWay(S,pts);
   }
@@ -685,7 +737,7 @@ function build(header, A, lod) {
     const m = Math.floor(n / 2), mx = P[(st + m) * 3] - ox, mz = P[(st + m) * 3 + 2] - oz;
     if (mx < 0 || mx >= TILE || mz < 0 || mz >= TILE) continue;
     const pts = []; for (let q = 0; q < n; q++) pts.push([P[(st + q) * 3] - ox, P[(st + q) * 3 + 1], P[(st + q) * 3 + 2] - oz]);
-    ribbonDeck(G, S, pts, NET.width[e], 0, hAt, true, 3, site);
+    ribbonDeck(G, S, pts, NET.width[e], 0, hAt, true, 3, site, NET.width[e] >= 6.5 && !(NET.flags[e] & 1));
     deckLines.push(n, 0, NET.width[e]); for (const p of pts) deckLines.push(p[0], p[1], p[2]);
   }
   // approach slabs: the deck carried on along roads leaving a bridge while they stand above the ground
@@ -699,7 +751,7 @@ function build(header, A, lod) {
     hi = Math.min(hi, cum[st + n - 1]);
     const m = at((lo + hi) / 2); if (m[0] < 0 || m[0] >= TILE || m[2] < 0 || m[2] >= TILE) continue;
     const pts = [at(lo)]; for (let q = 0; q < n; q++) { const sv = cum[st + q]; if (sv > lo + 0.3 && sv < hi - 0.3) pts.push(at(sv)); } pts.push(at(hi));
-    ribbonDeck(G, S, pts, NET.width[e], 0, hAt, false, 3, site);
+    ribbonDeck(G, S, pts, NET.width[e], 0, hAt, false, 3, site, NET.width[e] >= 6.5 && !(NET.flags[e] & 1));
   }
   // a road standing clear of the ground drawn under it (a raised road the ground couldn't be built up under,
   // a slip road climbing beside a cutting the terrain grid can't hold) rides on a deck instead of hanging over
@@ -745,7 +797,7 @@ function build(header, A, lod) {
       // the neighbour, so no end wall there
       list.sort((p, q) => p.j - q.j);
       let cur = null;
-      const flush = () => { if (cur) ribbonDeck(G, S, cur.pts, cur.hw * 2, 0, hAt, false, (cur.c0 ? 0 : 1) | (cur.c1 ? 0 : 2), site); cur = null; };
+      const flush = () => { if (cur) ribbonDeck(G, S, cur.pts, cur.hw * 2, 0, hAt, false, (cur.c0 ? 0 : 1) | (cur.c1 ? 0 : 2), site, cur.hw * 2 >= 6.5 && !(NET.flags[e] & 1)); cur = null; };
       for (const p of list) {
         if (cur && p.j === cur.j + 1 && cur.t1 === 1 && p.t0 === 0) { cur.pts.push(p.b); cur.j = p.j; cur.t1 = p.t1; cur.c1 = p.t1 < 1; }
         else { flush(); cur = { pts: [p.a, p.b], hw: p.hw, c0: p.t0 > 0, c1: p.t1 < 1, j: p.j, t1: p.t1 }; }
@@ -1142,29 +1194,46 @@ function permanentWay(buf,pts){
     }
   }
 }
-function ribbonDeck(G, S, pts, w, kind, hAt, parapets = true, ends = 3, site = null) {
+function ribbonDeck(G, S, pts, w, kind, hAt, parapets = true, ends = 3, site = null, split = false) {
   // deck surface (ground mesh, surf 5 road / 6 foot / 7 rail deck) + sides, parapets, piers (struct)
+  // edges are mitred so a curved span meets itself instead of leaving a triangular gap at every bend
   const surfId = kind === 0 ? 5 : kind === 1 ? 6 : 7;
-  const hw = w / 2;
+  const hw = w / 2, e = hw + 0.4, lift = kind === 0 ? 0.045 : 0.02;
+  const left = pts.map((_, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    const dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz) || 1;
+    return [-dz / l, dx / l];
+  });
   for (let i = 0; i < pts.length - 1; i++) {
     const [x0, y0, z0] = pts[i], [x1, y1, z1] = pts[i + 1];
     const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.05) continue;
-    const nx = -dz / l, nz = dx / l;
-    const e = hw + 0.4;
-    const a = [x0 + nx * e, y0, z0 + nz * e], b = [x1 + nx * e, y1, z1 + nz * e], c = [x1 - nx * e, y1, z1 - nz * e], d = [x0 - nx * e, y0, z0 - nz * e];
+    const snx = -dz / l, snz = dx / l;
+    const m = (nx, nz) => Math.min(2.2, 1 / Math.max(0.4, nx * snx + nz * snz));
+    const e0 = e * m(left[i][0], left[i][1]), e1 = e * m(left[i + 1][0], left[i + 1][1]);
+    const a = [x0 + left[i][0] * e0, y0 + lift, z0 + left[i][1] * e0], b = [x1 + left[i + 1][0] * e1, y1 + lift, z1 + left[i + 1][1] * e1];
+    const c = [x1 - left[i + 1][0] * e1, y1 + lift, z1 - left[i + 1][1] * e1], d = [x0 - left[i][0] * e0, y0 + lift, z0 - left[i][1] * e0];
     quad(G, a, b, c, d, [0, 1, 0], null, [surfId]);
-    for (const s of [1, -1]) {
-      const ex = nx * e * s, ez = nz * e * s;
-      // side face down 1.1 m
-      quad(S, [x0 + ex, y0 - 1.2, z0 + ez], [x1 + ex, y1 - 1.2, z1 + ez], [x1 + ex, y0 === y0 ? y1 : y1, z1 + ez], [x0 + ex, y0, z0 + ez], [nx * s, 0, nz * s], null, [0]);
-      // parapet 1.1 m high, 0.3 thick
-      if (!parapets) continue;
-      const ix = nx * (e - 0.3) * s, iz = nz * (e - 0.3) * s;
-      quad(S, [x0 + ex, y0, z0 + ez], [x1 + ex, y1, z1 + ez], [x1 + ex, y1 + 1.1, z1 + ez], [x0 + ex, y0 + 1.1, z0 + ez], [nx * s, 0, nz * s], null, [0]);
-      quad(S, [x0 + ix, y0, z0 + iz], [x1 + ix, y1, z1 + iz], [x1 + ix, y1 + 1.1, z1 + iz], [x0 + ix, y0 + 1.1, z0 + iz], [-nx * s, 0, -nz * s], null, [0]);
-      quad(S, [x0 + ix, y0 + 1.1, z0 + iz], [x1 + ix, y1 + 1.1, z1 + iz], [x1 + ex, y1 + 1.1, z1 + ez], [x0 + ex, y0 + 1.1, z0 + ez], [0, 1, 0], null, [0]);
+    // a low concrete reservation down a two-way deck, so the two directions stay on their own sides
+    if (split && kind === 0) {
+      const bw = 0.16, bh = 0.82;
+      const L0 = [x0 + left[i][0] * bw, y0 + lift, z0 + left[i][1] * bw];
+      const L1 = [x1 + left[i + 1][0] * bw, y1 + lift, z1 + left[i + 1][1] * bw];
+      const R0 = [x0 - left[i][0] * bw, y0 + lift, z0 - left[i][1] * bw];
+      const R1 = [x1 - left[i + 1][0] * bw, y1 + lift, z1 - left[i + 1][1] * bw];
+      quad(S, L0, L1, [L1[0], L1[1] + bh, L1[2]], [L0[0], L0[1] + bh, L0[2]], [left[i][0], 0, left[i][1]], null, [0]);
+      quad(S, R1, R0, [R0[0], R0[1] + bh, R0[2]], [R1[0], R1[1] + bh, R1[2]], [-left[i][0], 0, -left[i][1]], null, [0]);
+      quad(S, [L0[0], L0[1] + bh, L0[2]], [L1[0], L1[1] + bh, L1[2]], [R1[0], R1[1] + bh, R1[2]], [R0[0], R0[1] + bh, R0[2]], [0, 1, 0], null, [0]);
     }
-    // underside
+    for (const s of [1, -1]) {
+      const xA = x0 + left[i][0] * e0 * s, zA = z0 + left[i][1] * e0 * s, xB = x1 + left[i + 1][0] * e1 * s, zB = z1 + left[i + 1][1] * e1 * s;
+      quad(S, [xA, y0 - 1.2, zA], [xB, y1 - 1.2, zB], [xB, y1, zB], [xA, y0, zA], [left[i][0] * s, 0, left[i][1] * s], null, [0]);
+      if (!parapets) continue;
+      const p0 = e0 - 0.3 * m(left[i][0], left[i][1]), p1 = e1 - 0.3 * m(left[i + 1][0], left[i + 1][1]);
+      const iA = x0 + left[i][0] * p0 * s, izA = z0 + left[i][1] * p0 * s, iB = x1 + left[i + 1][0] * p1 * s, izB = z1 + left[i + 1][1] * p1 * s;
+      quad(S, [xA, y0, zA], [xB, y1, zB], [xB, y1 + 1.1, zB], [xA, y0 + 1.1, zA], [left[i][0] * s, 0, left[i][1] * s], null, [0]);
+      quad(S, [iA, y0, izA], [iB, y1, izB], [iB, y1 + 1.1, izB], [iA, y0 + 1.1, izA], [-left[i][0] * s, 0, -left[i][1] * s], null, [0]);
+      quad(S, [iA, y0 + 1.1, izA], [iB, y1 + 1.1, izB], [xB, y1 + 1.1, zB], [xA, y0 + 1.1, zA], [0, 1, 0], null, [0]);
+    }
     quad(S, [a[0], y0 - 1.2, a[2]], [b[0], y1 - 1.2, b[2]], [c[0], y1 - 1.2, c[2]], [d[0], y0 - 1.2, d[2]], [0, -1, 0], null, [0]);
   }
   // abutments: a concrete wall across each end of a deck that stands clear of the ground, facing the span
@@ -1667,19 +1736,24 @@ function buildMarkings(header, ox, oz, hAt0, deckOf = new Map()) {
     const bridge = !!(f & 4);
     // where a deck carries a piece of this road (approach slab, sagging ground) its markings lie on the deck
     const dk = deckOf.get(e);
-    const hAt = !dk ? hAt0 : (x, z) => {
-      for (const [ax, ay, az, bx, by, bz, hw] of dk) {
+    // markings sit just above the flat carriageway (or the deck), not in the terrain triangles
+    const hAt = (x, z) => {
+      if (dk) for (const [ax, ay, az, bx, by, bz, hw] of dk) {
         const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1e-6, t = ((x - ax) * vx + (z - az) * vz) / L2;
         if (t < -0.02 || t > 1.02) continue;
         const tc = Math.max(0, Math.min(1, t));
-        if (Math.hypot(ax + vx * tc - x, az + vz * tc - z) <= hw + 0.45) return ay + (by - ay) * tc - 0.04;
+        if (Math.hypot(ax + vx * tc - x, az + vz * tc - z) <= hw + 0.45) return ay + (by - ay) * tc - 0.005;
+      }
+      if (!bridge) {
+        const pr = profileAt(x + ox, z + oz), g = pr && pr.ground;
+        if (g && g.d <= g.hw + 0.45) return g.y - 0.01;
       }
       return hAt0(x, z);
     };
     const st = NET.pstart[e], n = NET.pcount[e];
     const L = cum[st + n - 1];
     const pts = []; for (let i = 0; i < n; i++) pts.push([P[(st + i) * 3] - ox, P[(st + i) * 3 + 1], P[(st + i) * 3 + 2] - oz, cum[st + i]]);
-    const yAt = bridge ? (p, s) => sampleY(pts, s) + 0.03 : (p) => hAt(p[0], p[2]) + 0.07;
+    const yAt = bridge ? (p, s) => sampleY(pts, s) + 0.065 : (p) => hAt(p[0], p[2]) + 0.07;
     const w = NET.width[e], lf = NET.lanesF[e], lb = NET.lanesB[e], oneway = f & 1;
     const s0 = NET.cutA[e], s1 = L - NET.cutB[e];
     const inTile = p => p[0] >= 0 && p[0] < TILE && p[2] >= 0 && p[2] < TILE;
@@ -1709,7 +1783,7 @@ function buildMarkings(header, ox, oz, hAt0, deckOf = new Map()) {
       for (let sv = s0 + 4 + phase; sv < s1 - 2; sv += 18) {
         const p = posAt(pts, sv); if (!inTile(p)) continue;
         const ax = -p[4], az = p[3], cx = p[0] + p[3] * offset, cz = p[2] + p[4] * offset;
-        const y = bridge ? sampleY(pts, sv) + 0.045 : hAt(cx, cz) + 0.09;
+        const y = bridge ? sampleY(pts, sv) + 0.08 : hAt(cx, cz) + 0.09;
         const q = [[-0.09, -0.06], [0.09, -0.06], [0.09, 0.06], [-0.09, 0.06]].map(([a, l]) => [cx + ax * a + p[3] * l, y, cz + az * a + p[4] * l]);
         quad(B, q[0], q[1], q[2], q[3], [0, 1, 0], null, [id]);
       }
@@ -1770,7 +1844,7 @@ function buildMarkings(header, ox, oz, hAt0, deckOf = new Map()) {
         const base = [p[0] + dx * alongOff, p[2] + dz * alongOff];
         const a = [base[0] + tx * o0 * sgn, 0, base[1] + tz * o0 * sgn], b = [base[0] + tx * o1 * sgn, 0, base[1] + tz * o1 * sgn];
         const c = [b[0] + dx * thick, 0, b[2] + dz * thick], d = [a[0] + dx * thick, 0, a[2] + dz * thick];
-        for (const v of [a, b, c, d]) v[1] = bridge ? p[1] + 0.03 : hAt(v[0], v[2]) + 0.075;
+        for (const v of [a, b, c, d]) v[1] = bridge ? p[1] + 0.065 : hAt(v[0], v[2]) + 0.075;
         quad(B, a, b, c, d, [0, 1, 0], null, [id]);
       };
       if (code === 3 || code === 2) mk(halfFrom, halfTo, code === 2 ? 0.4 : 0.3, 0, 0);
@@ -1793,7 +1867,7 @@ function buildMarkings(header, ox, oz, hAt0, deckOf = new Map()) {
       if (Math.min(tip, base) < 2 || Math.max(tip, base) > L - 2) continue;
       const lane = oneway ? 0 : dir * w / 4, half = Math.min(0.62, w / 8);
       const A = posAt(pts, tip); if (!inTile(A)) continue;
-      const corner = (sv, o) => { const p = posAt(pts, sv), x = p[0] + p[3] * o, z = p[2] + p[4] * o; return [x, bridge ? p[1] + 0.03 : hAt(x, z) + 0.075, z]; };
+      const corner = (sv, o) => { const p = posAt(pts, sv), x = p[0] + p[3] * o, z = p[2] + p[4] * o; return [x, bridge ? p[1] + 0.065 : hAt(x, z) + 0.075, z]; };
       const T = corner(tip, lane), B1 = corner(base, lane - half), B2 = corner(base, lane + half);
       for (const [u, v] of [[T, B1], [T, B2], [B1, B2]]) {
         const dx = v[0] - u[0], dz = v[2] - u[2], l = Math.hypot(dx, dz) || 1, nx = -dz / l * 0.08, nz = dx / l * 0.08;
@@ -1810,7 +1884,7 @@ function buildMarkings(header, ox, oz, hAt0, deckOf = new Map()) {
       const put = (o0, o1, a0, a1, id) => {
         const v = [[o0, a0], [o1, a0], [o1, a1], [o0, a1]].map(([o, a]) => {
           const x = p[0] + lat[0] * o + along[0] * a * -1, z = p[2] + lat[1] * o + along[1] * a * -1;
-          return [x, bridge ? p[1] + 0.03 : hAt(x, z) + 0.076, z];
+          return [x, bridge ? p[1] + 0.065 : hAt(x, z) + 0.076, z];
         });
         quad(B, v[0], v[1], v[2], v[3], [0, 1, 0], null, [id]);
       };
@@ -1888,7 +1962,7 @@ function zigzags(B, pts, s, w, bridge, hAt, inTile, lo = 0, hi = Infinity) {
       const oa = lat + (k % 2 ? 0.3 : -0.3) * Math.sign(lat), ob = lat + (k % 2 ? -0.3 : 0.3) * Math.sign(lat);
       const A1 = [pa[0] + pa[3] * oa, 0, pa[2] + pa[4] * oa], B1 = [pb[0] + pb[3] * ob, 0, pb[2] + pb[4] * ob];
       const dx = B1[0] - A1[0], dz = B1[2] - A1[2], l = Math.hypot(dx, dz) || 1, nx = -dz / l * 0.05, nz = dx / l * 0.05;
-      const q = [[A1[0] - nx, A1[2] - nz], [B1[0] - nx, B1[2] - nz], [B1[0] + nx, B1[2] + nz], [A1[0] + nx, A1[2] + nz]].map(([x, z]) => [x, bridge ? pa[1] + 0.03 : hAt(x, z) + 0.077, z]);
+      const q = [[A1[0] - nx, A1[2] - nz], [B1[0] - nx, B1[2] - nz], [B1[0] + nx, B1[2] + nz], [A1[0] + nx, A1[2] + nz]].map(([x, z]) => [x, bridge ? pa[1] + 0.065 : hAt(x, z) + 0.077, z]);
       quad(B, q[0], q[1], q[2], q[3], [0, 1, 0], null, [0]);
     }
   }

@@ -50,6 +50,9 @@ export const HANDLING = {
   rangerover: { kw: 330, vmax: 69, drive: 'A', mu: 0.95, fw: 0.53, cg: 0.72, gears: 8, redline: 6500, assist: 1.1 },
   bus: { kw: 190, vmax: 24, drive: 'R', mu: 0.82, fw: 0.36, cg: 1.35, gears: 4, redline: 2400, assist: 1.4 },
   busS: { kw: 180, vmax: 25, drive: 'R', mu: 0.82, fw: 0.36, cg: 1.1, gears: 4, redline: 2400, assist: 1.4 },
+  // light town bikes: short gearing, plenty of assist so a stolen one does not spin like a car
+  moped: { kw: 7, vmax: 20, drive: 'R', mu: 1.05, fw: 0.46, cg: 0.55, gears: 4, redline: 8500, assist: 1.35 },
+  escooter: { kw: 0.8, vmax: 7, drive: 'R', mu: 0.9, fw: 0.48, cg: 0.7, gears: 3, redline: 4200, assist: 1.5 },
 };
 
 const derived = new Map();

@@ -8,7 +8,7 @@ import { F_ONEWAY, F_ROUNDABOUT, F_BRIDGE, F_DRIVE } from './network.js';
 const FULL_R = 480, BUBBLE_R = 650, KILL_R = 820;
 export const KEEP_R = 250;        // the fleet within this radius of either brother is kept (frozen while he is inactive) and saved
 const RANK = { motorway: 10, trunk: 9, primary: 8, secondary: 7, tertiary: 6, motorway_link: 8, trunk_link: 7, primary_link: 7, secondary_link: 6, tertiary_link: 5, unclassified: 4, residential: 3, living_street: 2, service: 1, busway: 3 };
-const DENS = { motorway: 1 / 60, trunk: 1 / 70, primary: 1 / 55, secondary: 1 / 80, tertiary: 1 / 110, motorway_link: 1 / 150, trunk_link: 1 / 150, primary_link: 1 / 120, secondary_link: 1 / 150, tertiary_link: 1 / 200, unclassified: 1 / 260, residential: 1 / 520, living_street: 1 / 900 };
+const DENS = { motorway: 1 / 120, trunk: 1 / 140, primary: 1 / 110, secondary: 1 / 160, tertiary: 1 / 220, motorway_link: 1 / 300, trunk_link: 1 / 300, primary_link: 1 / 240, secondary_link: 1 / 300, tertiary_link: 1 / 400, unclassified: 1 / 520, residential: 1 / 1040, living_street: 1 / 1800 };
 
 export class Traffic {
   constructor(net, signals, opts = {}) {
@@ -22,7 +22,7 @@ export class Traffic {
     for (let e = 0; e < net.nEdges; e++) this.rank[e] = RANK[net.classes[net.cls[e]]] || 0;
     this.onCollision = null;
     this.spawnTimer = 0;
-    this.density = 1;
+    this.density = 1;            // road classes above are already half the old spacing; the vehicle cap is halved too
     this.focus = { x: 0, z: 0 };
   }
   // ----------------------------------------------------------------- creation
@@ -38,30 +38,43 @@ export class Traffic {
   randomModel() {
     return randomModel(this.rand());
   }
+  // mopeds and electric scooters mix in with the cars, more of them on the town streets than on the A-roads
+  pickModel(h) {
+    const name = this.net.clsName(h >> 1);
+    const town = name === 'residential' || name === 'living_street' || name === 'service' || name === 'unclassified' || name === 'tertiary';
+    const r = this.rand();
+    if ((town && r < 0.22) || (!town && r < 0.05)) return this.rand() < 0.55 ? 'moped' : 'escooter';
+    return this.randomModel();
+  }
   driver(v) {
     const r = this.rand();
     v.v0f = 0.85 + r * 0.3;        // desired speed factor
-    v.T = 1.2 + this.rand() * 0.6; v.s0 = 2 + this.rand(); v.amax = v.model.startsWith('bus') ? 1.0 : 1.6 + this.rand() * 0.8; v.bc = 2.2;
+    if (v.model === 'moped') v.v0f *= 0.62;
+    if (v.model === 'escooter') v.v0f *= 0.42;
+    v.T = 1.2 + this.rand() * 0.6; v.s0 = 2 + this.rand(); v.amax = v.model.startsWith('bus') ? 1.0 : v.model === 'escooter' ? 1.1 : v.model === 'moped' ? 1.4 : 1.6 + this.rand() * 0.8; v.bc = 2.2;
   }
   spawnAt(h, s, opts = {}) {
-    const model = opts.model || this.randomModel();
+    const model = opts.model || this.pickModel(h);
     const v = this.add({ kind: opts.kind || 'traffic', model, paint: opts.paint ?? paintFor(model, this.rand()), h, s, lane: 0, route: [h], ri: 0, v: opts.v ?? Math.min(12, this.net.speed[h >> 1] / 3.6 * 0.8) });
     this.driver(v);
     if (opts.route) { v.route = opts.route; v.ri = opts.ri || 0; v.h = v.route[v.ri]; }
     v.lane = Math.floor(this.rand() * this.net.laneCount(v.h));
+    if (v.model === 'moped' || v.model === 'escooter') v.lane = 0;   // nearside, with the kerb
     this.place(v);
     return v;
   }
   // ----------------------------------------------------------------- geometry
   laneOffset(h, lane) {
     const e = h >> 1, w = this.net.width[e], nl = Math.max(1, this.net.lanesF[e] + this.net.lanesB[e]);
-    const lw = w / nl;
-    const fl = (h & 1) ? this.net.lanesB[e] : this.net.lanesF[e];
-    // motorway carriageway: lanes start inside the nearside hard shoulder and stop at the offside hard strip
     const hs = this.net.shoulder ? this.net.shoulder[e] : 0;
-    if (hs > 0) return w / 2 - hs - (w - hs - this.net.strip[e]) / nl * (lane + 0.5);
-    if (this.net.flags[e] & F_ONEWAY) return w / 2 - lw * (lane + 0.5);
-    return Math.max(lw * 0.5, w / 2 - lw * (Math.min(lane, Math.max(0, fl - 1)) + 0.5));
+    // motorway carriageway: lanes start inside the nearside hard shoulder and stop at the offside hard strip
+    if (hs > 0) return w / 2 - hs - (w - hs - (this.net.strip[e] || 0)) / nl * ((lane | 0) + 0.5);
+    const oneway = this.net.flags[e] & F_ONEWAY;
+    // each direction owns only its left half (UK). laneCount already splits a one-sided tag in two.
+    const n = this.net.laneCount(h);
+    const lw = (oneway ? w : w * 0.5) / n;
+    const i = Math.min(Math.max(0, lane | 0), n - 1);
+    return w * 0.5 - lw * (i + 0.5);
   }
   place(v) {
     const t = this.net.at(v.h, v.s, this.tmp);
@@ -309,7 +322,7 @@ export class Traffic {
     if (gap < 14 && lv < (v.siren ? 3 : 0.5) && stopAt > gap + 2 && (v.siren || this.blocking(lead))) {
       v.stuck += dt;
       if (v.stuck > (v.siren ? 1 : 4)) this.tryPass(v, occ);
-    } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing && gap > 25 && v.s > (v.passUntil ?? -1e9)) { v.passing = false; v.latT = 0; } }
+    } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing) { v.passT = (v.passT || 0) + dt; if ((gap > 18 && v.s > (v.passUntil ?? -1e9)) || v.passT > 7) { v.passing = false; v.latT = 0; v.passT = 0; } } }
     // responding police: pull up ~10 m short of the scene when it lies ahead on this road
     if (v.target && v.status === 'responding') {
       for (let k = 0; k <= 90; k += 6) {
@@ -355,6 +368,8 @@ export class Traffic {
       const nh2 = v.route[v.ri];
       v.h = nh2;
       v.lane = Math.min(v.lane, net.laneCount(v.h) - 1);
+      // a pass that wasn't finished does not carry onto the next street (that left cars on the wrong side)
+      if ((nh2 >> 1) !== e) { v.lat = 0; v.latT = 0; v.passing = false; v.passT = 0; }
       if (v.fixedRoute && v.onEdge) v.onEdge(v);
       if (!v.fixedRoute && v.route.length > 64 && v.ri > 32) { v.route = v.route.slice(v.ri); v.ri = 0; }
     }
@@ -391,6 +406,9 @@ export class Traffic {
       if (!l.some(o => o !== v && o.lane === target && Math.abs(o.s - v.s) < 12)) { const b0 = this.laneOffset(v.h, v.lane); v.lane = target; v.lat += b0 - this.laneOffset(v.h, target); v.stuck = 0; return; }
     }
     if (!(net.flags[e] & F_ONEWAY)) { // overtake into the opposing lane when it is clear
+      const name = net.clsName(e);
+      // only the big one-way and primary roads: a pass on a town street put the car on the right and left it there
+      if (name !== 'motorway' && name !== 'motorway_link' && name !== 'trunk' && name !== 'trunk_link' && name !== 'primary' && name !== 'primary_link') return;
       const opp = occ.get(v.h ^ 1) || [];
       const L = net.len[e], myOpp = L - v.s;
       // never across a junction, on a road too narrow for two, or without a long clear view of oncoming traffic
@@ -474,7 +492,7 @@ export class Traffic {
     }
     const hr = info.hour;
     const tod = hr < 5 ? 0.12 : hr < 6.5 ? 0.3 : hr < 9.5 ? 1.15 : hr < 16 ? 0.85 : hr < 18.5 ? 1.15 : hr < 22 ? 0.55 : 0.25;
-    const target = Math.min(this.maxVehicles || 260, this._edgeCache.target * tod * this.density);
+    const target = Math.min(this.maxVehicles || 130, this._edgeCache.target * tod * this.density);
     let count = 0;
     for (const v of this.list) if (!v.parked && Math.hypot(v.x - focus.x, v.z - focus.z) < BUBBLE_R) count++;
     let tries = 6;
