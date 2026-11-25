@@ -25,6 +25,7 @@ import { Save } from './save.js';
 import { Perf } from './perf.js';
 import { Trains } from './trains.js';
 import { Stations } from './stations.js';
+import { Wildlife } from './wildlife.js';
 
 class Events { constructor() { this.h = {}; } on(n, f) { (this.h[n] ||= []).push(f); } emit(n, e) { for (const f of this.h[n] || []) f(e); } }
 
@@ -94,6 +95,7 @@ G.districtName = (x, z) => { const d = G.districtAt(x, z); if (!d) return 'Berks
 G.roadName = (x, z) => { const n = G.net.nearest(x, z, 30, e => !!G.net.roadName(e)); return n ? G.net.roadName(n.e) : ''; };
 const frustum = new THREE.Frustum(), pm = new THREE.Matrix4(), sph = new THREE.Sphere();
 const camInfo = { night: 0, rain: 0, hour: 12, visible: (x, y, z, r) => frustum.intersectsSphere(sph.set(new THREE.Vector3(x, y, z), r + 2)) };
+G.wildlife = new Wildlife(G, camInfo);   // wildlife, farm animals and pets: dogs out with their people, cats (wildlife.js)
 function kerbPlace(x, z, filter) {
   const n = G.net.nearest(x, z, 200, filter || (e => (G.net.flags[e] & 16) && !/primary|trunk|motorway/.test(G.net.classes[G.net.cls[e]])));
   if (!n) return { x, z, heading: 0 };
@@ -212,6 +214,7 @@ function step(dt, render) {
   G.breakables.update(dt);
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
+  G.wildlife.update(dt);
   G.police.update(dt);
   G.trains.update(dt);
   G.neighbourhood.update(dt);
@@ -240,6 +243,7 @@ function step(dt, render) {
       look:B.actor[B.active].look });
   }
   G.peds.draw(G.people, actors, cam, dt);
+  G.wildlife.draw(cam);
   G.signalRenderer.draw(cam, (x, z) => G.tiles.ground(x, z), G.time);
   G.hud.update(dt);
   G.audio.update(dt, G);
