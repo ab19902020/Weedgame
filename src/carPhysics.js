@@ -84,9 +84,19 @@ export class CarDynamics {
     const n = Math.min(10, Math.max(1, Math.round(dt / H)));
     const h = dt / n;
     let impact = 0;
+    if (ph.water > 0.75) { v.flooded = true; if (ctl) ctl = { ...ctl, throttle: Math.min(0, ctl.throttle || 0) * 0.2 }; }
+    else if (ph.water < 0.05) v.flooded = false;
     for (let i = 0; i < n; i++) {
       this.integrate(v, ph, P, h, ctl);
       impact = Math.max(impact, this.collide(v, ph, P, h, true));
+    }
+    // water resistance: a bow wave and spray while ploughing in, then the car wallows to a stop
+    if (ph.water > 0.15) {
+      const k = Math.exp(-dt * ph.water * 1.8), sp = Math.hypot(ph.vx, ph.vz);
+      ph.vx *= k; ph.vz *= k; ph.w *= k;
+      const bx = v.x + Math.cos(v.heading) * v.def.L / 2, bz = v.z + Math.sin(v.heading) * v.def.L / 2, wy = (v.y || 0) + ph.water;
+      if (sp > 2 && Math.random() < Math.min(1, sp / 8)) this.G.breakables?.debris.burst('drop', Math.round(4 + sp), bx, wy + 0.1, bz, ph.vx * 0.5, 1.5 + sp * 0.15, ph.vz * 0.5, 1.2);
+      if (v.player && this.G.U?.wake) this.G.U.wake.value.set(bx, bz, Math.min(1, 0.3 + sp * 0.12));
     }
     this.finish(v, ph, P, dt);
     return impact;
@@ -126,6 +136,10 @@ export class CarDynamics {
     ph.surf = base * (1 - wet * (soft ? 0.35 : 0.27));
     ph.crr = soft ? 0.07 : base < 0.8 ? 0.035 : 0.013;
     ph.soft = soft;
+    // driving into a lake or river: water drags at the car and floods the engine once it's over the sills
+    const lv = G.tiles.waterLevel ? G.tiles.waterLevel(v.x, v.z) : null;
+    ph.water = lv != null ? Math.max(0, lv - (v.y || 0)) : 0;
+    if (ph.water > 0.1) { ph.surf *= Math.max(0.35, 1 - ph.water * 0.5); ph.crr += Math.min(0.5, ph.water * 0.4); }
   }
   gather(v, dt) {
     const G = this.G, c = this.cand; c.length = 0;

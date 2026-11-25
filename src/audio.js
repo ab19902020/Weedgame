@@ -209,7 +209,7 @@ export class Audio {
     }
     // footsteps
     const running = G.brothers.speedNow > 3;
-    if (!inCar && !G.transit.ride && !(G.brothers.actor[G.brothers.active].jumpTime > 0) && G.brothers.speedNow > .4) {
+    if (!inCar && !G.transit.ride && !(G.brothers.actor[G.brothers.active].jumpTime > 0) && !me.swimming && !G.brothers.actor[G.brothers.active].wading && G.brothers.speedNow > .4) {
       this.stepT -= dt * (running ? 3.2 : 1.9);
       if (this.stepT <= 0) { this.stepT = 1; this.step(me, running, running ? .48 : .32); }
     }

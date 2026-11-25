@@ -89,7 +89,8 @@ G.audio = new Audio(G);
 // ---------------------------------------------------------------- helpers
 const districts = G.manifest.districts.map(d => ({ ...d, core: /town centre|Woodley|Wokingham/.test(d.name), coreR: d.name === 'Woodley' ? 300 : 700 }));
 G.districtAt = (x, z) => { let best = null, bd = 1e9; for (const d of districts) { const k = Math.hypot(x - d.x, z - d.z) / d.r; if (k < bd) { bd = k; best = d; } } return best; };
-G.districtName = (x, z) => { const d = G.districtAt(x, z); return d && Math.hypot(x - d.x, z - d.z) < d.r * 1.25 ? d.name : 'A329 corridor'; };
+// the district or village you're in, or the nearest one in open country ('near Hurst')
+G.districtName = (x, z) => { const d = G.districtAt(x, z); if (!d) return 'Berkshire'; const k = Math.hypot(x - d.x, z - d.z) / d.r; return k < 1.25 ? d.name : k < 4 ? 'near ' + d.name : 'Berkshire'; };
 G.roadName = (x, z) => { const n = G.net.nearest(x, z, 30, e => !!G.net.roadName(e)); return n ? G.net.roadName(n.e) : ''; };
 const frustum = new THREE.Frustum(), pm = new THREE.Matrix4(), sph = new THREE.Sphere();
 const camInfo = { night: 0, rain: 0, hour: 12, visible: (x, y, z, r) => frustum.intersectsSphere(sph.set(new THREE.Vector3(x, y, z), r + 2)) };

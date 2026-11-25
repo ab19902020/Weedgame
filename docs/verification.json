@@ -197,9 +197,9 @@
   }
  },
  "buildings": {
-  "count": 48144,
-  "worldAreaKm2": 5.9862,
-  "ellipsoidAreaKm2": 5.9858,
+  "count": 86486,
+  "worldAreaKm2": 11.6854,
+  "ellipsoidAreaKm2": 11.6848,
   "areaRatio": {
    "mean": 1.00005,
    "p01": 0.99998,
@@ -207,11 +207,11 @@
   }
  },
  "signals": {
-  "osmTrafficSignalNodes": 593,
-  "withinAController": 591,
-  "controllers": 253,
-  "approaches": 1383,
-  "pedestrianCrossingHeads": 707,
+  "osmTrafficSignalNodes": 927,
+  "withinAController": 927,
+  "controllers": 379,
+  "approaches": 2148,
+  "pedestrianCrossingHeads": 1088,
   "documentedTimings": 0,
   "timingSource": "simulated (UK-typical intergreens; no published phase data imported)"
  }

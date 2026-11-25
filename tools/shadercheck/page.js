@@ -1,6 +1,6 @@
 // Shader-check page: builds every material on a WebGPU renderer so its WGSL can be captured (see run.sh).
 import * as THREE from 'three/webgpu';
-import { terrainMaterial, groundMaterial, markingMaterial, structMaterial, buildingMaterial, lampMaterial, treeMaterials } from '../../src/materials.js';
+import { terrainMaterial, groundMaterial, markingMaterial, structMaterial, buildingMaterial, lampMaterial, treeMaterials, waterMaterial } from '../../src/materials.js';
 import { loadSurfaces } from '../../src/surfaces.js';
 import { crownGeometry, trunkGeometry } from '../../src/vegetation.js';
 import { VehicleRenderer } from '../../src/vehicles.js';
@@ -28,8 +28,8 @@ window.onerror = e => log('ERR', e);
     const sun = new THREE.DirectionalLight(); sun.castShadow = true; scene.add(sun, new THREE.HemisphereLight());
     const geo = () => { const g = new THREE.PlaneGeometry(10, 10, 2, 2); const n = g.attributes.position.count;
       g.setAttribute('aslot', new THREE.BufferAttribute(new Float32Array(n * 2), 2)); g.setAttribute('surf', new THREE.BufferAttribute(new Float32Array(n), 1));
-      g.setAttribute('bA', new THREE.BufferAttribute(new Float32Array(n * 4).fill(3), 4)); g.setAttribute('lampHead', new THREE.BufferAttribute(new Float32Array(n), 1)); return g; };
-    const mats = { terrain: terrainMaterial(), ground: groundMaterial(), mark: markingMaterial(), struct: structMaterial(), building: buildingMaterial(), lamp: lampMaterial() };
+      g.setAttribute('bA', new THREE.BufferAttribute(new Float32Array(n * 4).fill(3), 4)); g.setAttribute('lampHead', new THREE.BufferAttribute(new Float32Array(n), 1)); g.setAttribute('wDepth', new THREE.BufferAttribute(new Float32Array(n).fill(2), 1)); return g; };
+    const mats = { terrain: terrainMaterial(), ground: groundMaterial(), mark: markingMaterial(), struct: structMaterial(), building: buildingMaterial(), lamp: lampMaterial(), water: waterMaterial() };
     for (const [k, m] of Object.entries(mats)) { const me = new THREE.Mesh(geo(), m); me.castShadow = me.receiveShadow = true; me.name = k; scene.add(me); }
     const tm = treeMaterials();
     const cr = new THREE.InstancedMesh(crownGeometry(), tm.crown, 2); cr.castShadow = true; scene.add(cr);

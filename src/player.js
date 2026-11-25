@@ -9,6 +9,7 @@ const JACKETS = [0x314958, 0x765741, 0x294735, 0x653143], SKINS = [0xb48265, 0x8
 
 import { CAR_SPECS } from './carModel.js';
 import { HERO_CARS } from './heroCars.js';
+const SWIM_DEPTH = 0.45;   // a swimmer's root sits this far below the surface: the rigs' swim clips hold the head ~0.56 m above it
 export class Brothers {
   constructor(G, saved) {
     this.G = G;
@@ -45,14 +46,19 @@ export class Brothers {
       const b = this.b[i], a = this.actor[i];
       a.look = this.lookFor(i);
       a.visible = !b.vehicle;
-      if (i !== this.active) { a.x = b.x; a.y = b.y; a.z = b.z; a.heading = b.heading; a.speed = 0; a.pose = G.world.cur.rain > 0.35 && !G.shelteredAt(b.x, b.y, b.z) ? 'umbrella' : 'idle'; a.t += dt; }
+      if (i !== this.active) { a.x = b.x; a.y = b.y; a.z = b.z; a.heading = b.heading; a.speed = 0; a.pose = b.swimming ? 'swim' : G.world.cur.rain > 0.35 && !G.shelteredAt(b.x, b.y, b.z) ? 'umbrella' : 'idle'; a.t += dt; }
     }
   }
   walk(dt, input) {
     const G = this.G, me = this.me, a = this.actor[this.active];
     const ax = input.axis();
     const run = input.padRun || input.held.has('run') || Math.hypot(ax.x, ax.y) > 0.92 && input.held.has('run');
-    const speed = (run ? 5.4 : 1.7) * Math.min(1, Math.hypot(ax.x, ax.y));
+    // water: wade (slower the deeper it gets) and swim where it's over chest height
+    const lvl = G.tiles.waterLevel ? G.tiles.waterLevel(me.x, me.z) : null, gy0 = G.tiles.ground(me.x, me.z, me.y + 0.3);
+    const wdep = lvl != null && gy0 != null ? lvl - gy0 : 0;
+    me.swimming = me.swimming ? wdep > 1.05 : wdep > 1.3;
+    const wade = me.swimming ? 0 : Math.max(0, Math.min(0.65, wdep * 0.55));
+    const speed = (me.swimming ? (run ? 1.9 : 1.1) : (run && wdep < 0.6 ? 5.4 : 1.7) * (1 - wade)) * Math.min(1, Math.hypot(ax.x, ax.y));
     const fx = -Math.cos(this.cam.yaw), fz = -Math.sin(this.cam.yaw);
     const dx = (-ax.y) * fx + ax.x * -fz, dz = (-ax.y) * fz + ax.x * fx;
     const l = Math.hypot(dx, dz);
@@ -67,7 +73,11 @@ export class Brothers {
       [nx, nz] = pushFromBox(nx, nz, 0.3, v);
     }
     const gy = G.tiles.ground(nx, nz, me.y + 0.3);
-    if (gy != null) { me.y = gy > me.y ? me.y + (gy - me.y) * Math.min(1, dt * 14) : gy; }
+    if (me.swimming && lvl != null) {
+      // float with the head just out of the water; climbing out happens when the bed shelves up
+      const target = Math.max(gy ?? -1e9, lvl - SWIM_DEPTH);
+      me.y += (target - me.y) * Math.min(1, dt * 6);
+    } else if (gy != null) { me.y = gy > me.y ? me.y + (gy - me.y) * Math.min(1, dt * 14) : gy; }
     const mv = Math.hypot(nx - me.x, nz - me.z);
     me.x = nx; me.z = nz;
     const sp = mv / Math.max(dt, 1e-3);
@@ -75,8 +85,23 @@ export class Brothers {
     a.x = me.x; a.y = me.y; a.z = me.z; a.heading = me.heading; a.speed = sp; a.running = run && sp > 3;
     a.phase = (a.phase + sp * dt * (a.running ? 2.6 : 3.6)) % (Math.PI * 2);
     a.t += dt;
-    a.pose = G.world.cur.rain > 0.35 && !a.running && !G.shelteredAt(me.x, me.y, me.z) ? 'umbrella' : 'walk';
+    a.pose = me.swimming ? 'swim' : G.world.cur.rain > 0.35 && !a.running && !G.shelteredAt(me.x, me.y, me.z) ? 'umbrella' : 'walk';
+    a.swimming = !!me.swimming; a.wading = wdep > 0.25 && !me.swimming;
+    if (me.swimming) a.jumpTime = 0;
     this.speedNow = sp;
+    // splashes: a burst going in, then droplets with each stroke or stride, and a wake on the water shader
+    const drops = (n, up, spread) => G.breakables?.debris.burst('drop', n, me.x + Math.cos(me.heading) * 0.35, lvl + 0.15, me.z + Math.sin(me.heading) * 0.35, this.vel.x * 0.3, up, this.vel.z * 0.3, spread);
+    if (lvl != null && wdep > 0.25) {
+      if (!this._inWater && sp > 1.2) { drops(26, 2.6, 1.4); G.audio?.play?.('water', me.x, lvl, me.z, 0.8); }
+      this._splT = (this._splT || 0) - dt;
+      if (sp > 0.4 && this._splT <= 0) {
+        this._splT = me.swimming ? 0.55 : 0.4;
+        drops(me.swimming ? 7 : 5, 1.4, 0.7);
+        G.audio?.play?.('water', me.x, lvl, me.z, me.swimming ? 0.45 : 0.35);
+      }
+      G.U.wake.value.set(me.x, me.z, Math.min(1, 0.25 + sp * 0.5));
+    } else if (G.U.wake.value.z > 0) G.U.wake.value.z = Math.max(0, G.U.wake.value.z - dt * 0.8);
+    this._inWater = lvl != null && wdep > 0.25;
     // on foot, only re-centre behind the brother while the stick is pushed mostly forward
     const forward = ax.y < -0.55 && Math.abs(ax.x) < 0.35;
     const fm = this.cam.foot;

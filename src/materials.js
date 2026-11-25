@@ -137,12 +137,73 @@ export function terrainMaterial() {
   const w1 = nz(p.xz.add(vec2(t.mul(0.9), t.mul(0.4))), 1 / 7).rg, w2 = nz(p.xz.add(vec2(t.mul(-0.5), t.mul(0.7))), 1 / 2.3).rg;
   const rip = w1.add(w2).sub(1).mul(mix(float(0.12), float(0.35), U.rain).add(length(U.wind).mul(0.01)));
   const waterN = normalize(vec3(rip.x, 1, rip.y));
-  albedo = mix(albedo, vec3(0.012, 0.022, 0.024), isWater);
+  // under water (class 4) the terrain is the carved bed seen through the water surface: dark silt with weed
+  const silt = mix(vec3(0.07, 0.065, 0.045), vec3(0.05, 0.075, 0.035), nz(p.xz, 1 / 2.7).g);
+  albedo = mix(albedo, silt, isWater);
   const d = sDetail(layer, uvm);
   m.colorNode = albedo.mul(cloudShadow(p));
-  m.roughnessNode = mix(mix(d.b.mul(0.35).add(0.62), float(0.32), wet), float(0.03), isWater);
-  m.normalNode = worldToView(mix(perturbW(normalWorld, d, float(0.9)), waterN, isWater));
-  m.emissiveNode = lightPool(p).mul(albedo).add(skyReflection(p, normalize(vec3(rip.x, 1, rip.y)), isWater.mul(0.9)));
+  m.roughnessNode = mix(mix(d.b.mul(0.35).add(0.62), float(0.32), wet), float(0.8), isWater);
+  m.normalNode = worldToView(mix(perturbW(normalWorld, d, float(0.9)), mix(normalWorld, waterN, 0.3), isWater));
+  m.emissiveNode = lightPool(p).mul(albedo);
+  return m;
+}
+
+// --- open water: lakes, rivers, brooks (tile worker water surfaces over carved beds) ----------------------
+// wDepth: metres of water over the bed at each vertex. Colour follows Beer-Lambert absorption (peaty green-
+// brown English water), shallows turn clear over the bed, waves are three octaves of wind-driven noise plus rain
+// rings, reflections are Fresnel-weighted sky and street lights, and a thin lapping line runs along the shore.
+export function waterMaterial() {
+  // lit by hand (unlit node material): the reflections come from the analytic sky, not the IBL cube map, whose
+  // face joins show as a hard line on a mirror-flat lake; it is also cheaper than the full light loop on phones
+  const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: true, side: THREE.DoubleSide });
+  const p = positionWorld, t = U.t;
+  const depth = attribute('wDepth', 'float').max(0);
+  const wl = length(U.wind), wd = normalize(U.wind.add(vec2(1e-4, 0)));
+  const calm = clamp(wl.mul(0.08).add(0.15), 0.15, 1);
+  // height field from scrolling noise octaves (texture red channel), with its gradient by finite differences
+  const hf = Fn(([q]) => {
+    const a = nz(q.add(wd.mul(t.mul(0.55))), 1 / 9).r;
+    const b = nz(q.add(vec2(t.mul(-0.31), t.mul(0.42))), 1 / 3.3).r;
+    const c = nz(q.add(wd.mul(t.mul(1.3))), 1 / 1.1).r;
+    return a.mul(0.55).add(b.mul(0.3)).add(c.mul(0.15).mul(calm));
+  });
+  const e = 0.35, h0 = hf(p.xz), hx = hf(p.xz.add(vec2(e, 0))), hz = hf(p.xz.add(vec2(0, e)));
+  const amp = calm.mul(0.55).add(U.rain.mul(0.25));
+  let gx = hx.sub(h0).div(e).mul(amp), gz = hz.sub(h0).div(e).mul(amp);
+  // rain: expanding rings from random drops on a 0.6 m lattice
+  const cell = floor(p.xz.div(0.6)), f = fract(p.xz.div(0.6)).sub(0.5);
+  const rnd = fract(sin(dot(cell, vec2(12.9898, 78.233))).mul(43758.5453));
+  const ph = fract(t.mul(0.9).add(rnd)), rr = length(f).sub(ph.mul(0.45));
+  const ring = sin(rr.mul(40)).mul(smoothstep(0.08, 0, abs(rr))).mul(float(1).sub(ph)).mul(U.rain).mul(step(0.35, rnd));
+  gx = gx.add(f.x.mul(ring).mul(3)); gz = gz.add(f.y.mul(ring).mul(3));
+  // wake: rings spreading from a swimmer (or a car wading), and churned water right around them
+  const wv = p.xz.sub(vec2(U.wake.x, U.wake.y)), wdst = length(wv).max(0.05);
+  const wave = sin(wdst.mul(7).sub(t.mul(6))).mul(exp(wdst.mul(-0.45))).mul(U.wake.z).mul(0.45);
+  gx = gx.add(wv.x.div(wdst).mul(wave)); gz = gz.add(wv.y.div(wdst).mul(wave));
+  const churn = smoothstep(1.4, 0.2, wdst).mul(U.wake.z);
+  const n = normalize(vec3(gx.negate(), 1, gz.negate()));
+  const v = normalize(cameraPosition.sub(p));
+  const fres = pow(float(1).sub(max(dot(n, v), 0)), 5).mul(0.95).add(0.02);
+  // body: shallow water shows the bed, deep water is dark peaty green; lit by sun and sky
+  const absorb = float(1).sub(exp(depth.mul(-0.55)));
+  const body = mix(vec3(0.06, 0.085, 0.05), vec3(0.012, 0.03, 0.028), absorb);
+  const day = float(1).sub(U.night.mul(0.85));
+  const lit = vec3(U.sunCol).mul(max(U.sunDir.y, 0).mul(0.9)).mul(float(1).sub(U.cover.mul(0.6))).add(skyColor(vec3(0, 1, 0)).mul(0.55)).mul(day).add(0.02);
+  // shore: a narrow lapping line where the water meets the bank (depth ~0), moving with the waves
+  const lap = smoothstep(0.16, 0.02, depth).mul(smoothstep(0.45, 0.7, nz(p.xz.add(vec2(t.mul(0.2), 0)), 1 / 0.7).g.add(h0.mul(0.3))))
+    .add(churn.mul(smoothstep(0.4, 0.85, nz(p.xz.add(vec2(t.mul(0.35), t.mul(-0.2))), 1 / 1.1).g.add(h0.mul(0.25)))).mul(0.5)).min(1);
+  const bodyLit = mix(body, vec3(0.42, 0.44, 0.4), lap.mul(0.55)).mul(lit).mul(cloudShadow(p)).add(lightPool(p).mul(body));
+  // reflection: the sky (plus street lights by night, from wetReflection's streaks) and the sun's glitter
+  const r = reflect(v.negate(), n);
+  const sky = skyColor(r).mul(float(1).sub(U.night.mul(0.75)));
+  const sharpR = float(1).sub(calm.mul(0.6));     // calm water: long, sharp light streaks (and not a WGSL constant)
+  const streaks = wetReflection(p, n, float(1), sharpR).sub(skyColor(r).mul(pow(float(1).sub(max(dot(n, v), 0)), 4).mul(0.85).add(0.05)).mul(float(1).sub(U.night.mul(0.75))).mul(float(1).sub(U.ibl.mul(0.8)))).max(0);
+  const glint = pow(max(dot(r, U.sunDir), 0), 900).mul(30).add(pow(max(dot(r, U.sunDir), 0), 120).mul(0.6))
+    .mul(vec3(U.sunCol)).mul(float(1).sub(U.night)).mul(float(1).sub(U.cover.mul(0.85)));
+  const alpha = clamp(absorb.mul(1.1).add(0.3).add(fres.mul(0.5)).add(lap.mul(0.3)), 0.35, 0.97);
+  // the blend scales everything by alpha: divide the reflections back up so shallows still mirror the sky
+  const refl = sky.mul(fres).add(streaks).add(glint);
+  m.colorNode = vec4(bodyLit.mul(float(1).sub(fres)).add(refl.div(alpha)), alpha);
   return m;
 }
 

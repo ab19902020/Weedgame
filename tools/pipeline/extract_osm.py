@@ -1,13 +1,14 @@
 """Cut the Green County study area out of a regional OSM extract.
 
-Usage: python3 extract_osm.py <regional.osm.pbf> <out.osm.pbf>
+Usage: python3 extract_osm.py <regional.osm.pbf> <out.osm.pbf> [W S E N]
+(default bbox: the study area; v0.18 used -1.10 51.385 -0.70 51.52 to take in the M4 from J12 to J8/9)
 Keeps every way touching the study bbox, every tagged node inside it and every
 relation with a member way kept, then writes all referenced objects so the
 output is referentially complete.
 """
 import sys, osmium
 
-W, S, E, N = -1.005, 51.385, -0.725, 51.485
+W, S, E, N = (-1.005, 51.385, -0.725, 51.485) if len(sys.argv) < 7 else tuple(map(float, sys.argv[3:7]))
 
 def inside(loc):
     return loc.valid() and W <= loc.lon <= E and S <= loc.lat <= N

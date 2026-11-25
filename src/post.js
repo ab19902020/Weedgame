@@ -134,7 +134,13 @@ export function createIBL(G) {
       const prevTM = renderer.toneMapping;
       rt = pmrem.fromScene(envScene, 0, 1, 2500, { size, position: pos, renderTarget: rt });
       renderer.toneMapping = prevTM;
-      if (scene.environment !== rt.texture) scene.environment = rt.texture;
+      if (scene.environment !== rt.texture) {
+        // objects drawn before the first environment existed compiled without it: rebuild their materials once,
+        // or tiles loaded in the first seconds lack sky reflections their later neighbours have (a seam on water)
+        const first = !scene.environment;
+        scene.environment = rt.texture;
+        if (first) { const seen = new Set(); scene.traverse(o => { for (const m of [].concat(o.material || [])) if (!seen.has(m)) { seen.add(m); m.needsUpdate = true; } }); }
+      }
       U.ibl.value = 1;
     },
   };

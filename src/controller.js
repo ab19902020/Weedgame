@@ -55,7 +55,7 @@ export class Controller {
     }
     const jump=I.consume('jump'),hit=I.consume('hit'),pickup=I.consume('pickup');
     if(me.vehicle)return;
-    if(jump && !(a.jumpTime>0))a.jumpTime=.68;
+    if(jump && !(a.jumpTime>0) && !me.swimming)a.jumpTime=.68;
     if(a.jumpTime>0){a.jumpTime=Math.max(0,a.jumpTime-dt);const t=1-a.jumpTime/.68;a.y=me.y+3.2*t*(1-t);}
     if(hit && !(a.hitTime>0)){
       a.hitTime=.32;
