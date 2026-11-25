@@ -3,6 +3,7 @@ import { ROLES } from './riggedPeople.js';
 import { GameMenu } from './gameMenu.js';
 import { Navigation, distanceLabel } from './navigation.js';
 import { STATES } from './weather.js';
+import { MapView } from './mapView.js';
 
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 export const TESTSPOTS = [
@@ -95,6 +96,7 @@ export class Hud {
       this.mapView={x:(left+right)/2,z:(top+bottom)/2,s:Math.max(.025,Math.min(2,(innerWidth-64)/Math.max(1,right-left),(innerHeight-160)/Math.max(1,bottom-top)))};
     };
     this.setupMap();
+    this.atlas = new MapView(G);   // draws the Road Atlas and the minimap (mapView.js)
     this.menu=new GameMenu(this);
     this.overview = new Map();
     this.feedItems = [];
@@ -143,7 +145,9 @@ export class Hud {
       this.el('pBrake').classList.toggle('rev',!!(v?.ph?.gear<0&&c.brake>0));
     } else this.el('speedo').hidden=true;
     this._acc = (this._acc || 0) + dt;
-    if (this._acc > 0.1) { this._acc = 0; const notice=this.nav.update(me); if(notice) this.toast(notice); this.drawMini(); this.renderFeed(); this.drawClock(); if (!this.el('map').hidden) this.drawMap(); }
+    if (this._acc > 0.1) { this._acc = 0; const notice=this.nav.update(me); if(notice) this.toast(notice); this.miniText(); this.renderFeed(); this.drawClock(); }
+    // the maps draw every frame (the minimap turns smoothly; the atlas redraws only when its view or contents change)
+    if (!this.el('map').hidden) this.drawMap(); else this.drawMini();
     if(G.transit.ride){this.el('guidance').hidden=false;this.el('guidance').firstChild.textContent=G.transit.ride===G.transit?'RAIL':'BUS '+G.transit.ride.ref;this.el('guidance').lastChild.textContent='Next: '+G.transit.nextName()+(G.transit.request?' · Stop requested':'');}
     if (this.perfOn) this.el('perf').textContent = G.perf.text();
   }
@@ -156,57 +160,45 @@ export class Hud {
     this.el('clock').textContent = `${me.short} · ${hh}:${mm} · ${label}${G.world.s.wet > 0.05 ? ` · roads ${G.world.s.wet > 0.6 ? 'wet' : 'damp'}` : ''}`;
   }
   drawMini() {
-    const G = this.G, c = this.mini, W = 220, me = G.brothers.me, net = G.net;
-    const scale = me.vehicle ? Math.max(.35,.92-(G.brothers.speedNow || 0)*.018) : 1.6; // px per metre
+    const G = this.G, me = G.brothers.me, cv = this.el('miniC');
+    const S = cv.clientWidth || 150, dpr = Math.min(3, devicePixelRatio || 1), dev = Math.round(S * dpr);
+    if (cv.width !== dev) { cv.width = cv.height = dev; }
+    // (the zoom was tuned for a 220 px disc: keep the same reach at any size)
+    const scale = (me.vehicle ? Math.max(.35, .92 - (G.brothers.speedNow || 0) * .018) : 1.6) * S / 220; // px per metre
     const rot = this.menu.settings.orientation === 'North up' ? 0 : me.vehicle ? -me.heading-Math.PI/2 : -(G.brothers.cam.yaw + Math.PI / 2) - Math.PI; // map rotates with camera
-    c.save(); c.clearRect(0, 0, W, W);
-    c.fillStyle = 'rgba(28,36,32,0.88)'; c.beginPath(); c.arc(W / 2, W / 2, W / 2 - 2, 0, 7); c.fill(); c.clip();
-    c.translate(W / 2, W / 2); c.rotate(rot); c.scale(scale, scale); c.translate(-me.x, -me.z);
-    const R = W / scale * 0.75;
-    // buildings from loaded tiles
-    c.fillStyle = '#5b5550';
-    G.tiles.buildingsNear(me.x, me.z, R, (P, s, n) => {
-      c.beginPath(); for (let k = 0; k < n; k++) { const x = P[(s + k) * 2], z = P[(s + k) * 2 + 1]; k ? c.lineTo(x, z) : c.moveTo(x, z); } c.fill();
+    const c = this.mini, R = S / 2;
+    this.atlas.minimap(c, S, dpr, me, scale, rot, c => {
+      this.nav.draw(c, x => x, z => z, 1 / scale);
+      const reach = R / scale;
+      for (const v of G.traffic.list) {
+        if (Math.abs(v.x - me.x) > reach || Math.abs(v.z - me.z) > reach) continue;
+        if (v.kind === 'police') dot(c, v.x, v.z, 4.5 / scale, v.siren ? (Math.floor(performance.now() / 250) % 2 ? '#2a6cff' : '#ff2a2a') : '#3a7aff', '#0b1220', 1.2 / scale);
+        else if (v.owner || v.free) dot(c, v.x, v.z, 4 / scale, '#7fd0ff', '#0b1220', 1.2 / scale);
+        else if (v.kind === 'bus') dot(c, v.x, v.z, 3.5 / scale, '#c080ff', '#0b1220', 1 / scale);
+      }
     });
-    // roads
-    const seen = new Set();
-    for (let cx = Math.floor((me.x - R) / 50); cx <= Math.floor((me.x + R) / 50); cx++) for (let cz = Math.floor((me.z - R) / 50); cz <= Math.floor((me.z + R) / 50); cz++) {
-      const l = net.grid.get(cx * 65536 + cz); if (!l) continue;
-      for (let k = 0; k < l.length; k += 2) seen.add(l[k]);
-    }
-    for (const pass of [0, 1]) for (const e of seen) {
-      const walk = net.walkCls.has(net.cls[e]); if (walk && pass === 0) continue; if (!walk && pass === 1) continue;
-      const cl = net.classes[net.cls[e]];
-      c.strokeStyle = walk ? '#7d7a6c' : /motorway|trunk/.test(cl) ? '#e0a050' : /primary/.test(cl) ? '#d8c890' : '#c9c9c0';
-      c.lineWidth = walk ? 1.2 : Math.max(3, net.width[e]);
-      c.beginPath();
-      const s = net.pstart[e], n = net.pcount[e];
-      for (let i = 0; i < n; i++) { const x = net.pts[(s + i) * 3], z = net.pts[(s + i) * 3 + 2]; i ? c.lineTo(x, z) : c.moveTo(x, z); }
-      c.stroke();
-    }
-    this.nav.draw(c,x=>x,z=>z,1/scale);
-    // vehicles: parked brothers' cars, police
-    for (const v of G.traffic.list) {
-      if (Math.abs(v.x - me.x) > R || Math.abs(v.z - me.z) > R) continue;
-      if (v.kind === 'police') dot(c, v.x, v.z, 5 / scale, v.siren ? (Math.floor(performance.now() / 250) % 2 ? '#2a6cff' : '#ff2a2a') : '#3a7aff');
-      else if (v.owner || v.free) dot(c, v.x, v.z, 4.5 / scale, '#7fd0ff');
-      else if (v.kind === 'bus') dot(c, v.x, v.z, 4 / scale, '#c080ff');
-    }
-    // other brother
+    // screen space: the other brother (held at the rim when out of range), the needle, north
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
     const other = G.brothers.b[1 - G.brothers.active];
+    const cs = Math.cos(rot), sn = Math.sin(rot), ox0 = (other.x - me.x) * scale, oz0 = (other.z - me.z) * scale;
+    let ox = ox0 * cs - oz0 * sn, oz = ox0 * sn + oz0 * cs;
+    const lim = R - 10, ol = Math.hypot(ox, oz); if (ol > lim) { ox *= lim / ol; oz *= lim / ol; }
+    dot(c, R + ox, R + oz, 6.5, '#ffb347', '#1a1208', 1.6);
+    c.fillStyle = '#1a1208'; c.font = '800 8.5px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(other.short[0], R + ox, R + oz + 0.5);
+    c.save(); c.translate(R, R);
+    c.fillStyle = 'rgba(47,140,255,0.25)'; c.beginPath(); c.arc(0, 0, 13, 0, 7); c.fill();
+    c.rotate(me.heading + rot);
+    c.beginPath(); c.moveTo(11, 0); c.lineTo(-7.5, -7.5); c.lineTo(-3.5, 0); c.lineTo(-7.5, 7.5); c.closePath();
+    c.lineJoin = 'round'; c.lineWidth = 4.5; c.strokeStyle = 'rgba(8,14,22,0.55)'; c.stroke();
+    c.lineWidth = 2.4; c.strokeStyle = '#ffffff'; c.stroke(); c.fillStyle = '#2f8cff'; c.fill();
     c.restore();
-    c.save(); c.translate(W / 2, W / 2);
-    const toScreen = (x, z) => { const dx = (x - me.x) * scale, dz = (z - me.z) * scale; const cs = Math.cos(rot), sn = Math.sin(rot); return [dx * cs - dz * sn, dx * sn + dz * cs]; };
-    let [ox, oz] = toScreen(other.x, other.z);
-    const lim = W / 2 - 12, ol = Math.hypot(ox, oz); if (ol > lim) { ox *= lim / ol; oz *= lim / ol; }
-    c.fillStyle = '#ffb347'; c.beginPath(); c.arc(ox, oz, 7, 0, 7); c.fill(); c.fillStyle = '#222'; c.font = 'bold 9px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(other.short[0], ox, oz + 0.5);
-    // me (arrow showing heading)
-    const hd = me.heading + rot;
-    c.rotate(hd); c.fillStyle = '#fff'; c.beginPath(); c.moveTo(9, 0); c.lineTo(-6, -6); c.lineTo(-3, 0); c.lineTo(-6, 6); c.fill();
-    c.restore();
-    // north marker
-    const nx = Math.cos(rot - Math.PI / 2) * (W / 2 - 12), nz = Math.sin(rot - Math.PI / 2) * (W / 2 - 12);
-    c.fillStyle = '#fff'; c.font = 'bold 12px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('N', W / 2 + nx, W / 2 + nz);
+    const nx = R + Math.cos(rot - Math.PI / 2) * (R - 10), nz = R + Math.sin(rot - Math.PI / 2) * (R - 10);
+    dot(c, nx, nz, 7.5, '#14211d', '#e8f3ec', 1.2);
+    c.fillStyle = '#ff6b5a'; c.font = '800 9px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('N', nx, nz + 0.5);
+  }
+  // the guidance panel and the road you're on (ten times a second)
+  miniText() {
+    const G = this.G, me = G.brothers.me;
     const guide=this.el('guidance');
     guide.hidden=!this.nav.pin;
     if(this.nav.pin){
@@ -220,7 +212,7 @@ export class Hud {
     this.el('road').textContent = `${name || G.districtName(me.x, me.z)} · ${hdg}`;
   }
   // ------------------------------------------------------------------ full map
-  zoomMap(factor) { this.mapView.s=Math.max(.04,Math.min(4,this.mapView.s*factor)); }
+  zoomMap(factor) { this.mapView.s=Math.max(.025,Math.min(3,this.mapView.s*factor)); }
   setupMap() {
     const cv=this.el('mapC'), pointers=new Map();
     let tap=null;
@@ -259,57 +251,46 @@ export class Hud {
     const k = i + '_' + j; if (this.overview.has(k)) return this.overview.get(k);
     const img = new Image(); img.src = `world/overview/${k}.png`; this.overview.set(k, img); return img;
   }
-  drawMap() {
-    const G = this.G, cv = this.el('mapC'), ov = G.manifest.overview;
-    if (cv.width !== innerWidth || cv.height !== innerHeight) { cv.width = innerWidth; cv.height = innerHeight; }
-    const c = cv.getContext('2d'), V = this.mapView, W = cv.width, H = cv.height;
-    c.fillStyle = '#6e766c'; c.fillRect(0, 0, W, H);
-    const X = x => (x - V.x) * V.s + W / 2, Z = z => (z - V.z) * V.s + H / 2;
-    const tw = ov.tile * ov.mpx;
-    const i0 = Math.max(0, Math.floor((V.x - W / 2 / V.s - ov.x0) / tw)), i1 = Math.min(Math.ceil(ov.w / ov.tile) - 1, Math.floor((V.x + W / 2 / V.s - ov.x0) / tw));
-    const j0 = Math.max(0, Math.floor((V.z - H / 2 / V.s - ov.z0) / tw)), j1 = Math.min(Math.ceil(ov.h / ov.tile) - 1, Math.floor((V.z + H / 2 / V.s - ov.z0) / tw));
-    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
-      const img = this.ovTile(i, j); if (!img.complete || !img.naturalWidth) continue;
-      c.drawImage(img, X(ov.x0 + i * tw), Z(ov.z0 + j * tw), tw * V.s + 1, tw * V.s + 1);
-    }
-    // roads + names
-    const net = G.net, labels = [];
-    const minRank = V.s < 0.15 ? 7 : V.s < 0.5 ? 5 : 2;
-    for (let e = 0; e < net.nEdges; e++) {
-      const cl = net.classes[net.cls[e]];
-      const rank = { motorway: 9, trunk: 9, primary: 8, secondary: 7, tertiary: 6, motorway_link: 6, trunk_link: 6, primary_link: 6, unclassified: 4, residential: 3, living_street: 2, service: 1 }[cl] || 0;
-      if (rank < minRank) continue;
-      const s = net.pstart[e], n = net.pcount[e];
-      const x0 = net.pts[s * 3], z0 = net.pts[s * 3 + 2];
-      if (X(x0) < -400 || X(x0) > W + 400 || Z(z0) < -400 || Z(z0) > H + 400) continue;
-      c.strokeStyle = rank >= 9 ? '#e8a040' : rank >= 7 ? '#efe0a0' : '#f4f2ea'; c.lineWidth = Math.max(1, net.width[e] * V.s);
-      c.beginPath(); for (let k = 0; k < n; k++) { const x = X(net.pts[(s + k) * 3]), z = Z(net.pts[(s + k) * 3 + 2]); k ? c.lineTo(x, z) : c.moveTo(x, z); } c.stroke();
-      const nm = net.roadName(e); if (nm && net.len[e] * V.s > 60) labels.push([nm, s + (n >> 1), rank]);
-    }
-    c.font = '600 12px system-ui'; c.fillStyle = '#1a1a1a'; c.strokeStyle = 'rgba(255,255,255,0.85)'; c.lineWidth = 3; c.textAlign = 'center';
-    const used = new Set(), cells = new Set();
-    labels.sort((a, b) => b[2] - a[2]);
-    for (const [nm, k] of labels) {
-      const x = X(net.pts[k * 3]), z = Z(net.pts[k * 3 + 2]); const cell = Math.floor(x / 140) + ',' + Math.floor(z / 26);
-      if (used.has(nm) && V.s < 1 || cells.has(cell) || x < 0 || x > W || z < 0 || z > H) continue;
-      used.add(nm); cells.add(cell); c.strokeText(nm, x, z); c.fillText(nm, x, z);
-    }
-    // districts
-    c.font = 'bold 15px system-ui';
-    for (const d of G.manifest.districts) { if (/hamlet|neighbourhood/.test(d.kind || '')) continue; c.strokeText(d.name, X(d.x), Z(d.z) - 20); c.fillText(d.name, X(d.x), Z(d.z) - 20); }
-    G.transit.drawMap(c,X,Z,V.s);
-    this.nav.draw(c,X,Z);
-    // vehicles & brothers
-    for (const v of G.traffic.list) { if (v.owner || v.free) dot(c, X(v.x), Z(v.z), 6, '#4fb7ff'); if (v.kind === 'police') dot(c, X(v.x), Z(v.z), 4, '#2a4cff'); }
-    G.brothers.b.forEach((b, i) => { dot(c, X(b.x), Z(b.z), 8, i === G.brothers.active ? '#ffffff' : '#ffb347'); c.fillStyle = '#111'; c.font = 'bold 13px system-ui'; c.fillText(b.short, X(b.x), Z(b.z) - 12); });
-    const nav=this.nav;
-    this.el('mInfo').textContent=nav.pin ? nav.pin.name+' · '+(nav.route ? distanceLabel(nav.route.length-nav.progress)+' remaining' : nav.instruction()) : 'Tap a street to set a waypoint · drag to explore';
+  drawMap(force = false) {
+    const G = this.G, cv = this.el('mapC'), dpr = Math.min(2, devicePixelRatio || 1), W = innerWidth, H = innerHeight;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); force = true; }
+    // redrawn when the view or what's on it changes, and four times a second for the moving markers
+    const V = this.mapView, nav = this.nav, now = performance.now();
+    const sig = `${V.x.toFixed(1)},${V.z.toFixed(1)},${V.s.toFixed(4)},${this.atlas.data.version},${nav.pin ? nav.pin.x + ',' + (nav.progress | 0) : ''}`;
+    if (!force && !this.atlas.pending && sig === this._mapSig && now - (this._mapT || 0) < 250) return;
+    this._mapSig = sig; this._mapT = now;
+    const c = cv.getContext('2d');
+    // names keep clear of the controls and of the brothers' markers
+    const avoid = [];
+    for (const q of this.el('map').querySelectorAll('.maptools,.atlasPlaces,.atlasFooter')) { const r = q.getBoundingClientRect(); if (r.width) avoid.push([r.x + r.width / 2, r.y + r.height / 2, r.width + 8, r.height + 8]); }
+    for (const b of G.brothers.b) avoid.push([(b.x - V.x) * V.s + W / 2, (b.z - V.z) * V.s + H / 2 - 8, 64, 58]);
+    this.atlas.atlas(c, V, W, H, {
+      dpr, avoid, ovTile: (i, j) => this.ovTile(i, j),
+      over: (c, X, Z, s) => {
+        nav.draw(c, X, Z);
+        // the brothers' cars and the police
+        for (const v of G.traffic.list) {
+          const x = X(v.x), z = Z(v.z); if (x < -10 || x > W + 10 || z < -10 || z > H + 10) continue;
+          if (v.owner || v.free) { c.save(); c.translate(x, z); c.rotate(v.heading); c.fillStyle = '#2b8fe8'; c.strokeStyle = '#ffffff'; c.lineWidth = 1.6; c.beginPath(); c.roundRect ? c.roundRect(-7, -4, 14, 8, 2.5) : c.rect(-7, -4, 14, 8); c.fill(); c.stroke(); c.fillStyle = '#bfe3ff'; c.fillRect(1.5, -3, 3, 6); c.restore(); }
+          else if (v.kind === 'police') dot(c, x, z, s < 0.1 ? 3.2 : 4.5, v.siren ? (Math.floor(now / 250) % 2 ? '#2a6cff' : '#ff2a2a') : '#2a4cff', '#ffffff', s < 0.1 ? 1 : 1.4);
+        }
+        // the brothers: you as a needle, the other as a ringed initial
+        G.brothers.b.forEach((b, i) => {
+          const x = X(b.x), z = Z(b.z), me = i === G.brothers.active;
+          if (me) {
+            c.save(); c.translate(x, z);
+            c.fillStyle = 'rgba(47,113,212,0.18)'; c.beginPath(); c.arc(0, 0, 20, 0, 7); c.fill();
+            c.rotate(b.heading); c.beginPath(); c.moveTo(13, 0); c.lineTo(-9, -9); c.lineTo(-4.5, 0); c.lineTo(-9, 9); c.closePath();
+            c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = '#ffffff'; c.stroke(); c.fillStyle = '#2f71d4'; c.fill();
+            c.restore();
+          } else { dot(c, x, z, 9, '#ffb347', '#ffffff', 2.2); c.fillStyle = '#2a1a05'; c.font = '800 10px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(b.short[0], x, z + 0.5); }
+          c.font = '800 12px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+          c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; c.strokeText(b.short, x, z - 22); c.fillStyle = '#16211c'; c.fillText(b.short, x, z - 22);
+        });
+      },
+    });
+    this.el('mInfo').textContent=nav.pin ? nav.pin.name+' · '+(nav.route ? distanceLabel(nav.route.length-nav.progress)+' remaining' : nav.instruction()) : 'Tap a street to set a waypoint · drag to explore · pinch to zoom';
     this.el('mClear').hidden=this.el('mFit').hidden=!nav.pin;
-    const metres=[10,25,50,100,250,500,1000,2500].find(n=>n*V.s>=45)||2500;
-    const width=metres*V.s;
-    c.fillStyle='#19372e';c.fillRect(14,H-85,width+12,29);c.fillStyle='#fff5d9';
-    c.font='bold 11px system-ui';c.textAlign='left';c.fillText(metres>=1000?metres/1000+' km':metres+' m',20,H-70);
-    c.fillRect(20,H-65,width,2);
   }
   // ------------------------------------------------------------------ developer panel
   toggleDev() {
@@ -343,7 +324,7 @@ export class Hud {
     d.lastChild.onclick = () => d.hidden = true;
   }
 }
-function dot(c, x, z, r, col) { c.fillStyle = col; c.beginPath(); c.arc(x, z, r, 0, 7); c.fill(); }
+function dot(c, x, z, r, col, edge, lw) { c.fillStyle = col; c.beginPath(); c.arc(x, z, r, 0, 7); c.fill(); if (edge) { c.strokeStyle = edge; c.lineWidth = lw || 1.5; c.stroke(); } }
 // stable data-act ids for dev buttons (the acceptance run taps by id, not by label or position)
 export function slug(s) { return String(s).toLowerCase().replace(/[✓×]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''); }
 function esc(s) { return String(s).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[m]); }
