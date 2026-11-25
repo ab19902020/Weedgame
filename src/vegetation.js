@@ -4,7 +4,7 @@
 import * as THREE from 'three/webgpu';
 import {
   float, vec2, vec3, vec4, positionLocal, positionGeometry, positionWorld, normalWorld, cameraPosition, uv, texture, int, attribute,
-  mix, sin, length, max, dot, normalize, pow, smoothstep, fract, instanceIndex,
+  mix, sin, length, max, dot, normalize, pow, smoothstep, fract, instanceIndex, normalViewGeometry, instanceColor,
 } from 'three/tsl';
 import { U, cloudShadow } from './env.js';
 import { L, sAlbedo, sDetail, perturb } from './surfaces.js';
@@ -43,10 +43,11 @@ function leafTexture() {
     g.restore();
   };
   const specs = [
-    { n: 210, base: [34, 78, 28], yel: 40, serr: true },
-    { n: 190, base: [78, 120, 32], yel: 70, serr: false },
-    { n: 180, base: [92, 38, 28], yel: 20, serr: false },
-    { n: 260, base: [22, 58, 30], yel: 8, serr: false, needle: true },
+    // leaf colours (sRGB): real foliage reflects ~8-15% in the green, so these sit well above black
+    { n: 210, base: [62, 118, 44], yel: 40, serr: true },
+    { n: 190, base: [104, 150, 48], yel: 70, serr: false },
+    { n: 200, base: [78, 126, 56], yel: 30, serr: true },   // field maple / hawthorn green (copper beech is tinted from green in the shader)
+    { n: 260, base: [44, 92, 50], yel: 8, serr: false, needle: true },
   ];
   specs.forEach((sp, v) => {
     const ox = (v % 2) * N / 2, oy = Math.floor(v / 2) * N / 2, h = N / 2;
@@ -177,10 +178,16 @@ export function treeMaterials() {
   const lt = texture(leafTex, uv());
   const dist = length(cameraPosition.sub(p));
   const alpha = lt.a.mul(mix(float(1), float(2.4), smoothstep(25, 160, dist)));
-  // instanceColor is the species (set in tiles.js): oak, lime, plane, copper, yew
-  const species = attribute('instanceColor', 'vec3');
-  let col = lt.rgb.mul(species).mul(tid.mul(0.18).add(0.9)).mul(mix(float(1), float(0.72), U.wet));
+  // the species tint (oak, lime, plane, copper, yew; shrub palettes) is the mesh's instance colour, which three.js
+  // multiplies into colorNode itself. It must be read through the instanceColor varying: it is not a geometry
+  // attribute, and attribute('instanceColor') silently read zero and turned every crown near-black.
+  // Tints arrive halved from tiles.js (so 0.5 = the leaf texture's own colour): double here.
+  const species = instanceColor;
+  let col = lt.rgb.mul(2).mul(tid.mul(0.18).add(0.9)).mul(mix(float(1), float(0.72), U.wet));
   col = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, 0.78);
+  // copper beech and red-leaved shrubs (red-leaning tints): take the leaf's luminance into a deep copper
+  const copper = smoothstep(0.08, 0.2, species.r.sub(species.g));
+  col = mix(col, vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))).mul(vec3(1.9, 1.05, 1.05)), copper);
   const pg = positionGeometry;
   const r = length(pg);
   const ao = smoothstep(0.2, 0.95, r).mul(0.6).add(0.4).mul(pg.y.mul(0.28).add(0.8));
@@ -188,12 +195,18 @@ export function treeMaterials() {
   crown.colorNode = vec4(col.mul(cloudShadow(p)), alpha);
   const v = normalize(p.sub(cameraPosition));
   const back = pow(max(dot(v, U.sunDir), 0), 5).mul(float(1).sub(U.night)).mul(float(1).sub(U.cover.mul(0.6)));
-  crown.emissiveNode = col.mul(vec3(1.05, 1.15, 0.45)).mul(U.sunCol).mul(back.mul(0.95).add(0.025));
+  // translucency: strong looking towards the sun, plus a soft wrap so sunlit crowns glow green rather than going navy
+  const wrap = max(dot(normalWorld, U.sunDir).mul(0.5).add(0.5), 0).mul(float(1).sub(U.night)).mul(float(1).sub(U.cover.mul(0.5)));
+  crown.emissiveNode = col.mul(species).mul(vec3(1.05, 1.15, 0.45)).mul(U.sunCol).mul(back.mul(0.95).add(wrap.mul(0.16)).add(0.03));
+  // leaf cards are double-sided but carry outward 'volume' normals: don't let three.js flip them on back faces
+  // (that lit half of every crown from the inside and made trees look near-black)
+  crown.normalNode = normalViewGeometry;
   const trunk = new THREE.MeshStandardNodeMaterial({ roughness: 0.92, metalness: 0 });
   const tuv = vec2(uv().x.mul(1.6), positionWorld.y.mul(0.85));
   const bark = sAlbedo(int(L.bark), tuv);
   const lichen = smoothstep(0.62, 0.86, texture(leafTex, tuv.mul(0.15)).g).mul(0.22);
-  trunk.colorNode = bark.mul(mix(vec3(0.72, 0.62, 0.5), vec3(0.85), species.b)).mul(mix(float(1), float(0.62), U.wet)).mul(mix(vec3(1), vec3(0.75, 0.9, 0.62), lichen)).mul(cloudShadow(positionWorld));
+  // trunks carry no instance colour (it would tint the bark green): grey-barked beech/plane by hash instead
+  trunk.colorNode = bark.mul(mix(vec3(0.72, 0.62, 0.5), vec3(0.85), smoothstep(0.62, 0.78, tid))).mul(mix(float(1), float(0.62), U.wet)).mul(mix(vec3(1), vec3(0.75, 0.9, 0.62), lichen)).mul(cloudShadow(positionWorld));
   trunk.normalNode = perturb(normalWorld, sDetail(int(L.bark), tuv), float(1.35));
   return { crown, trunk };
 }

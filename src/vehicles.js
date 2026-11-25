@@ -185,8 +185,11 @@ export class VehicleRenderer {
     S.s = sp; S.h = v.heading;
     const big = MODELS[v.model].mass > 5000 ? 0.6 : 1;
     const tp = Math.max(-0.05, Math.min(0.05, along * 0.0042 * big)), tr = Math.max(-0.065, Math.min(0.065, -lat * 0.0058 * big));
+    // collisions jolt the body: a frontal hit pitches the nose down, a side hit rolls it away (carPhysics.kick)
+    if (v._kick) { S.vp += v._kick[0] * 0.055 * big; S.vr -= v._kick[1] * 0.07 * big; v._kick = null; }
     S.vp += ((tp - S.p) * 70 - S.vp * 9) * dt; S.p += S.vp * dt;
     S.vr += ((tr - S.r) * 55 - S.vr * 8) * dt; S.r += S.vr * dt;
+    S.p = Math.max(-0.14, Math.min(0.14, S.p)); S.r = Math.max(-0.16, Math.min(0.16, S.r));
   }
   draw(vehicles, cam, maxDist = 700) {
     const counts = {}, countsFar = {}; for (const k in MODELS) { counts[k] = 0; countsFar[k] = 0; }

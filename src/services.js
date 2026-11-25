@@ -20,7 +20,7 @@ export class Parking {
       const id = `p:${t.key}:${i}`;
       if (G.save.taken.has(id) || G.traffic.byId.has(id)) continue;
       const r = mulberry(hashStr(id))();
-      const occ = K[i] ? 0.6 : 0.75;      // car parks / kerbside
+      const occ = K[i] ? 0.28 : 0.42;     // car parks / kerbside: well used but with gaps, not wall-to-wall
       if (r > occ) continue;
       const r2 = mulberry(hashStr(id) ^ 0x5bd1e995);
       const model = randomModel(r2());
