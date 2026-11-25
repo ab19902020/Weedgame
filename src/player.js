@@ -136,8 +136,11 @@ export class Brothers {
     // brake pedal: brakes while moving; held at a standstill it holds the car, then after a moment engages reverse
     // (so stopping at a junction never lurches backwards). The accelerator brakes a car that is rolling backwards.
     const u = v.ph ? v.ph.vx * Math.cos(v.heading) + v.ph.vz * Math.sin(v.heading) : (v.sp || 0);
-    if (c.brake > 0.05 && c.gas < 0.05 && Math.abs(u) < 0.8) this.stillT = (this.stillT || 0) + dt; else if (c.brake <= 0.05) this.stillT = 0;
-    const reverse = c.brake > 0.05 && c.gas < 0.05 && (u < -0.3 || this.stillT > 0.45);
+    // Reverse carries on only while the press that engaged it is held: a fresh press while rolling backwards brakes.
+    const braking = c.brake > 0.05 && c.gas < 0.05;
+    if (!braking) { this.stillT = 0; this.revHold = false; } else if (Math.abs(u) < 0.8) this.stillT = (this.stillT || 0) + dt;
+    if (braking && this.stillT > 0.45) this.revHold = true;
+    const reverse = braking && this.revHold;
     // carPhysics.js: tyre model, gearbox, assists and impulse collisions
     const ctl = { throttle: c.gas > 0.05 ? c.gas : reverse ? -c.brake : 0, brake: reverse ? 0 : c.brake, steer: c.steer, handbrake: input.padBrake || input.held.has('brake') };
     G.carDyn.drive(v, dt, ctl);
