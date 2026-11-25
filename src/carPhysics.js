@@ -181,6 +181,8 @@ export class CarDynamics {
     if (ctl) {
       if (ctl.throttle > 0.05) { if (u < -0.8) brk = ctl.throttle; else { thr = ctl.throttle; if (ph.gear < 1) ph.gear = 1; } }
       else if (ctl.throttle < -0.05) { if (u > 0.8) brk = -ctl.throttle; else { thr = -ctl.throttle; ph.gear = -1; } }
+      // the brake pedal (separate from the accelerator): full pressure at once, and it holds a stopped car still
+      if (ctl.brake > 0.02 && thr === 0) brk = Math.max(brk, ctl.brake);
       hb = !!ctl.handbrake;
       const maxSteer = 0.62 / (1 + Math.max(0, u) / 12);
       steerT = ctl.steer * maxSteer;

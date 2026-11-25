@@ -132,9 +132,14 @@ export class Brothers {
   }
   drive(dt, input, v) {
     const G = this.G, me = this.me;
-    const ax = input.driveAxis ? input.driveAxis() : input.axis();
+    const c = input.driveControls ? input.driveControls(dt) : (a => ({ steer: a.x, gas: Math.max(0, -a.y), brake: Math.max(0, a.y) }))(input.axis());
+    // brake pedal: brakes while moving; held at a standstill it holds the car, then after a moment engages reverse
+    // (so stopping at a junction never lurches backwards). The accelerator brakes a car that is rolling backwards.
+    const u = v.ph ? v.ph.vx * Math.cos(v.heading) + v.ph.vz * Math.sin(v.heading) : (v.sp || 0);
+    if (c.brake > 0.05 && c.gas < 0.05 && Math.abs(u) < 0.8) this.stillT = (this.stillT || 0) + dt; else if (c.brake <= 0.05) this.stillT = 0;
+    const reverse = c.brake > 0.05 && c.gas < 0.05 && (u < -0.3 || this.stillT > 0.45);
     // carPhysics.js: tyre model, gearbox, assists and impulse collisions
-    const ctl = { throttle: -ax.y, steer: ax.x, handbrake: input.padBrake || input.held.has('brake') };
+    const ctl = { throttle: c.gas > 0.05 ? c.gas : reverse ? -c.brake : 0, brake: reverse ? 0 : c.brake, steer: c.steer, handbrake: input.padBrake || input.held.has('brake') };
     G.carDyn.drive(v, dt, ctl);
     const hit = G.carDyn.flush(v);
     if (hit > 2) this.cam.shake = Math.max(this.cam.shake || 0, Math.min(1, hit / 14));

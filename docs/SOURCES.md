@@ -24,7 +24,21 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 
 ## Sound recordings
 
-`www/sfx/berkshire.ogg` holds 124 field-recording and foley cues (traffic, engines, horns, footsteps by surface, crowd, crashes). They are cut from CC0 and CC BY 3.0 recordings on OpenGameArt and Freesound. Each source, author and licence is listed in `www/sfx/CREDITS.txt`, which ships in the APK beside the bank; the CC BY items need that attribution kept. Cue offsets are in `src/soundCues.json`. The player's own engine, tyre squeal and scrape are synthesised (`src/audio.js`).
+`www/sfx/berkshire.ogg` holds 124 field-recording and foley cues (traffic, engines, horns, footsteps by surface, crowd, crashes). They are cut from CC0 and CC BY 3.0 recordings on OpenGameArt and Freesound. Each source, author and licence is listed in `www/sfx/CREDITS.txt`, which ships in the APK beside the bank; the CC BY items need that attribution kept. Cue offsets are in `src/soundCues.json`.
+
+Nothing in the game is synthesised: every sound is a real recording.
+
+`www/sfx/world.ogg` holds the rest of the world's sound, built by `tools/audio/build_sfx.py` from 39 Freesound recordings (37 CC0, two CC BY):
+- tyre squeal, screech and skids, road roar and metal scrape for the player's car;
+- rain (open air, and drumming on a car roof), wind, wind in leaves and a distant-traffic bed;
+- a British police car siren, and UK pelican-crossing bleeps recorded in Hereford;
+- the impacts of knocked-down street furniture: struck lamp posts, a pillar box, bins, timber poles, fences, trees, hedges, garden walls and glass.
+
+The build excerpts each recording, levels it and turns loops seamless with an equal-power crossfade. The cue offsets are in `src/worldCues.json`.
+
+`www/sfx/inline4.ogg` is the four-cylinder engine used by every car that is not a V8. `tools/vehicles/engine_bank_i4.py` builds it from Nox_Sound's CC0 recordings of a Peugeot 308: its idle is rebuilt as seamless loops at 800–7,200 rpm, with a real throttle blip on top.
+
+Every recording is credited in `www/sfx/CREDITS.txt`.
 
 `www/sfx/rangerover.ogg` is the Range Rover's V8, built by `tools/vehicles/engine_bank.py` from two CC0 recordings on Freesound:
 - "Crown Victoria Startup and idle" by Therancher01 (Ford 4.6 V8, https://freesound.org/s/610774/). The start-up is used as recorded, and its idle is rebuilt as seamless loops at 800–5,600 rpm.
@@ -75,7 +89,6 @@ The leaf-cluster texture for tree crowns is drawn procedurally on a canvas at st
 
 * **Textures**: value-noise, FBM and Worley textures, cloud noise, window interiors (parallax rooms, shop shelving, curtains), road markings and the tree leaf clusters are procedural (`src/env.js`, `src/materials.js`, `src/vegetation.js`). Surface materials (brick, render, roof tiles, asphalt, paving, grass, bark and so on) use the CC0 photographs listed above.
 * **Models**: people, vehicles (hatchback, saloon, estate, SUV, van, single- and double-deck bus, police estate in Battenburg-style livery), street lamps, signal heads, Belisha beacons, bus shelters, canopies, the Cemetery Junction gateway and Reading Town Hall are procedural geometry in `src/`.
-* **Audio**: everything (rain, wind, traffic, footsteps, murmur, horn, two-tone siren, crossing beeps, crashes) is synthesised with WebAudio at runtime in `src/audio.js`; no samples.
 * **Shop fascia text**: rendered at runtime from OSM `name` tags in plain type. These are factual street names and shop names, not logos. Brand marks are never reproduced.
 * **Launcher icon**: drawn by `tools/android/icon.py`.
 * **Railway stations and train paths** (`www/world/rail.json`, built by `tools/rail/build_rail.mjs`): track centre lines are the OSM `railway=rail` lines already in the tiles (ODbL). Station positions are the WGS84 coordinates on the English Wikipedia articles (Reading, Reading West, Earley, Winnersh Triangle, Winnersh, Wokingham, Bracknell, Martins Heron; fetched via the MediaWiki `prop=coordinates` API, Nov 2026), snapped to the nearest track (1–59 m). `manifest.stations` replaces them when the world data provides it. There is no timetable: trains run evenly spaced.
