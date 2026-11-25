@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { decode, inflate } from '../../../src/data.js';
 import { Network, F_BRIDGE, F_TUNNEL, F_DRIVE, F_ONEWAY } from '../../../src/network.js';
 import { repairGaps, alignRoads } from '../../../src/roadProfile.js';
-import { cleanSignals, motorwayLayout, kerbBusStops, barriers } from '../../../src/roadDetail.js';
+import zlib from 'node:zlib';
+import { cleanSignals, motorwayLayout, kerbBusStops, applyStops, barriers, shelterPose } from '../../../src/roadDetail.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 let cached = null;
@@ -24,7 +25,7 @@ async function roads() {
   net.addedBridges = added;
   const rail = JSON.parse(fs.readFileSync(path.join(root, 'www/world/rail.json'), 'utf8'));
   alignRoads(net, rail);
-  motorwayLayout(net); kerbBusStops(net); barriers(net);
+  motorwayLayout(net); kerbBusStops(net); applyStops(net, JSON.parse(fs.readFileSync(path.join(root, 'www/world/stops.json'), 'utf8'))); barriers(net);
   cached = { net, rail };
   return cached;
 }
@@ -134,4 +135,35 @@ test('motorway lanes leave the hard shoulder clear', async () => {
   }
   assert.ok(n > 30, `${n} motorway carriageway edges with a hard shoulder`);
   assert.ok(net.barriers.length > 1000, 'central reservation and embankment barriers built');
+});
+
+test('bus stop flags and shelters stand clear of the road surface the tiles draw', async () => {
+  const { net } = await roads();
+  const tiles = new Map();
+  const roadPolys = (x, z) => {
+    const ix = Math.floor(x / 256), iz = Math.floor(z / 256), k = ix + ',' + iz;
+    if (!tiles.has(k)) {
+      const f = path.join(root, 'www/world/tiles', `${ix}_${iz}.bin`); let polys = [];
+      if (fs.existsSync(f)) {
+        const b = zlib.inflateSync(fs.readFileSync(f)), { header: H, arrays: A } = decode(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+        let ci = 0, ri = 0;
+        for (let pi = 0; pi < A.roadP.length; pi++) { const rings = []; for (let q = 0; q < A.roadP[pi]; q++) { const n = A.roadR[ri++], ring = []; for (let j = 0; j < n; j++) ring.push([A.roadC[(ci + j) * 2] / 10 + H.ix * 256, A.roadC[(ci + j) * 2 + 1] / 10 + H.iz * 256]); ci += n; rings.push(ring); } polys.push(rings); }
+      }
+      tiles.set(k, polys);
+    }
+    return tiles.get(k);
+  };
+  const inRing = (r, x, z) => { let ins = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [xi, zi] = r[i], [xj, zj] = r[j]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) ins = !ins; } return ins; };
+  const onRoad = (x, z) => roadPolys(x, z).some(rings => inRing(rings[0], x, z) && !rings.slice(1).some(h => inRing(h, x, z)));
+  let shelters = 0;
+  net.busStops.forEach(([x, z, name, shelter], i) => {
+    assert.ok(!onRoad(x, z), `the flag of ${name || 'stop ' + i} stands on the road at ${x},${z}`);
+    if (!shelter) return;
+    const fit = net.shelterPoses?.[i]; assert.ok(fit, `shelter ${i} placed`);
+    const [cx, cz, h] = fit, ca = Math.cos(h), sa = Math.sin(h);
+    for (const [u, v] of [[-1.6, -0.7], [1.6, -0.7], [1.6, 0.7], [-1.6, 0.7], [0, 0]]) assert.ok(!onRoad(cx + ca * u - sa * v, cz + sa * u + ca * v), `the shelter of ${name || 'stop ' + i} reaches into the road`);
+    assert.ok(Math.cos(h - shelterPose(net, x, z).h) > 0.99, 'shelter faces the road its flag stands by');
+    shelters++;
+  });
+  assert.ok(shelters > 150, `${shelters} shelters checked`);
 });

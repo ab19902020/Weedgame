@@ -16,9 +16,13 @@ const STATIONS_LL = [
   ['Wokingham', 51.411, -0.843], ['Bracknell', 51.413, -0.752], ['Martins Heron', 51.408, -0.725],
   ['Twyford', 51.476, -0.863], ['Tilehurst', 51.4715, -1.0295], ['Reading West', 51.455142, -0.990516],
 ];
+// headway: seconds between trains each way (shorter than the real timetable, so nobody waits long in play).
+// board: passengers can ride it. apart: through trains take a track at least this far from the station's
+// snapped track (Reading has many; the terminating services use the snapped one and its platforms).
 const LINES = [
-  { name: 'Reading–Waterloo line', stops: ['Reading', 'Earley', 'Winnersh Triangle', 'Winnersh', 'Wokingham', 'Bracknell', 'Martins Heron'], vmax: 33, cars: 4, color: 0x2b3f8c, headway: 900 },
-  { name: 'Great Western main line', stops: ['Reading'], through: 9000, vmax: 45, cars: 6, color: 0x1f4d3a, headway: 600 },
+  { name: 'Reading–Waterloo line', stops: ['Reading', 'Earley', 'Winnersh Triangle', 'Winnersh', 'Wokingham', 'Bracknell', 'Martins Heron'], vmax: 33, cars: 4, color: 0x2b3f8c, headway: 420, board: true },
+  { name: 'Reading–Basingstoke line', stops: ['Reading', 'Reading West'], vmax: 20, cars: 2, color: 0x6a3a8c, headway: 360, board: true },
+  { name: 'Great Western main line', stops: ['Reading'], through: 9000, vmax: 45, cars: 6, color: 0x1f4d3a, headway: 600, apart: 15 },
 ];
 const tiles = new Map(), pieces = [];
 for (const f of fs.readdirSync(path.join(ROOT, 'www/world/tiles'))) {
@@ -154,7 +158,8 @@ for (const L of LINES) {
       for (const A of As) { for (const B of Bs) { r = leg(A, B, k === 1 ? [0, 1] : dir); if (r) { prevEnd = B; break; } } if (r) break; } if (!r) { missing.push(...stops.slice(k)); break; } pts = pts.length ? pts.concat(r.pts.slice(1)) : r.pts; stopS.push([stops[k], cum(pts).at(-1)]); dir = [r.dirOut]; }
   } else if (stops.length === 1 && L.through) {
     // a through line with one station in the map: run end to end along the straightest track through it
-    const S = st[stops[0]]; const ends = [0, 1].map(d => extend(S, d, L.through));
+    const S0 = st[stops[0]], S = L.apart ? (S0.alt.find(a => a.d >= L.apart && a.d < 60 && E[a.edge].len > 150) || S0) : S0;
+    const ends = [0, 1].map(d => extend(S, d, L.through));
     const west = ends[0].pts.slice().reverse(); pts = west.concat(ends[1].pts.slice(1)); stopS = [['', 0], [stops[0], ends[0].len], ['', cum(pts).at(-1)]];
   }
   if (!pts || pts.length < 2) { console.log('line skipped', L.name); continue; }
@@ -163,7 +168,36 @@ for (const L of LINES) {
     const sm = med.map((_, i) => { let a = 0, n = 0; for (let j = i; j >= 0 && c[i] - c[j] < 20; j--) { a += med[j]; n++; } for (let j = i + 1; j < y.length && c[j] - c[i] < 20; j++) { a += med[j]; n++; } return a / n; });
     pts.forEach((p, i) => { p[1] = sm[i]; }); }
   const flat = []; for (const p of pts) flat.push(+p[0].toFixed(1), +p[1].toFixed(2), +p[2].toFixed(1));
-  out.lines.push({ ...L, stops: stopS.map(([n, s]) => ({ name: n, s: +s.toFixed(1) })), missing, len: +cum(pts).at(-1).toFixed(0), p: flat });
+  out.lines.push({ ...L, stops: stopS.map(([n, s]) => ({ name: n, s: +s.toFixed(1) })), missing, len: +cum(pts).at(-1).toFixed(0), p: flat, off: runningTracks(pts) });
+}
+// ---- running tracks. A line follows one OSM track; on double track the other lies 1.5-5 m to one side, and
+// which side changes wherever the line hops between them. Trains keep left (UK): each direction runs on the
+// left-hand track as seen in its direction of travel. off.f / off.b: lateral offset (m, + = left of the
+// forward direction) of the track each direction uses, every off.ds metres along the line.
+function runningTracks(pts) {
+  const DS = 20, c = cum(pts), len = c.at(-1), n = Math.floor(len / DS) + 1, G = 40, grid = new Map();
+  pieces.forEach((pc, pi) => { for (let k = 1; k < pc.length; k++) { const key = Math.floor(pc[k][0] / G) * 65536 + Math.floor(pc[k][1] / G); if (!grid.has(key)) grid.set(key, []); grid.get(key).push(pi * 100000 + k); } });
+  const at = s => { let i = 1; while (i < c.length - 1 && c[i] < s) i++; const a = pts[i - 1], b = pts[i], l = c[i] - c[i - 1] || 1, t = Math.max(0, Math.min(1, (s - c[i - 1]) / l)); return [a[0] + (b[0] - a[0]) * t, a[2] + (b[2] - a[2]) * t, (b[0] - a[0]) / l, (b[2] - a[2]) / l]; };
+  const other = new Array(n).fill(null);
+  for (let i = 0; i < n; i++) {
+    const [x, z, ux, uz] = at(i * DS), lx = uz, lz = -ux; let best = null;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const id of grid.get((Math.floor(x / G) + a) * 65536 + Math.floor(z / G) + b) || []) {
+      const pc = pieces[Math.floor(id / 100000)], k = id % 100000, [px, pz] = pc[k - 1], [qx, qz] = pc[k];
+      const sx = qx - px, sz = qz - pz, sl = Math.hypot(sx, sz) || 1; if (Math.abs((sx * ux + sz * uz) / sl) < 0.96) continue;
+      const t = Math.max(0, Math.min(1, ((x - px) * sx + (z - pz) * sz) / (sl * sl))), cx = px + sx * t - x, cz = pz + sz * t - z;
+      const lat = cx * lx + cz * lz; if (Math.abs(cx * ux + cz * uz) > 3 || Math.abs(lat) < 1.3 || Math.abs(lat) > 5.5) continue;
+      if (!best || Math.abs(lat) < Math.abs(best)) best = lat;
+    }
+    other[i] = best;
+  }
+  // bridge short gaps (rail bridges carry no tile track) between readings on the same side
+  for (let i = 0; i < n; i++) if (other[i] == null) {
+    let a = i - 1; while (a >= 0 && other[a] == null) a--; let b = i + 1; while (b < n && other[b] == null) b++;
+    if (a >= 0 && b < n && (b - a) * DS <= 400 && Math.sign(other[a]) === Math.sign(other[b])) other[i] = other[a] + (other[b] - other[a]) * (i - a) / (b - a);
+  }
+  const f = other.map(o => o != null && o > 0 ? o : 0), bk = other.map(o => o != null && o < 0 ? o : 0);
+  const smooth = v => v.map((_, i) => { let s = 0, m = 0; for (let j = Math.max(0, i - 2); j <= Math.min(n - 1, i + 2); j++) { s += v[j]; m++; } return +(s / m).toFixed(2); });
+  return { ds: DS, f: smooth(f), b: smooth(bk) };
 }
 const save = { built: out.built, source: out.source, graph: { nodes: out.nodes.length, edges: out.edges.length, links, hidden }, stations: out.stations.map(({ alt, edge, s, ...r }) => r), lines: out.lines };
 fs.writeFileSync(path.join(ROOT, 'www/world/rail.json'), JSON.stringify(save));

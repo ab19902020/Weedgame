@@ -14,17 +14,37 @@ test('rail data has both lines, Reading–Waterloo with its stations in order', 
   assert.ok(gw.stops.some(s => s.name === 'Reading'));
 });
 
-test('trains stop at every station and never jump', () => {
+test('trains stop centred on every station and never jump', () => {
   const T = new Trains(null).setup(rail);
   assert.ok(T.trains.length >= 3);
   for (const L of T.lines) {
-    for (const st of L.stops) {
-      const fwdStop = Array.from(L.fwd).filter(s => Math.abs(s - st) < 0.01).length * 0.5;
-      assert.ok(fwdStop >= 30 || st > L.len - 1, `${L.name} dwells at ${st.toFixed(0)} m (${fwdStop} s)`);
-    }
+    // the front stands half a train beyond the station, so the train is centred on the platform
+    L.centre.forEach((c, k) => {
+      const front = c + L.Lt / 2, dwell = Array.from(L.fwd).filter(s => Math.abs(s - front) < 0.01).length * 0.5;
+      assert.ok(dwell >= 30 || k === L.centre.length - 1, `${L.name} dwells at ${L.names[k]} (${dwell} s)`);
+      assert.ok(Math.abs(c - L.stops[k]) < L.Lt / 2 + 1, 'stops at the station');
+    });
+    // the middle of the train moves continuously, also when it reverses at a terminus
     const tr = T.trains.find(t => t.line === L); let prev = null;
-    for (let t = 0; t < L.cycle * 1.05; t += 1) { const [s, , v] = T.state(tr, t); assert.ok(s >= -0.01 && s <= L.len + 0.01); if (prev != null) assert.ok(Math.abs(s - prev) <= L.vmax * 1.05 + 0.5 || Math.abs(Math.abs(s - prev) - 0) < 1e-6, `jump ${prev}→${s} at ${t}`); assert.ok(Math.abs(v) <= L.vmax + 0.01); prev = s; }
+    for (let t = 0; t < L.cycle * 1.05; t += 1) {
+      const [s, dir, v] = T.state(tr, t), mid = s - dir * L.Lt / 2;
+      assert.ok(mid >= -L.Lt / 2 - 0.01 && mid <= L.len + L.Lt / 2 + 0.01, `${L.name}: middle ${mid} m off the line`);
+      if (prev != null) assert.ok(Math.abs(mid - prev) <= L.vmax * 1.05 + 0.5, `jump ${prev}→${mid} at ${t}`);
+      assert.ok(Math.abs(v) <= L.vmax + 0.01); prev = mid;
+    }
   }
+});
+
+test('stopped trains know their station; trains keep left on double track', () => {
+  const T = new Trains(null).setup(rail);
+  const rw = T.lines.find(l => /Waterloo/.test(l.name)), seen = new Set();
+  const tr = T.trains.find(t => t.line === rw);
+  for (let t = 0; t < rw.cycle; t += 2) { const [s, dir, , st] = T.state(tr, t); Object.assign(tr, { s, dir, status: st }); const k = T.stationOf(tr); if (st !== 'running') { assert.ok(k >= 0, `${st} at ${s.toFixed(0)} m is a station`); seen.add(rw.names[k]); } }
+  for (const n of rw.names) assert.ok(seen.has(n), 'calls at ' + n);
+  // each direction runs on the left-hand track where the line has two
+  let both = 0;
+  for (let i = 0; i < rw.off.f.length; i++) { const f = rw.off.f[i], b = rw.off.b[i]; assert.ok(f >= -0.01 && b <= 0.01); if (f > 1 || b < -1) both++; }
+  assert.ok(both > rw.off.f.length * 0.5, 'double track found along most of the line');
 });
 
 test('trains on a line are spread out and the service shuttles end to end', () => {

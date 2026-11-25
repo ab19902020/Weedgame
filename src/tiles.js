@@ -33,9 +33,11 @@ export class Tiles {
         pav: net.pav, lanesF: net.lanesF, lanesB: net.lanesB, cutA: net.cutA, cutB: net.cutB, ctrlA: net.ctrlA, ctrlB: net.ctrlB,
         classes: net.classes, crossings: net.crossings, ea: net.ea, eb: net.eb, rise: net.rise, addedBridges: net.addedBridges,
         shoulder: net.shoulder, strip: net.strip, barriers: net.barriers,
+        slabs: [...(net.slabRange || new Map())].flatMap(([e, rs]) => rs.flatMap(r => [e, r[0], r[1]])), connector: net.connector,
         bays: (net.busBays || []).flatMap(b => [b.e, b.s, b.side, b.laneW, b.served ? 1 : 0]),
         approaches: net.controllers.flatMap(c => c.approaches.map(a => [a[0], a[1], a[2]])),
         driveCls: net.classes.map((c, i) => [c, i]).filter(([c]) => !/footway|path|pedestrian|steps|cycleway|bridleway|corridor/.test(c)).map(([, i]) => i),
+        platforms: opts.platforms || [], railLines: opts.railLines || [],
       });
       this.workers.push(w);
     }
@@ -136,6 +138,8 @@ export class Tiles {
       if (d.bushes && d.bushes.length) this.addBushes(t, d.bushes);
       this.addSigns(t, d.signs);
       this.registerCollision(t);
+      // road segments this tile carries on a deck over sagging ground (tileWorker.js): ground() rides on them
+      if (d.decks && d.decks.length && this.net) { const m = this.net.sagDeck || (this.net.sagDeck = new Map()); for (const j of d.decks) m.set(j, (m.get(j) || 0) + 1); }
     }
     this.scene.add(t.group);
     this.tiles.set(d.key, t);
@@ -332,6 +336,7 @@ export class Tiles {
     const lift = c === 2 || c === 12 ? 0.17 : c === 1 ? 0.05 : c === 10 ? 0.07 : 0;
     let y = g == null ? null : g + lift;
     const decks = this.net.decks(x, z, this._decks || (this._decks = []));
+    if (this.extraDecks) this.extraDecks(x, z, decks);   // station platforms (stations.js)
     if (decks.length) {
       const ref = curY == null ? (y ?? 0) : curY;
       let best = y, bd = y == null ? 1e9 : Math.abs(ref - y);
@@ -352,6 +357,7 @@ export class Tiles {
     t.group.traverse(o => { if (o.isMesh && o.geometry !== this.crownGeo && o.geometry !== this.trunkGeo && o.geometry !== this.lampGeo && o.geometry !== this.bushGeo) o.geometry.dispose(); if (o.isInstancedMesh) o.dispose(); });
     if (t.signs && this.signAtlas) for (const s of t.signs) this.signAtlas.free(s);
     this.unregisterCollision(t);
+    if (t.lod === 0 && t.data.decks && this.net && this.net.sagDeck) for (const j of t.data.decks) { const n = (this.net.sagDeck.get(j) || 0) - 1; if (n > 0) this.net.sagDeck.set(j, n); else this.net.sagDeck.delete(j); }
     if (!keepSlot && t.slot != null) this.freeSlots.push(t.slot);
   }
 }

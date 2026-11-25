@@ -64,6 +64,7 @@ export function kerbBusStops(net) {
   // roads the bus routes run along, and in which directions (1: a->b, 2: b->a)
   const routeDir = new Map();
   for (const r of net.routes) for (const [e, d] of r.seq) routeDir.set(e, (routeDir.get(e) || 0) | (d === 1 ? 1 : 2));
+  net.busStopsMapped = net.busStops.map(s => [s[0], s[1]]);
   const usable = e => (net.flags[e] & F_DRIVE) && !(net.flags[e] & (F_BRIDGE | F_TUNNEL)) && !NOT_KERB.test(net.classes[net.cls[e]]);
   const bays = [];
   let moved = 0;
@@ -108,6 +109,28 @@ export function kerbBusStops(net) {
   });
   net.busBays = bays;
   return { moved, bays: bays.length, served: bays.filter(b => b.served).length };
+}
+
+// ---- the way a bus shelter at (x, z) faces: its local +z (open side) towards the carriageway
+export function shelterPose(net, x, z) {
+  const road = net.nearest(x, z, 25, e => !!(net.flags[e] & (F_DRIVE | 128)));
+  return { h: road ? Math.atan2(road.dz, road.dx) + (road.side < 0 ? Math.PI : 0) : 0 };
+}
+// ---- flag and shelter positions fitted to the drawn footways offline (tools/roads/stops.mjs,
+// www/world/stops.json): [mappedX, mappedZ, x, z, shelterX?, shelterZ?, shelterHeading?] per stop. Entries
+// apply only while the stop is still where it was mapped (so stale data is ignored). A mapped shelter that
+// fits nowhere off the road is left out.
+export function applyStops(net, data) {
+  if (!data?.stops || !net.busStopsMapped) return 0;
+  net.shelterPoses = [];
+  let n = 0;
+  net.busStops.forEach((st, i) => {
+    const e = data.stops[i], m = net.busStopsMapped[i];
+    if (!e || Math.hypot(e[0] - m[0], e[1] - m[1]) > 0.3) return;
+    st[0] = e[2]; st[1] = e[3]; n++;
+    if (st[3]) { if (e.length >= 7) net.shelterPoses[i] = [e[4], e[5], e[6]]; else st[3] = 0; }
+  });
+  return n;
 }
 
 // ---- barriers: polylines [x, y, z] of a double-sided steel fence (central reserve) or a single fence (verge)
