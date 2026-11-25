@@ -5,8 +5,9 @@ import i4Bank from './inline4Cues.json';
 
 // Every sound in the game is a real recording (credits: www/sfx/CREDITS.txt):
 //  - sfx/berkshire.ogg  footsteps, doors, horn, crashes, punches, crowd, traffic engines (soundCues.json)
-//  - sfx/world.ogg      tyres, road roar, scrape, rain, wind, distant traffic, siren, crossing bleeps and the
-//                       impacts of knocked-down street furniture (worldCues.json, tools/audio/build_sfx.py)
+//  - sfx/world.ogg      tyres (road, gravel, squeal, skids), scrape, rain, wind, distant traffic, siren, crossing
+//                       bleeps, the car's ignition, doors, handbrake and horn, and the impacts of knocked-down
+//                       street furniture (worldCues.json, tools/audio/build_sfx.py)
 //  - sfx/rangerover.ogg V8 engine loops at six rpm points (Range Rover, sports cars, coupés)
 //  - sfx/inline4.ogg    four-cylinder engine loops at seven rpm points (every other car)
 // Loops are crossfaded and re-pitched by what the car is doing; nothing is synthesised.
@@ -14,6 +15,7 @@ import i4Bank from './inline4Cues.json';
 // These indices follow the landcover palette in the world builder.
 const groundSounds = ['grass','boots','boots','tile','water','grass','grass','grass','boots','gravel','gravel','grass','boots','grass','grass','grass','grass','boots','gravel','gravel'];
 const ENGINES = { v8: { url: 'sfx/rangerover.ogg', bank: v8Bank }, i4: { url: 'sfx/inline4.ogg', bank: i4Bank } };
+const ALIAS = { Car_Door_Open: ['doorOpen', 1.3], Car_Door_Close: ['doorClose', 1.3], Car_Engine_Start_Up: ['start', 1.4], Car_Engine_Turning_Off: ['stop', 1.3], Car_Parking_Brake: ['handbrake', 1] };
 const engineOf = model => model === 'rangerover' || model === 'sports' || model === 'coupe' ? 'v8' : 'i4';
 
 export class Audio {
@@ -45,7 +47,7 @@ export class Audio {
     }
     // the player's own car: tyre squeal, a heavier screech, road roar and metal scrape, all recorded loops
     const car = (hz = 20000) => { const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = hz; const g = A.createGain(); g.gain.value = 0; f.connect(g); g.connect(this.master); return { f, g }; };
-    this.squeal = car(); this.screech = car(); this.road = car(2500); this.scrape = car();
+    this.squeal = car(); this.screech = car(); this.road = car(2500); this.gravel = car(3000); this.scrape = car();
     this.lastCue = new Map();
     this.pedSteps = new WeakMap();
     this.engines = {};
@@ -70,7 +72,7 @@ export class Audio {
     const L = (name, node) => this.wloop(name, node);
     L('rain', this.rain.f); L('rainroof', this.rainRoof.f); L('wind', this.wind.f); L('leaves', this.leaves.f); L('traffic', this.hum.f);
     L('siren', this.siren.g); L('crossing', this.crossing.g);
-    this.squeal.src = L('squeal', this.squeal.f); this.screech.src = L('screech', this.screech.f); this.road.src = L('road', this.road.f); L('scrape', this.scrape.f);
+    this.squeal.src = L('squeal', this.squeal.f); this.screech.src = L('screech', this.screech.f); this.road.src = L('road', this.road.f); this.gravel.src = L('gravel', this.gravel.f); L('scrape', this.scrape.f);
     for (const voice of this.voices) voice.tyre = L('road', voice.tf);
   }
   // a looping slice of a bank, started at a random point so repeats never line up
@@ -108,10 +110,13 @@ export class Audio {
     const kind = engineOf(v.model);
     this.loadEngine(kind).catch(e => console.warn(e));
     if (v.model === 'rangerover') { this.loadEngine('v8').then(() => this.engineShot('v8', 'start', 0.9)).catch(e => console.warn(e)); return; }
-    this.play('Car_Engine_Start_Up', v.x, v.y, v.z);
+    this.play('Car_Engine_Start_Up', v.x, v.y + 0.5, v.z, 0.5);
   }
   // ---------------------------------------------------------------- one-shots
   play(name, x, y, z, gain = 0.4) {
+    // the car's own sounds come from better recordings in the world bank (a real ignition, the Peugeot 308's doors)
+    const alias = ALIAS[name];
+    if (alias && this.wbank) { this.shot(alias[0], x, z, gain * alias[1], y); return; }
     if (!this.bank) return;
     const options = cues[name];
     this.shotFrom(this.bank, options, name, x, y, z, gain, 5);
@@ -143,8 +148,19 @@ export class Audio {
     const y = this.G.tiles.terrain(x,z) ?? this.G.brothers.me.y;
     this.play('crash', x, y + .5, z, .85 * k);
   }
+  // the horn sounds for as long as it is held: the recording's attack, then its steady note looped a whole
+  // number of cycles at a time, cut off when the button is let go (at least a short honk for a tap)
   horn(x, z) {
-    this.play('Car_Horn', x, this.G.tiles.terrain(x,z) ?? this.G.brothers.me.y, z, .55);
+    const y = (this.G.tiles.terrain(x, z) ?? this.G.brothers.me.y) + 0.8;
+    if (!this.wbank || !world.sustain?.horn) { this.play('Car_Horn', x, y, z, .55); return; }
+    if (this.hornV) { this.hornV.t0 = this.ctx.currentTime; return; }
+    const [start, , la, lb] = world.sustain.horn, A = this.ctx;
+    const s = A.createBufferSource(), g = A.createGain(), p = A.createPanner();
+    s.buffer = this.wbank; s.loop = true; s.loopStart = la; s.loopEnd = lb;
+    g.gain.value = 0.6; p.refDistance = 6; this.setPos(p, x, y, z);
+    s.connect(g); g.connect(p); p.connect(this.master); s.start(0, start);
+    s.onended = () => { s.disconnect(); g.disconnect(); p.disconnect(); };
+    this.hornV = { s, g, p, t0: A.currentTime };
   }
   step(actor, run, level) {
     let name = groundSounds[this.G.tiles.landcover(actor.x, actor.z)] || 'boots';
@@ -223,7 +239,13 @@ export class Audio {
       // and a recorded skid as a hard stop or handbrake turn begins. Light and moderate braking is silent, as
       // it is in a real car: only tyres past their grip make a sound.
       const slip = ph.slip || 0, wetK = G.world.s.wet > 0.3 ? 0.35 : 1, soft = ph.soft ? 0.25 : 1;
-      this.road.g.gain.setTargetAtTime(Math.min(0.5, sp / 40) * (ph.soft ? 0.6 : 1) * (G.world.s.wet > 0.3 ? 1.4 : 1), t, 0.08);
+      // off the tarmac (gravel, grass, dirt) the road roar gives way to stones and earth under the tyres
+      const lc = G.tiles.landcover(pv.x, pv.z), off = !(lc === 1 || lc === 2 || lc === 12) ? 1 : 0;
+      this.offK = (this.offK ?? off) + (off - (this.offK ?? off)) * Math.min(1, dt * 6);
+      this.gravel.g.gain.setTargetAtTime(Math.min(0.6, sp / 22) * this.offK * (ph.soft ? 0.7 : 1), t, 0.08);
+      this.gravel.f.frequency.setTargetAtTime(ph.soft ? 1400 : 5000, t, 0.1);
+      this.gravel.src?.playbackRate.setTargetAtTime(0.8 + Math.min(0.5, sp / 40), t, 0.1);
+      this.road.g.gain.setTargetAtTime(Math.min(0.5, sp / 40) * (1 - this.offK * 0.85) * (G.world.s.wet > 0.3 ? 1.4 : 1), t, 0.08);
       this.road.f.frequency.setTargetAtTime((ph.soft ? 900 : 1600) + sp * 40 + (G.world.s.wet > 0.3 ? 3000 : 0), t, 0.1);
       this.road.src?.playbackRate.setTargetAtTime(0.75 + Math.min(0.55, sp / 55), t, 0.1);
       const sq = slip > 0.12 ? Math.min(1, (slip - 0.12) / 0.6) : 0;
@@ -235,8 +257,14 @@ export class Audio {
       this.slipWas = slip; this.hbWas = !!ph.hb;
       this.scrape.g.gain.setTargetAtTime((ph.scrape || 0) * 0.6, t, 0.05);
     } else {
-      for (const n of [this.squeal, this.screech, this.road, this.scrape]) n.g.gain.setTargetAtTime(0, t, 0.15);
+      for (const n of [this.squeal, this.screech, this.road, this.gravel, this.scrape]) n.g.gain.setTargetAtTime(0, t, 0.15);
       this.slipWas = 0; this.hbWas = false;
+    }
+    // let the horn go when the button is released
+    if (this.hornV) {
+      const H = this.hornV, held = G.input?.held.has('horn') || G.input?.padHorn;
+      if (pv) this.setPos(H.p, pv.x, (pv.y || 0) + 0.8, pv.z);
+      if (!(held && pv) && t - H.t0 > 0.28) { H.g.gain.setTargetAtTime(0, t, 0.02); H.s.stop(t + 0.15); this.hornV = null; }
     }
     // footsteps
     const running = G.brothers.speedNow > 3;

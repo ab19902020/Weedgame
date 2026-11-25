@@ -97,7 +97,7 @@ S63 AMG V8 Engine Revs — marcelweiss, CC0
 https://freesound.org/s/505321/
 https://creativecommons.org/publicdomain/zero/1.0/
 
-World sound bank (world.ogg): tyres, road, scrape, weather, traffic, siren, crossing bleeps and street-furniture impacts.
+World sound bank (world.ogg): tyres on road and gravel, scrape, weather, traffic, siren, crossing bleeps, the car's ignition, doors, handbrake and horn (a whole-period sustain loop of the recorded note), and street-furniture impacts.
 
 Game edits: excerpting, mono mix, resampling, band-limiting, gain (one surging screech levelled), fades, seamless loop crossfades, layering and Ogg Vorbis encoding (tools/audio/build_sfx.py).
 
@@ -116,12 +116,21 @@ Metal lamp post hit — jorickhoofd, CC BY 4.0
 https://freesound.org/s/160087/
 https://creativecommons.org/licenses/by/4.0/
 
+Handbrake.wav — ninebilly, CC0
+https://freesound.org/s/173007/
+
+Handbrake On.wav — NHumphrey, CC0
+https://freesound.org/s/200974/
+
 pedestriancrossing.wav — kwahmah_02, CC BY 3.0
 https://freesound.org/s/255849/
 http://creativecommons.org/licenses/by/3.0/
 
 Branches snapping_northern87 — northern87, CC0
 https://freesound.org/s/369986/
+
+Turning off engine & removing the car key — Caitlin_100, CC0
+https://freesound.org/s/384412/
 
 S023_Metal_Rail_Scrape_Mono.wav — Pól, CC0
 https://freesound.org/s/385939/
@@ -152,6 +161,12 @@ https://freesound.org/s/481668/
 
 Highway drive interior — gecop, CC0
 https://freesound.org/s/521766/
+
+Vehicle_Car_Peugeot_308_Door_Open_Mono.wav — Nox_Sound, CC0
+https://freesound.org/s/522219/
+
+Vehicle_Car_Peugeot_308_Door_Close_Mono_.wav — Nox_Sound, CC0
+https://freesound.org/s/522220/
 
 Tire.ogg — egomassive, CC0
 https://freesound.org/s/536769/
@@ -189,14 +204,23 @@ https://freesound.org/s/648723/
 Branch Crack — lukabea, CC0
 https://freesound.org/s/660471/
 
+Car driving on gravel dirt road, close recording from outside with slight motor and muffled wind — felix.blume, CC0
+https://freesound.org/s/685230/
+
 Siren police car British — SoundingSam, CC0
 https://freesound.org/s/706296/
+
+Car Horn — yfjesse, CC0
+https://freesound.org/s/734253/
 
 Plants or ferns - Manipulation & Hit — Vrymaa, CC0
 https://freesound.org/s/770112/
 
 Wind Through Leaves — craigsmith, CC0
 https://freesound.org/s/817192/
+
+Engine Ignition Outside — microman502, CC0
+https://freesound.org/s/818292/
 
 dry bush 01 — _sinny_, CC0
 https://freesound.org/s/825422/

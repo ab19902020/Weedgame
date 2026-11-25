@@ -28,8 +28,9 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 
 Nothing in the game is synthesised: every sound is a real recording.
 
-`www/sfx/world.ogg` holds the rest of the world's sound, built by `tools/audio/build_sfx.py` from 39 Freesound recordings (37 CC0, two CC BY):
-- tyre squeal, screech and skids, road roar and metal scrape for the player's car;
+`www/sfx/world.ogg` holds the rest of the world's sound, built by `tools/audio/build_sfx.py` from 47 Freesound recordings (45 CC0, two CC BY):
+- tyre squeal, screech and skids, road roar, gravel under the tyres and metal scrape for the player's car;
+- the car itself: a real ignition, switching off, the Peugeot 308's doors, a handbrake ratchet, and a horn whose recorded note sustains for as long as it is held;
 - rain (open air, and drumming on a car roof), wind, wind in leaves and a distant-traffic bed;
 - a British police car siren, and UK pelican-crossing bleeps recorded in Hereford;
 - the impacts of knocked-down street furniture: struck lamp posts, a pillar box, bins, timber poles, fences, trees, hedges, garden walls and glass.

@@ -69,7 +69,7 @@ export class Hud {
     this.el = id => root.querySelector('#' + id);
     const I = G.input;
     for(const [id,action] of [['bJump','jump'],['bHit','hit'],['bPickup','pickup']])I.bindButton(this.el(id),action);
-    I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn');
+    I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn', true);
     I.bindButton(this.el('bHand'), 'brake', true); I.bindPedals(this.el('pGas'), this.el('pBrake')); I.bindArrows(this.el('sLeft'), this.el('sRight'));
     I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
     this.el('mClose').onclick = () => this.toggleMap(false);

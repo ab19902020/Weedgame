@@ -135,6 +135,9 @@ async function step(name, fn) {
   await p.goto(BASE + '?backend=webgl');
   await p.evaluate(() => localStorage.clear());
   await p.goto(BASE + '?backend=webgl&sim=2&fixedres=1');
+  // the start menu opens first: tap "Enter free roam" as a player would
+  await p.waitForFunction(() => window.GC && GC.hud && GC.hud.menu && document.querySelector('[data-go="play"]')?.offsetWidth, null, { timeout: 0, polling: 500 });
+  await T.tap('[data-go="play"]').catch(() => p.evaluate(() => document.querySelector('[data-go="play"]').click()));
   await p.waitForFunction(() => window.GC && GC.frame > 3 && document.getElementById('boot').textContent === '', null, { timeout: 0, polling: 500 });
   await T.frames(8);
   log.environment = await p.evaluate(() => ({ userAgent: navigator.userAgent, backend: GC.backend, quality: GC.quality, gl: (() => { try { const c = document.createElement('canvas').getContext('webgl2'); const e = c.getExtension('WEBGL_debug_renderer_info'); return c.getParameter(e.UNMASKED_RENDERER_WEBGL); } catch { return null; } })(), viewport: [innerWidth, innerHeight] }));
@@ -301,7 +304,7 @@ async function step(name, fn) {
     // stand under the shop canopy: rain is kept out and sound changes
     const can = await p.evaluate(() => { const me = GC.brothers.me; let best = null, bd = 1e9; for (const c of GC.canopies) if (c.kind === 0) { const d = Math.hypot(c.x - me.x, c.z - me.z); if (d < bd) { bd = d; best = c; } } return [best.x, best.z]; });
     await T.walkTo(can[0], can[1], { within: 0.8, bursts: 20, frames: 5 });
-    const under = await p.evaluate(() => { const me = GC.brothers.me, A = GC.audio; return { sheltered: GC.shelteredAt(me.x, me.y + 1.2, me.z), rainGain: A.on ? +A.rain.g.gain.value.toFixed(3) : null, patterGain: A.on ? +A.rainHi.g.gain.value.toFixed(3) : null, lowpassHz: A.on ? Math.round(A.rain.f.frequency.value) : null }; });
+    const under = await p.evaluate(() => { const me = GC.brothers.me, A = GC.audio; return { sheltered: GC.shelteredAt(me.x, me.y + 1.2, me.z), rainGain: A.on ? +A.rain.g.gain.value.toFixed(3) : null, patterGain: A.on ? +A.rainRoof.g.gain.value.toFixed(3) : null, lowpassHz: A.on ? Math.round(A.rain.f.frequency.value) : null }; });
     rec.notes.push(`under canopy: sheltered=${under.sheltered}, rain bed gain ${under.rainGain}, overhead patter gain ${under.patterGain}, rain low-pass ${under.lowpassHz} Hz`);
     rec.shots.push(await T.shot('19-under-canopy-in-rain'));
     await T.dev('weather-clearing', 'speed-600');

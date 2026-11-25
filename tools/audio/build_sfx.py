@@ -40,6 +40,10 @@ SOURCES = {
     569503: 'stone rubble 7',                         569504: 'stone rubble 8',
     566446: 'glass break 3',                          566448: 'glass break 1',
     848312: 'glass smash',
+    685230: 'car on a gravel road, close, outside', 818292: 'engine ignition, outside',
+    384412: 'turning off an engine',                  522219: 'Peugeot 308 door opening',
+    522220: 'Peugeot 308 door closing',               173007: 'handbrake',
+    200974: 'handbrake on',                           734253: 'car horn',
 }
 
 def curl(url, dest=None):
@@ -160,6 +164,25 @@ shots['bin'] = [shot(648723, 12.75, 1.0), shot(648723, 9.65, 1.2), shot(648723, 
 shots['thud'] = [shot(569504, 0, 1.0), shot(569503, 0, 1.0), shot(569501, 0, 1.0)]
 shots['brick'] = [shot(848472, 0, 2.2), fades(peak(mix((onset(load(569501), 0, 1), 0), (onset(load(569503), 0, 1), 0.11), (onset(load(569504), 0, 1), 0.27), (0.7 * onset(load(848472), 1.85, 0.9), 0.35))), 0.002, 0.2)]
 shots['glass'] = [shot(566446, 0.04, 0.7), shot(566448, 0.29, 0.9), shot(848312, 0.22, 1.3)]
+# tyres on gravel, grass and dirt
+gv = load(685230); a = steady(gv, 6, 5, 160); loops['gravel'] = rms(band(loop(gv, a, 6, 0.6), 50), -20)
+# the car itself: ignition and start, switching off, doors (the same Peugeot 308 as the engine), handbrake
+shots['start'] = [fades(peak(seg(load(818292), 3.0, 3.7)), 0.05, 0.6)]
+shots['stop'] = [fades(peak(seg(load(384412), 0.0, 1.35)), 0.08, 0.3)]
+shots['doorOpen'] = [shot(522219, 0.0, 0.85), shot(522219, 1.7, 0.75), shot(522219, 3.2, 0.85)]
+shots['doorClose'] = [shot(522220, t0, 0.6) for t0 in (0.0, 1.15, 2.4, 4.15, 5.25, 6.35)]
+shots['handbrake'] = [shot(173007, 0.05, 0.6), shot(200974, 0.25, 0.95)]
+# the horn: its attack, a steady middle that loops (a whole number of periods of its 330 Hz note, so it sustains
+# without a seam for as long as the button is held) and its natural release
+hn = load(734253)
+def period(x):
+    x = x - x.mean(); ac = np.correlate(x, x, 'full')[len(x) - 1:]; lo, hi = int(SR / 600), int(SR / 150)
+    k = lo + int(np.argmax(ac[lo:hi])); y0, y1, y2 = ac[k - 1], ac[k], ac[k + 1]
+    return (k + 0.5 * (y0 - y2) / (y0 - 2 * y1 + y2)) / SR
+T = period(seg(hn, 0.14, 0.12)); la = 0.12; n_per = int(0.15 / T); lb = la + n_per * T
+horn = fades(seg(hn, 0.04, 0.80), 0.004, 0.3); horn = horn / np.abs(horn).max() * 0.9
+sustain = {'horn': (horn, la - 0.04, lb - 0.04)}
+print(f'horn note {1 / T:.1f} Hz, sustain loop {n_per} periods')
 
 # ---------------------------------------------------------------- write
 parts, cues, t, gap = [], {'loops': {}, 'shots': {}}, 0.0, 0.08
@@ -170,6 +193,9 @@ def put(x):
     return [round(start, 5), round(len(x) / SR, 5)]
 for k, x in loops.items(): cues['loops'][k] = put(x)
 for k, xs in shots.items(): cues['shots'][k] = [put(x) for x in xs]
+cues['sustain'] = {}
+for k, (x, a, b) in sustain.items():
+    st, ln = put(x); cues['sustain'][k] = [st, ln, round(st + a, 6), round(st + b, 6)]   # whole clip, loop start, loop end
 bank = np.concatenate(parts)
 with tempfile.TemporaryDirectory() as d:
     w = os.path.join(d, 'bank.f32'); bank.tofile(w)
