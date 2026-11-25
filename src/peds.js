@@ -135,10 +135,11 @@ export class Peds {
     }
     const rain = G.world.cur.rain;
     for (const p of this.list) {
+      p.lastStepX = p.x; p.lastStepZ = p.z;
       p.t += dt;
       if (p.alpha < 1) p.alpha = Math.min(1, p.alpha + dt);
-      if (p.fallT > 0) { p.fallT -= dt; p.fall = p.fallT > 1.2 ? Math.min(1, (p.fall || 0) + dt * 6) : Math.max(0, p.fall - dt * 1.5); p.speedNow = 0; if (p.fallT <= 0) { p.mode = 'walk'; p.pose = 'phone'; p.phoneT = 6; } continue; }
-      if (p.reactT > 0) { p.reactT -= dt; p.heading = lerpAngle(p.heading, p.reactHeading, dt * 6); p.pose = p.reactPose; p.speedNow = p.reactPose === 'flee' ? 3.5 : 0; if (p.reactPose === 'flee') { p.x += Math.cos(p.reactHeading + Math.PI) * 3.5 * dt; p.z += Math.sin(p.reactHeading + Math.PI) * 3.5 * dt; } this.ground(p); continue; }
+      if (p.impact) { this.updateImpact(p, dt); continue; }
+      if (p.reactT > 0) { p.reactT -= dt; p.heading = lerpAngle(p.heading, p.reactHeading, dt * 6); p.pose = p.reactPose; p.speedNow = p.reactPose === 'flee' ? 3.5 : 0; if (p.reactPose === 'flee') { p.phase = (p.phase + dt * 10) % 6.283; p.x += Math.cos(p.reactHeading + Math.PI) * 3.5 * dt; p.z += Math.sin(p.reactHeading + Math.PI) * 3.5 * dt; } this.ground(p); continue; }
       if (p.phoneT > 0) { p.phoneT -= dt; p.pose = 'phone'; p.speedNow = 0; continue; }
       if(p.mode==='greeting'){
         p.timer-=dt;p.speedNow=0;p.pose='talk';
@@ -161,10 +162,30 @@ export class Peds {
       }
       this.walk(p, dt, rain);
     }
-    // gentle separation
-    for (let i = 0; i < this.list.length; i++) for (let j = i + 1; j < this.list.length; j++) {
-      const a = this.list[i], b = this.list[j]; const dx = b.x - a.x, dz = b.z - a.z, d2 = dx * dx + dz * dz;
-      if (d2 < 0.36 && d2 > 1e-6 && a.mode !== 'talk' && b.mode !== 'talk') { const d = Math.sqrt(d2), k = (0.6 - d) * 0.5 / d; a.x -= dx * k; a.z -= dz * k; b.x += dx * k; b.z += dz * k; }
+    // Drive the gait from actual travel, including eased corners and the final step into a queue.
+    for (const p of this.list) {
+      if (p.mode === 'chase') { p.gaitPhase = p.gaitSpeed = undefined; continue; }
+      const travel = Math.hypot(p.x-p.lastStepX,p.z-p.lastStepZ);
+      const distance = Math.min(travel,dt*5);
+      const stride = (p.look?.h || 1) * (p.speedNow > 2.5 ? 2.35 : 1.48);
+      p.gaitPhase = ((p.gaitPhase ?? p.phase ?? 0) + distance*2*Math.PI/stride) % (2*Math.PI);
+      p.gaitSpeed = p.impact || !dt ? 0 : distance/dt;
+    }
+    // Sort references along the street grid so distant pairs never reach the contact test.
+    const ordered = this.separationOrder ||= [];
+    ordered.length = this.list.length;
+    for (let i = 0; i < ordered.length; i++) ordered[i] = this.list[i];
+    ordered.sort((a,b) => a.x-b.x);
+    for (let i=0; i<ordered.length; i++) {
+      const a = ordered[i];
+      for (let j=i+1; j<ordered.length; j++) {
+        const b=ordered[j], dx=b.x-a.x;
+        if (dx>.65) break;
+        const dz=b.z-a.z, d2=dx*dx+dz*dz;
+        if (d2>=.36 || d2<=1e-6 || a.mode==='talk' || b.mode==='talk') continue;
+        const d=Math.sqrt(d2), k=(.6-d)*.5/d;
+        a.x-=dx*k; a.z-=dz*k; b.x+=dx*k; b.z+=dz*k;
+      }
     }
   }
   planDay(p){
@@ -460,14 +481,48 @@ export class Peds {
       p.reactT = 2 + this.rand() * 2; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = d < 8 ? 'flee' : this.rand() < 0.3 ? 'phone' : 'point';
     }
   }
+  strike(p, heading, speed = 0) {
+    if (p.impact) return;
+    const knockdown = speed >= 4.5;
+    const push = knockdown ? Math.min(7, speed * .55) : 1.8;
+    const duration = knockdown ? 2.8 : .62;
+    this.queueRemove(p);
+    p.stopIdx = null;
+    p.goal = null; p.corner = null; p.dayPath = null;
+    p.leader = null;
+    p.mode = 'walk';
+    p.reactT = 0;
+    p.impact = {elapsed: 0, duration, knockdown, vx: Math.cos(heading)*push, vz: Math.sin(heading)*push};
+    p.heading = heading + Math.PI;
+    p.fallT = duration;
+  }
+  updateImpact(p, dt) {
+    const k = p.impact;
+    k.elapsed = Math.min(k.duration, k.elapsed + dt);
+    const t = k.elapsed;
+    const drift = (1 - Math.exp(-4 * dt)) / 4;
+    const x = p.x + k.vx * drift, z = p.z + k.vz * drift;
+    if (!this.G.tiles.insideBuilding(x,z) && this.G.tiles.ground(x,z,p.y) != null) {
+      p.x = x; p.z = z; this.ground(p);
+    }
+    k.vx *= Math.exp(-4*dt); k.vz *= Math.exp(-4*dt);
+    p.fallT = k.duration - t;
+    const recover = Math.min(1, p.fallT / .95);
+    p.fall = k.knockdown ? Math.min(1,(t/.48)**2)*recover*recover*(3-2*recover) : 0;
+    p.brace = k.knockdown ? Math.min(1,t/.14)*Math.min(1,p.fallT/.45) : Math.sin(Math.PI*t/k.duration);
+    p.pose = 'brace'; p.speedNow = 0;
+    if (p.fallT === 0) {
+      p.impact = null; p.brace = 0; p.fall = 0; p.phoneT = 2;
+    }
+  }
   sweep({ v, x, z, speed }) {
     if (speed < 1.5) return;
     for (const p of this.list) {
-      const dx = p.x - x, dz = p.z - z; if (dx * dx + dz * dz > 16) continue;
+      const dx = p.x - x, dz = p.z - z; if (Math.abs(p.y-v.y)>2.2 || dx*dx+dz*dz > (v.def.L/2+.3)**2+(v.def.W/2+.3)**2) continue;
       const c = Math.cos(v.heading), s = Math.sin(v.heading);
       const lx = dx * c + dz * s, lz = -dx * s + dz * c;
       if (Math.abs(lx) < v.def.L / 2 + 0.3 && Math.abs(lz) < v.def.W / 2 + 0.3 && !(p.fallT > 0)) {
-        p.fallT = 3.5; p.fall = 0; p.x += -s * Math.sign(lz || 1) * 1.2; p.z += c * Math.sign(lz || 1) * 1.2;
+        this.strike(p, Math.atan2(dz,dx), speed);
         this.G.events.emit('pedHit', { p, v, speed });
         this.disturb(p.x, p.z, 35, 'hit');
       }

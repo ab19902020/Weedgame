@@ -231,12 +231,13 @@ export function groundMaterial() {
     sel(isPath.greaterThan(0.5), vec3(0.82, 0.78, 0.72), sel(isBallast.greaterThan(0.5), vec3(0.8, 0.72, 0.66), vec3(1))))));
   let albedo = tex.mul(tone);
   // aggregate chips, tar patches, slab joints, weeds in the cracks, mossy kerbs
-  const chip = step(0.84, nz(p.xz, 1 / 0.07).r).mul(isRoad);
+  const chip = smoothstep(0.80, 0.88, nz(p.xz, 1 / 0.07).r).mul(isRoad);
   albedo = albedo.add(vec3(0.55, 0.52, 0.46).mul(chip.mul(0.16)));
   const cell = floor(p.xz.mul(0.065));
   const patchPick = h3(vec3(cell.x, cell.y, 2.2));
   const fx = fract(p.x.mul(0.065)), fz = fract(p.z.mul(0.065));
-  const inPatch = step(0.88, patchPick).mul(step(0.14, fx)).mul(step(fx, 0.86)).mul(step(0.14, fz)).mul(step(fz, 0.86)).mul(isRoad);
+  const insetX = patchPick.mul(.24), insetZ = fract(patchPick.mul(39)).mul(.32);
+  const inPatch = step(0.88, patchPick).mul(smoothstep(insetX,insetX.add(.006),fx)).mul(step(fx, 0.86)).mul(smoothstep(insetZ,insetZ.add(.006),fz)).mul(step(fz, 0.86)).mul(isRoad);
   albedo = mix(albedo, albedo.mul(vec3(0.58, 0.56, 0.52)), inPatch);
   const joint = smoothstep(0.012, 0.04, fract(p.x.div(0.6))).mul(smoothstep(0.012, 0.04, fract(p.z.div(0.9))));
   const flags = isPave.mul(float(1).sub(step(0.5, tarmacPave)));

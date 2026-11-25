@@ -83,9 +83,13 @@ function drawFace(S, Hm, T, E, f, r) {
   blob(S, 0, 1.545, 0.07, 0.02, D, 0.4);                     // under the jaw
   blob(S, 0, 1.567, 0.02, 0.011, L, 0.14);                   // chin
   blob(S, 0, 1.582, 0.018, 0.006, D, 0.35);                  // under the lower lip
+  // A cell has one consistent facial structure on both sides, with slight natural asymmetry.
+  const spacing = .031 + .005*r(), eyeHeight = 1.660 + .004*r();
+  const eyeWidth = .0114 + .0026*r(), lidOpening = .0052 + .0015*r();
+  const browHeight = 1.682 + .008*r();
   // ---- eyes
   for (const s of [-1, 1]) {
-    const ex = s * 0.034, ey = 1.662, hw = 0.0128, hh = 0.0066 - (f.male ? 0.0005 : 0);
+    const ex = s*spacing, ey = eyeHeight + s*.0005, hw = eyeWidth, hh = lidOpening;
     blob(S, ex, ey + 0.004, 0.024, 0.017, D, 0.42);           // socket
     blob(S, s * 0.04, 1.685, 0.022, 0.006, L, 0.16);          // brow ridge
     blob(S, ex, ey - 0.012, 0.014, 0.005, D, 0.18 + age * 0.22); // under-eye shadow / bags
@@ -106,7 +110,7 @@ function drawFace(S, Hm, T, E, f, r) {
     curve(S, [inner[0] + s * 0.001, inner[1] + 0.0004], [up[0], up[1] - 0.0016], [outer[0] - s * 0.001, outer[1]], 0.0022, `rgba(${D},0.25)`);
     if (age) for (let k = 0; k < 3; k++) curve(S, [ex + s * 0.016, ey + 0.002 - k * 0.003], [ex + s * 0.021, ey + 0.001 - k * 0.0035], [ex + s * 0.025, ey + 0.002 - k * 0.005], 0.0006, `rgba(${D},0.22)`);
     // eyebrows: many short hairs along an arch, thicker at the inner end
-    const b0 = 0.013, b1 = 0.054, by = 1.689;
+    const b0 = 0.013, b1 = 0.054, by = browHeight;
     for (let k = 0; k < 140 * f.brow; k++) {
       const t = r(), x = s * (b0 + (b1 - b0) * t), arch = Math.sin(Math.min(1, t * 1.4) * Math.PI * 0.75) * 0.0045 - (t > 0.75 ? (t - 0.75) * 0.01 : 0);
       const th = (f.male ? 0.0042 : 0.0028) * f.brow * (1 - t * 0.55);
@@ -127,7 +131,7 @@ function drawFace(S, Hm, T, E, f, r) {
   blob(S, 0, 1.624, 0.016, 0.005, D, 0.4);                   // shadow under the nose
   blob(S, 0, 1.615, 0.0035, 0.007, D, 0.18);                 // philtrum
   // ---- mouth
-  const mw = f.male ? 0.0215 : 0.02, my = 1.603;
+  const mw = .0185 + .005*r(), my = 1.601 + .003*r();
   const upper = g => { g.beginPath(); g.moveTo(-mw, my); g.quadraticCurveTo(-mw * 0.5, my + 0.0058, -0.003, my + 0.0055); g.lineTo(0, my + 0.0047); g.lineTo(0.003, my + 0.0055); g.quadraticCurveTo(mw * 0.5, my + 0.0058, mw, my); g.quadraticCurveTo(0, my + 0.0008, -mw, my); g.closePath(); };
   const lower = g => { g.beginPath(); g.moveTo(-mw, my); g.quadraticCurveTo(0, my - 0.0002, mw, my); g.quadraticCurveTo(mw * 0.4, my - 0.0085, 0, my - 0.0088); g.quadraticCurveTo(-mw * 0.4, my - 0.0085, -mw, my); g.closePath(); };
   S.fillStyle = `rgba(${D},0.22)`; upper(S); S.fill();
