@@ -243,7 +243,7 @@ function initCuttings(m) {
   if (seg.length) NET.cut = { seg: new Float32Array(seg), grid };
 }
 function cut(H, ox, oz, lcAt, A) {
-  const C = NET && NET.cut; if (!C) return { floor: null, low: null };
+  const C = NET && NET.cut; if (!C) return { floor: null, low: null, near: null };
   const H0 = H.slice();
   const ids = new Set();
   for (let cx = Math.floor(ox / CUT_CELL); cx <= Math.floor((ox + TILE) / CUT_CELL); cx++)
@@ -253,6 +253,7 @@ function cut(H, ox, oz, lcAt, A) {
   // surface it holds up, being within a grid step of its carriageway (floor); and whether it lies on a
   // carriageway at all (on)
   const low = new Float32Array(NT * NT).fill(Infinity), floor = new Float32Array(NT * NT).fill(-Infinity), on = new Uint8Array(NT * NT);
+  const near = new Float32Array(NT * NT).fill(Infinity);   // the lowest road within a grid step of its carriageway
   const S = C.seg;
   for (const id of ids) {
     const o = id * CUT_REC, ax = S[o] - ox, ay = S[o + 1], az = S[o + 2] - oz, bx = S[o + 3] - ox, by = S[o + 4], bz = S[o + 5] - oz, hw = S[o + 6];
@@ -266,6 +267,7 @@ function cut(H, ox, oz, lcAt, A) {
       const want = y + Math.max(0, d - hw - CUT_FULL) * CUT_SLOPE;
       if (want < low[k]) low[k] = want;
       if (d <= hw + STEP && y > floor[k]) floor[k] = y;
+      if (d <= hw + STEP && y < near[k]) near[k] = y;
       if (d <= hw) on[k] = 1;
     }
   }
@@ -292,7 +294,7 @@ function cut(H, ox, oz, lcAt, A) {
     }
     ci += n;
   }
-  return { floor, low };
+  return { floor, low, near };
 }
 
 // ------------------------------------------------------------------ railway lines the trains run on
@@ -372,7 +374,9 @@ function railBed(H, ox, oz, lcAt, roads, A) {
     } else if (H[k] < bot[k] - 0.1) {
       const c = edge ? 0 : lcAt(x, z);
       if (c === 4 || (!on[k] && c === 3)) continue;
-      if (roads.low && roads.low[k] < bot[k] - 1) continue;   // a road passes under the railway here
+      // a road passes under the railway here, or runs below it within a grid step (its drawn surface rests
+      // on this ground): the embankment never builds up over it
+      if ((roads.low && roads.low[k] < bot[k] - 0.1) || (roads.near && roads.near[k] < bot[k] - 0.1)) continue;
       if (underDeck(x, z)) continue;                          // the trains cross on a bridge
       H[k] = bot[k];
     }
