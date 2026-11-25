@@ -1,4 +1,4 @@
-# Map audit: roads, paths and water (v0.17.0, M4 corridor v0.18.0)
+# Map audit: roads, paths and water (v0.17.0, M4 corridor v0.18.0, carriageways v0.20.0)
 
 What was checked, what was wrong and what changed. Every number is computed from the OSM extract
 (`berks.osm.pbf`, South East England extract of 2026-11-19, cut to lon −1.005…−0.725, lat 51.385…51.485), the
@@ -50,6 +50,28 @@ stopped there in the game. The world now also takes in a corridor 500 m either s
 * With the corridor the network is 2,048 km of drivable road (96.3% one connected network) and 3,460 km of roads and
   paths together (99.4%); open water is 952 ha (450 lakes and ponds, 37 channels, 551 brooks and ditches). Lanes that
   cross the corridor's outer edge near Theale (Nunhide Lane, North Street) end there, as roads do at any edge.
+
+## Nothing in the carriageway (v0.20.0)
+
+`tools/test/workerAudit.mjs` runs the real tile worker over every tile, fed exactly as the game feeds it. It counts
+anything standing more than 25 cm inside a tile's road polygons. Whole world, 3,730 tiles:
+
+| Standing in a carriageway | before | after |
+|---|---|---|
+| Lamp posts (of 30,116) | 709 | 0 (moved to just behind the kerb, arm turned over the road) |
+| Trees (of 1.45 million) | 123 | 0 |
+| Telegraph poles, pillar boxes, bins, benches, wheelie bins | 111 | 0 |
+| Bridge piers (of 348) | 0 | 0 |
+
+Traffic: a simulation over the whole network had cars pulling onto the wrong side to overtake queues at lights and
+roundabouts, with 5,385 wrong-side samples and 218 off-road. Overtaking now happens only round a blocked lead (a
+crash, a breakdown, a parked car, police on scene, a bus at its stop), on a road wide enough, with the oncoming lane
+clear. The same simulation now gives 0 and 0.
+
+Roundabouts: the world builder rasterised road polygons into the landcover grid without their holes. Every
+roundabout island inside a tile came out as tarmac; Exbourne Road showed half an island of road surface, Penwood
+Gardens a solid disc. Holes now keep what lies beneath, so islands are grass with their planting, and building
+courtyards are no longer drawn as roof.
 
 ## Water
 
