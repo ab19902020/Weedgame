@@ -1291,10 +1291,17 @@ def build_tile(ix, iz):
     img = Image.new('L', (NR, NR), LC['grass'])
     dr = ImageDraw.Draw(img)
     def fill(geom, val):
-        for poly in poly_rings(geom):
-            dr.polygon([((x - ox) / RAS, (z - oz) / RAS) for x, z in poly[0]], fill=val)
+        # holes stay as they were underneath: a roundabout's island is not road, a courtyard is not building
+        rings = poly_rings(geom)
+        if not rings:
+            return
+        m = Image.new('1', (NR, NR), 0); md = ImageDraw.Draw(m)
+        area = lambda r: abs(float(np.dot(r[:-1, 0], r[1:, 1]) - np.dot(r[1:, 0], r[:-1, 1]))) if len(r) > 2 else 0
+        for poly in sorted(rings, key=lambda q: -area(np.asarray(q[0], float))):   # outer first: an island inside a hole draws after it
+            md.polygon([((x - ox) / RAS, (z - oz) / RAS) for x, z in poly[0]], fill=1)
             for hole in poly[1:]:
-                pass  # holes keep the fill (minor); landuse holes are rare inside a tile
+                md.polygon([((x - ox) / RAS, (z - oz) / RAS) for x, z in hole], fill=0)
+        img.paste(val, mask=m)
     for j in sorted(landtree.query(tbm), key=lambda j: land_polys[j][0]):
         pr, cl, p = land_polys[j]
         g = p.intersection(tbm)
