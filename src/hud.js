@@ -122,12 +122,14 @@ export class Hud {
     const ready=inCar||near||G.transit.ride||boardable;
     use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable)&&!inCar);
     // on foot: stick and actions; driving: wheel (or arrows) and pedals; riding a bus or train: just the stop button
-    const ride=!!G.transit.ride, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Drag wheel';
+    const ride=!!G.transit.ride, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Steering wheel';
     I.driving=drive; I.steering=steer;
+    // handling: Easy (traction and stability control, ABS, steering assist; the default) or Realistic (carPhysics.js)
+    I.assists=/^Realistic/.test(this.menu?.settings?.handling||'')?0:1;
     this.el('btns').querySelector('.foot').classList.toggle('driving',drive||ride);
     this.el('btns').querySelector('.drive').hidden=!drive;
-    this.el('btns').querySelector('.arrows').hidden=!(drive&&steer==='Arrow buttons');
-    I.wheelEl.hidden=!(drive&&steer==='Drag wheel');
+    this.el('btns').querySelector('.arrows').hidden=!(drive&&steer==='Buttons');
+    I.wheelEl.hidden=!(drive&&steer==='Steering wheel');
     I.rest.hidden=drive||ride;
     for(const id of ['bJump','bHit','bPickup','bRun'])this.el(id).hidden=drive||ride;
     this.el('bSwap').hidden=ride;

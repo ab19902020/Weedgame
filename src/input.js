@@ -1,9 +1,11 @@
 // Touch controls + keyboard (the gamepad is read in controller.js).
 // On foot: a floating joystick anywhere on the left; drag anywhere else to turn the camera.
-// Driving: the left thumb steers (a wheel you drag sideways, arrow buttons, or tilting the phone, chosen in
-// Settings) and the right thumb works the pedals: accelerator and brake, which you can rock between without
-// lifting. Brake held at a standstill engages reverse. Drag the free screen to look around.
-const STICK_R = 58, WHEEL_R = 84;
+// Driving: the left thumb steers, chosen in Settings as on the best mobile racers: a steering wheel you drag
+// sideways (proportional, as Real Racing's and CarX's wheels), left and right buttons (as GTA's and Real Racing's
+// touch zones: a tap is a small correction, a hold full lock) or tilting the phone. The right thumb works the
+// pedals: accelerator and brake, which you can rock between without lifting. Brake held at a standstill engages
+// reverse. Drag the free screen to look around. Handling assists (Easy or Realistic) are in carPhysics.js.
+const STICK_R = 58, WHEEL_R = 96;
 const KEYMAP = { ShiftLeft: 'run', ShiftRight: 'run', KeyF: 'use', Enter: 'use', KeyH: 'horn', Space: 'brake', Tab: 'swap', KeyM: 'map', KeyP: 'dev', Backquote: 'dev', KeyC: 'camera', KeyV: 'camera' };
 export class Input {
   constructor(root) {
@@ -11,7 +13,8 @@ export class Input {
     this.held = new Set(); this.pressed = new Set(); this.keys = new Set();
     this.lastLook = 0;
     this.driving = false;               // set by the HUD each frame
-    this.steering = 'Drag wheel';       // 'Drag wheel' | 'Arrow buttons' | 'Tilt' (Settings)
+    this.steering = 'Steering wheel';   // 'Steering wheel' | 'Buttons' | 'Tilt' (Settings)
+    this.assists = 1;                   // handling: 1 Easy, 0 Realistic (Settings)
     this.stick = { id: null, ox: 0, oy: 0 };
     this.wheel = { id: null, ox: 0, x: 0 };
     this.pedal = { id: null, on: null, t: 0 };    // which pedal the right thumb is on
@@ -40,7 +43,7 @@ export class Input {
     if (e.target.closest('button,.panel,#map,.pedal,.arrow')) return;
     e.preventDefault();
     const left = e.clientX < innerWidth * 0.42;
-    if (left && this.driving && this.steering === 'Drag wheel' && this.wheel.id == null) {
+    if (left && this.driving && this.steering === 'Steering wheel' && this.wheel.id == null) {
       this.wheel = { id: e.pointerId, ox: e.clientX, x: 0 };
       this.placeWheel(e.clientX, e.clientY);
     } else if (left && !this.driving && this.stick.id == null) {
@@ -155,11 +158,16 @@ export class Input {
   // driving: accelerator, brake and steering stay independent
   driveControls(dt = 1 / 60) {
     const k = this.keys;
-    let steer = this.wheel.x + (this.padX || 0);
-    if (this.steering === 'Arrow buttons' || this.arrows.l || this.arrows.r) {
-      // buttons ease in, so a tap is a correction and a hold is full lock
-      const want = (this.arrows.r ? 1 : 0) - (this.arrows.l ? 1 : 0);
-      this._arrow = (this._arrow || 0) + Math.max(-dt * 5, Math.min(dt * 5, want - (this._arrow || 0)));
+    // the wheel: a light filter (about 50 ms) takes the jitter of a thumb out without making it feel late
+    this._wheel = (this._wheel ?? 0) + (this.wheel.x - (this._wheel ?? 0)) * (dt > 0 ? Math.min(1, dt * 20) : 0);
+    if (this.wheel.id == null && this.wheel.x === 0 && Math.abs(this._wheel) < 0.01) this._wheel = 0;
+    let steer = this._wheel + (this.padX || 0);
+    if (this.steering === 'Buttons' || this.arrows.l || this.arrows.r) {
+      // buttons ease in over a quarter second, so a tap is a small correction and a hold is full lock; let go and
+      // the wheel comes straight back to centre
+      const want = (this.arrows.r ? 1 : 0) - (this.arrows.l ? 1 : 0), cur = this._arrow || 0;
+      const rate = !want || Math.sign(want) !== Math.sign(cur) ? 9 : 4;
+      this._arrow = cur + Math.max(-dt * rate, Math.min(dt * rate, want - cur));
       if (!want && Math.abs(this._arrow) < 0.02) this._arrow = 0;
       steer += this._arrow;
     }

@@ -6,8 +6,19 @@
 // rear-driven car therefore costs rear grip, so it can oversteer. The engine follows a power curve
 // through an automatic gearbox (rpm and gear also drive the engine sound). There are aero drag,
 // rolling resistance and engine braking. Grip falls on wet roads, gravel and grass. The handbrake
-// locks the rear wheels. For touch play, speed-sensitive steering and a light stability assist
-// (counter-steer, yaw limiting) are added; the sports models get less of it.
+// locks the rear wheels.
+// Driving assists, as on the best mobile racers (Real Racing 3's steering assist and traction control, Gran
+// Turismo's counter-steer assist) and on every modern road car (ABS, EBD, traction and stability control):
+// ctl.assists is 1 for 'Easy' (the default) and 0 for 'Realistic', scaled per model (the sports cars get less):
+//  * steering: speed-sensitive lock no greater than the front tyres can use, calmer steering at speed, quick
+//    return to centre, and steering into a slide (counter-steer assist);
+//  * ABS and EBD: no tyre locks under braking and the rear brakes stay well under the rear's grip, so braking
+//    in a turn runs a little wide instead of spinning (the handbrake still locks the rear for handbrake turns);
+//  * traction control: each driven axle gets only the drive its tyres can put down while holding the corner,
+//    less again once the tail starts to slide;
+//  * stability control: turning faster than the steering asks for is pulled back (as braking the outside
+//    front wheel does) and the engine eased while it works;
+//  * a chassis set to understeer a little at the limit: the rear holds slightly more than the front.
 //
 // Collisions: impulses at the actual contact point, with mass, moment of inertia, restitution and
 // friction, so glancing blows scrape and spin the car rather than bouncing it. Obstacles are
@@ -178,18 +189,33 @@ export class CarDynamics {
     const dmg = v.dmg;
     // ---- controls
     let thr = 0, brk = 0, hb = false, steerT = 0;
+    // assists: 1 Easy .. 0 Realistic. Easy gives every car near-full help (the sports cars too); Realistic leaves the
+    // light stability and traction control a road car of that sort has (less on the sports cars)
+    const A = ctl ? Math.max(0, Math.min(1, ctl.assists ?? 1)) : 0, AS = A * Math.max(0.9, P.assist) + (1 - A) * 0.6 * P.assist;
+    const muS = P.mu * ph.surf;
     if (ctl) {
       if (ctl.throttle > 0.05) { if (u < -0.8) brk = ctl.throttle; else { thr = ctl.throttle; if (ph.gear < 1) ph.gear = 1; } }
       else if (ctl.throttle < -0.05) { if (u > 0.8) brk = -ctl.throttle; else { thr = -ctl.throttle; ph.gear = -1; } }
       // the brake pedal (separate from the accelerator): full pressure at once, and it holds a stopped car still
       if (ctl.brake > 0.02 && thr === 0) brk = Math.max(brk, ctl.brake);
       hb = !!ctl.handbrake;
-      const maxSteer = 0.62 / (1 + Math.max(0, u) / 12);
+      let maxSteer = 0.62 / (1 + Math.max(0, u) / 12);
+      // steering assist: no more lock than the front tyres can use at this speed (the angle for the tightest turn
+      // the grip allows, plus their working slip), so a full-lock swipe at speed turns as hard as the car can
+      // instead of scrubbing the front or snapping the tail
+      if (u > 6) { const dg = P.wb * muS * G0 * 0.95 / (u * u) + 0.09; maxSteer += (Math.min(maxSteer, dg) - maxSteer) * Math.min(1, A * 1.2); }
       steerT = ctl.steer * maxSteer;
-      // stability assist: steer into a slide (not while the handbrake is held, so handbrake turns still work)
-      if (!hb && speed > 4) { const beta = Math.atan2(vl, Math.abs(u)); steerT += Math.max(-0.35, Math.min(0.35, beta * 0.55 * P.assist)) * Math.sign(u || 1); }
+      // counter-steer assist: steer into a slide (not while the handbrake is held, so handbrake turns still work). The
+      // slide is the rear tyres' own slip beyond their working angle, not the body's angle to its path (in a tight
+      // turn at walking pace that is geometry, and steering into it wound the lock on past full)
+      if (!hb && speed > 4) {
+        const arN = Math.atan2(vl - ph.w * P.b, Math.max(Math.abs(u), 0.8)), ex = Math.sign(arN) * Math.max(0, Math.abs(arN) - 0.04);
+        steerT += Math.max(-0.35, Math.min(0.35, ex * (0.5 + 0.5 * A) * P.assist * Math.min(1, (speed - 4) / 4))) * Math.sign(u || 1);
+      }
       steerT += ((dmg[3] - dmg[2]) * 0.05 + Math.max(dmg[0] - 0.5, 0) * 0.03) * Math.min(1, speed / 10);   // bent steering pulls
-      const rate = 3.2;
+      // the wheel turns quickly at parking speeds and more calmly at speed, and comes back to centre faster
+      const back = Math.abs(steerT) < Math.abs(ph.steer) - 1e-3;
+      const rate = 3.2 / (1 + Math.max(0, u) / (16 + 14 * (1 - A))) * (back ? 1.7 : 1);
       ph.steer += Math.max(-rate * h, Math.min(rate * h, steerT - ph.steer));
     } else {
       // driverless: parked cars sit on their handbrake and in gear, crashed traffic on the footbrake
@@ -227,17 +253,38 @@ export class CarDynamics {
     const af = Math.atan2(vfw, Math.max(Math.abs(ufw), 0.8)), ar = Math.atan2(vr, Math.max(Math.abs(u), 0.8));
     const share = P.drive === 'F' ? [1, 0] : P.drive === 'R' ? [0, 1] : [0.4, 0.6];
     const sgnU = Math.abs(u) > 0.05 ? Math.sign(u) : 0;
+    // tyres grip a little less per kilogram the harder they're loaded (load sensitivity): braking hard throws load
+    // on the front and lifts it off the rear, and without this the front out-gripped the rear and the car swapped ends
+    const sens = (Fz, Fz0) => mu * Math.max(0.75, Math.min(1.2, 1 - 0.15 * (Fz - Fz0) / Fz0));
+    const capF = sens(Fzf, mg * P.fw) * Fzf, capR = sens(Fzr, mg * (1 - P.fw)) * Fzr;
+    let dF = drive * share[0], dR = drive * share[1];
+    if (ctl && drive > 0) {
+      // traction control: each driven axle gets at most what its tyres can put down while still holding the corner
+      // (last step's cornering force), and less again once the tail slides or stability control is at work
+      const latF = Math.min(0.95, Math.abs(ph.fyF || 0) / Math.max(1, capF)), latR = Math.min(0.95, Math.abs(ph.fyR || 0) / Math.max(1, capR));
+      const kF = 1 - 0.08 * AS, kR = 0.98 - 0.22 * AS;
+      dF = Math.min(dF, capF * kF * Math.sqrt(1 - latF * latF));
+      dR = Math.min(dR, capR * kR * Math.sqrt(1 - latR * latR));
+      if (!hb && Math.abs(ar) > 0.07) dR *= Math.max(0.15, 1 - (Math.abs(ar) - 0.07) * 9 * AS);
+      if (ph.esc) { const cut = Math.max(0.2, 1 - ph.esc * 0.8 * AS); dF *= cut; dR *= cut; }
+    }
+    // ABS and EBD: the brakes never lock a wheel, and the rear's share stays well inside the rear's grip (it loses load
+    // as the car pitches forward), so the car steers and stays straight under hard braking. Crashed cars with nobody
+    // at the wheel skid on locked tyres as before.
     const bF = brk * mg * 1.05;
-    let FxF = drive * share[0] - sgnU * bF * 0.66;
-    let FxR = drive * share[1] - sgnU * bF * 0.34;
+    let bkF = bF * 0.66, bkR = bF * 0.34;
+    if (ctl) { bkF = Math.min(bkF, capF * 0.95); bkR = Math.min(bkR, capR * (0.74 - 0.1 * Math.min(1, AS))); }
+    let FxF = dF - sgnU * bkF;
+    let FxR = dR - sgnU * bkR;
     let gripR = 1;
     if (hb) { FxR = -sgnU * mu * Fzr * 0.85; gripR = 0.42; }
-    const capF = mu * Fzf, capR = mu * Fzr;
     let spin = 0;
     if (Math.abs(FxF) > capF) { spin = Math.max(spin, (Math.abs(FxF) - capF) / capF); FxF = Math.sign(FxF) * capF; }
     if (Math.abs(FxR) > capR) { spin = Math.max(spin, (Math.abs(FxR) - capR) / capR); FxR = Math.sign(FxR) * capR; }
-    let FyF = -capF * pac(af), FyR = -capR * gripR * pac(ar);
-    const limF = Math.sqrt(Math.max(0, capF * capF - FxF * FxF)), limR = Math.sqrt(Math.max(0, (capR * gripR) ** 2 - (hb ? 0 : FxR * FxR)));
+    // (a chassis that understeers a little at the limit, as road cars are set up: the rear holds a touch more)
+    const capRy = capR * gripR * (hb ? 1 : 1 + 0.1 * AS);
+    let FyF = -capF * pac(af), FyR = -capRy * pac(ar);
+    const limF = Math.sqrt(Math.max(0, capF * capF - FxF * FxF)), limR = Math.sqrt(Math.max(0, capRy * capRy - (hb ? 0 : FxR * FxR)));
     FyF = Math.max(-limF, Math.min(limF, FyF)); FyR = Math.max(-limR, Math.min(limR, FyR));
     // never let a tyre force overshoot (low-speed stability): at most what cancels that axle's lateral speed this step
     const mF = P.m * P.fw, mR = P.m * (1 - P.fw);
@@ -250,6 +297,18 @@ export class CarDynamics {
     const Fy = FxF * sd + FyF * cd + FyR;
     let Mz = P.a * (FxF * sd + FyF * cd) - P.b * FyR;
     Fx -= P.kd * u * Math.abs(u) * (1 + (dmg[0] + dmg[1]) * 0.3) + (Math.abs(u) > 0.05 ? sgnU * ph.crr * mg : 0);
+    // stability control: the yaw rate the steering asks for (a steady turn of a car that understeers a little),
+    // no faster than the grip allows; turning faster than that, or the wrong way, is pulled back as braking the
+    // outside front wheel would, and the engine is eased (traction control reads ph.esc next step)
+    ph.esc = 0;
+    if (ctl && !hb && speed > 5 && u > 2) {
+      const wRef0 = u * Math.tan(delta) / (P.wb * (1 + (u / 24) ** 2)), wCap = mu * G0 * 0.92 / speed;
+      const wRef = Math.max(-wCap, Math.min(wCap, wRef0)), over = Math.abs(ph.w) - Math.abs(wRef);
+      if ((over > 0.03 && Math.sign(ph.w) === Math.sign(wRef || ph.w)) || (Math.sign(ph.w) !== Math.sign(wRef) && Math.abs(ph.w) > 0.06 && Math.abs(wRef) > 0.02)) {
+        Mz -= (ph.w - wRef) * P.Iz * 9 * AS;
+        ph.esc = Math.min(1, Math.abs(ph.w - wRef) * 4);
+      }
+    }
     // yaw limiter (ESP): stops a spin building beyond what the tyres can hold, unless on the handbrake
     if (ctl && !hb && speed > 6) {
       const wMax = mu * G0 / speed * 1.15 + 0.15;
@@ -272,7 +331,7 @@ export class CarDynamics {
     ph.ay += (ay - ph.ay) * Math.min(1, h * 12);
     ph.slip = Math.max(Math.abs(af) > 0.16 ? (Math.abs(af) - 0.16) * 4 : 0, Math.abs(ar) > 0.15 ? (Math.abs(ar) - 0.15) * 4 : 0, spin * 1.5, hb && speed > 3 ? 1 : 0, brk > 0.9 && speed > 3 && ph.surf < 0.8 ? 0.5 : 0);
     ph.slip = Math.min(1, ph.slip) * Math.min(1, speed / 4);
-    ph.thr = thr; ph.brk = brk; ph.hb = hb;
+    ph.thr = thr; ph.brk = brk; ph.hb = hb; ph.fyF = FyF; ph.fyR = FyR;
   }
   // ------------------------------------------------------------------ collisions
   // returns the largest closing speed resolved (m/s)

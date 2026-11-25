@@ -3,13 +3,16 @@ const choices={
   orientation:['Minimap orientation','Heading up','North up'],
   size:['Minimap size','Standard','Compact','Large'],
   colour:['Route colour','Mint','Amber','Blue'],
-  steering:['Steering (touch)','Drag wheel','Arrow buttons','Tilt'],
+  steering:['Steering (touch)','Steering wheel','Buttons','Tilt'],
+  handling:['Handling','Easy (assists on)','Realistic (fewer assists)'],
   buttons:['Touch button size','Standard','Large','Compact']
 };
 export class GameMenu {
   constructor(hud) {
     this.hud=hud;
     try { this.settings=JSON.parse(localStorage.getItem(key)) || {}; } catch { this.settings={}; }
+    // (the steering options' old names)
+    this.settings.steering=({'Drag wheel':'Steering wheel','Arrow buttons':'Buttons'})[this.settings.steering]||this.settings.steering;
     const menu=this.el=document.createElement('section');
     menu.id='countyMenu';menu.setAttribute('aria-label','Green County menu');
     menu.innerHTML=`<div class="menuContent"><small>BERKSHIRE · ENGLAND</small><h1>Green<br>County</h1><nav><button data-go="play">Enter free roam ↗</button><button data-go="atlas">Road Atlas</button><button data-go="settings">Settings</button></nav><section class="preferences" hidden><h2>Settings</h2></section></div>`;

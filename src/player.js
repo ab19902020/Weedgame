@@ -142,7 +142,7 @@ export class Brothers {
     if (braking && this.stillT > 0.45) this.revHold = true;
     const reverse = braking && this.revHold;
     // carPhysics.js: tyre model, gearbox, assists and impulse collisions
-    const ctl = { throttle: c.gas > 0.05 ? c.gas : reverse ? -c.brake : 0, brake: reverse ? 0 : c.brake, steer: c.steer, handbrake: input.padBrake || input.held.has('brake') };
+    const ctl = { throttle: c.gas > 0.05 ? c.gas : reverse ? -c.brake : 0, brake: reverse ? 0 : c.brake, steer: c.steer, handbrake: input.padBrake || input.held.has('brake'), assists: input.assists ?? 1 };
     G.carDyn.drive(v, dt, ctl);
     const hit = G.carDyn.flush(v);
     if (hit > 2) this.cam.shake = Math.max(this.cam.shake || 0, Math.min(1, hit / 14));
