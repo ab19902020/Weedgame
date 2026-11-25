@@ -53,6 +53,7 @@ function initNet(m) {
 }
 
 // ------------------------------------------------------------------ growable buffers
+const BR = 14;   // floats per breakable record (see build: brkRec)
 class Buf {
   constructor(extra = 0) { this.p = []; this.n = []; this.x = []; this.extra = extra; this.uv = []; }
   v(x, y, z, nx, ny, nz, u, w, ...ex) { this.p.push(x, y, z); this.n.push(nx, ny, nz); this.uv.push(u, w); for (let i = 0; i < this.extra; i++) this.x.push(ex[i] ?? 0); }
@@ -181,6 +182,26 @@ function build(header, A, lod) {
   }
   // ---------------- walls / fences / hedges
   const wallCol = [], hedgeSegs = [];
+  // breakables (main thread: breakables.js). Each record is BR floats: kind, first vertex and vertex count in
+  // the struct mesh, x0 z0 x1 z1 (a point prop keeps its heading in x1), thickness or radius, height,
+  // attached-wire range, next-span range, ground y. Kinds: 1 telegraph pole, 2 wheelie bin, 3 litter bin,
+  // 4 bench, 5 pillar box, 7 hedge section, 8 fence panel, 9 low garden wall section, 10 garden shrub
+  const brk = [], vtx = () => S.p.length / 3;
+  const brkRec = (kind, v0, x0, z0, x1, z1, th, h) => { brk.push(kind, v0, vtx() - v0, x0, z0, x1, z1, th, h, 0, 0, 0, 0, hAt(x0, z0)); return brk.length / BR - 1; };
+  // hedges, fences and low walls are built in short sections, each its own breakable (not a static collider)
+  const breakWall = (pts, th, h, id, kind, piece) => {
+    for (let q = 0; q < pts.length - 1; q++) {
+      const [ax, az] = pts[q], [bx, bz] = pts[q + 1], L = Math.hypot(bx - ax, bz - az); if (L < 0.05) continue;
+      const n = Math.max(1, Math.round(L / piece));
+      for (let i = 0; i < n; i++) {
+        const A0 = [ax + (bx - ax) * i / n, az + (bz - az) * i / n], B0 = [ax + (bx - ax) * (i + 1) / n, az + (bz - az) * (i + 1) / n];
+        const v0 = vtx();
+        // a hedge's solid core sits inside its leafy bushes (plantings), which give it its shape
+        if (id === 3) wall(S, [A0, B0], th * 0.62, h * 0.9, hAt, id); else wall(S, [A0, B0], th, h, hAt, id);
+        brkRec(kind, v0, A0[0], A0[1], B0[0], B0[1], th, h);
+      }
+    }
+  };
   {
     const C = A.wlC, M = A.wlM; let ci = 0;
     for (let k = 0; k < M.length; k += 3) {
@@ -190,8 +211,11 @@ function build(header, A, lod) {
       if (kind === 6) continue; // tree rows handled as trees by the pipeline
       const th = kind === 2 ? 0.8 : kind === 1 ? 0.06 : kind === 5 ? 0.1 : 0.25;
       const id = kind === 2 ? 3 : kind === 1 ? 2 : kind === 5 ? 4 : 1;
-      wall(S, pts, th, h, hAt, id);
       if (id === 3) for (let q = 0; q < pts.length - 1; q++) hedgeSegs.push(pts[q][0], pts[q][1], pts[q + 1][0], pts[q + 1][1], h, th);
+      // hedges, fences and low walls give way to a car; walls, retaining walls and guard rails don't
+      const bk = lod ? 0 : kind === 2 ? 7 : kind === 1 && h <= 2.2 ? 8 : kind === 0 && h <= 1.1 ? 9 : 0;
+      if (bk) { breakWall(pts, th, h, id, bk, bk === 7 ? 1.6 : bk === 8 ? 1.9 : 1.2); continue; }
+      wall(S, pts, th, h, hAt, id);
       if (id === 3) wall(S, pts, th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id);
       for (let q = 0; q < pts.length - 1; q++) wallCol.push(pts[q][0], pts[q][1], pts[q + 1][0], pts[q + 1][1], h);
     }
@@ -206,7 +230,13 @@ function build(header, A, lod) {
     const P = (s_, o) => [x0 + ux * s_ + nx * o, z0 + uz * s_ + nz * o];
     if (style !== 'open') {
       const h = style === 'hedge' ? 0.95 + r * 0.5 : 0.62, th = style === 'hedge' ? 0.6 : 0.24, id = style === 'hedge' ? 3 : 1;
-      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) { const A0 = P(a, t), B0 = P(b, t); wall(S, [A0, B0], th, h, hAt, id); if (id === 3) { wall(S, [A0, B0], th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id); hedgeSegs.push(A0[0], A0[1], B0[0], B0[1], h, th); } wallCol.push(A0[0], A0[1], B0[0], B0[1], h); }
+      for (const [a, b] of [[-0.2, gs], [gs + gw, l + 0.2]]) if (b - a > 0.4) {
+        const A0 = P(a, t), B0 = P(b, t);
+        if (id === 3) hedgeSegs.push(A0[0], A0[1], B0[0], B0[1], h, th);
+        if (!lod) { breakWall([A0, B0], th, h, id, id === 3 ? 7 : 9, id === 3 ? 1.6 : 1.2); continue; }
+        wall(S, [A0, B0], th, h, hAt, id); if (id === 3) wall(S, [A0, B0], th * 0.62, h * 0.36, (x, z) => hAt(x, z) + h * 0.72, id);
+        wallCol.push(A0[0], A0[1], B0[0], B0[1], h);
+      }
     }
     // driveway (block paving or tarmac) or front path (flags) from the gap to the house
     const surfId = drive ? (seed % 5 < 3 ? 4 : 0) : 1, lift = drive ? 0.08 : 0.09;
@@ -217,8 +247,9 @@ function build(header, A, lod) {
     if (!lod && seed % 7 !== 0 && l > 3.5) {
       const sb = gs > l / 2 ? 0.45 : l - 1.35, ang = Math.atan2(uz, ux);
       for (let k = 0; k < (seed % 3 ? 2 : 1); k++) {
-        const [bx, bz] = P(sb + k * 0.68, 0.55), y = hAt(bx, bz);
+        const [bx, bz] = P(sb + k * 0.68, 0.55), y = hAt(bx, bz), v0 = vtx();
         wheelieBin(S, bx, y, bz, ang, k ? [11, 12][seed % 2] : (seed % 4 ? 10 : 17));
+        if (!lod) brkRec(2, v0, bx, bz, ang, 0, 0.36, 1.1);
       }
     }
     // shrubs and a flower bed in the front garden, kept off the driveway
@@ -227,8 +258,9 @@ function build(header, A, lod) {
       if (gs > 1.3) spots.push(Math.max(0.4, gs * 0.45));
       if (l - (gs + gw) > 1.3) spots.push(Math.min(l - 0.4, gs + gw + (l - gs - gw) * 0.55));
       spots.forEach((sv, i) => {
-        const [sx, sz] = P(sv, Math.min(Math.max(t * 0.42, 0.8), 2.2));
-        shrub(S, sx, hAt(sx, sz), sz, 0.46 + ((seed + i) % 4) * 0.07);
+        const [sx, sz] = P(sv, Math.min(Math.max(t * 0.42, 0.8), 2.2)), sv0 = vtx(), ss = 0.46 + ((seed + i) % 4) * 0.07;
+        shrub(S, sx, hAt(sx, sz), sz, ss);
+        if (!lod) brkRec(10, sv0, sx, sz, 0, 0, ss * 0.45, ss);
       });
       if (seed % 4 !== 0) {
         const sv = Math.min(l - 0.35, Math.max(0.35, drive ? gs + gw + 0.55 : l * 0.5));
@@ -261,10 +293,11 @@ function build(header, A, lod) {
         let prev = null;
         for (let sv = s0; sv < cum - 4; sv += sp) {
           const [x, z] = at(sv, off); if (!inTile(x, z)) { prev = null; continue; }
-          const y = hAt(x, z), top = y + 8.4;
+          const y = hAt(x, z), top = y + 8.4, p0 = vtx();
           box(S, x, y, z, 0, 0.13, 4.2, 0.13, 15);
           const [, , ang] = at(sv, off);
           box(S, x, top - 0.35, z, ang + Math.PI / 2, 0.55, 0.05, 0.06, 15);
+          const rec = brkRec(1, p0, x, z, ang, 0, 0.15, 8.4), w0 = vtx();
           // service drops: the fan of thin cables from the pole to the eaves of the nearest houses
           let nd = 0;
           for (const g of drops) {
@@ -274,24 +307,33 @@ function build(header, A, lod) {
             g[3] = 1; nd++;
             sagWire(S, [x, top - 0.55, z], [g[0], g[2] - 0.25, g[1]], 0.25 + Math.sqrt(dd) * 0.012, 3);
           }
-          if (prev) for (const o of [-0.4, 0, 0.4]) sagWire(S, [prev[0] + Math.cos(prev[2] + Math.PI / 2) * o, prev[1] - 0.3, prev[3] + Math.sin(prev[2] + Math.PI / 2) * o], [x + Math.cos(ang + Math.PI / 2) * o, top - 0.3, z + Math.sin(ang + Math.PI / 2) * o], 0.45);
-          prev = [x, top, ang, z];
+          if (prev) {
+            const s0 = vtx();
+            for (const o of [-0.4, 0, 0.4]) sagWire(S, [prev[0] + Math.cos(prev[2] + Math.PI / 2) * o, prev[1] - 0.3, prev[3] + Math.sin(prev[2] + Math.PI / 2) * o], [x + Math.cos(ang + Math.PI / 2) * o, top - 0.3, z + Math.sin(ang + Math.PI / 2) * o], 0.45);
+            // the span hangs between two poles, so either one falling takes it down: it is the tail of this
+            // pole's wire range and the earlier pole's 'next span'
+            brk[prev[4] * BR + 11] = s0; brk[prev[4] * BR + 12] = vtx() - s0;
+          }
+          brk[rec * BR + 9] = w0; brk[rec * BR + 10] = vtx() - w0;                 // drop wires + span back
+          prev = [x, top, ang, z, rec];
         }
-        if (hh % 23 === 0) { const [x, z, ang] = at(Math.min(8, cum / 2), -side * (w / 2 + 0.7)); if (inTile(x, z)) pillarBox(S, x, hAt(x, z), z, ang); }
+        if (hh % 23 === 0) { const [x, z, ang] = at(Math.min(8, cum / 2), -side * (w / 2 + 0.7)); if (inTile(x, z)) { const v0 = vtx(); pillarBox(S, x, hAt(x, z), z, ang); brkRec(5, v0, x, z, ang, 0, 0.27, 1.56); } }
       }
       if (header.core && /^(primary|secondary|tertiary)$/.test(cn)) {
         // high-street furniture on the pavement edge: litter bins, the odd bench
         for (let sv = 10 + (hh % 25); sv < cum - 6; sv += 42) {
           const sd = (Math.round(sv) & 1) ? 1 : -1, [x, z, ang] = at(sv, sd * (w / 2 + 0.55)); if (!inTile(x, z)) continue;
-          const y = hAt(x, z) + 0.15;
-          if ((h32i(e * 17 + Math.round(sv)) % 5) === 0) bench(S, x, y, z, ang + (sd > 0 ? 0 : Math.PI)); else litterBin(S, x, y, z);
+          const y = hAt(x, z) + 0.15, v0 = vtx();
+          if ((h32i(e * 17 + Math.round(sv)) % 5) === 0) { bench(S, x, y, z, ang + (sd > 0 ? 0 : Math.PI)); brkRec(4, v0, x - Math.cos(ang) * 0.9, z - Math.sin(ang) * 0.9, x + Math.cos(ang) * 0.9, z + Math.sin(ang) * 0.9, 0.5, 0.75); }
+          else { litterBin(S, x, y, z); brkRec(3, v0, x, z, 0.3, 0, 0.29, 1.05); }
         }
       }
       if (/^(pedestrian|footway)$/.test(cn) && (header.core || /pedestrian/.test(cn))) {
         for (let sv = 8 + (hh % 20); sv < cum - 3; sv += 32) {
           const [x, z, ang] = at(sv, (hh & 2 ? 1 : -1) * (w / 2 + 0.5)); if (!inTile(x, z)) continue;
-          const y = hAt(x, z) + 0.1;
-          if ((h32i(e * 31 + Math.round(sv)) & 3) === 0) bench(S, x, y, z, ang); else litterBin(S, x, y, z);
+          const y = hAt(x, z) + 0.1, v0 = vtx();
+          if ((h32i(e * 31 + Math.round(sv)) & 3) === 0) { bench(S, x, y, z, ang); brkRec(4, v0, x - Math.cos(ang) * 0.9, z - Math.sin(ang) * 0.9, x + Math.cos(ang) * 0.9, z + Math.sin(ang) * 0.9, 0.5, 0.75); }
+          else { litterBin(S, x, y, z); brkRec(3, v0, x, z, 0.3, 0, 0.29, 1.05); }
         }
       }
     }
@@ -315,6 +357,7 @@ function build(header, A, lod) {
   }
   out.ground = G.pack();
   out.struct = S.pack();
+  out.brk = new Float32Array(brk);
   out.markings = buildMarkings(header, ox, oz, hAt);
 
   // ---------------- instances: trees, lamps, slots
@@ -417,7 +460,7 @@ function plantings(header, lcAt, hAt, trees, hedgeSegs) {
       const f = (i + 0.5) / n, x = x0 + (x1 - x0) * f, z = z0 + (z1 - z0) * f;
       if (x < 0 || x >= 256 || z < 0 || z >= 256) continue;
       const hh = h * (1.02 + rnd() * 0.12);
-      bushes.push(x, hAt(x, z) + hh * 0.5, z, L / n * 0.78 + 0.25, hh * 0.56, th * 0.75 + 0.18, yaw, 2);
+      bushes.push(x, hAt(x, z) + hh * 0.5, z, L / n * 0.95 + 0.35, hh * 0.6, th * 1.3 + 0.3, yaw, 2);
     }
   }
   // open ground: jittered grid at 3 m, density by landcover class

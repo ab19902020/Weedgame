@@ -9,6 +9,8 @@ import { People } from '../../src/characters.js';
 import { createGrass } from '../../src/grass.js';
 import { createPost, createIBL } from '../../src/post.js';
 import { createSky } from '../../src/sky.js';
+import { Debris } from '../../src/debris.js';
+import { vec3 } from 'three/tsl';
 window.__wgsl = [];
 if (window.GPUDevice) { const o = GPUDevice.prototype.createShaderModule; GPUDevice.prototype.createShaderModule = function (d) { window.__wgsl.push(d.code); return o.call(this, d); }; }
 const log = (...a) => { console.log(...a); document.body.append(a.join(' ') + '\n'); };
@@ -32,6 +34,10 @@ window.onerror = e => log('ERR', e);
     const tm = treeMaterials();
     const cr = new THREE.InstancedMesh(crownGeometry(), tm.crown, 2); cr.castShadow = true; scene.add(cr);
     const tr = new THREE.InstancedMesh(trunkGeometry(), tm.trunk, 2); scene.add(tr);
+    // crash debris and sparks, and a knocked-down (dark) lamp post (breakables.js / debris.js)
+    const deb = new Debris(scene, () => 0);
+    deb.burst('glass', 4, 0, 1, 0, 1, 1, 0); deb.burst('brick', 2, 1, 1, 0, 0, 1, 0, 1, [0.5, 0.2, 0.1]); deb.spark(4, 0, 1, 0, 1, 2, 0); deb.update(0.016);
+    const dead = lampMaterial(); dead.emissiveNode = vec3(0); scene.add(new THREE.Mesh(geo(), dead));
     const vr = new VehicleRenderer(scene, true);
     // the hand-made Range Rover (heroCars.js): wait for its GLB, then draw one with every lamp state on
     HERO_CARS.rangerover.file = '../' + HERO_CARS.rangerover.file;   // this page lives in www/test/

@@ -128,7 +128,7 @@ export class Tiles {
     if (d.lod === 0) {
       const gg = geoFrom(d.ground, 'surf', 1); if (gg) this.addMesh(t, gg, this.mats.ground, { receive: true });
       const mg = geoFrom(d.markings, 'surf', 1); if (mg) this.addMesh(t, mg, this.mats.mark, { receive: true });
-      const sg = geoFrom(d.struct, 'surf', 1); if (sg) this.addMesh(t, sg, this.mats.struct, { cast: true, receive: true });
+      const sg = geoFrom(d.struct, 'surf', 1); if (sg) t.structMesh = this.addMesh(t, sg, this.mats.struct, { cast: true, receive: true });
       this.addTrees(t, d.trees);
       this.addLamps(t, d.lamps);
       if (d.bushes && d.bushes.length) this.addBushes(t, d.bushes);
@@ -178,12 +178,14 @@ export class Tiles {
     crowns.receiveShadow = this.shadows;
     crowns.computeBoundingSphere(); trunks.computeBoundingSphere();
     t.group.add(crowns, trunks);
+    t.treeMesh = { crowns, trunks };   // breakables.js topples young trees by rewriting their instances
   }
   // shrubs and leafy hedges: [x, y, z, sx, sy, sz, yaw, tint] from the worker; tints as for tree species
   addBushes(t, b) {
     const n = b.length / 8, q = this.budget?.bushes ?? 1;
     const keep = q >= 1 ? n : Math.floor(n * q); if (!keep) return;
     const im = new THREE.InstancedMesh(this.bushGeo, this.mats.crown, keep);
+    t.bushMesh = im; t.bushPos = [];
     const m = new THREE.Matrix4(), qq = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), col = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
     // half-tints: shrub green, fresh green, dark privet/laurel (hedges), copper-leaved, gorse, flowering
     const PAL = [[0.46, 0.54, 0.38], [0.58, 0.64, 0.38], [0.36, 0.48, 0.32], [0.6, 0.42, 0.34], [0.72, 0.68, 0.3], [0.7, 0.46, 0.5]];   // + gorse yellow, blossom pink
@@ -194,6 +196,8 @@ export class Tiles {
       qq.setFromAxisAngle(up, -b[i * 8 + 6]);
       m.compose(p, qq, s.set(b[i * 8 + 3] * 0.5, b[i * 8 + 4], b[i * 8 + 5] * 0.5));
       im.setMatrixAt(k, m);
+      // breakables.js flattens shrubs a car drives through: world x, z, radius, instance
+      t.bushPos.push(p.x + t.data.ox, p.z + t.data.oz, Math.max(b[i * 8 + 3], b[i * 8 + 5]) * 0.42, k);
       const c = PAL[b[i * 8 + 7] | 0] || PAL[0], v = 0.9 + ((i * 0.754877666) % 1) * 0.2;
       im.setColorAt(k, col.setRGB(c[0] * v, c[1] * v, c[2] * v));
       k++;
@@ -219,6 +223,7 @@ export class Tiles {
     }
     im.computeBoundingSphere();
     t.group.add(im);
+    t.lampMesh = im;
   }
   addSigns(t, signs) {
     const S = signs.data, n = Math.floor(S.length / 7); if (!n || !this.signAtlas) return;

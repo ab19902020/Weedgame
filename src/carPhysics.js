@@ -17,6 +17,7 @@
 // Impacts dent four damage zones per car (front, rear, left, right; v.dmg), which the vehicle
 // shader turns into crumpled panels, broken lights and cracked glass. Heavy front damage costs power
 // and pulls the steering.
+import { breaks } from './breakSpec.js';
 import { MODELS } from './vehicles.js';
 import { pointInRing } from './tiles.js';
 
@@ -133,8 +134,10 @@ export class CarDynamics {
       if (v.y > top - 0.35 || base > v.y + 1.6) return;
       c.push({ k: n === 2 ? 'wall' : 'poly', P, s, n });
     });
-    // lamp posts and tree trunks in the tiles around the car
-    for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) {
+    // lamp posts, trees, street furniture, hedges, fences and garden walls: breakables.js decides what gives way
+    if (G.breakables) G.breakables.gather(v.x, v.z, v.y, r, c);
+    // (without it, e.g. in the unit tests: lamp posts and tree trunks are plain posts)
+    else for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) {
       const t = G.tiles.tileAt(v.x + dx * r, v.z + dz * r); if (!t || t._cSeen === this) continue;
       t._cSeen = this;
       const lp = t.data.lamps;
@@ -144,7 +147,7 @@ export class CarDynamics {
       }
       if (t.trees) for (const [x, z, Ht] of t.trees) if (Math.abs(x - v.x) < r && Math.abs(z - v.z) < r) c.push({ k: 'post', x, z, r: 0.12 * (1 + Ht / 14) });
     }
-    for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) { const t = G.tiles.tileAt(v.x + dx * r, v.z + dz * r); if (t) t._cSeen = null; }
+    if (!G.breakables) for (const dx of [-1, 0, 1]) for (const dz of [-1, 0, 1]) { const t = G.tiles.tileAt(v.x + dx * r, v.z + dz * r); if (t) t._cSeen = null; }
     // other vehicles
     this.others = [];
     for (const o of G.traffic.list) {
@@ -267,6 +270,8 @@ export class CarDynamics {
     const samples = [[hl, hw], [hl, -hw], [-hl, hw], [-hl, -hw], [hl, 0], [-hl, 0], [0, hw], [0, -hw], [hl * 0.5, hw], [hl * 0.5, -hw], [-hl * 0.5, hw], [-hl * 0.5, -hw]];
     const contacts = [];
     for (const c of this.cand) {
+      const n0 = contacts.length;
+      if (c.b && c.b.broken) continue;
       if (c.k === 'poly') {
         const { P: Q, s, n } = c;
         for (const [lx, lz] of samples) {
@@ -292,7 +297,7 @@ export class CarDynamics {
         }
       } else if (c.k === 'wall') {
         const { P: Q, s } = c, ax = Q[s * 2], az = Q[s * 2 + 1], ex = Q[s * 2 + 2] - ax, ez = Q[s * 2 + 3] - az, L2 = ex * ex + ez * ez || 1;
-        const T = 0.16;
+        const T = c.T || 0.16;
         for (const [lx, lz] of samples) {
           const [x, z] = toWorld(lx, lz);
           let t = ((x - ax) * ex + (z - az) * ez) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
@@ -323,6 +328,7 @@ export class CarDynamics {
           if (px < pz) contacts.push([c.x, c.z, -fx * Math.sign(lx), -fz * Math.sign(lx), px + c.r]); else contacts.push([c.x, c.z, -rx * Math.sign(lz), -rz * Math.sign(lz), pz + c.r]);
         }
       }
+      if (c.b && contacts.length > n0) this.giveWay(v, ph, P, c.b, contacts, n0, cgx, fx, fz, rx, rz);
     }
     // static contacts: resolve the deepest few
     contacts.sort((a, b) => b[4] - a[4]);
@@ -331,7 +337,14 @@ export class CarDynamics {
       const cvx = v.x + fx * cgx, cvz = v.z + fz * cgx;
       const r0x = x - cvx, r0z = z - cvz;
       const vn = this.pointVel(ph, r0x, r0z, nx, nz);
-      if (vn < 0) worst = Math.max(worst, this.impulseStatic(v, ph, P, r0x, r0z, nx, nz, vn, 0.12, 0.35));
+      if (vn < 0) {
+        const before = [ph.vx, ph.vz];
+        worst = Math.max(worst, this.impulseStatic(v, ph, P, r0x, r0z, nx, nz, vn, 0.12, 0.35));
+        this.kick(v, ph.vx - before[0], ph.vz - before[1], fx, fz, rx, rz);
+        if (-vn > 3) this.G.breakables?.crash(v, x, z, -vn, nx, nz, null);
+      }
+      // grinding along: sparks from the contact
+      if (i === 0 && this.G.breakables) { const tv = Math.abs(this.pointVel(ph, r0x, r0z, -nz, nx)); if (tv > 4) this.G.breakables.scrape(x, v.y || 0, z, ph.vx, ph.vz, tv); }
       v.x += nx * Math.min(depth, 0.5) * 0.85; v.z += nz * Math.min(depth, 0.5) * 0.85;
     }
     if (contacts.length) ph.scrape = Math.max(ph.scrape, Math.min(1, Math.hypot(ph.vx, ph.vz) / 8));
@@ -368,12 +381,17 @@ export class CarDynamics {
         let jt = -vt / (1 / P.m + rta * rta / P.Iz + (kinematic ? 0 : 1 / Po.m + rtb * rtb / Po.Iz));
         jt = Math.max(-0.3 * j, Math.min(0.3 * j, jt));
         ph.vx += jt * tx / P.m; ph.vz += jt * tz / P.m; ph.w += rta * jt / P.Iz;
+        this.kick(v, (j * nx + jt * tx) / P.m, (j * nz + jt * tz) / P.m, fx, fz, rx, rz);
+        if (-vn > 3) this.G.breakables?.crash(v, cx, cz, -vn, nx, nz, o);
+        if (Math.abs(vt) > 4) this.G.breakables?.scrape(cx, v.y || 0, cz, ph.vx, ph.vz, Math.abs(vt));
         if (!kinematic && !o.player) {
           const ophL = this.makeLoose(o);
           ophL.vx -= (j * nx + jt * tx) / Po.m; ophL.vz -= (j * nz + jt * tz) / Po.m; ophL.w -= (rnb * j + rtb * jt) / Po.Iz;
           if (!o.parked && !o.crashed && Math.abs(vn) > 2.5) this.G.events.emit('vehicleHit', { by: v, other: o, speed: Math.abs(vn) });
           if (!o.parked) { o.crashed = true; o.hazard = true; o.v = 0; }
           this.damage(o, Po, cx, cz, j / Po.m);
+          const ofx = Math.cos(o.heading), ofz = Math.sin(o.heading);
+          this.kick(o, -(j * nx + jt * tx) / Po.m, -(j * nz + jt * tz) / Po.m, ofx, ofz, -ofz, ofx);
         }
         this.damage(v, P, cx, cz, j / P.m);
         worst = Math.max(worst, -vn);
@@ -385,6 +403,28 @@ export class CarDynamics {
       if (share < 1) { o.x -= nx * depth * (1 - share); o.z -= nz * depth * (1 - share); }
     }
     return worst;
+  }
+  // something that can give way (breakables.js) is in contact: below its breaking speed it stays a solid
+  // obstacle; above it, it breaks and the car ploughs on, losing some speed and maybe a little paint
+  giveWay(v, ph, P, b, contacts, n0, cgx, fx, fz, rx, rz) {
+    let k = n0; for (let i = n0 + 1; i < contacts.length; i++) if (contacts[i][4] > contacts[k][4]) k = i;
+    const [x, z, nx, nz] = contacts[k];
+    const r0x = x - (v.x + fx * cgx), r0z = z - (v.z + fz * cgx);
+    const closing = -this.pointVel(ph, r0x, r0z, nx, nz);
+    if (!breaks(b, v, closing, this.G.time || 0)) { if (closing > 4) this.G.breakables?.bump(b, closing); return; }
+    contacts.length = n0;
+    const loss = this.G.breakables.smash(b, v, x, z, nx, nz, closing);
+    const rn = r0x * nz - r0z * nx, j = loss / (1 / P.m + rn * rn / P.Iz * 0.35);
+    ph.vx += j * nx / P.m; ph.vz += j * nz / P.m; ph.w += rn * j / P.Iz * 0.35;
+    this.kick(v, j * nx / P.m, j * nz / P.m, fx, fz, rx, rz);
+    if (b.S.dmg) this.damage(v, P, x, z, closing * b.S.dmg * 0.25);
+    if (b.S.dmg >= 0.8) this.events.push({ x, z, speed: loss * 1.3 });
+  }
+  // the sprung body lurches with a sudden change of velocity (vehicles.js adds it to pitch and roll)
+  kick(v, dvx, dvz, fx, fz, rx, rz) {
+    const k = v._kick || (v._kick = [0, 0]);
+    k[0] = Math.max(-14, Math.min(14, k[0] + dvx * fx + dvz * fz));
+    k[1] = Math.max(-14, Math.min(14, k[1] + dvx * rx + dvz * rz));
   }
   // report the hardest impact since the last flush (sound, camera shake, pedestrians, police)
   flush(v) {

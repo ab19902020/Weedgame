@@ -101,6 +101,8 @@ export class Brothers {
       if (inside) { const ux = bx - x, uz = bz - z, l = Math.hypot(ux, uz) || 1; x = bx + ux / l * r; z = bz + uz / l * r; this.hit = (this.hit || 0) + 1; }
       else if (d < r) { const ux = x - bx, uz = z - bz, l = d || 1; x = bx + ux / l * r; z = bz + uz / l * r; }
     });
+    // hedges, fences and garden walls are breakables now (a car can go through them; people can't)
+    if (G.breakables) [x, z] = G.breakables.pushOut(x, z, r, y ?? 0);
     return [x, z];
   }
   drive(dt, input, v) {

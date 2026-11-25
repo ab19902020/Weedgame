@@ -4,6 +4,7 @@ import { boot } from './main.js';
 import { Controller } from './controller.js';
 import { CarDynamics } from './carPhysics.js';
 import { TyreFx } from './skidmarks.js';
+import { Breakables } from './breakables.js';
 import { HeroCars } from './heroCars.js';
 import { Input } from './input.js';
 import { Hud } from './hud.js';
@@ -62,6 +63,7 @@ G.signals = new Signals(G.net);
 G.traffic = new Traffic(G.net, G.signals, { seed: (Math.random() * 1e9) | 0 });
 G.carDyn = new CarDynamics(G);   // player driving, collisions, struck cars sliding (carPhysics.js)
 G.tyreFx = new TyreFx(G.scene);   // skid marks and tyre smoke
+G.breakables = new Breakables(G);   // street furniture, trees, hedges and walls that give way; crash debris
 G.traffic.maxVehicles = G.budget.vehicles;
 G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled);
 G.vehicleRenderer.heroCars = G.heroCars = new HeroCars(G.scene);   // the brothers' Range Rovers (heroCars.js)
@@ -142,7 +144,11 @@ G.tiles.update(G.focus.x, G.focus.z);
 G.police.init();
 addEventListener('visibilitychange', () => { if (document.hidden) G.save.now(); });
 addEventListener('pagehide', () => G.save.now());
-G.events.on('impact', e => { G.audio.crash(e.x, e.z, Math.min(1, e.speed / 10)); });
+G.events.on('impact', e => {
+  G.audio.crash(e.x, e.z, Math.min(1, e.speed / 10));
+  // a big smash in your own car plays out in slow motion for a moment (?slowmo=0 turns it off)
+  if (e.v && e.v.player && e.speed > 13 && !(G.slowmo > 0) && G.Q.get('slowmo') !== '0') G.slowmo = 1.1;
+});
 G.events.on('horn', e => G.audio.horn(e.x, e.z));
 G.events.on('parked', () => G.save.now());
 
@@ -156,6 +162,7 @@ function frame() {
   G.controller.poll(dt);
   if (!G.hud.menu.el.hidden) return;
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
+  if (G.slowmo > 0) { G.slowmo -= dt; dt *= G.slowmo > 0.35 ? 0.3 : 1 - 0.7 * Math.max(0, G.slowmo) / 0.35; }
   for (let k = 1; k < G.simSteps; k++) step(dt, false);
   step(dt, true);
 }
@@ -199,6 +206,7 @@ function step(dt, render) {
   G.traffic.update(dt, G.focus, camInfo);
   G.carDyn.update(dt);
   G.tyreFx.update(dt, G.world.wind);
+  G.breakables.update(dt);
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
   G.police.update(dt);
