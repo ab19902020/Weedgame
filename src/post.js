@@ -1,11 +1,12 @@
 // Camera post-processing and image-based lighting.
-//   post: one scene pass (colour + view normals) -> GTAO at reduced resolution -> HDR bloom
+//   post: one scene pass (colour + view normals) -> GTAO at reduced resolution, denoised -> HDR bloom
 //         -> tone map -> FXAA.  Off on 'low' quality or with ?post=0.
 //   ibl:  the live sky (clouds included) rendered into a small cube every few seconds and
 //         prefiltered (PMREM) as scene.environment, so every PBR surface picks up sky light
 //         and glossy reflections that follow the weather.
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, vec2, vec3, vec4, float, uniform, mix, renderOutput, screenUV, normalWorld, positionWorld, Fn, smoothstep, max, metalness, roughness, rtt } from 'three/tsl';
+import { pass, mrt, output, normalView, vec2, vec3, vec4, float, uniform, mix, renderOutput, screenUV, normalWorld, positionWorld, Fn, smoothstep, max, metalness, roughness, rtt, textureSize, cameraViewMatrix, dot } from 'three/tsl';
+import { depthAwareBlur } from 'three/examples/jsm/tsl/display/depthAwareBlur.js';
 import { ssr } from 'three/examples/jsm/tsl/display/SSRNode.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
@@ -39,8 +40,17 @@ export function createPost(G) {
   aoPass.thickness.value = 1.2;
   aoPass.scale.value = 1.15;
   }
+  // GTAO leaves its 5x5 noise pattern in the result; drawn as it was, at a third of the screen's resolution, the
+  // pattern crawled over walls, windows and kerbs whenever the camera moved. Two depth-aware blur passes at the
+  // AO's own resolution smooth it out without bleeding across silhouettes.
+  let aoBlurH = null, aoBlurV = null;
+  if (aoPass) {
+    const aoTex = aoPass.getTextureNode(), texel = vec2(1).div(vec2(textureSize(aoTex, 0)));
+    aoBlurH = rtt(depthAwareBlur(aoTex, depth, vec2(texel.x, 0), camera, 2, 0.6), null, null, { resolutionScale: B.ao.scale * s });
+    aoBlurV = rtt(depthAwareBlur(aoBlurH, depth, vec2(0, texel.y), camera, 2, 0.6), null, null, { resolutionScale: B.ao.scale * s });
+  }
   const strength = uniform(0.9);
-  let c = aoPass ? colour.rgb.mul(mix(float(1), aoPass.getTextureNode().sample(screenUV).r, strength)) : colour.rgb;
+  let c = aoPass ? colour.rgb.mul(mix(float(1), aoBlurV.sample(screenUV).r, strength)) : colour.rgb;
   // screen-space reflections ('fake ray tracing'): wet roads and puddles, glass, car paint and chrome
   // reflect what is actually on screen; the sky PMREM still covers rays that leave the screen
   let ssrPass = null;
@@ -60,7 +70,10 @@ export function createPost(G) {
     // rays that miss come back black (the node's env fallback needs an equirect map, not our live PMREM):
     // drop them so the material's own sky/IBL reflection shows instead
     const hitLum = max(max(ssrPass.r, ssrPass.g), ssrPass.b);
-    const w = smoothstep(0.5, 0.04, rough).mul(mix(float(0.55), float(0.85), metal)).mul(ssrPass.a).mul(smoothstep(0.004, 0.04, hitLum)).clamp(0, 1);
+    // only surfaces that face up (wet roads, puddles, bonnets and roofs): on upright glass and car sides the
+    // half-resolution reflection's edges shimmered as the camera moved, and the sky reflection reads as well there
+    const up = dot(normal.xyz, cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);
+    const w = smoothstep(0.5, 0.04, rough).mul(mix(float(0.55), float(0.85), metal)).mul(ssrPass.a).mul(smoothstep(0.004, 0.04, hitLum)).mul(smoothstep(0.55, 0.85, up)).clamp(0, 1);
     c = mix(c, ssrPass.rgb, w);
   }
   // HDR bloom: lamps, headlights, lit shopfronts, sun glints on wet roads
@@ -91,7 +104,7 @@ export function createPost(G) {
     setScale(v) {
       if (!useFSR || Math.abs(v - s) < 0.005) return;
       s = v; scenePass.setResolutionScale(v); lowA.setResolutionScale(v); lowB.setResolutionScale(v);
-      if (aoPass) aoPass.resolutionScale = B.ao.scale * v;
+      if (aoPass) { aoPass.resolutionScale = B.ao.scale * v; aoBlurH.setResolutionScale(B.ao.scale * v); aoBlurV.setResolutionScale(B.ao.scale * v); }
       if (ssrPass) ssrPass.resolutionScale = (B.ssr.scale ?? 0.5) * v;
     },
     render() { pipe.render(); },

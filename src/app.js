@@ -263,16 +263,20 @@ function step(dt, render) {
       G._resT = 0;
       const want = Number(G.Q.get('fps')) || G.budget.targetFps || 60;
       G._fps = G._fps || want;
-      const T = 1000 / G._fps, over = G._ema > T * 1.15, under = G._ema < T * 0.8;
+      const T = 1000 / G._fps, over = G._ema > T * 1.15;
+      // sharper again only after two quiet checks in a row (6 s), in small steps: stepping straight back up
+      // made the picture pump between soft and sharp, which read as flicker on fine detail
+      G._quiet = G._ema < T * 0.8 ? (G._quiet || 0) + 1 : 0;
+      const under = G._quiet >= 2;
       if (G.post?.fsr) {
         const [lo, , hi] = G.budget.scale, sc = G.post.scale;
         if (over) { if (sc > lo + 0.01) G.post.setScale(Math.max(lo, sc - 0.06)); else if (G._fps > 30) G._fps = 30; }
-        else if (under) { if (sc < hi - 0.01) G.post.setScale(Math.min(hi, sc + 0.04)); else if (G._fps < want && G._ema < 1000 / want * 0.85) G._fps = want; }
+        else if (under) { G._quiet = 0; if (sc < hi - 0.01) G.post.setScale(Math.min(hi, sc + 0.03)); else if (G._fps < want && G._ema < 1000 / want * 0.85) G._fps = want; }
       } else {
         const [minPr, , maxPr] = G.budget.pixelRatio, cap = Math.min(devicePixelRatio, maxPr), pr = G.renderer.getPixelRatio();
         let next = pr;
         if (over) { if (pr > minPr + 0.01) next = Math.max(minPr, pr - 0.1); else if (G._fps > 30) G._fps = 30; }
-        else if (under) next = Math.min(cap, pr + 0.1);
+        else if (under) { G._quiet = 0; next = Math.min(cap, pr + 0.05); }
         if (Math.abs(next - pr) > 0.01) { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth, innerHeight); }
       }
     }

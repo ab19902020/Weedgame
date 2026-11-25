@@ -380,7 +380,8 @@ export function buildingMaterial() {
   const ivy = isHouse.mul(pEq(1)).mul(step(h1(seed.add(8.8)), 0.34)).mul(step(u.x, mix(float(1.4), float(6.0), r2))).mul(step(u.y, mix(float(1.1), float(4.6), r1))).mul(step(0.4, ivyN.r));
   wallCol = mix(wallCol, vec3(0.07, 0.2, 0.06).mul(ivyN.g.mul(0.55).add(0.6)), ivy);
   // plinth course below the damp-proof line, and a rain-darkened band at the foot of the wall
-  wallCol = wallCol.mul(mix(float(1), float(0.68), step(u.y, 0.32).mul(step(-2, u.y)))).mul(smoothstep(-0.4, 0.6, u.y).mul(0.12).add(0.88));
+  const fV0 = fwidth(u.y).max(1e-4);
+  wallCol = wallCol.mul(mix(float(1), float(0.68), float(1).sub(smoothstep(float(0.32).sub(fV0), float(0.32).add(fV0), u.y)).mul(step(-2, u.y)))).mul(smoothstep(-0.4, 0.6, u.y).mul(0.12).add(0.88));
   // ---- windows / doors / shopfronts
   const fh = max(floorH, 2.4);
   const fi = floor(max(u.y, 0).div(fh));
@@ -388,6 +389,15 @@ export function buildingMaterial() {
   const sp = sel(isHouse.greaterThan(0.5), mix(float(2.4), float(3.2), r2), sel(isOffice.greaterThan(0.5), mix(float(1.5), float(3.0), r2), mix(float(2.6), float(4), r2)));
   const ci = floor(u.x.div(sp));
   const cu = fract(u.x.div(sp));
+  // anti-aliasing: how much wall one pixel covers (fU across, fV up, in the wall's own units), so each edge below
+  // is smoothed over a pixel instead of snapping on and off as the camera moves: window frames, glazing bars,
+  // sills, shop mullions and door frames are thinner than a pixel a short way off, and flickered
+  const fU = fwidth(u.x).max(1e-4), fV = fwidth(u.y).max(1e-4);
+  const fcu = fU.div(sp).mul(0.75), ffv = fV.div(fh).mul(0.75);
+  const insideU = (x, half, f) => float(1).sub(smoothstep(half.sub(f), half.add(f), abs(x.sub(0.5))));   // |x - 0.5| < half
+  const between = (x, lo, hi, f) => smoothstep(lo.sub(f), lo.add(f), x).mul(float(1).sub(smoothstep(hi.sub(f), hi.add(f), x)));
+  const below = (x, e, f) => float(1).sub(smoothstep(e.sub(f), e.add(f), x));
+  const lineAA = (d, hw, f) => float(1).sub(smoothstep(hw.sub(f), hw.add(f), d)).mul(min(float(1), hw.div(f)));   // a bar of half width hw, d from its middle
   const ww = sel(isOffice.greaterThan(0.5), mix(float(0.42), float(0.58), r1), sel(isInd.greaterThan(0.5), float(0.25), float(0.42)));
   const winTop = sel(isInd.greaterThan(0.5), float(0.9), float(0.78));
   const winBot = sel(isInd.greaterThan(0.5), float(0.72), float(0.38));
@@ -404,18 +414,18 @@ export function buildingMaterial() {
   const rx = dot(vIn, tU), ry = vIn.y, rz = max(dot(vIn, nW.negate()), 0.05);
   const rearShop = shop.mul(float(1).sub(front)).mul(step(fi, 0.5));
   const blankSide = big.mul(float(1).sub(front));
-  const inWin = step(abs(cu.sub(0.5)), wwS.mul(0.5)).mul(step(botS, fv)).mul(step(fv, topS)).mul(step(0.0, u.y)).mul(isWall).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5)))).mul(float(1).sub(rearShop.max(blankSide)));
+  const inWin = insideU(cu, wwS.mul(0.5), fcu).mul(between(fv, botS, topS, ffv)).mul(step(0.0, u.y)).mul(isWall).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5)))).mul(float(1).sub(rearShop.max(blankSide)));
   // frames and glass sit 11 cm back in the opening: shift their coordinates by parallax and show the
   // reveal (shaded brick) where the shifted opening no longer covers the pixel
   const rev = float(0.11).div(rz).mul(float(1).sub(isInd));
   const cuS = cu.add(rx.mul(rev).div(sp)), fvS = fv.add(ry.mul(rev).div(fh));
-  const opening = step(abs(cuS.sub(0.5)), wwS.mul(0.5)).mul(step(botS, fvS)).mul(step(fvS, topS));
+  const opening = insideU(cuS, wwS.mul(0.5), fcu).mul(between(fvS, botS, topS, ffv));
   const reveal = inWin.mul(float(1).sub(opening));
   const fw = float(0.045).div(sp);                                 // ~6 cm uPVC frame
-  const inner = step(abs(cuS.sub(0.5)), wwS.mul(0.5).sub(fw)).mul(step(botS.add(0.025), fvS)).mul(step(fvS, topS.sub(0.025))).mul(opening);
+  const inner = insideU(cuS, wwS.mul(0.5).sub(fw), fcu).mul(between(fvS, botS.add(0.025), topS.sub(0.025), ffv)).mul(opening);
   // glazing bars: casement split for houses, transoms for offices
-  const bar = isHouse.mul(step(abs(cuS.sub(0.5)), fw.mul(0.5))).add(step(abs(fvS.sub(mix(winBot, winTop, 0.72))), 0.008).mul(isHouse))
-    .add(isOffice.mul(step(abs(fract(fvS.mul(2)).sub(0.5)), 0.012))).min(1);
+  const bar = isHouse.mul(lineAA(abs(cuS.sub(0.5)), fw.mul(0.5), fcu)).add(lineAA(abs(fvS.sub(mix(winBot, winTop, 0.72))), float(0.008), ffv).mul(isHouse))
+    .add(isOffice.mul(lineAA(abs(fract(fvS.mul(2)).sub(0.5)), float(0.012), ffv.mul(2)))).min(1);
   const frame = inWin.mul(opening).mul(float(1).sub(inner)).add(inWin.mul(inner).mul(bar)).min(1);
   // shop street face: one shopfront, not brick piers with black garage openings
   const shopG = shop.mul(front).mul(step(fi, 0.5)).mul(step(-0.2, u.y));
@@ -425,18 +435,18 @@ export function buildingMaterial() {
   const fascia1 = mix(float(0.975), f1m.div(fh), big);
   const gBot = mix(float(0.14), mix(mix(mix(float(0.14), float(0.02), big), float(0.32), bank), float(0.4), isPub), hasBrand);
   const bayW = mix(float(1.7), float(3.1), big);
-  const inBand = shopG.mul(step(gBot, fv)).mul(step(fv, fascia0));
-  const cellU = fract(u.x.div(bayW));
-  const transom = step(abs(fv.sub(mix(gBot, fascia0, 0.62))), 0.012);
-  const shopFront = inBand.mul(step(0.028, cellU)).mul(step(cellU, 0.972)).mul(float(1).sub(transom));
+  const inBand = shopG.mul(between(fv, gBot, fascia0, ffv));
+  const cellU = fract(u.x.div(bayW)), fcell = fU.div(bayW).mul(0.75);
+  const transom = lineAA(abs(fv.sub(mix(gBot, fascia0, 0.62))), float(0.012), ffv);
+  const shopFront = inBand.mul(between(cellU, float(0.028), float(0.972), fcell)).mul(float(1).sub(transom));
   const shopFrame = inBand.mul(float(1).sub(shopFront));
   const doorHalf = mix(float(0.48), float(0.9), big);
   const doorCol = h1(seed.add(5.5)).mul(5).floor();
   const hasDoor = isHouse.mul(front).mul(step(0.1, doorU));
   const du = abs(u.x.sub(doorU));
-  const isDoor = hasDoor.mul(step(du, 0.46)).mul(step(u.y, 2.05)).mul(step(0, u.y));
-  const doorFrame = hasDoor.mul(step(du, 0.54)).mul(step(u.y, 2.13)).mul(step(-0.05, u.y)).mul(float(1).sub(isDoor));
-  const doorGlass = isDoor.mul(step(du, 0.28)).mul(step(1.25, u.y)).mul(step(u.y, 1.85));
+  const isDoor = hasDoor.mul(below(du, float(0.46), fU)).mul(below(u.y, float(2.05), fV)).mul(step(0, u.y));
+  const doorFrame = hasDoor.mul(below(du, float(0.54), fU)).mul(below(u.y, float(2.13), fV)).mul(step(-0.05, u.y)).mul(float(1).sub(isDoor));
+  const doorGlass = isDoor.mul(below(du, float(0.28), fU)).mul(between(u.y, float(1.25), float(1.85), fV));
   const doorZone = hasDoor.mul(step(du, 0.8)).mul(step(fi, 0.5));
   const doorRGB = sel(doorCol.lessThan(1), vec3(0.04, 0.06, 0.16), sel(doorCol.lessThan(2), vec3(0.32, 0.04, 0.05), sel(doorCol.lessThan(3), vec3(0.02, 0.02, 0.02),
     sel(doorCol.lessThan(4), vec3(0.06, 0.16, 0.08), vec3(0.82, 0.82, 0.8)))));
@@ -444,8 +454,9 @@ export function buildingMaterial() {
   const bv = u.y.sub(floor(u.y.div(fh)).mul(fh)), bfu = fract(u.x);
   const bRiser = isBay.mul(step(bv, 0.5)), bSill = isBay.mul(step(0.5, bv)).mul(step(bv, 0.57));
   const bHead = isBay.mul(step(min(fh.sub(0.3), float(2.32)), bv));
+  const fb = fU.mul(0.75);
   const bFrame = isBay.mul(float(1).sub(bRiser)).mul(float(1).sub(bSill)).mul(float(1).sub(bHead))
-    .mul(step(bfu, 0.06).add(step(0.94, bfu)).add(step(abs(bv.sub(1.85)), 0.035)).min(1));
+    .mul(float(1).sub(between(bfu, float(0.06), float(0.94), fb)).add(lineAA(abs(bv.sub(1.85)), float(0.035), fV)).min(1));
   const bGlass = isBay.mul(float(1).sub(bRiser)).mul(float(1).sub(bSill)).mul(float(1).sub(bHead)).mul(float(1).sub(bFrame));
   const glass = max(max(inWin.mul(inner).mul(float(1).sub(bar)), shopFront).mul(float(1).sub(isDoor)).mul(float(1).sub(doorZone)), max(bGlass, doorGlass));
   // ---- room interiors behind the glass (parallax box: back wall, side walls, floor, ceiling)
@@ -464,8 +475,10 @@ export function buildingMaterial() {
   const room = sel(hitBack.greaterThan(0.5), wallpaper, sel(hitSide.greaterThan(0.5), wallpaper.mul(0.75), sel(hitFloor.greaterThan(0.5), vec3(0.22, 0.16, 0.12), vec3(0.75, 0.74, 0.7))));
   // furniture silhouettes in homes; shelving with stock in shops
   const hy = y0.add(ry.mul(tHit)), hx = x0.add(rx.mul(tHit)), hz = rz.mul(tHit);
-  const furniture = hitBack.mul(step(hy, mix(float(0.7), float(1.1), roomSeed))).mul(step(abs(hx.sub(roomSeed.sub(0.5).mul(sp))), sp.mul(0.25))).mul(0.6);
-  const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.1));
+  // (the room's fine detail fades to its average once a pixel covers more than a few centimetres of wall)
+  const detail = float(1).sub(smoothstep(0.03, 0.1, max(fU, fV)));
+  const furniture = hitBack.mul(step(hy, mix(float(0.7), float(1.1), roomSeed))).mul(step(abs(hx.sub(roomSeed.sub(0.5).mul(sp))), sp.mul(0.25))).mul(mix(float(0.15), float(0.6), detail));
+  const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.1)).mul(detail);
   const along = sel(hitBack.greaterThan(0.5), hx, hz);
   const cell = h3(vec3(floor(along.div(0.28)), floor(hy.div(0.42)), roomSeed.mul(53)));
   const stock = mix(vec3(0.5), mix(vec3(0.7, 0.3, 0.22), vec3(0.3, 0.4, 0.62), cell), 0.45).mul(cell.mul(0.5).add(0.55));
@@ -473,10 +486,13 @@ export function buildingMaterial() {
   let roomCol = room.mul(float(1).sub(furniture));
   roomCol = mix(roomCol, mix(stock, vec3(0.85), shelfEdge), shelfZone.mul(step(0.18, fract(along.div(0.28)))));
   roomCol = roomCol.mul(exp(tHit.mul(-0.12)));
+  // further off, the parallax room's walls, floor and ceiling (which swap as the view angle changes) settle to
+  // the room's average, so distant windows don't flicker as you move
+  roomCol = mix(wallpaper.mul(0.55), roomCol, float(1).sub(smoothstep(0.05, 0.18, max(fU, fV))));
   // curtains / nets on homes, part-drawn blinds in offices
-  const curtain = isHouse.mul(step(roomSeed, 0.55)).mul(step(halfW.mul(0.62), abs(x0)));
+  const curtain = isHouse.mul(step(roomSeed, 0.55)).mul(smoothstep(halfW.mul(0.62).sub(fU), halfW.mul(0.62).add(fU), abs(x0)));
   const nets = isHouse.mul(step(0.55, roomSeed)).mul(step(roomSeed, 0.75)).mul(0.55);
-  const blinds = isOffice.mul(step(roomSeed, 0.4)).mul(step(fh.mul(mix(float(0.45), float(0.85), h1(roomSeed.mul(7)))), y0)).mul(step(0.35, fract(y0.mul(7))).mul(0.3).add(0.6));
+  const blinds = isOffice.mul(step(roomSeed, 0.4)).mul(smoothstep(fh.mul(mix(float(0.45), float(0.85), h1(roomSeed.mul(7)))).sub(fV), fh.mul(mix(float(0.45), float(0.85), h1(roomSeed.mul(7)))).add(fV), y0)).mul(mix(float(0.75), step(0.35, fract(y0.mul(7))).mul(0.3).add(0.6), detail));
   const curtainCol = mix(vec3(0.5, 0.38, 0.3), vec3(0.78, 0.74, 0.66), h1(roomSeed.mul(37)));
   roomCol = mix(roomCol, curtainCol, curtain.max(blinds));
   roomCol = mix(roomCol, vec3(0.8, 0.8, 0.78), nets);
@@ -491,7 +507,7 @@ export function buildingMaterial() {
   const frameCol = sel(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), sel(r3.lessThan(0.85), vec3(0.9, 0.9, 0.88), vec3(0.15, 0.12, 0.1)));
   albedo = mix(albedo, frameCol, frame.mul(float(1).sub(doorZone)));
   albedo = mix(albedo, wallCol.mul(mix(float(0.55), float(0.8), step(0, ry))), reveal.mul(float(1).sub(shopFront)));
-  const sill = step(abs(cu.sub(0.5)), ww.mul(0.5).add(0.06)).mul(step(winBot.sub(0.05), fv)).mul(step(fv, winBot)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(doorZone)).mul(step(0, u.y));
+  const sill = insideU(cu, ww.mul(0.5).add(0.06), fcu).mul(between(fv, winBot.sub(0.05), winBot, ffv)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(doorZone)).mul(step(0, u.y));
   albedo = mix(albedo, vec3(0.7, 0.68, 0.62), sill);
   albedo = mix(albedo, vec3(0.012, 0.014, 0.016), glass);
   albedo = mix(albedo, doorRGB, isDoor.mul(float(1).sub(doorGlass)));
@@ -504,34 +520,35 @@ export function buildingMaterial() {
   albedo = albedo.add(trimCol.mul(isTrim)).add(gutterCol.mul(isGutter)).add(trimCol.mul(0.92).mul(isSoffit)).add(vec3(0.42, 0.2, 0.1).mul(isPot));
   albedo = albedo.add(isBay.mul(mix(mix(mix(vec3(0.012, 0.014, 0.016), trimCol, bFrame.add(bHead).min(1)), vec3(0.68, 0.66, 0.6), bSill), wallCol, bRiser)));
   // ground floor of a shop is a shopfront: pale surround, stall, metal frame, brand fascia. No brick.
-  const fascia = shopG.mul(step(fascia0, fv)).mul(step(fv, fascia1));
+  const fascia = shopG.mul(between(fv, fascia0, fascia1, ffv));
   const plainFascia = sel(r1.lessThan(0.5), vec3(0.09, 0.12, 0.18), vec3(0.14, 0.09, 0.09));
   const fasciaRGB = mix(plainFascia, fasciaCol, hasBrand);
   albedo = mix(albedo, vec3(0.86, 0.87, 0.88), shopG);
   albedo = mix(albedo, fasciaRGB, fascia);
-  const crown = shopG.mul(step(fascia1, fv));
+  const crown = shopG.mul(smoothstep(fascia1.sub(ffv), fascia1.add(ffv), fv));
   albedo = mix(albedo, vec3(0.8, 0.81, 0.82), crown);
   // big stores and sheds: profiled steel cladding (vertical ribs every 30 cm) in two tones split by a
   // brand-coloured stripe, over a brick plinth with a flashing on top, rather than one flat pale slab
+  // (the 30 cm ribs fade to their average once a pixel covers a third of one: they made moire that crawled)
   const ribs = smoothstep(0.3, 0.46, abs(fract(u.x.div(0.3)).sub(0.5)));
-  const ribShade = float(1.04).sub(ribs.mul(0.13)).sub(step(fract(u.x.div(0.3)), 0.06).mul(0.06));
+  const ribShade = mix(float(1.0), float(1.04).sub(ribs.mul(0.13)).sub(below(fract(u.x.div(0.3)), float(0.06), fU.div(0.3)).mul(0.06)), float(1).sub(smoothstep(0.03, 0.1, fU)));
   const splitY = mix(float(4.2), float(5.4), r2);
-  const stripeB = step(abs(u.y.sub(splitY)), 0.2);
+  const stripeB = below(abs(u.y.sub(splitY)), float(0.2), fV);
   const cladTop = mix(vec3(0.78, 0.79, 0.8), vec3(0.62, 0.66, 0.7), step(0.6, r1));
   const cladLow = mix(vec3(0.42, 0.44, 0.47), vec3(0.2, 0.26, 0.24), step(0.7, r3));
   let cladCol = mix(cladTop, cladLow, step(u.y, splitY)).mul(ribShade);
   cladCol = mix(cladCol, mix(vec3(0.16, 0.3, 0.42), fasciaCol.mul(0.85), hasBrand), stripeB);
-  cladCol = mix(cladCol, vec3(0.62, 0.63, 0.64), step(abs(u.y.sub(2.05)), 0.05));      // plinth flashing
-  cladCol = mix(cladCol, wallCol.mul(0.9), step(u.y, 2.0));                            // brick plinth
+  cladCol = mix(cladCol, vec3(0.62, 0.63, 0.64), lineAA(abs(u.y.sub(2.05)), float(0.05), fV));      // plinth flashing
+  cladCol = mix(cladCol, wallCol.mul(0.9), below(u.y, float(2.0), fV));                            // brick plinth
   const bigTop = big.mul(front).mul(step(0.5, fi)).mul(isWall);
   albedo = mix(albedo, cladTop.mul(ribShade), bigTop);
   const stallCol = mix(mix(mix(vec3(0.16, 0.16, 0.17), fasciaCol.mul(0.55), big), vec3(0.45, 0.43, 0.4), bank), vec3(0.1, 0.09, 0.08), isPub);
-  const stall = shopG.mul(step(0.0, u.y)).mul(step(fv, gBot));
+  const stall = shopG.mul(step(0.0, u.y)).mul(below(fv, gBot, ffv));
   albedo = mix(albedo, mix(vec3(0.2, 0.2, 0.21), stallCol, hasBrand), stall);
   const frameB = mix(vec3(0.14, 0.15, 0.16), mix(fasciaCol.mul(0.4), vec3(0.08, 0.09, 0.1), big), hasBrand);
   const sHalf = doorHalf;
-  const sDoor = shopG.mul(step(0.4, doorU)).mul(step(abs(u.x.sub(doorU)), sHalf)).mul(step(0.02, u.y)).mul(step(u.y, floorH.mul(fascia0)));
-  const sFrame = shopG.mul(step(0.4, doorU)).mul(step(abs(u.x.sub(doorU)), sHalf.add(0.08))).mul(step(-0.02, u.y)).mul(step(u.y, floorH.mul(fascia0).add(0.04))).mul(float(1).sub(sDoor));
+  const sDoor = shopG.mul(step(0.4, doorU)).mul(below(abs(u.x.sub(doorU)), sHalf, fU)).mul(step(0.02, u.y)).mul(below(u.y, floorH.mul(fascia0), fV));
+  const sFrame = shopG.mul(step(0.4, doorU)).mul(below(abs(u.x.sub(doorU)), sHalf.add(0.08), fU)).mul(step(-0.02, u.y)).mul(below(u.y, floorH.mul(fascia0).add(0.04), fV)).mul(float(1).sub(sDoor));
   albedo = mix(albedo, frameB, shopFrame.add(sFrame).min(1));
   albedo = mix(albedo, vec3(0.07, 0.08, 0.085), shopFront.add(sDoor).min(1));
   const shed = blankSide.mul(isWall).mul(float(1).sub(min(glass.add(frame), float(1))));

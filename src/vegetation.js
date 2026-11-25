@@ -5,6 +5,7 @@ import * as THREE from 'three/webgpu';
 import {
   float, vec2, vec3, vec4, positionLocal, positionGeometry, positionWorld, normalWorld, cameraPosition, uv, texture, int, attribute,
   mix, sin, length, max, dot, normalize, pow, smoothstep, fract, instanceIndex, normalViewGeometry, instanceColor,
+  uniform, screenCoordinate, interleavedGradientNoise,
 } from 'three/tsl';
 import { U, cloudShadow } from './env.js';
 import { L, sAlbedo, sDetail, perturb } from './surfaces.js';
@@ -163,6 +164,11 @@ export function trunkGeometry() {
 }
 
 // ---- materials ---------------------------------------------------------------------------
+// Trees fade out over the 70 m short of this distance (main.js sets it to the quality budget's treeDist, the
+// distance at which perf.js stops drawing a tile's trees), so a tile's trees are already gone when its trees are
+// switched off and a whole block of them no longer pops in or out on the skyline as you move.
+export const treeFar = uniform(1e5);
+const treeFade = (d) => float(1).sub(smoothstep(treeFar.sub(70), treeFar, d));
 export function treeMaterials() {
   const leafTex = leafTexture();
   const crown = new THREE.MeshStandardNodeMaterial({ roughness: 0.82, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.35 });
@@ -177,7 +183,7 @@ export function treeMaterials() {
   crown.positionNode = positionLocal.add(vec3(sway.mul(lift).add(flutter), flutter.mul(0.6), sway.mul(lift).mul(0.6)));
   const lt = texture(leafTex, uv());
   const dist = length(cameraPosition.sub(p));
-  const alpha = lt.a.mul(mix(float(1), float(2.4), smoothstep(25, 160, dist)));
+  const alpha = lt.a.mul(mix(float(1), float(2.4), smoothstep(25, 160, dist))).mul(treeFade(dist));
   // the species tint (oak, lime, plane, copper, yew; shrub palettes) is the mesh's instance colour, which three.js
   // multiplies into colorNode itself. It must be read through the instanceColor varying: it is not a geometry
   // attribute, and attribute('instanceColor') silently read zero and turned every crown near-black.
@@ -201,7 +207,9 @@ export function treeMaterials() {
   // leaf cards are double-sided but carry outward 'volume' normals: don't let three.js flip them on back faces
   // (that lit half of every crown from the inside and made trees look near-black)
   crown.normalNode = normalViewGeometry;
-  const trunk = new THREE.MeshStandardNodeMaterial({ roughness: 0.92, metalness: 0 });
+  const trunk = new THREE.MeshStandardNodeMaterial({ roughness: 0.92, metalness: 0, alphaTest: 0.5 });
+  // (the trunks dissolve with their crowns, in a fine dither)
+  trunk.opacityNode = treeFade(length(cameraPosition.sub(positionWorld))).add(interleavedGradientNoise(screenCoordinate.xy).mul(0.5).sub(0.25));
   const tuv = vec2(uv().x.mul(1.6), positionWorld.y.mul(0.85));
   const bark = sAlbedo(int(L.bark), tuv);
   const lichen = smoothstep(0.62, 0.86, texture(leafTex, tuv.mul(0.15)).g).mul(0.22);

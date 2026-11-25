@@ -17,6 +17,7 @@ import { createGrass } from './grass.js';
 import { createSkyBake } from './skybake.js';
 import { loadSurfaces } from './surfaces.js';
 import { budgetFor } from './perf.js';
+import { treeFar } from './vegetation.js';
 
 const Q = new URLSearchParams(location.search);
 const status = t => { const el = document.getElementById('boot'); if (el) el.textContent = t; };
@@ -88,6 +89,7 @@ export async function boot(extra = {}) {
   });
   tiles.signAtlas = new SignAtlas();
   tiles.budget = budget;   // bush density per quality (tiles.addBushes)
+  treeFar.value = budget.treeDist;   // trees fade out short of where perf.js stops drawing them (vegetation.js)
   const world = new World(extra.weather);
   const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, budget, Q, U, lightPos, lightCol, NL, rail, frame: 0 };
   window.GC = G;
@@ -106,10 +108,22 @@ export async function boot(extra = {}) {
     hemi.groundColor.setRGB(0.22, 0.22, 0.18).multiplyScalar(0.25 + world.day * 0.75);
     renderer.toneMappingExposure = (0.85 + U.night.value * 0.9 + U.cover.value * 0.25) * (renderer.toneMapping === THREE.AgXToneMapping ? 1.22 : 1);
   };
+  // The shadow box follows the player in whole shadow-map texels, measured in the light's own frame, so the map
+  // no longer slides under the world as you move (every shadow edge used to crawl and flicker); and it turns with
+  // the sun in quarter-degree steps (a shadow edge moves a few centimetres each time) rather than a little every
+  // frame. The light's own axes are the shadow camera's: x = up x towards-the-light, y = towards-the-light x x.
+  const lightDir = new THREE.Vector3(), lx = new THREE.Vector3(), ly = new THREE.Vector3(), lc = new THREE.Vector3(), upY = new THREE.Vector3(0, 1, 0);
+  const texel = (2 * E) / S, stepCos = Math.cos(0.25 * Math.PI / 180);
   G.placeSun = (fx, fy, fz) => {
     const d = U.sunDir.value;
-    sun.position.set(fx + d.x * 300, fy + d.y * 300, fz + d.z * 300);
-    sun.target.position.set(fx, fy, fz);
+    if (lightDir.lengthSq() === 0 || lightDir.dot(d) < stepCos * d.length()) lightDir.copy(d).normalize();
+    lx.crossVectors(upY, lightDir); if (lx.lengthSq() < 1e-8) lx.set(1, 0, 0); lx.normalize();
+    ly.crossVectors(lightDir, lx);
+    lc.set(fx, fy, fz);
+    const px = Math.round(lc.dot(lx) / texel) * texel, py = Math.round(lc.dot(ly) / texel) * texel, pz = lc.dot(lightDir);
+    lc.copy(lx).multiplyScalar(px).addScaledVector(ly, py).addScaledVector(lightDir, pz);
+    sun.position.copy(lc).addScaledVector(lightDir, 300);
+    sun.target.position.copy(lc);
     sky.position.copy(camera.position);
   };
   addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
