@@ -1,4 +1,5 @@
 // A hollow shell and its furniture share a single vertex-colour geometry per model.
+import {createCrowdBatch, disposeCrowdBatch, writeCrowdMember} from './humans.js';
 import {TransitSign} from './transitSign.js';
 import * as T from 'three/webgpu';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
@@ -81,7 +82,6 @@ function layout(type){
   function merge(batch){const result=mergeGeometries(batch);batch.forEach(g=>g.dispose());return result;}
   const result={body:merge(parts),stripe:merge(paint),windows:merge(panes),seats,doors,L,H,floor,double};cache.set(type,result);return result;
 }
-const head=new T.SphereGeometry(.13,8,6),torso=new T.BoxGeometry(.30,.48,.33),riderMat=new T.MeshStandardMaterial();
 const doorSurface=new T.MeshStandardMaterial({color:0x426b77});
 const doorPanel=mergeGeometries([
   new T.BoxGeometry(.61,.85,.075).translate(0,-.52,0),
@@ -92,8 +92,12 @@ export class PassengerCabin extends T.Group {
   constructor(type,colour){
     super();this.typeName=type;this.seated=[];this.layout=layout(type);this.paint=new T.MeshStandardMaterial({color:colour});
     this.add(new T.Mesh(this.layout.body,material),new T.Mesh(this.layout.stripe,this.paint),new T.Mesh(this.layout.windows,glass));
-    this.heads=new T.InstancedMesh(head,riderMat,24);this.bodies=new T.InstancedMesh(torso,riderMat,24);
-    this.add(this.heads,this.bodies);this.heads.count=this.bodies.count=0;
+    this.riders = createCrowdBatch(24,false);
+    // Instances are placed in the vertex shader, so use the cabin dimensions for culling.
+    this.riders.geo.boundingSphere = new T.Sphere(new T.Vector3(0,this.layout.H/2,0),
+      Math.hypot(this.layout.L/2,this.layout.H/2,1.5));
+    this.riders.mesh.frustumCulled = true;
+    this.add(this.riders.mesh);
     this.leaves=[];
     for(const [x,y,z] of this.layout.doors)for(const sign of [-1,1]){
       const leaf=new T.Mesh(doorPanel,doorSurface);leaf.position.set(x+sign*.31,y+.95,z);this.add(leaf);
@@ -104,7 +108,7 @@ export class PassengerCabin extends T.Group {
     this.frontSign=new TransitSign(1.8,.34,true);this.frontSign.position.set(L/2+.018,H-.32,0);this.frontSign.rotation.y=Math.PI/2;
     this.add(this.insideSign,this.frontSign);
     this.openAmount=0;
-    this.seatMatrix=new T.Matrix4();this.heads.frustumCulled=this.bodies.frustumCulled=false;
+
   }
   // side: which side's doors a train opens (+1 the cabin's +z side, -1 its -z side: the platform side)
   doorState(open,dt,side=1){
@@ -117,10 +121,14 @@ export class PassengerCabin extends T.Group {
     this.seated=people.slice(0,n);
     for(let i=0;i<n;i++){
       const [x,y,z]=this.layout.seats[i],look=(people[i].actor||people[i]).look;
-      this.heads.setMatrixAt(i,this.seatMatrix.makeTranslation(x,y+1.22,z));this.bodies.setMatrixAt(i,this.seatMatrix.makeTranslation(x,y+.86,z));
-      this.heads.setColorAt(i,new T.Color(look.skin));this.bodies.setColorAt(i,new T.Color(look.top));
+      const height = look.h || 1;
+      writeCrowdMember(this.riders,i,{look,x,y:y+.55-.87*height,z,heading:0,pose:'seated',t:i*1.7});
     }
-    for(const m of [this.heads,this.bodies]){m.count=n;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;}
+    this.riders.geo.instanceCount=n;
+    this.riders.mesh.visible=n>0;
+    for (const attr of [this.riders.iPos,this.riders.iAnim,this.riders.iCol,this.riders.iSty]) {
+      if (n) { attr.clearUpdateRanges(); attr.addUpdateRange(0,n*4); attr.needsUpdate=true; }
+    }
   }
-  dispose(){this.insideSign.dispose();this.frontSign.dispose();this.paint.dispose();this.heads.dispose();this.bodies.dispose();}
+  dispose(){this.insideSign.dispose();this.frontSign.dispose();this.paint.dispose();disposeCrowdBatch(this.riders);}
 }

@@ -1,13 +1,38 @@
 // Close-range characters share geometry and materials, but each owns its skeleton and mixer.
 // Roles: 'officer' and 'civilian' (19-joint rigs, six clips, near the camera) and the heroes 'cal' and 'leon'
 // (the playable Ward brothers: Tripo rigs with 21 and 20 clips, prepared by tools/characters/prepare-hero.mjs).
-import { AnimationMixer, Group, Mesh, BoxGeometry, MeshStandardMaterial, LoopOnce } from 'three/webgpu';
+import { AnimationMixer, Group, Mesh, BoxGeometry, MeshStandardMaterial, LoopOnce, Color, MeshStandardNodeMaterial, DataTexture, RepeatWrapping, LinearMipmapLinearFilter, LinearFilter } from 'three/webgpu';
+import { texture, uniform, positionGeometry, smoothstep, mix, dot, vec3, abs, float } from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 
 const propSlide = new BoxGeometry(.033, .17, .042);
 const propGrip = new BoxGeometry(.034, .05, .083);
 const propSurface = new MeshStandardMaterial({color: 0x363a40, roughness: .83});
+
+// Neutral cloth swatches multiply the civilian's own outfit colour. Mipmaps filter the
+// yarn and diagonal denim ribs into a continuous tone at street distance.
+const swatches = new Map();
+function clothSwatch(field) {
+  if (swatches.has(field)) return swatches.get(field);
+  const size = 128, pixels = new Uint8Array(size*size*4);
+  for (let y=0; y<size; y++) for (let x=0; x<size; x++) {
+    const diagonal = Math.cos((x+y)*Math.PI/4);
+    const warp = Math.cos(x*Math.PI/2)*Math.cos(y*Math.PI/2);
+    const yarn = field === 'legs' ? 11*diagonal+4*warp : 8*warp;
+    const shade = Math.round(231+yarn);
+    pixels.set([shade,shade,shade,255],(y*size+x)*4);
+  }
+  const tex = new DataTexture(pixels,size,size);
+  tex.wrapS = tex.wrapT = RepeatWrapping;
+  tex.repeat.set(12,12);
+  tex.generateMipmaps = true;
+  tex.minFilter = LinearMipmapLinearFilter;
+  tex.magFilter = LinearFilter;
+  tex.needsUpdate = true;
+  swatches.set(field,tex);
+  return tex;
+}
 
 // per-role clip names for the game's states, natural walk/run speeds (m/s) and presentation
 const NPC = { idle: 'Idle', walk: 'Walk', run: 'Run', jump: 'Jump', swim: 'Swim', weaponHold: 'WeaponHold', once: ['Jump'], walkSpeed: 1.4, runSpeed: 3.8, scale: 1, swimTilt: true, prop: 'HandR', range: 44 };
@@ -34,8 +59,57 @@ export const ROLES = {
     scale: 1.81 / 0.971, walkSpeed: 1.21, runSpeed: 4.38, jumpScale: 2.2, hitScale: 1.5, swimTilt: false, prop: null, range: 160, hero: true, shadow: true,
   },
 };
-// which role an actor gets: Cal and Leon are the two brothers; officers and every fourth numbered pedestrian get the NPC rigs
-const roleOf = a => a.previewRole || (a.id === 'brother0' ? 'cal' : a.id === 'brother1' ? 'leon' : a.officer ? 'officer' : /^p\d+$/.test(a.id) && Number(a.id.slice(1)) % 4 === 0 ? 'civilian' : null);
+// Share the existing character meshes and clips. Only the nearest eight people need mixers.
+for (const [role,source] of [['jacket','cal'],['tracksuit','leon']]) {
+  ROLES[role] = {...ROLES[source],source,hero:false,shadow:false,range:24};
+}
+function streetClothing(source) {
+  const mat = new MeshStandardNodeMaterial();
+  mat.normalMap = source.normalMap;
+  mat.normalScale.copy(source.normalScale);
+  mat.roughnessMap = source.roughnessMap;
+  mat.side = source.side;
+  mat.roughness = .88;
+  const top = uniform(new Color()), legs = uniform(new Color());
+  const p = positionGeometry, base = texture(source.map);
+  const luma = dot(base.rgb,vec3(.2126,.7152,.0722));
+  // The bind pose puts the hands at the ends of the outstretched sleeves.
+  const shirt = smoothstep(.46,.50,p.y).mul(float(1).sub(smoothstep(.76,.80,p.y)))
+    .mul(float(1).sub(smoothstep(.39,.43,abs(p.x))));
+  const trousers = smoothstep(.072,.105,p.y).mul(float(1).sub(smoothstep(.46,.50,p.y)));
+  mat.colorNode = mix(mix(base.rgb,legs.mul(luma.mul(3).add(.16)),trousers),
+    top.mul(luma.mul(2.4).add(.21)),shirt);
+  return {mat,top,legs};
+}
+function jerseyClothing(original) {
+  const mat = new MeshStandardNodeMaterial();
+  const p = positionGeometry, side = abs(p.x);
+  const legs = uniform(new Color()), top = uniform(new Color());
+  const skin = texture(original.map).rgb;
+  const cuffs = smoothstep(.37,.38,side);
+  const neckline = float(1.355).add(smoothstep(.055,.15,side).mul(.072));
+  const covered = float(1).sub(smoothstep(neckline,neckline.add(.004),p.y)).mul(float(1).sub(cuffs));
+  const waist = smoothstep(.868,.873,p.y);
+  const jersey = top.mul(texture(clothSwatch('top')).r);
+  const denim = legs.mul(texture(clothSwatch('legs')).r);
+  mat.colorNode = mix(skin,mix(denim,jersey,waist),covered);
+  mat.side = original.side;
+  mat.roughness = .82;
+  return {mat,top,legs};
+}
+// The civilian GLB depicts a long-haired woman in a jersey. Keep other silhouettes and
+// accessories on their own detailed crowd mesh when approaching or leaving the camera.
+function roleOf(a) {
+  if (a.previewRole) return a.previewRole;
+  if (a.id === 'brother0') return 'cal';
+  if (a.id === 'brother1') return 'leon';
+  if (a.officer) return 'officer';
+  const look = a.look;
+  if (!/^p\d+$/.test(a.id) || !look || look.hood || look.bag || look.cap ||
+      ['umbrella','phone','point','wave','talk','hands'].includes(a.pose)) return null;
+  if (look.female) return look.style === 2 ? 'civilian' : null;
+  return look.outfit % 2 ? 'tracksuit' : 'jacket';
+}
 
 export class RiggedPeople {
   constructor(scene) {
@@ -59,7 +133,8 @@ export class RiggedPeople {
     root.add(body);
     if (R.shadow) body.traverse(n => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; n.frustumCulled = false; } });
     const mixer = new AnimationMixer(body);
-    const actions = Object.fromEntries(asset.animations.map(clip => [clip.name, mixer.clipAction(clip)]));
+    const clips = R.source ? asset.animations.filter(clip => [R.walk,R.run,R.idle,R.swim,R.jump].includes(clip.name)) : asset.animations;
+    const actions = Object.fromEntries(clips.map(clip => [clip.name, mixer.clipAction(clip)]));
     for (const name of R.once) if (actions[name]) { actions[name].setLoop(LoopOnce, 1); actions[name].clampWhenFinished = true; }
     let prop = null;
     const hand = R.prop && body.getObjectByName(R.prop);
@@ -74,23 +149,31 @@ export class RiggedPeople {
       prop.position.y = .085;
     }
     this.scene.add(root);
-    const wardrobe = [];
-    if (role === 'civilian') body.traverse(node => {
-      if (!node.isMesh) return;
-      const tint = material => {
-        const field = {'Green jersey':'top','Indigo denim':'legs'}[material.name];
-        if (!field) return material;
-        const copy = material.clone();
-        wardrobe.push({copy,field});
-        return copy;
-      };
-      node.material = Array.isArray(node.material) ? node.material.map(tint) : tint(node.material);
+    const streetMaterials = [];
+    if (R.source) body.traverse(node => {
+      if (!node.isSkinnedMesh) return;
+      const clothing = streetClothing(node.material);
+      node.material = clothing.mat;
+      streetMaterials.push(clothing);
     });
-    const reactionJoints = R === NPC ? ['Chest','ArmL','ArmR','ThighL','ShinL','ShinR'].map(name => {
+    if (role === 'civilian') {
+      let skin;
+      body.traverse(node => { if (node.isMesh && node.material.map) skin = node.material; });
+      if (skin) {
+        const clothing = jerseyClothing(skin);
+        streetMaterials.push(clothing);
+        body.traverse(node => {
+          if (node.isMesh && node.material.name !== 'Dark shoes') node.material = clothing.mat;
+        });
+      }
+    }
+    const names = R.source ? ['Spine2','L_Upperarm','R_Upperarm','L_Thigh','L_Calf','R_Calf'] :
+      R === NPC ? ['Chest','ArmL','ArmR','ThighL','ShinL','ShinR'] : [];
+    const reactionJoints = names.map((name,index) => {
       const bone = body.getObjectByName(name);
-      return {bone, rest: bone.quaternion.clone()};
-    }) : [];
-    return {role, root, body, prop, actions, mixer, reactionJoints, wardrobe, lock: 0, still: 0};
+      return {bone,index, rest: bone?.quaternion.clone()};
+    }).filter(joint => joint.bone);
+    return {role, root, body, prop, actions, mixer, reactionJoints, streetMaterials, head:body.getObjectByName('Head'), lock: 0, still: 0};
   }
   // pick the clip for an actor's state; one-shots (jump, kick, fidgets) hold until they finish
   choose(slot, a, R, dt) {
@@ -108,7 +191,7 @@ export class RiggedPeople {
     if (speed > .1) { slot.still = 0; return { clip: R.walk, scale: Math.max(.65, Math.min(1.6, speed / R.walkSpeed)) }; }
     // standing: the hero fidgets now and then (nod, laugh, look round, take a call)
     slot.still += dt;
-    if (R.fidgets && slot.still > 9 + (slot.wait ??= Math.random() * 8)) {
+    if (!R.source && R.fidgets && slot.still > 9 + (slot.wait ??= Math.random() * 8)) {
       slot.still = 0; slot.wait = Math.random() * 10;
       return { clip: R.fidgets[Math.floor(Math.random() * R.fidgets.length)], scale: 1, hold: true };
     }
@@ -126,16 +209,21 @@ export class RiggedPeople {
     candidates.sort((a,b) => a.distance-b.distance);
     const visible = new Set();
     for (const {a,role} of candidates.slice(0,8)) {
-      const asset = this.load(role);
+      const asset = this.load(ROLES[role].source || role);
       if (!asset) continue;
       const R = ROLES[role];
       let slot = this.active.get(a.id);
       if (slot && slot.role !== role) { this.remove(a.id, slot); slot = null; }
       if (!slot) { slot = this.create(role,asset); this.active.set(a.id,slot); }
       visible.add(a.id);
-      if (role === 'civilian' && a.look && slot.look !== a.look) {
-        for (const {copy,field} of slot.wardrobe) copy.color.setHex(a.look[field]);
-        slot.root.scale.setScalar(a.look.h || 1);
+      if (!R.hero && a.look && slot.look !== a.look) {
+        for (const {top,legs} of slot.streetMaterials) {
+          top.value.setHex(a.look.top);
+          legs.value.setHex(a.look.legs);
+        }
+        if (slot.head && R.source) slot.head.scale.set(1+((a.look.build ?? .35)-.35)*.13,1,1+((a.look.build ?? .35)-.35)*.09);
+        const height = a.look.h || 1, build = (a.look.build ?? .35)-.35;
+        slot.root.scale.set(height*(1+build*.16),height,height*(1+build*.14));
         slot.look = a.look;
       }
       const pick = this.choose(slot, a, R, dt);
@@ -163,7 +251,7 @@ export class RiggedPeople {
       slot.braced = a.brace > 0;
       if (slot.braced) {
         const angles = [-.28,-.85,-1.05,-.48,.68,.46];
-        slot.reactionJoints.forEach(({bone,rest},i) => {
+        slot.reactionJoints.forEach(({bone,rest,index:i}) => {
           rest.copy(bone.quaternion);
           bone.rotateX(angles[i]*a.brace);
         });
@@ -173,7 +261,7 @@ export class RiggedPeople {
     return visible;
   }
   remove(id,slot) {
-    for (const {copy} of slot.wardrobe) copy.dispose();
+    for (const {mat} of slot.streetMaterials) mat.dispose();
     slot.mixer.stopAllAction();
     slot.mixer.uncacheRoot(slot.body);
     slot.body.traverse(node => { if (node.isSkinnedMesh) node.skeleton.dispose(); });

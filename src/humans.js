@@ -7,7 +7,7 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, float, vec2, vec3, vec4, int, attribute, positionGeometry, normalGeometry, positionWorld, varyingProperty,
-  sin, cos, abs, max, min, mix, step, smoothstep, clamp, floor, fract, pow, length, normalize, select, texture,
+  sin, cos, abs, max, min, mix, step, smoothstep, clamp, floor, fract, pow, length, normalize, select, texture, fwidth, modelWorldMatrix,
 } from 'three/tsl';
 import { bakeFaceAtlas, bakeHairTexture, FACE_ATLAS as FA } from './faceBake.js';
 import { U, cloudShadow } from './env.js';
@@ -17,7 +17,7 @@ import { RiggedPeople } from './riggedPeople.js';
 
 const MAX0 = 96, MAX1 = 260;          // near (detailed) and far instance capacity
 const LOD_DIST = 30;                  // metres
-const POSE = { walk: 0, idle: 0, flee: 0, talk: 1, phone: 2, umbrella: 3, wave: 4, point: 5, hands: 6, shelter: 7, brace: 8 };
+const POSE = { walk: 0, idle: 0, flee: 0, talk: 1, phone: 2, umbrella: 3, wave: 4, point: 5, hands: 6, shelter: 7, brace: 8, seated: 9 };
 const TAG = { always: 0, hairShort: 1, hairLong: 2, hairBun: 3, hairCurly: 4, helmet: 10, umbrella: 11, bag: 12, cap: 13, hood: 14 };
 // regions: 0 skin, 1 top, 2 trousers, 3 shoes, 4 hair, 6 helmet, 7 umbrella canopy, 8 bag, 9 dark trim, 10 cap, 11 metal
 
@@ -117,14 +117,12 @@ function bodyGeometry(q) {
   const neck = tube([{ c: [0, 1.45, -0.006], rx: 0.056, rf: 0.054, rb: 0.056, s: 0 }, { c: [0, 1.6, 0.004], rx: 0.049, rf: 0.047, rb: 0.05, s: 0 }], lseg, 'y', [false, true]);
   B.add(neck.geo, () => [0, 0, 0, 0]);
   // --- head: skull with jaw, chin, cheekbones; nose; ears
-  const head = new THREE.SphereGeometry(0.1, q ? 22 : 10, q ? 16 : 8);
+  const head = new THREE.SphereGeometry(0.1, q ? 48 : 14, q ? 32 : 10);
   { const p = head.attributes.position; for (let i = 0; i < p.count; i++) {
-    p.setXYZ(i, ...headShape(p.getX(i), p.getY(i), p.getZ(i)));
+    p.setXYZ(i, ...headShape(p.getX(i), p.getY(i), p.getZ(i), true));
   } }
   B.add(head, () => [0, 0, 0, 0]);
   if (q) {
-    const nose = new THREE.ConeGeometry(0.017, 0.042, 8); nose.rotateX(Math.PI / 2 + 0.42); nose.translate(0, 1.642, 0.104);
-    B.add(nose, () => [0, 0, 0, 0]);
     for (const sx of [-1, 1]) { const e = new THREE.SphereGeometry(0.022, 8, 6); e.scale(0.42, 1.3, 0.9); e.translate(sx * 0.087, 1.655, 0.0); B.add(e, () => [0, 0, 0, 0]); }
   }
   // --- legs, shoes, arms, hands (side +1 = the person's left, +x)
@@ -143,10 +141,10 @@ function bodyGeometry(q) {
     { const p = shoe.geo.attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, Math.max(0.004, p.getY(i))); }
     B.add(shoe.geo, (x, y, z, i) => [legLimb, shoe.S[i] ?? 2.5, 3, 0]);
     const JA = [[sx * 0.2, 1.43, -0.01], [sx * 0.225, 1.165, -0.03], [sx * 0.235, 0.905, 0.0]];
-    const armR = [[-0.22, 0.056, 0.058, 0.058], [0, 0.064, 0.062, 0.064], [0.2, 0.057, 0.056, 0.056], [0.45, 0.051, 0.05, 0.05], [0.75, 0.047, 0.046, 0.047],
+    const armR = [[-0.22, 0.056, 0.058, 0.058], [0, 0.060, 0.060, 0.060], [0.2, 0.057, 0.056, 0.056], [0.45, 0.051, 0.05, 0.05], [0.75, 0.047, 0.046, 0.047],
       [1.0, 0.046, 0.046, 0.044], [1.2, 0.046, 0.047, 0.044], [1.5, 0.041, 0.042, 0.04], [1.8, 0.036, 0.037, 0.035], [1.96, 0.038, 0.039, 0.037]]
       .filter((_, i) => q || i % 2 === 0 || i === 9);
-    const arm = tube(armR.map(([s, rx, rf, rb]) => ({ c: s < 0 ? [sx * 0.185, 1.43 - s * 0.2, -0.01] : chainAt(JA, s), rx, rf, rb, s })), lseg, 'y', [true, false]);
+    const arm = tube(armR.map(([s, rx, rf, rb]) => ({ c: s < 0 ? [sx * 0.165, 1.442 - s * 0.07, -0.01] : chainAt(JA, s), rx, rf, rb, s })), lseg, 'y', [true, false]);
     B.add(arm.geo, (x, y, z, i) => [armLimb, arm.S[i] ?? 0, 1, 0]);
     // deltoid cap
     const del = new THREE.SphereGeometry(0.058, q ? 12 : 6, q ? 8 : 4); del.scale(0.95, 0.85, 1.05); del.translate(sx * 0.19, 1.405, -0.01);
@@ -155,8 +153,13 @@ function bodyGeometry(q) {
     const palm = new THREE.SphereGeometry(1, q ? 10 : 6, q ? 8 : 4); palm.scale(0.021, 0.048, 0.04); palm.translate(sx * 0.236, 0.86, 0.004);
     B.add(palm, () => [armLimb, 2.5, 0, 0]);
     if (q) {
-      const fing = new THREE.CapsuleGeometry(0.017, 0.045, 3, 8); fing.scale(1.0, 1.0, 2.05); fing.translate(sx * 0.236, 0.8, 0.008);
-      B.add(fing, () => [armLimb, 2.8, 0, 0]);
+      // Resting fingers taper and curl toward the thigh, with staggered knuckles.
+      for (const [finger,length] of [.069,.076,.070,.056].entries()) {
+        const z = .031 - finger*.016;
+        const rings = [[0,.010], [.36,.009], [.75,.0078], [1,.0045]].map(([u,r]) =>
+          ({c:[sx*(.239-.013*u*u), .833-length*u, z-.004*u], rx:r,rf:r,rb:r,s:2.8}));
+        B.add(tube(rings,6).geo, () => [armLimb,2.8,0,0]);
+      }
       const th = new THREE.CapsuleGeometry(0.0105, 0.035, 2, 6); th.rotateX(-0.5); th.translate(sx * 0.226, 0.855, 0.043);
       B.add(th, () => [armLimb, 2.6, 0, 0]);
     }
@@ -230,11 +233,23 @@ function bodyGeometry(q) {
 }
 
 // skull shape (jaw, chin, narrower crown) applied to a 0.1 m sphere; shared by the head and the hair shells
-function headShape(x, y, z) {
+function headShape(x, y, z, sculpt = false) {
   const jaw = y < 0 ? 1 - 0.24 * Math.min(1, -y / 0.1) : 1;
   x *= 0.88 * jaw * (y > 0.05 ? 1 - (y - 0.05) * 0.6 : 1);
   z *= (z > 0 ? 1.02 : 1.08) * (y < -0.03 ? 0.96 : 1);
   if (z > 0 && y < -0.05) z += 0.012 * Math.min(1, (-y - 0.05) / 0.04) * Math.max(0, 1 - Math.abs(x) / 0.04);   // chin
+  if (sculpt && z > 0) {
+    const height = y*1.17+1.66, ax = Math.abs(x);
+    const form = (cx,cy,w,h) => Math.exp(-(((ax-cx)/w)**2 + ((height-cy)/h)**2));
+    const facing = Math.min(1,z/.042);
+    z += facing * (
+      .014*form(.032,1.683,.029,.011) - .014*form(.034,1.662,.020,.012)
+      + .012*form(.051,1.640,.022,.017) + .018*form(0,1.651,.009,.029)
+      + .021*form(0,1.633,.013,.010) + .009*form(.012,1.629,.006,.005)
+      + .006*form(.008,1.606,.016,.004) + .007*form(0,1.598,.020,.005)
+      + .009*form(0,1.571,.026,.013)
+    );
+  }
   return [x, y * 1.17 + 1.66, z + 0.008];
 }
 function lerpTable(t, a) {
@@ -260,16 +275,22 @@ function crowdMaterial() {
   // packed per-person data is decoded here, where it is exact (interpolated varyings would scramble the bits)
   const vSkinC = varyingProperty('vec3', 'vSkinC'), vTopC = varyingProperty('vec3', 'vTopC'), vLegC = varyingProperty('vec3', 'vLegC'), vHairC = varyingProperty('vec4', 'vHairC');
   const vMisc = varyingProperty('vec4', 'vMisc');   // hi-vis, shoe index, umbrella index, umbrella up
+  const vOutfit = varyingProperty('float','vOutfit');
   const vFace = varyingProperty('float', 'vFace');  // face atlas cell (0-3 men, 4-7 women)
   const faceTex = bakeFaceAtlas(), hairTex = bakeHairTexture();
+  // Neutralised facial albedo projected from the four character GLBs already shipped with the game.
+  const portraitTex = new THREE.TextureLoader().load('assets/people/face-detail.png');
+  portraitTex.colorSpace = THREE.NoColorSpace;
+  portraitTex.anisotropy = 4;
   m.positionNode = Fn(() => {
     const limb = sk.x, s = sk.y, tag = sk.w;
     // iSty.x = hair style + 0.05 x face index
     const style = floor(iSty.x.add(0.01)), flags = floor(iSty.y.add(0.5)), hgt = iSty.z;
+    vOutfit.assign(floor(flags.div(2048)));
     vFace.assign(floor(fract(iSty.x).mul(20).add(0.5)));
     vSkinC.assign(unpack(iCol.x)); vTopC.assign(unpack(iCol.y)); vLegC.assign(unpack(iCol.z));
     vHairC.assign(vec4(unpack(iCol.w), step(0.6, fract(iCol.x.mul(0.000031)))));
-    vMisc.assign(vec4(bit(flags, 3), floor(flags.div(64)).sub(floor(flags.div(256)).mul(4)), floor(flags.div(256)), bit(flags, 1)));
+    vMisc.assign(vec4(bit(flags, 3), floor(flags.div(64)).sub(floor(flags.div(256)).mul(4)), floor(flags.div(256)).mod(8), bit(flags, 1)));
     const female = step(1.5, iSty.w), build = iSty.w.sub(female.mul(2));
     const phi = iAnim.x, run = step(1.5, iAnim.y), amp = iAnim.y.sub(run.mul(2));
     const pose = floor(iAnim.z), fall = fract(iAnim.z), t = iAnim.w;
@@ -293,18 +314,26 @@ function crowdMaterial() {
     const inflate = float(1).add(isLimb.mul(build.mul(0.13)).mul(step(s, 1.98)));
     const shift = isArm.mul(female.mul(-0.012)).add(isLeg.mul(female.mul(0.006))).mul(side);
     p = vec3(sel(isLimb.greaterThan(0.5), axX.add(p.x.sub(axX).mul(inflate)).add(shift), p.x.mul(sx)), y, p.z.mul(sel(isLimb.greaterThan(0.5), inflate, sx)).add(chest).add(belly));
+    // Vary the lower face and skull together with the hair, keeping features registered.
+    const headWeight = smoothstep(1.52,1.59,y);
+    const jawWidth = build.sub(.35).mul(.32).sub(female.mul(.035));
+    p = vec3(p.x.mul(float(1).add(headWeight.mul(jawWidth).mul(float(1).sub(smoothstep(1.62,1.70,y))))),
+      p.y, p.z.mul(float(1).add(headWeight.mul(build.sub(.35)).mul(.12))));
+    const quilt = eq(vOutfit,2).mul(eq(sk.z,1));
+    const loft = sin(y.mul(74)).mul(.0025).add(.007).mul(quilt);
+    p = p.add(n.mul(loft));
     // ---- gait and pose angles
     const psiL = phi.add(float(Math.PI).mul(float(1).sub(odd)));
-    const brace = eq(pose, 8).mul(iAnim.w);
-    const thigh = brace.mul(odd.mul(.2).add(.28)).add(amp.mul(sin(psiL)).mul(run.mul(0.25).add(0.52)));
+    const brace = eq(pose, 8).mul(iAnim.w), seated = eq(pose,9);
+    const thigh = seated.mul(1.48).add(brace.mul(odd.mul(.2).add(.28))).add(amp.mul(sin(psiL)).mul(run.mul(0.25).add(0.52)));
     const kneeS = max(sin(psiL.add(1.3)), 0);
-    const knee = amp.mul(kneeS.mul(kneeS).mul(run.mul(0.7).add(0.62)).add(0.1)).add(0.04).add(brace.mul(.67));
+    const knee = amp.mul(kneeS.mul(kneeS).mul(run.mul(0.7).add(0.62)).add(0.1)).add(0.04).add(brace.mul(.67)).add(seated.mul(1.49));
     const ankle = amp.mul(0.25).mul(sin(psiL.sub(0.6)));
     const psiA = psiL.add(Math.PI);
     const idle = float(1).sub(amp.min(1));
     const gFlex = amp.mul(sin(psiA)).mul(run.mul(0.3).add(0.35)).add(idle.mul(0.03).mul(sin(t.mul(0.9).add(side))));
     const gElb = amp.mul(max(sin(psiA), 0).mul(0.25).add(0.15)).add(run.mul(1.15)).add(0.16);
-    const gAbd = float(0.06).add(build.mul(0.07));
+    const gAbd = float(.035).add(build.mul(.04));
     const isR = float(1).sub(odd);   // the person's right arm carries the props
     const armPose = isArm.mul(sel(pose.greaterThan(5.5), float(1), isR.mul(step(0.5, pose)))).mul(mix(float(1),brace,eq(pose,8)));
     const pFlex = sel(eq(pose, 1).greaterThan(0.5), sin(t.mul(3.1)).mul(0.25).add(0.5), sel(eq(pose, 2).greaterThan(0.5), float(0.35), sel(eq(pose, 3).greaterThan(0.5), float(1.0),
@@ -339,7 +368,7 @@ function crowdMaterial() {
     const wc = sel(isLeg.greaterThan(0.5), float(0), sel(isArm.greaterThan(0.5), float(1), smoothstep(0.98, 1.3, positionGeometry.y)));
     const lean = amp.mul(0.04).add(run.mul(0.2)).add(eq(pose, 7).mul(0.06)).sub(brace.mul(.25));
     const breath = sin(t.mul(1.7)).mul(0.004).mul(idle);
-    p = about(p, vec3(0, 1.0, 0), rotY, yawP.mul(-1.4).mul(wc)); n = rotY(n, yawP.mul(-1.4).mul(wc));
+    p = about(p, vec3(0, 1.0, 0), rotY, yawP.mul(-1.2).mul(wc)); n = rotY(n, yawP.mul(-1.2).mul(wc));
     p = about(p, vec3(0, 1.0, 0), rotX, lean.negate().mul(wc)); n = rotX(n, lean.negate().mul(wc));
     p = p.add(vec3(0, breath.mul(wc), 0));
     // pelvis: yaw with the stride, side sway and vertical bob
@@ -354,7 +383,7 @@ function crowdMaterial() {
     // collapse hidden accessories into the torso, scale, face the heading, place
     p = mix(vec3(0, 1.2, 0), p, keep).mul(hgt);
     const yaw = float(Math.PI / 2).sub(iPos.w);
-    vN.assign(rotY(n, yaw));
+    vN.assign(modelWorldMatrix.mul(vec4(rotY(n, yaw),0)).xyz);
     return rotY(p, yaw).add(iPos.xyz);
   })();
   // fabric folds (bunching at elbows, knees and the waist), fine weave and hair strands perturb the normal
@@ -367,7 +396,7 @@ function crowdMaterial() {
     const ridge = cos(rp0.y.mul(210).add(sin(rp0.x.mul(70).add(rp0.z.mul(50))).mul(2.5)));
     const crumple = vec3(sin(rp0.y.mul(97).add(rp0.x.mul(53))), sin(rp0.z.mul(89).add(rp0.y.mul(71))), sin(rp0.x.mul(83).add(rp0.z.mul(61))));
     const strands = eq(rg, 4).mul(sin(rp0.x.mul(520).add(rp0.z.mul(300))));
-    m.normalNode = worldToView(normalize(vN.add(vec3(0, ridge.mul(zone).mul(0.45), 0)).add(crumple.mul(cloth.mul(0.07))).add(vec3(strands.mul(0.18), 0, strands.mul(0.12)))));
+    m.normalNode = worldToView(normalize(vN.add(vec3(0, ridge.mul(zone).mul(0.14), 0)).add(crumple.mul(cloth.mul(0.024))).add(vec3(strands.mul(0.18), 0, strands.mul(0.12)))));
   }
   // ---- appearance
   const region = sk.z, rp = positionGeometry;
@@ -382,7 +411,21 @@ function crowdMaterial() {
   // clothing detail: zip, hem shadow, seams, knee wear on trousers
   const front = step(0.0, rp.z);
   const zip = front.mul(step(abs(rp.x), 0.004)).mul(step(0.96, rp.y)).mul(step(rp.y, 1.45)).mul(eq(region, 1)).mul(eq(sk.x, 0));
-  const weave = sin(rp.y.mul(780)).mul(sin(rp.x.add(rp.z).mul(780))).mul(0.035).add(1);
+  const clothPixel = fwidth(rp.y).add(fwidth(rp.x)).add(fwidth(rp.z));
+  const weave = sin(rp.y.mul(780)).mul(sin(rp.x.add(rp.z).mul(780)))
+    .mul(float(1).sub(smoothstep(.001,.006,clothPixel))).mul(.035).add(1);
+  const knit = eq(vOutfit,1), quilted = eq(vOutfit,2), overshirt = eq(vOutfit,3);
+  const hem = float(1).sub(smoothstep(.020,.040,abs(rp.y.sub(.957))));
+  const cuff = step(2.5,sk.x).mul(smoothstep(1.68,1.88,sk.y));
+  const rib = sin(rp.x.add(rp.z).mul(480)).mul(.05).add(.83);
+  const quiltSeam = smoothstep(.75,.985,cos(rp.y.mul(74))).mul(.17);
+  const placket = front.mul(eq(sk.x,0)).mul(step(abs(rp.x),.014));
+  const buttons = placket.mul(step(abs(rp.x),.004)).mul(smoothstep(.91,.995,cos(rp.y.mul(71))));
+  const topSurface = topC.mul(weave)
+    .mul(mix(float(1),rib,knit.mul(max(hem,cuff))))
+    .mul(float(1).sub(quilted.mul(quiltSeam)))
+    .mul(float(1).sub(overshirt.mul(placket.mul(.18).add(buttons.mul(.58)))))
+    .mul(float(1).sub(zip.mul(.5).mul(float(1).sub(max(knit,overshirt)))));
   const knees = eq(region, 2).mul(front).mul(smoothstep(0.08, 0.0, abs(rp.y.sub(0.5)))).mul(0.12);
   // face: baked atlas (faceBake.js) projected from the front onto the head. R shading, G facial hair,
   // B lip / blush tint, A eye mask (sclera, iris, pupil)
@@ -397,6 +440,10 @@ function crowdMaterial() {
   skinD = mix(skinD, vec3(0.72, 0.7, 0.68), white);
   skinD = mix(skinD, mix(vec3(0.05, 0.03, 0.015), vec3(0.08, 0.12, 0.16), vHairC.w), iris);
   skinD = mix(skinD, vec3(0.006), pupil).mul(shade);
+  const portraitCell = vec2(vFace.mod(2),float(1).sub(step(3.5,vFace)));
+  const portrait = texture(portraitTex,fuv.add(portraitCell).mul(.5));
+  const facialColour = mix(skinC.mul(portrait.rgb).mul(2),hairC.mul(.65),ft.g.mul(.78));
+  skinD = mix(skinD,facialColour,face.mul(portrait.a).mul(.92));
   // hair: baked strand map, tri-planar in head space (strands run down the sides and front to back on top)
   const hw = pow(abs(normalGeometry), vec3(4)), hwn = hw.div(hw.x.add(hw.y).add(hw.z).add(1e-4));
   // curly hair: the same map, finer and rotated, reads as tight coils instead of combed strands
@@ -409,7 +456,7 @@ function crowdMaterial() {
   const sole = eq(region, 3).mul(step(rp.y, 0.016));
   const shoeD = mix(shoeC, sel(shoeI.greaterThan(1.5).and(shoeI.lessThan(2.5)), vec3(0.85), vec3(0.03)), sole);
   let col = sel(region.lessThan(0.5), skinD,
-    sel(region.lessThan(1.5), topC.mul(weave).mul(float(1).sub(zip.mul(0.5))),
+    sel(region.lessThan(1.5), topSurface,
     sel(region.lessThan(2.5), legC.mul(weave).mul(float(1).add(knees)),
     sel(region.lessThan(3.5), shoeD,
     sel(region.lessThan(4.5), hairC.mul(strands),
@@ -441,23 +488,51 @@ const LEGS = [0x22252b, 0x2b3a55, 0x3e3a33, 0x111111, 0x5a5348, 0x3a4a63, 0x1d28
 function packLook(L, a) {
   const style = L.bald ? 0 : (L.style ?? 1);
   let flags = (a.hat ? 1 : 0) | (a.pose === 'umbrella' ? 2 : 0) | (L.bag && !a.hiVis ? 4 : 0) | (a.hiVis ? 8 : 0) | (L.cap && !a.hat ? 16 : 0) | (L.hood ? 32 : 0);
+  flags += 2048 * (a.hiVis ? 0 : (L.outfit ?? 0));
   flags += 64 * ((L.shoe ?? 0) & 3) + 256 * (L.umbIdx ?? 0);
   const face = (L.female ? 4 : 0) + ((L.face ?? 0) & 3);
   return [style + face * 0.05, flags, L.h || 1, Math.min(0.999, Math.max(0, L.build ?? 0.35)) + (L.female ? 2 : 0)];
+}
+
+let sharedClothing;
+const bodies = new Map();
+
+// A batch owns its instance data. Street crowds and seated passengers share the model and textures.
+export function createCrowdBatch(max, detailed, shadows = false) {
+  if (!bodies.has(detailed)) bodies.set(detailed,bodyGeometry(detailed));
+  const model = bodies.get(detailed), geo = new THREE.InstancedBufferGeometry();
+  geo.setIndex(model.index);
+  for (const [name,attr] of Object.entries(model.attributes)) geo.setAttribute(name,attr);
+  const set = {max,geo};
+  for (const name of ['iPos','iAnim','iCol','iSty']) {
+    const attr = new THREE.InstancedBufferAttribute(new Float32Array(max*4),4);
+    attr.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute(name,attr);
+    set[name] = attr;
+  }
+  set.mesh = new THREE.Mesh(geo,sharedClothing ??= crowdMaterial());
+  set.mesh.castShadow = shadows;
+  set.mesh.receiveShadow = true;
+  set.mesh.frustumCulled = false;
+  set.mesh.visible = false;
+  geo.instanceCount = 0;
+  return set;
+}
+
+export function disposeCrowdBatch(set) {
+  // Shared vertex and index buffers outlive any individual bus or train.
+  set.geo.setIndex(null);
+  for (const name of ['position','normal','skin']) set.geo.deleteAttribute(name);
+  set.geo.dispose();
 }
 
 export class People {
   constructor(scene, shadows) {
     this.list = [];
     this.rigs = new RiggedPeople(scene);
-    const mat = crowdMaterial();
-    this.sets = [MAX0, MAX1].map((max, lod) => {
-      const geo = bodyGeometry(lod === 0);
-      const at = (name, n) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(max * n), n); a.setUsage(THREE.DynamicDrawUsage); geo.setAttribute(name, a); return a; };
-      const set = { max, geo, iPos: at('iPos', 4), iAnim: at('iAnim', 4), iCol: at('iCol', 4), iSty: at('iSty', 4) };
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.frustumCulled = false; mesh.castShadow = shadows && lod === 0; mesh.receiveShadow = true;
-      scene.add(mesh); set.mesh = mesh;
+    this.sets = [MAX0,MAX1].map((max,lod) => {
+      const set = createCrowdBatch(max,lod === 0,shadows && lod === 0);
+      scene.add(set.mesh);
       return set;
     });
     this.tris = this.sets.map(s => s.geo.index.count / 3);
@@ -469,7 +544,7 @@ export class People {
     // face (faceBake.js): men clean shaven / stubble / beard / older; women young / natural / made up / older
     const face = female ? [0, 0, 1, 1, 2, 3][Math.floor(r() * 6)] : [0, 0, 1, 1, 2, 3][Math.floor(r() * 6)];
     return {
-      face, skin: pick(SKINS), hair: face === 3 && r() < 0.7 ? pick(GREYS) : pick(HAIRS), top: pick(TOPS), legs: pick(LEGS), bald: style === 0, style, female,
+      face, outfit: Math.floor(r()*4), skin: pick(SKINS), hair: face === 3 && r() < 0.7 ? pick(GREYS) : pick(HAIRS), top: pick(TOPS), legs: pick(LEGS), bald: style === 0, style, female,
       build: Math.min(1, Math.max(0, 0.3 + (r() - 0.5) * 0.7)), shoe: Math.floor(r() * 4), cap: !female && r() < 0.12, hood: r() < 0.18,
       bag: r() < 0.25, umbrella: 0, umbIdx: Math.floor(r() * 5), h: female ? 0.93 + r() * 0.08 : 0.98 + r() * 0.08,
     };
@@ -482,8 +557,8 @@ export class People {
       const dx = a.x - camPos.x, dz = a.z - camPos.z, d2 = dx * dx + dz * dz;
       if (d2 > maxDist * maxDist) continue;
       const lod = d2 < LOD_DIST * LOD_DIST ? 0 : 1, S = this.sets[lod];
-      let i = cnt[lod]; if (i >= S.max) { if (lod === 0 && cnt[1] < this.sets[1].max) { i = cnt[1]; this.write(this.sets[1], i, a); cnt[1]++; } continue; }
-      this.write(S, i, a); cnt[lod]++;
+      let i = cnt[lod]; if (i >= S.max) { if (lod === 0 && cnt[1] < this.sets[1].max) { i = cnt[1]; writeCrowdMember(this.sets[1], i, a); cnt[1]++; } continue; }
+      writeCrowdMember(S, i, a); cnt[lod]++;
     }
     for (let k = 0; k < 2; k++) {
       const S = this.sets[k]; S.geo.instanceCount = cnt[k]; S.mesh.visible = cnt[k] > 0;
@@ -491,7 +566,9 @@ export class People {
     }
     return cnt[0] + cnt[1] + detailed.size;
   }
-  write(S, i, a) {
+}
+
+export function writeCrowdMember(S, i, a) {
     const L = a.look || {};
     const sp = a.gaitSpeed ?? a.speedNow ?? a.speed ?? 0;
     const amp = Math.min(1, sp / 1.5);
@@ -504,4 +581,3 @@ export class People {
     S.iCol.array.set(L._pk, i * 4);
     S.iSty.array.set(packLook(L, a), i * 4);
   }
-}
