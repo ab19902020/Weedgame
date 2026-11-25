@@ -37,7 +37,9 @@ export class Stations {
   layout(L, k, name, dir, terminus) {
     const T = this.G.trains, c = L.centre[k], hl = L.Lt / 2 + 8, tmp = new Float64Array(6), pts = [];
     const side = dir;   // + : left of the line's forward direction
-    for (let s = c - hl; s <= c + hl + 0.01; s += SEG) {
+    // (at a terminus the platform stops where the track does)
+    const s0 = Math.max(0, c - hl), s1 = Math.min(L.len, c + hl);
+    for (let s = s0; s <= s1 + 0.01; s = s < s1 && s + SEG > s1 ? s1 : s + SEG) {
       T.at(L, s, tmp);
       const h = Math.hypot(tmp[3], tmp[5]) || 1, ux = tmp[3] / h, uz = tmp[5] / h, nx = uz, nz = -ux;
       const o = T.offset(L, s, dir), edge = o + side * EDGE, outer = o + side * (EDGE + WIDTH);
@@ -48,14 +50,14 @@ export class Stations {
     return { line: L, k, name, dir, side, terminus, c, hl, pts, dest: terminus ? null : dest, mid: [m.x + m.nx * lc, m.y, m.z + m.nz * lc] };
   }
   // the ground the platforms need, for the tile worker (tileWorker.js cutPlatforms): per platform its sample
-  // count, then per sample a point just beyond its track, a point a metre behind the platform and the rail
+  // count, then per sample a point just beyond its track, a point 2.5 m behind the platform and the rail
   // height. Where a station stands in a cutting the ground is cut down to the track under it.
   footprints() {
     const out = [];
     for (const p of this.platforms) {
       out.push(p.pts.length);
       for (const q of p.pts) {
-        const track = q.edge - p.side * EDGE, a = track - p.side * 1.6, b = q.outer + p.side * 1;
+        const track = q.edge - p.side * EDGE, a = track - p.side * 1.6, b = q.outer + p.side * 2.5;
         out.push(q.x + q.nx * a, q.z + q.nz * a, q.x + q.nx * b, q.z + q.nz * b, q.rail);
       }
     }

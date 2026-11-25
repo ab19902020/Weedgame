@@ -117,3 +117,50 @@ test('no platform is buried in its cutting: the ground lies below every platform
   }
   assert.ok(n > 1000, `${n} points on platforms checked`);
 });
+
+// what passes under a bridge: the network's drive roads (not decks) and the trains' lines (rail.json)
+const beneath = [];
+for (let e = 0; e < net.nEdges; e++) { if (!(net.flags[e] & 16) || (net.flags[e] & 12) || /footway|path|cycleway|steps|pedestrian|bridleway|corridor/.test(net.clsName(e))) continue; const s = net.pstart[e], P = net.pts; for (let k = 0; k + 1 < net.pcount[e]; k++) { const a = (s + k) * 3; beneath.push({ a: [P[a], P[a + 1], P[a + 2]], b: [P[a + 3], P[a + 4], P[a + 5]], hw: net.width[e] / 2, what: `${net.clsName(e)} ${net.roadName(e)}`, rail: false }); } }
+for (const L of rail.lines) for (let i = 0; i + 5 < L.p.length; i += 3) beneath.push({ a: [L.p[i], L.p[i + 1], L.p[i + 2]], b: [L.p[i + 3], L.p[i + 4], L.p[i + 5]], hw: 4.5, what: L.name, rail: true });
+const segX = (ax, az, bx, bz, cx, cz, dx, dz) => { const rx = bx - ax, rz = bz - az, sx = dx - cx, sz = dz - cz, den = rx * sz - rz * sx; if (Math.abs(den) < 1e-9) return null; const qx = cx - ax, qz = cz - az, t = (qx * sz - qz * sx) / den, u = (qx * rz - qz * rx) / den; return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [t, u] : null; };
+// tiles with bridges over the M4, the IDR, Reading's railway and the lines out to Bracknell, Twyford and Reading West
+const bridgeTiles = ['2_0', '-31_-9', '-29_-12', '28_7', '-35_-12', '7_14', '-6_-1', '-34_-12', '-31_-10'];
+
+test('bridges leave headroom over the roads and railways beneath them', async () => {
+  let n = 0;
+  for (const key of bridgeTiles) {
+    const r = await build(key), D = r.deckLines;
+    for (let i = 0; i < D.length;) {
+      const m = D[i], kind = D[i + 1], pts = []; i += 3; for (let q = 0; q < m; q++, i += 3) pts.push([D[i] + r.ox, D[i + 1], D[i + 2] + r.oz]);
+      for (let q = 0; q + 1 < m; q++) for (const u of beneath) {
+        const X = segX(pts[q][0], pts[q][2], pts[q + 1][0], pts[q + 1][2], u.a[0], u.a[2], u.b[0], u.b[2]); if (!X) continue;
+        const deck = pts[q][1] + (pts[q + 1][1] - pts[q][1]) * X[0], y = u.a[1] + (u.b[1] - u.a[1]) * X[1];
+        if (deck - y < 1.5) continue;   // on the deck or level with it
+        n++;
+        assert.ok(deck - 1.2 - y >= 4.5, `${['road', 'foot', 'rail'][kind]} bridge in tile ${key} leaves ${(deck - 1.2 - y).toFixed(2)} m over the ${u.what}`);
+      }
+    }
+  }
+  assert.ok(n > 20, `${n} crossings checked`);
+});
+
+test('bridge piers stand clear of every carriageway and railway line beneath', async () => {
+  let piers = 0, reserve = 0;
+  for (const key of bridgeTiles) {
+    const r = await build(key), P = r.piers;
+    for (let i = 0; i < P.length; i += 8) {
+      piers++; if (P[i + 4] > 0.6) reserve++;
+      const x = P[i] + r.ox, z = P[i + 1] + r.oz, ux = P[i + 2], uz = P[i + 3], al = P[i + 4], ac = P[i + 5], top = P[i + 7];
+      for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1], [0, 0]]) {
+        const cx = x + ux * a * al - uz * b * ac, cz = z + uz * a * al + ux * b * ac;
+        for (const u of beneath) {
+          const vx = u.b[0] - u.a[0], vz = u.b[2] - u.a[2], L2 = vx * vx + vz * vz || 1e-6, t = Math.max(0, Math.min(1, ((cx - u.a[0]) * vx + (cz - u.a[2]) * vz) / L2));
+          if (u.a[1] + (u.b[1] - u.a[1]) * t > top - 2) continue;   // up on the deck the pier carries
+          const d = Math.hypot(u.a[0] + vx * t - cx, u.a[2] + vz * t - cz);
+          assert.ok(d >= (u.rail ? 3.2 : u.hw - 0.1), `pier at ${x.toFixed(1)},${z.toFixed(1)} stands ${d.toFixed(2)} m from the ${u.what}`);
+        }
+      }
+    }
+  }
+  assert.ok(piers > 10 && reserve > 0, `${piers} piers checked, ${reserve} in central reservations`);
+});

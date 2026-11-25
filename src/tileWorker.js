@@ -322,8 +322,9 @@ function initRailLines(lines) {
 // height of the trains' rails (rail.json) at a world point within reach m of a line's centre, or null
 function railY(gx, gz, reach) {
   const R = NET && NET.rail; if (!R) return null;
-  let best = null, bd = reach;
-  for (const id of R.grid.get(Math.floor(gx / CUT_CELL) * 65536 + Math.floor(gz / CUT_CELL)) || []) {
+  let best = null, bd = reach; const seen = new Set();
+  for (let cx = Math.floor((gx - reach) / CUT_CELL); cx <= Math.floor((gx + reach) / CUT_CELL); cx++) for (let cz = Math.floor((gz - reach) / CUT_CELL); cz <= Math.floor((gz + reach) / CUT_CELL); cz++) for (const id of R.grid.get(cx * 65536 + cz) || []) {
+    if (seen.has(id)) continue; seen.add(id);
     const o = id * RAIL_REC, C = R.seg, ax = C[o], az = C[o + 2], vx = C[o + 3] - ax, vz = C[o + 5] - az, L2 = vx * vx + vz * vz || 1e-6;
     const t = Math.max(0, Math.min(1, ((gx - ax) * vx + (gz - az) * vz) / L2)), d = Math.hypot(ax + vx * t - gx, az + vz * t - gz);
     if (d < bd) { bd = d; best = C[o + 1] + (C[o + 4] - C[o + 1]) * t; }
@@ -379,8 +380,9 @@ function railBed(H, ox, oz, lcAt, roads, A) {
 }
 
 // ------------------------------------------------------------------ station platforms
-// Stations in a cutting: the ground under each platform and its track (stations.js footprints) is cut down to
-// the rails, rising behind the platform at 1:1, so the platform isn't buried in the cutting's side.
+// Stations in a cutting: the ground under each platform and its track (stations.js footprints), and a grid
+// step around them, is cut down to the rails, rising beyond at 1:1, so the platform isn't buried in the side
+// of the cutting (the 4 m terrain grid would tilt the ground up through its back).
 function initPlatforms(flat) {
   NET.plat = [];
   for (let i = 0; i < flat.length;) {
@@ -393,7 +395,7 @@ function initPlatforms(flat) {
   }
 }
 function cutPlatforms(H, ox, oz, lcAt, floor) {
-  const BAND = 6;
+  const BAND = 10;
   for (const P of NET && NET.plat || []) {
     if (P.x1 + BAND < ox || P.x0 - BAND > ox + TILE || P.z1 + BAND < oz || P.z0 - BAND > oz + TILE) continue;
     const R = P.ring.map(([x, z]) => [x - ox, z - oz]);
@@ -412,10 +414,12 @@ function cutPlatforms(H, ox, oz, lcAt, floor) {
       } else d = 0;
       if (d > BAND) continue;
       const t = Math.max(0, Math.min(1, ((x - mx0) * ux + (z - mz0) * uz) / L2)), k = j * NT + i;
-      // (never into the ground that carries a road beside the station)
-      const want = Math.max(P.ra + (P.rb - P.ra) * t - 0.12 + d, floor ? floor[k] : -Infinity);
+      // (under the platform and a grid step around it the platform wins: the terrain grid would otherwise
+      // tilt the ground up through its back; further out it never cuts into the ground a road stands on,
+      // nor under buildings or into water)
+      const base = P.ra + (P.rb - P.ra) * t - 0.12 + Math.max(0, d - STEP), want = d > STEP ? Math.max(base, floor ? floor[k] : -Infinity) : base;
       if (!(want < H[k])) continue;
-      if (d > 0) { const edge = i === 0 || j === 0 || i === NT - 1 || j === NT - 1, c = edge ? 0 : lcAt(x, z); if (c === 3 || c === 4) continue; }
+      if (d > STEP) { const edge = i === 0 || j === 0 || i === NT - 1 || j === NT - 1, c = edge ? 0 : lcAt(x, z); if (c === 3 || c === 4) continue; }
       H[k] = want;
     }
   }
@@ -626,13 +630,36 @@ function build(header, A, lod) {
     off += n;
     if (kind === 2 && live < 0) {
       // a railway bridge carries its line at the trains' height (rail.json, 0.2 m below their rails): where the
-      // tile's deck sits lower or higher than the line, the deck follows the line
-      const ys = pts.map(p => railY(p[0] + ox, p[2] + oz, 4.5));
+      // tile's deck sits lower or higher than the line, the deck follows the line. The bridges of the tracks
+      // beside a line (sidings, the other pair, junction tracks) are brought up to its level where they sit
+      // well below it (the pipeline's deck heights can lie on the road beneath)
+      const on = pts.map(p => railY(p[0] + ox, p[2] + oz, 4.5) != null);
+      const ys = pts.map(p => { const at = railY(p[0] + ox, p[2] + oz, 4.5); if (at != null) return at; const by = railY(p[0] + ox, p[2] + oz, 40); return by != null && by - 0.2 - p[1] > 1 ? by : null; });
       const got = ys.map((v, q) => v == null ? -1 : q).filter(q => q >= 0);
+      // (between the points that found a line the deck runs straight; past the last it holds that level)
       if (got.length) for (let q = 0; q < n; q++) {
         if (ys[q] != null) { pts[q][1] = ys[q] - 0.2; continue; }
         const a = got.filter(g => g < q).pop(), b = got.find(g => g > q);
-        if (a != null && b != null) pts[q][1] = ys[a] - 0.2 + (ys[b] - ys[a]) * (q - a) / (b - a);
+        pts[q][1] = a != null && b != null ? ys[a] - 0.2 + (ys[b] - ys[a]) * (q - a) / (b - a) : ys[a ?? b] - 0.2;
+      }
+      // where no train runs (a chord, a branch, sidings) a railway bridge still clears the roads beneath it:
+      // 4.8 m under a 1.2 m deck, its deck rising to that at 1 in 50 from the trains' line or its ends (the
+      // trains' own lines climb to clear the roads they cross: build_rail.mjs)
+      if (on.some(v => !v) && NET && NET.cut) {
+        const C = NET.cut.seg, ids = new Set(), need = [];
+        const cm = [0]; for (let q = 1; q < n; q++) cm.push(cm[q - 1] + Math.hypot(pts[q][0] - pts[q - 1][0], pts[q][2] - pts[q - 1][2]));
+        const bx0 = Math.min(...pts.map(p => p[0])) + ox, bx1 = Math.max(...pts.map(p => p[0])) + ox, bz0 = Math.min(...pts.map(p => p[2])) + oz, bz1 = Math.max(...pts.map(p => p[2])) + oz;
+        for (let cx = Math.floor(bx0 / CUT_CELL); cx <= Math.floor(bx1 / CUT_CELL); cx++) for (let cz = Math.floor(bz0 / CUT_CELL); cz <= Math.floor(bz1 / CUT_CELL); cz++) for (const id of NET.cut.grid.get(cx * 65536 + cz) || []) ids.add(id);
+        for (const id of ids) {
+          const o = id * CUT_REC, ax = C[o] - ox, ay = C[o + 1], az = C[o + 2] - oz, bx = C[o + 3] - ox, by = C[o + 4], bz = C[o + 5] - oz;
+          for (let q = 0; q + 1 < n; q++) {
+            const X = segX(pts[q][0], pts[q][2], pts[q + 1][0], pts[q + 1][2], ax, az, bx, bz); if (!X) continue;
+            const deck = pts[q][1] + (pts[q + 1][1] - pts[q][1]) * X[0], road = ay + (by - ay) * X[1];
+            // (a road beneath, not one joining the bridge, and not where the trains cross on it)
+            if (deck - road > 0.5 && road + 6 > deck && !(on[q] && on[q + 1])) need.push([cm[q] + (cm[q + 1] - cm[q]) * X[0], road + 6]);
+          }
+        }
+        for (const [sv, req] of need) for (let q = 0; q < n; q++) if (!on[q]) pts[q][1] = Math.max(pts[q][1], req - Math.abs(cm[q] - sv) / 50);
       }
     }
     ribbonDeck(G, S, pts, w, kind, hAt, true, 3, site);
