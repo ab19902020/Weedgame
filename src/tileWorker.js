@@ -51,8 +51,22 @@ function initNet(m) {
   for (const [e, d, stop] of m.approaches) { if (!NET.stops.has(e)) NET.stops.set(e, []); NET.stops.get(e).push([d, stop]); }
   NET.driveCls = new Set(m.driveCls);
   NET.added = m.addedBridges || [];
+  NET.slabs = []; for (let i = 0; i + 2 < (m.slabs || []).length; i += 3) NET.slabs.push([m.slabs[i], m.slabs[i + 1], m.slabs[i + 2]]);
+  // links between the spans of a bridge mapped in pieces ride at deck height: they are deck too
+  if (m.connector) for (let e = 0; e < m.connector.length; e++) if (m.connector[e] && NET.driveCls.has(m.cls[e])) NET.slabs.push([e, 0, Infinity]);
+  NET.slabOf = new Map(); for (const [e, lo, hi] of NET.slabs) { if (!NET.slabOf.has(e)) NET.slabOf.set(e, []); NET.slabOf.get(e).push([lo, hi]); }
   NET.shoulder = m.shoulder || null; NET.strip = m.strip || null;
+  // nodes where a slip road joins or leaves a motorway (edge lines there are broken)
+  NET.linkNode = new Set();
+  if (m.ea) {
+    const mw = m.classes.indexOf('motorway'), ml = m.classes.indexOf('motorway_link'), onMw = new Set();
+    for (let e = 0; e < m.cls.length; e++) if (m.cls[e] === mw) { onMw.add(m.ea[e]); onMw.add(m.eb[e]); }
+    for (let e = 0; e < m.cls.length; e++) if (m.cls[e] === ml) for (const n of [m.ea[e], m.eb[e]]) if (onMw.has(n)) NET.linkNode.add(n);
+  }
   initEmbankments(m);
+  initCuttings(m);
+  initPlatforms(m.platforms || []);
+  initRailLines(m.railLines || []);
   initBarriers(m.barriers);
   const bays = m.bays || [];   // (NET is this message: read the flat list before replacing it with the map)
   NET.bays = new Map();
@@ -115,7 +129,7 @@ function buildBarriers(S, ix, iz, ox, oz) {
 // Roads that climb to a bridge (net.rise, from roadProfile.js) get the ground built up under them: level
 // with the road across the carriageway and pavements, then falling away at 1:1.7. The fill stops dead at
 // a bridge end (the abutment) and never covers another road, pavement, railway, water or a building.
-const EMB_CELL = 64, EMB_SLOPE = 0.6, EMB_REC = 10;
+const EMB_CELL = 64, EMB_SLOPE = 0.6, EMB_REC = 11;
 function initEmbankments(m) {
   NET.emb = null;
   const rise = m.rise, ea = m.ea, eb = m.eb;
@@ -130,10 +144,12 @@ function initEmbankments(m) {
     const pw = m.pav[e] ? (/primary|secondary|trunk/.test(cn) ? 2.6 : 2.0) : 0.4;
     const hw = m.width[e] / 2 + (walk ? 0.6 : pw + 0.5);
     for (let k = 0; k + 1 < c; k++) {
-      const r = Math.max(rise[s + k], rise[s + k + 1]);
+      // next to a bridge the ground falls away under the deck, whatever the road was lifted by: always fill
+      const capA = k === 0 && brNode.has(ea[e]), capB = k + 2 === c && brNode.has(eb[e]);
+      const r = Math.max(rise[s + k], rise[s + k + 1], capA || capB ? 4 : 0);
       if (r < 0.06) continue;
       const a = (s + k) * 3, b = a + 3, id = seg.length / EMB_REC;
-      seg.push(P[a], P[a + 1], P[a + 2], P[b], P[b + 1], P[b + 2], hw, k === 0 && brNode.has(ea[e]) ? 1 : 0, k + 2 === c && brNode.has(eb[e]) ? 1 : 0, r);
+      seg.push(P[a], P[a + 1], P[a + 2], P[b], P[b + 1], P[b + 2], hw, capA ? 1 : 0, capB ? 1 : 0, r, walk ? 0 : m.width[e]);
       const R = hw + r / EMB_SLOPE + 1;
       for (let cx = Math.floor((Math.min(P[a], P[b]) - R) / EMB_CELL); cx <= Math.floor((Math.max(P[a], P[b]) + R) / EMB_CELL); cx++)
         for (let cz = Math.floor((Math.min(P[a + 2], P[b + 2]) - R) / EMB_CELL); cz <= Math.floor((Math.max(P[a + 2], P[b + 2]) + R) / EMB_CELL); cz++) {
@@ -143,8 +159,29 @@ function initEmbankments(m) {
   }
   if (seg.length) NET.emb = { seg: new Float32Array(seg), grid };
 }
-function embank(H, ox, oz, lcAt) {
+function embank(H, ox, oz, lcAt, edges = []) {
   const E = NET && NET.emb; if (!E) return;
+  // carriageways of roads that are not raised (the road under a bridge, a slip road beside a ramp): a fill
+  // that would bury one is left out there
+  const low = [];
+  for (const e of edges) {
+    if (!NET.driveCls.has(NET.cls[e]) || (NET.flags[e] & 12)) continue;
+    const s = NET.pstart[e], c = NET.pcount[e], P = NET.pts;
+    for (let k = 0; k + 1 < c; k++) {
+      if (Math.max(NET.rise[s + k], NET.rise[s + k + 1]) >= 0.06) continue;
+      // (one grid step beyond its edge: the ground between grid points is interpolated)
+      low.push(P[(s + k) * 3] - ox, P[(s + k) * 3 + 2] - oz, P[(s + k + 1) * 3] - ox, P[(s + k + 1) * 3 + 2] - oz, NET.width[e] / 2 + STEP, Math.max(P[(s + k) * 3 + 1], P[(s + k + 1) * 3 + 1]));
+    }
+  }
+  const underLowRoad = (x, z, target) => {
+    for (let q = 0; q < low.length; q += 6) {
+      if (low[q + 5] + 0.15 > target) continue;
+      const ax = low[q], az = low[q + 1], vx = low[q + 2] - ax, vz = low[q + 3] - az, L2 = vx * vx + vz * vz || 1e-6;
+      const t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / L2));
+      if (Math.hypot(ax + vx * t - x, az + vz * t - z) < low[q + 4]) return true;
+    }
+    return false;
+  };
   const ids = new Set();
   for (let cx = Math.floor(ox / EMB_CELL); cx <= Math.floor((ox + TILE) / EMB_CELL); cx++)
     for (let cz = Math.floor(oz / EMB_CELL); cz <= Math.floor((oz + TILE) / EMB_CELL); cz++)
@@ -157,19 +194,233 @@ function embank(H, ox, oz, lcAt) {
     const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1e-6;
     const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - R) / STEP)), i1 = Math.min(NT - 1, Math.ceil((Math.max(ax, bx) + R) / STEP));
     const j0 = Math.max(0, Math.floor((Math.min(az, bz) - R) / STEP)), j1 = Math.min(NT - 1, Math.ceil((Math.max(az, bz) + R) / STEP));
+    const segL = Math.sqrt(L2);
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
       const x = i * STEP, z = j * STEP;
-      let t = ((x - ax) * vx + (z - az) * vz) / L2;
-      if (t < 0) { if (capA) continue; t = 0; } else if (t > 1) { if (capB) continue; t = 1; }
+      let t = ((x - ax) * vx + (z - az) * vz) / L2, beyond = 0;
+      // at an abutment the fill runs on under the deck for one grid step as a steep spill slope, so the
+      // road surface doesn't sag into the gap before the deck (never over a road, railway or water)
+      if (t < 0) { if (capA) { beyond = -t * segL; if (beyond > STEP + 0.5) continue; } t = 0; }
+      else if (t > 1) { if (capB) { beyond = (t - 1) * segL; if (beyond > STEP + 0.5) continue; } t = 1; }
       const d = Math.hypot(x - ax - vx * t, z - az - vz * t);
       if (d > R) continue;
-      const target = ay + (by - ay) * t - 0.06 - Math.max(0, d - hw) * EMB_SLOPE, k = j * NT + i;
+      const target = ay + (by - ay) * t - 0.06 - Math.max(0, d - hw) * EMB_SLOPE - beyond * 0.6, k = j * NT + i;
       if (target <= H[k]) continue;
+      if (beyond > 0) { const cc = lcAt(x, z); if (cc === 1 || cc === 3 || cc === 4 || cc === 9) continue; }
       // (grid points on the tile edge are shared with the neighbour, which can't see this land cover: both
       // tiles must agree on them, so the land-cover test is left out there)
       const edge = i === 0 || j === 0 || i === NT - 1 || j === NT - 1, c = edge ? 0 : lcAt(x, z);
       if (c === 3 || (d > hw && (c === 1 || c === 2 || c === 4 || c === 8 || c === 9 || c === 10 || c === 12))) continue;
+      if (underLowRoad(x, z, target)) continue;
       H[k] = target;
+    }
+  }
+}
+
+// ------------------------------------------------------------------ cuttings
+// Where the ground stands above a road that runs on it (a road in a cutting narrower than the 4 m terrain
+// grid can hold, the dip under a bridge, the island between two spans of a bridge), the carriageway and a
+// metre and a half either side are cut down to the road, with 1:1 side slopes beyond, so the drawn road, its
+// markings and the traffic on it agree. A road beside a higher one (a slip road climbing out of a cutting)
+// never cuts into the ground that carries the higher road, nor into the ground under a railway line. Built
+// from every road in the network, so the two tiles that share an edge cut it alike.
+const CUT_REC = 9, CUT_FULL = 1.5, CUT_SLOPE = 1, CUT_BAND = 6, CUT_CELL = 32;
+function initCuttings(m) {
+  NET.cut = null;
+  const seg = [], grid = new Map(), P = m.pts;
+  for (let e = 0; e < m.flags.length; e++) {
+    if ((m.flags[e] & 12) || !NET.driveCls.has(m.cls[e])) continue;   // decks and tunnels
+    const s = m.pstart[e], c = m.pcount[e], hw = m.width[e] / 2;
+    for (let k = 0; k + 1 < c; k++) {
+      const a = (s + k) * 3, b = a + 3, id = seg.length / CUT_REC, R = hw + CUT_BAND;
+      seg.push(P[a], P[a + 1], P[a + 2], P[b], P[b + 1], P[b + 2], hw, e, s + k);
+      for (let cx = Math.floor((Math.min(P[a], P[b]) - R) / CUT_CELL); cx <= Math.floor((Math.max(P[a], P[b]) + R) / CUT_CELL); cx++)
+        for (let cz = Math.floor((Math.min(P[a + 2], P[b + 2]) - R) / CUT_CELL); cz <= Math.floor((Math.max(P[a + 2], P[b + 2]) + R) / CUT_CELL); cz++) {
+          const key = cx * 65536 + cz; let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(id);
+        }
+    }
+  }
+  if (seg.length) NET.cut = { seg: new Float32Array(seg), grid };
+}
+function cut(H, ox, oz, lcAt, A) {
+  const C = NET && NET.cut; if (!C) return { floor: null, low: null };
+  const H0 = H.slice();
+  const ids = new Set();
+  for (let cx = Math.floor(ox / CUT_CELL); cx <= Math.floor((ox + TILE) / CUT_CELL); cx++)
+    for (let cz = Math.floor(oz / CUT_CELL); cz <= Math.floor((oz + TILE) / CUT_CELL); cz++)
+      for (const id of C.grid.get(cx * 65536 + cz) || []) ids.add(id);
+  // per grid point: the lowest the roads around it want the ground (low); the highest road whose drawn
+  // surface it holds up, being within a grid step of its carriageway (floor); and whether it lies on a
+  // carriageway at all (on)
+  const low = new Float32Array(NT * NT).fill(Infinity), floor = new Float32Array(NT * NT).fill(-Infinity), on = new Uint8Array(NT * NT);
+  const S = C.seg;
+  for (const id of ids) {
+    const o = id * CUT_REC, ax = S[o] - ox, ay = S[o + 1], az = S[o + 2] - oz, bx = S[o + 3] - ox, by = S[o + 4], bz = S[o + 5] - oz, hw = S[o + 6];
+    const R = hw + CUT_BAND, vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1e-6;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - R) / STEP)), i1 = Math.min(NT - 1, Math.ceil((Math.max(ax, bx) + R) / STEP));
+    const j0 = Math.max(0, Math.floor((Math.min(az, bz) - R) / STEP)), j1 = Math.min(NT - 1, Math.ceil((Math.max(az, bz) + R) / STEP));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = i * STEP, z = j * STEP, t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / L2));
+      const d = Math.hypot(x - ax - vx * t, z - az - vz * t); if (d > R) continue;
+      const y = ay + (by - ay) * t - 0.06, k = j * NT + i;
+      const want = y + Math.max(0, d - hw - CUT_FULL) * CUT_SLOPE;
+      if (want < low[k]) low[k] = want;
+      if (d <= hw + STEP && y > floor[k]) floor[k] = y;
+      if (d <= hw) on[k] = 1;
+    }
+  }
+  for (let j = 0; j < NT; j++) for (let i = 0; i < NT; i++) {
+    const k = j * NT + i, want = Math.max(low[k], floor[k]);
+    if (!(want < H[k])) continue;
+    // off the carriageway the cut stops at buildings, water and the railway (land cover is left out on the
+    // tile edge, which the neighbour shares but can't see)
+    const edge = i === 0 || j === 0 || i === NT - 1 || j === NT - 1;
+    if (!on[k]) { const c = edge ? 0 : lcAt(i * STEP, j * STEP); if (c === 3 || c === 4 || c === 9) continue; }
+    H[k] = want;
+  }
+  // the tile's railway lines lie on the ground: every terrain cell a line runs through keeps its ground
+  const RC = A.railC; let ci = 0;
+  for (const n of A.railN) {
+    for (let q = 0; q + 1 < n; q++) {
+      const ax = RC[(ci + q) * 2] / 10, az = RC[(ci + q) * 2 + 1] / 10, bx = RC[(ci + q + 1) * 2] / 10, bz = RC[(ci + q + 1) * 2 + 1] / 10;
+      const steps = Math.ceil(Math.hypot(bx - ax, bz - az) / 1) + 1;
+      for (let u = 0; u <= steps; u++) {
+        const x = ax + (bx - ax) * u / steps, z = az + (bz - az) * u / steps;
+        const i = Math.max(0, Math.min(NT - 2, Math.floor(x / STEP))), j = Math.max(0, Math.min(NT - 2, Math.floor(z / STEP)));
+        for (const k of [j * NT + i, j * NT + i + 1, (j + 1) * NT + i, (j + 1) * NT + i + 1]) H[k] = H0[k];
+      }
+    }
+    ci += n;
+  }
+  return { floor, low };
+}
+
+// ------------------------------------------------------------------ railway lines the trains run on
+// (rail.json): each segment with the reach of its trains either side of the line, the running tracks' offsets
+// (trains.js) plus a car's half width and a clearance; nothing a bridge stands on may come within it
+const RAIL_REC = 7;
+function initRailLines(lines) {
+  NET.rail = null;
+  const seg = [], grid = new Map();
+  for (const L of lines) {
+    const p = L.p, n = p.length / 3, off = L.off;
+    const reach = v => { if (!off || !off.f) return 2.5; const k = Math.max(0, Math.min(off.f.length - 1, Math.round(v / (off.ds || 20)))); return Math.max(Math.abs(off.f[k] || 0), Math.abs(off.b?.[k] || 0)); };
+    let sv = 0;
+    for (let i = 0; i + 1 < n; i++) {
+      const a = i * 3, b = a + 3, len = Math.hypot(p[b] - p[a], p[b + 2] - p[a + 2]), hw = Math.max(reach(sv), reach(sv + len)) + 2.0, R = hw;
+      const id = seg.length / RAIL_REC; seg.push(p[a], p[a + 1], p[a + 2], p[b], p[b + 1], p[b + 2], hw);
+      for (let cx = Math.floor((Math.min(p[a], p[b]) - R) / CUT_CELL); cx <= Math.floor((Math.max(p[a], p[b]) + R) / CUT_CELL); cx++)
+        for (let cz = Math.floor((Math.min(p[a + 2], p[b + 2]) - R) / CUT_CELL); cz <= Math.floor((Math.max(p[a + 2], p[b + 2]) + R) / CUT_CELL); cz++) {
+          const key = cx * 65536 + cz; let l = grid.get(key); if (!l) grid.set(key, l = []); l.push(id);
+        }
+      sv += len;
+    }
+  }
+  if (seg.length) NET.rail = { seg: new Float32Array(seg), grid };
+}
+
+// height of the trains' rails (rail.json) at a world point within reach m of a line's centre, or null
+function railY(gx, gz, reach) {
+  const R = NET && NET.rail; if (!R) return null;
+  let best = null, bd = reach; const seen = new Set();
+  for (let cx = Math.floor((gx - reach) / CUT_CELL); cx <= Math.floor((gx + reach) / CUT_CELL); cx++) for (let cz = Math.floor((gz - reach) / CUT_CELL); cz <= Math.floor((gz + reach) / CUT_CELL); cz++) for (const id of R.grid.get(cx * 65536 + cz) || []) {
+    if (seen.has(id)) continue; seen.add(id);
+    const o = id * RAIL_REC, C = R.seg, ax = C[o], az = C[o + 2], vx = C[o + 3] - ax, vz = C[o + 5] - az, L2 = vx * vx + vz * vz || 1e-6;
+    const t = Math.max(0, Math.min(1, ((gx - ax) * vx + (gz - az) * vz) / L2)), d = Math.hypot(ax + vx * t - gx, az + vz * t - gz);
+    if (d < bd) { bd = d; best = C[o + 1] + (C[o + 4] - C[o + 1]) * t; }
+  }
+  return best;
+}
+// The ground along the lines the trains run (rail.json) is brought to their track bed (the rails 0.32 m above
+// it): cut down where it stands over the trains (an embankment the terrain model kept across a cutting), built
+// up where they would hang above it, across the trains' reach and with 1:1 slopes beyond. It is never built
+// over a road passing under the railway, in water or under a railway bridge's deck, and never cut into the
+// ground a road beside the line stands on.
+function railBed(H, ox, oz, lcAt, roads, A) {
+  const R = NET && NET.rail; if (!R) return;
+  const BAND = 8, decks = [];
+  { const bm = A.brM, bp = A.brP; let off = 0;
+    for (let k = 0; k < bm.length; k += 4) { const n = bm[k], w = bm[k + 1], kind = bm[k + 2]; if (kind === 2) for (let q = 0; q + 1 < n; q++) decks.push(bp[(off + q) * 3], bp[(off + q) * 3 + 2], bp[(off + q + 1) * 3], bp[(off + q + 1) * 3 + 2], w / 2 + 2); off += n; } }
+  const underDeck = (x, z) => { for (let q = 0; q < decks.length; q += 5) { const ax = decks[q], az = decks[q + 1], vx = decks[q + 2] - ax, vz = decks[q + 3] - az, L2 = vx * vx + vz * vz || 1e-6, t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / L2)); if (Math.hypot(ax + vx * t - x, az + vz * t - z) < decks[q + 4]) return true; } return false; };
+  const ids = new Set();
+  for (let cx = Math.floor(ox / CUT_CELL); cx <= Math.floor((ox + TILE) / CUT_CELL); cx++)
+    for (let cz = Math.floor(oz / CUT_CELL); cz <= Math.floor((oz + TILE) / CUT_CELL); cz++) for (const id of R.grid.get(cx * 65536 + cz) || []) ids.add(id);
+  if (!ids.size) return;
+  const top = new Float32Array(NT * NT).fill(Infinity), bot = new Float32Array(NT * NT).fill(-Infinity), on = new Uint8Array(NT * NT), C = R.seg;
+  for (const id of ids) {
+    const o = id * RAIL_REC, ax = C[o] - ox, ay = C[o + 1] - 0.32, az = C[o + 2] - oz, bx = C[o + 3] - ox, by = C[o + 4] - 0.32, bz = C[o + 5] - oz, hw = C[o + 6] - 0.6;
+    const Rr = hw + BAND, vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1e-6;
+    const i0 = Math.max(0, Math.floor((Math.min(ax, bx) - Rr) / STEP)), i1 = Math.min(NT - 1, Math.ceil((Math.max(ax, bx) + Rr) / STEP));
+    const j0 = Math.max(0, Math.floor((Math.min(az, bz) - Rr) / STEP)), j1 = Math.min(NT - 1, Math.ceil((Math.max(az, bz) + Rr) / STEP));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = i * STEP, z = j * STEP, t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / L2)), d = Math.hypot(x - ax - vx * t, z - az - vz * t);
+      if (d > Rr) continue;
+      const y = ay + (by - ay) * t, k = j * NT + i, beyond = Math.max(0, d - hw);
+      top[k] = Math.min(top[k], y + beyond);
+      bot[k] = Math.max(bot[k], y - beyond);
+      if (d <= hw) on[k] = 1;
+    }
+  }
+  for (let j = 0; j < NT; j++) for (let i = 0; i < NT; i++) {
+    const k = j * NT + i, edge = i === 0 || j === 0 || i === NT - 1 || j === NT - 1, x = i * STEP, z = j * STEP;
+    if (H[k] > top[k] + 0.1) {
+      const c = edge || on[k] ? 0 : lcAt(x, z); if (c === 3) continue;
+      // (a road well above the line where the trains run crosses it on a bridge, even where the map stops the
+      // bridge short of the track: the trains win, and the road is carried on a deck over the gap)
+      const f = roads.floor ? roads.floor[k] : -Infinity, v = on[k] && f > top[k] + 1.5 ? top[k] : Math.max(top[k], f);
+      if (v < H[k]) H[k] = v;
+    } else if (H[k] < bot[k] - 0.1) {
+      const c = edge ? 0 : lcAt(x, z);
+      if (c === 4 || (!on[k] && c === 3)) continue;
+      if (roads.low && roads.low[k] < bot[k] - 1) continue;   // a road passes under the railway here
+      if (underDeck(x, z)) continue;                          // the trains cross on a bridge
+      H[k] = bot[k];
+    }
+  }
+}
+
+// ------------------------------------------------------------------ station platforms
+// Stations in a cutting: the ground under each platform and its track (stations.js footprints), and a grid
+// step around them, is cut down to the rails, rising beyond at 1:1, so the platform isn't buried in the side
+// of the cutting (the 4 m terrain grid would tilt the ground up through its back).
+function initPlatforms(flat) {
+  NET.plat = [];
+  for (let i = 0; i < flat.length;) {
+    const n = flat[i++], q = [];
+    for (let k = 0; k < n; k++, i += 5) q.push(flat.slice(i, i + 5));
+    for (let k = 0; k + 1 < n; k++) {
+      const [ax, az, bx, bz, ra] = q[k], [cx, cz, dx, dz, rb] = q[k + 1];
+      NET.plat.push({ ring: [[ax, az], [bx, bz], [dx, dz], [cx, cz]], ra, rb, x0: Math.min(ax, bx, cx, dx), x1: Math.max(ax, bx, cx, dx), z0: Math.min(az, bz, cz, dz), z1: Math.max(az, bz, cz, dz) });
+    }
+  }
+}
+function cutPlatforms(H, ox, oz, lcAt, floor) {
+  const BAND = 10;
+  for (const P of NET && NET.plat || []) {
+    if (P.x1 + BAND < ox || P.x0 - BAND > ox + TILE || P.z1 + BAND < oz || P.z0 - BAND > oz + TILE) continue;
+    const R = P.ring.map(([x, z]) => [x - ox, z - oz]);
+    // along the platform: from the a-c side (k) to the b-d side (k + 1) for the rail height
+    const mx0 = (R[0][0] + R[1][0]) / 2, mz0 = (R[0][1] + R[1][1]) / 2, mx1 = (R[3][0] + R[2][0]) / 2, mz1 = (R[3][1] + R[2][1]) / 2;
+    const ux = mx1 - mx0, uz = mz1 - mz0, L2 = ux * ux + uz * uz || 1e-6;
+    const i0 = Math.max(0, Math.floor((P.x0 - ox - BAND) / STEP)), i1 = Math.min(NT - 1, Math.ceil((P.x1 - ox + BAND) / STEP));
+    const j0 = Math.max(0, Math.floor((P.z0 - oz - BAND) / STEP)), j1 = Math.min(NT - 1, Math.ceil((P.z1 - oz + BAND) / STEP));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const x = i * STEP, z = j * STEP;
+      let d = Infinity;
+      if (!insideRing(R, x, z)) for (let q = 0; q < 4; q++) {
+        const [ax, az] = R[q], [bx, bz] = R[(q + 1) % 4], vx = bx - ax, vz = bz - az, l2 = vx * vx + vz * vz || 1e-6;
+        const t = Math.max(0, Math.min(1, ((x - ax) * vx + (z - az) * vz) / l2));
+        d = Math.min(d, Math.hypot(ax + vx * t - x, az + vz * t - z));
+      } else d = 0;
+      if (d > BAND) continue;
+      const t = Math.max(0, Math.min(1, ((x - mx0) * ux + (z - mz0) * uz) / L2)), k = j * NT + i;
+      // (under the platform and a grid step around it the platform wins: the terrain grid would otherwise
+      // tilt the ground up through its back; further out it never cuts into the ground a road stands on,
+      // nor under buildings or into water)
+      const base = P.ra + (P.rb - P.ra) * t - 0.12 + Math.max(0, d - STEP), want = d > STEP ? Math.max(base, floor ? floor[k] : -Infinity) : base;
+      if (!(want < H[k])) continue;
+      if (d > STEP) { const edge = i === 0 || j === 0 || i === NT - 1 || j === NT - 1, c = edge ? 0 : lcAt(x, z); if (c === 3 || c === 4) continue; }
+      H[k] = want;
     }
   }
 }
@@ -211,7 +462,10 @@ function build(header, A, lod) {
   for (let i = 0; i < H.length; i++) H[i] = hmin + A.h[i] / 100;
   const lc = A.lc;  // 128x128 at 2 m
   const lcAt = (x, z) => lc[Math.min(127, Math.max(0, z >> 1)) * 128 + Math.min(127, Math.max(0, x >> 1))];
-  embank(H, ox, oz, lcAt);
+  embank(H, ox, oz, lcAt, header.edges);
+  const roads = cut(H, ox, oz, lcAt, A);
+  railBed(H, ox, oz, lcAt, roads, A);
+  cutPlatforms(H, ox, oz, lcAt, roads.floor);
   // terrain surface height (matches triangle split of the terrain mesh)
   const hAt = (x, z) => {
     const gx = Math.max(0, Math.min(NT - 1.0001, x / STEP)), gz = Math.max(0, Math.min(NT - 1.0001, z / STEP));
@@ -220,6 +474,10 @@ function build(header, A, lod) {
     return fu >= fv ? h00 + fu * (h10 - h00) + fv * (h11 - h10) : h00 + fv * (h01 - h00) + fu * (h11 - h01);
   };
   const out = { ix: header.ix, iz: header.iz, ox, oz, hmin, heights: H, lc: new Uint8Array(lc) };
+  // exact carriageway test (the tile's road polygons): no lamp post, tree or street furniture stands in a road
+  const inRoad = roadIndex(A);
+  // ...nor on a railway or in water (2 m landcover)
+  const blocked = (x, z, r = 0.5) => inRoad(x, z, r) || [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].some(([a, b]) => { const c = lcAt(x + a, z + b); return c === 9 || c === 4; });
 
   // ---------------- terrain
   const tstep = lod ? 4 : 1; // grid stride in samples
@@ -286,7 +544,87 @@ function build(header, A, lod) {
 
   // ---------------- bridges (decks in ground mesh, structure in struct mesh)
   const S = new Buf(1);
-  const bm = A.brM, bp = A.brP;
+  // what stands under a deck, which its piers and end walls keep clear of: the land cover at a spot (roads,
+  // pavements, paths, plazas, water, railway) and the roads and railway lines passing under a line beneath it,
+  // as [arc length along the line, half width along it, kind (1 road, 2 railway), its direction, sin of the angle]
+  const segX = (ax, az, bx, bz, cx, cz, dx, dz) => {
+    const rx = bx - ax, rz = bz - az, sx = dx - cx, sz = dz - cz, den = rx * sz - rz * sx; if (Math.abs(den) < 1e-9) return null;
+    const qx = cx - ax, qz = cz - az, t = (qx * sz - qz * sx) / den, u = (qx * rz - qz * rx) / den;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1 ? [t, u] : null;
+  };
+  const railSegs = []; { let ci = 0; for (const n of A.railN) { for (let q = 0; q + 1 < n; q++) railSegs.push(A.railC[(ci + q) * 2] / 10, A.railC[(ci + q) * 2 + 1] / 10, A.railC[(ci + q + 1) * 2] / 10, A.railC[(ci + q + 1) * 2 + 1] / 10); ci += n; } }
+  const clearOf = c => c === 1 || c === 2 || c === 4 || c === 9 || c === 10 || c === 12;
+  const site = {
+    piers: [],   // every pier drawn: x, z, its axis, half length along it and half width across, foot and top (out.piers)
+    ok: (x, z) => {
+      for (const [dx, dz] of [[0, 0], [0.9, 0.9], [-0.9, 0.9], [0.9, -0.9], [-0.9, -0.9]]) { const px = x + dx, pz = z + dz; if (px < 0 || pz < 0 || px >= TILE || pz >= TILE) continue; if (clearOf(lcAt(px, pz))) return false; }
+      for (const P of NET && NET.plat || []) if (x + ox > P.x0 - 1.5 && x + ox < P.x1 + 1.5 && z + oz > P.z0 - 1.5 && z + oz < P.z1 + 1.5) return false;   // nor on a station platform
+      return true;
+    },
+    // a spot clear of the trains' lines (their reach, rail.json) and of the carriageways (with a verge) that
+    // pass below a deck at height top, whichever way they run
+    clear: (x, z, top, roads = true) => {
+      const gx = x + ox, gz = z + oz, k = Math.floor(gx / CUT_CELL) * 65536 + Math.floor(gz / CUT_CELL);
+      const near = (C, rec, ids, pad) => { for (const id of ids || []) {
+        const o = id * rec, ax = C[o], az = C[o + 2], vx = C[o + 3] - ax, vz = C[o + 5] - az, L2 = vx * vx + vz * vz || 1e-6, t = Math.max(0, Math.min(1, ((gx - ax) * vx + (gz - az) * vz) / L2));
+        if (C[o + 1] + (C[o + 4] - C[o + 1]) * t > top - 2) continue;   // up on the deck, not below it
+        if (Math.hypot(ax + vx * t - gx, az + vz * t - gz) < C[o + 6] + pad) return true;
+      } return false; };
+      if (NET && NET.rail && near(NET.rail.seg, RAIL_REC, NET.rail.grid.get(k), 0.8)) return false;
+      if (roads && NET && NET.cut && near(NET.cut.seg, CUT_REC, NET.cut.grid.get(k), 2.0)) return false;
+      return true;
+    },
+    wallOk: (ax, az, bx, bz) => { for (let q = 0; q <= 8; q++) { const px = ax + (bx - ax) * q / 8, pz = az + (bz - az) * q / 8; if (px < 0 || pz < 0 || px >= TILE || pz >= TILE) continue; const c = lcAt(px, pz); if (c === 1 || c === 9) return false; } return true; },
+    under: (line, cum) => {
+      const out = [];
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const p of line) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[2]); z1 = Math.max(z1, p[2]); }
+      const add = (i, t, ux, uz, half, kind) => {
+        const a = line[i], b = line[i + 1], lx = b[0] - a[0], lz = b[2] - a[2], ll = Math.hypot(lx, lz) || 1, ul = Math.hypot(ux, uz) || 1;
+        const sin = Math.max(0.3, Math.abs(lx * uz - lz * ux) / (ll * ul));
+        out.push([cum[i] + (cum[i + 1] - cum[i]) * t, half / sin, kind, ux / ul, uz / ul, sin]);
+      };
+      const deckY = (i, t) => line[i][1] + (line[i + 1][1] - line[i][1]) * t;
+      if (NET && NET.cut) {
+        const C = NET.cut.seg, ids = new Set();
+        for (let cx = Math.floor((x0 + ox) / CUT_CELL); cx <= Math.floor((x1 + ox) / CUT_CELL); cx++)
+          for (let cz = Math.floor((z0 + oz) / CUT_CELL); cz <= Math.floor((z1 + oz) / CUT_CELL); cz++) for (const id of NET.cut.grid.get(cx * 65536 + cz) || []) ids.add(id);
+        for (const id of ids) {
+          const o = id * CUT_REC, ax = C[o] - ox, ay = C[o + 1], az = C[o + 2] - oz, bx = C[o + 3] - ox, by = C[o + 4], bz = C[o + 5] - oz;
+          for (let i = 0; i + 1 < line.length; i++) {
+            const X = segX(line[i][0], line[i][2], line[i + 1][0], line[i + 1][2], ax, az, bx, bz); if (!X) continue;
+            if (deckY(i, X[0]) - (ay + (by - ay) * X[1]) < 3) continue;   // not beneath: it joins the deck or runs over it
+            add(i, X[0], bx - ax, bz - az, C[o + 6], 1);
+          }
+        }
+      }
+      if (NET && NET.rail) {
+        const C = NET.rail.seg, ids = new Set();
+        for (let cx = Math.floor((x0 + ox) / CUT_CELL); cx <= Math.floor((x1 + ox) / CUT_CELL); cx++)
+          for (let cz = Math.floor((z0 + oz) / CUT_CELL); cz <= Math.floor((z1 + oz) / CUT_CELL); cz++) for (const id of NET.rail.grid.get(cx * 65536 + cz) || []) ids.add(id);
+        for (const id of ids) {
+          const o = id * RAIL_REC, ax = C[o] - ox, ay = C[o + 1], az = C[o + 2] - oz, bx = C[o + 3] - ox, by = C[o + 4], bz = C[o + 5] - oz;
+          for (let i = 0; i + 1 < line.length; i++) {
+            const X = segX(line[i][0], line[i][2], line[i + 1][0], line[i + 1][2], ax, az, bx, bz); if (!X) continue;
+            if (deckY(i, X[0]) - (ay + (by - ay) * X[1]) < 3) continue;   // the line runs on this deck, not under it
+            add(i, X[0], bx - ax, bz - az, C[o + 6], 2);
+          }
+        }
+      }
+      for (let q = 0; q < railSegs.length; q += 4) {
+        const ax = railSegs[q], az = railSegs[q + 1], bx = railSegs[q + 2], bz = railSegs[q + 3];
+        for (let i = 0; i + 1 < line.length; i++) {
+          const X = segX(line[i][0], line[i][2], line[i + 1][0], line[i + 1][2], ax, az, bx, bz); if (!X) continue;
+          if (deckY(i, X[0]) - (hAt(ax + (bx - ax) * X[1], az + (bz - az) * X[1]) + 0.12) < 3) continue;
+          add(i, X[0], bx - ax, bz - az, 1.7, 2);
+        }
+      }
+      // one entry per crossing (a polyline meets the line twice where it crosses at one of its vertices)
+      out.sort((p, q) => p[0] - q[0]);
+      return out.filter((p, k) => !k || Math.abs(p[0] - out[k - 1][0]) > 0.05 || p[2] !== out[k - 1][2]);
+    },
+  };
+  const bm = A.brM, bp = A.brP, deckLines = [];   // every bridge deck as drawn: n, kind, width, then its points (out.deckLines)
   let off = 0;
   for (let k = 0; k < bm.length; k += 4) {
     const n = bm[k], w = bm[k + 1], kind = bm[k + 2], e = bm[k + 3];
@@ -294,7 +632,42 @@ function build(header, A, lod) {
     const live = NET && e >= 0 && NET.pcount[e] === n ? NET.pstart[e] : -1;
     const pts = []; for (let q = 0; q < n; q++) pts.push([bp[(off + q) * 3], live >= 0 ? NET.pts[(live + q) * 3 + 1] : bp[(off + q) * 3 + 1], bp[(off + q) * 3 + 2]]);
     off += n;
-    ribbonDeck(G, S, pts, w, kind, hAt);
+    if (kind === 2 && live < 0) {
+      // a railway bridge carries its line at the trains' height (rail.json, 0.2 m below their rails): where the
+      // tile's deck sits lower or higher than the line, the deck follows the line. The bridges of the tracks
+      // beside a line (sidings, the other pair, junction tracks) are brought up to its level where they sit
+      // well below it (the pipeline's deck heights can lie on the road beneath)
+      const on = pts.map(p => railY(p[0] + ox, p[2] + oz, 4.5) != null);
+      const ys = pts.map(p => { const at = railY(p[0] + ox, p[2] + oz, 4.5); if (at != null) return at; const by = railY(p[0] + ox, p[2] + oz, 40); return by != null && by - 0.2 - p[1] > 1 ? by : null; });
+      const got = ys.map((v, q) => v == null ? -1 : q).filter(q => q >= 0);
+      // (between the points that found a line the deck runs straight; past the last it holds that level)
+      if (got.length) for (let q = 0; q < n; q++) {
+        if (ys[q] != null) { pts[q][1] = ys[q] - 0.2; continue; }
+        const a = got.filter(g => g < q).pop(), b = got.find(g => g > q);
+        pts[q][1] = a != null && b != null ? ys[a] - 0.2 + (ys[b] - ys[a]) * (q - a) / (b - a) : ys[a ?? b] - 0.2;
+      }
+      // where no train runs (a chord, a branch, sidings) a railway bridge still clears the roads beneath it:
+      // 4.8 m under a 1.2 m deck, its deck rising to that at 1 in 50 from the trains' line or its ends (the
+      // trains' own lines climb to clear the roads they cross: build_rail.mjs)
+      if (on.some(v => !v) && NET && NET.cut) {
+        const C = NET.cut.seg, ids = new Set(), need = [];
+        const cm = [0]; for (let q = 1; q < n; q++) cm.push(cm[q - 1] + Math.hypot(pts[q][0] - pts[q - 1][0], pts[q][2] - pts[q - 1][2]));
+        const bx0 = Math.min(...pts.map(p => p[0])) + ox, bx1 = Math.max(...pts.map(p => p[0])) + ox, bz0 = Math.min(...pts.map(p => p[2])) + oz, bz1 = Math.max(...pts.map(p => p[2])) + oz;
+        for (let cx = Math.floor(bx0 / CUT_CELL); cx <= Math.floor(bx1 / CUT_CELL); cx++) for (let cz = Math.floor(bz0 / CUT_CELL); cz <= Math.floor(bz1 / CUT_CELL); cz++) for (const id of NET.cut.grid.get(cx * 65536 + cz) || []) ids.add(id);
+        for (const id of ids) {
+          const o = id * CUT_REC, ax = C[o] - ox, ay = C[o + 1], az = C[o + 2] - oz, bx = C[o + 3] - ox, by = C[o + 4], bz = C[o + 5] - oz;
+          for (let q = 0; q + 1 < n; q++) {
+            const X = segX(pts[q][0], pts[q][2], pts[q + 1][0], pts[q + 1][2], ax, az, bx, bz); if (!X) continue;
+            const deck = pts[q][1] + (pts[q + 1][1] - pts[q][1]) * X[0], road = ay + (by - ay) * X[1];
+            // (a road beneath, not one joining the bridge, and not where the trains cross on it)
+            if (deck - road > 0.5 && road + 6 > deck && !(on[q] && on[q + 1])) need.push([cm[q] + (cm[q + 1] - cm[q]) * X[0], road + 6]);
+          }
+        }
+        for (const [sv, req] of need) for (let q = 0; q < n; q++) if (!on[q]) pts[q][1] = Math.max(pts[q][1], req - Math.abs(cm[q] - sv) / 50);
+      }
+    }
+    ribbonDeck(G, S, pts, w, kind, hAt, true, 3, site);
+    deckLines.push(n, kind, w); for (const p of pts) deckLines.push(p[0], p[1], p[2]);
     if(kind===2) permanentWay(S,pts);
   }
   // spans the pipeline dropped (the M4 over the River Loddon), drawn in the tile holding their middle
@@ -308,8 +681,78 @@ function build(header, A, lod) {
     const m = Math.floor(n / 2), mx = P[(st + m) * 3] - ox, mz = P[(st + m) * 3 + 2] - oz;
     if (mx < 0 || mx >= TILE || mz < 0 || mz >= TILE) continue;
     const pts = []; for (let q = 0; q < n; q++) pts.push([P[(st + q) * 3] - ox, P[(st + q) * 3 + 1], P[(st + q) * 3 + 2] - oz]);
-    ribbonDeck(G, S, pts, NET.width[e], 0, hAt);
+    ribbonDeck(G, S, pts, NET.width[e], 0, hAt, true, 3, site);
+    deckLines.push(n, 0, NET.width[e]); for (const p of pts) deckLines.push(p[0], p[1], p[2]);
   }
+  // approach slabs: the deck carried on along roads leaving a bridge while they stand above the ground
+  // (roadProfile.js net.slabRange); drawn by the tile holding their middle, without parapets
+  for (let [e, lo, hi] of NET ? NET.slabs : []) {
+    const st = NET.pstart[e], n = NET.pcount[e], P = NET.pts, cum = NET.cum, at = sv => {
+      let i = 1; while (i < n - 1 && cum[st + i] < sv) i++;
+      const a = st + i - 1, b = st + i, t = Math.max(0, Math.min(1, (sv - cum[a]) / ((cum[b] - cum[a]) || 1)));
+      return [P[a * 3] + (P[b * 3] - P[a * 3]) * t - ox, P[a * 3 + 1] + (P[b * 3 + 1] - P[a * 3 + 1]) * t, P[a * 3 + 2] + (P[b * 3 + 2] - P[a * 3 + 2]) * t - oz];
+    };
+    hi = Math.min(hi, cum[st + n - 1]);
+    const m = at((lo + hi) / 2); if (m[0] < 0 || m[0] >= TILE || m[2] < 0 || m[2] >= TILE) continue;
+    const pts = [at(lo)]; for (let q = 0; q < n; q++) { const sv = cum[st + q]; if (sv > lo + 0.3 && sv < hi - 0.3) pts.push(at(sv)); } pts.push(at(hi));
+    ribbonDeck(G, S, pts, NET.width[e], 0, hAt, false, 3, site);
+  }
+  // a road standing clear of the ground drawn under it (a raised road the ground couldn't be built up under,
+  // a slip road climbing beside a cutting the terrain grid can't hold) rides on a deck instead of hanging over
+  // the ground. Each tile decks the part of a road inside it and tells the main thread which segments ride on
+  // a deck (tiles.js); markings on a decked piece follow the deck (deckOf)
+  const deckOf = new Map(), deckSegs = [];
+  const addPiece = (e, a, b, hw) => { let l = deckOf.get(e); if (!l) deckOf.set(e, l = []); l.push([a[0], a[1], a[2], b[0], b[1], b[2], hw]); };
+  for (let [e, lo, hi] of NET ? NET.slabs : []) {   // approach slabs and links between spans (drawn above)
+    const st = NET.pstart[e], n = NET.pcount[e], P = NET.pts, cum = NET.cum;
+    for (let q = 0; q + 1 < n; q++) {
+      const c0 = cum[st + q], c1 = cum[st + q + 1]; if (c1 < lo || c0 > hi || c1 - c0 < 1e-3) continue;
+      const at = sv => { const t = Math.max(0, Math.min(1, (sv - c0) / (c1 - c0))), i = (st + q) * 3; return [P[i] + (P[i + 3] - P[i]) * t - ox, P[i + 1] + (P[i + 4] - P[i + 1]) * t, P[i + 2] + (P[i + 5] - P[i + 2]) * t - oz]; };
+      const a = at(Math.max(lo, c0)), b = at(Math.min(hi, c1));
+      if (Math.max(a[0], b[0]) < -10 || Math.min(a[0], b[0]) > TILE + 10 || Math.max(a[2], b[2]) < -10 || Math.min(a[2], b[2]) > TILE + 10) continue;
+      addPiece(e, a, b, NET.width[e] / 2);
+    }
+  }
+  if (NET && NET.cut) {
+    const C = NET.cut.seg, ids = new Set(), runs = new Map();
+    for (let cx = Math.floor(ox / CUT_CELL); cx <= Math.floor((ox + TILE) / CUT_CELL); cx++)
+      for (let cz = Math.floor(oz / CUT_CELL); cz <= Math.floor((oz + TILE) / CUT_CELL); cz++) for (const id of NET.cut.grid.get(cx * 65536 + cz) || []) ids.add(id);
+    for (const id of ids) {
+      const o = id * CUT_REC, e = C[o + 7], j = C[o + 8], hw = C[o + 6];
+      const sl = NET.slabOf.get(e); if (sl && sl.some(([lo, hi]) => NET.cum[j + 1] >= lo && NET.cum[j] <= hi)) continue;
+      // the part of the segment inside this tile
+      const ax = C[o] - ox, ay = C[o + 1], az = C[o + 2] - oz, vx = C[o + 3] - ox - ax, vy = C[o + 4] - ay, vz = C[o + 5] - oz - az;
+      let t0 = 0, t1 = 1;
+      for (const [p0, d] of [[ax, vx], [az, vz]]) {
+        if (Math.abs(d) < 1e-9) { if (p0 < 0 || p0 >= TILE) t1 = -1; continue; }
+        const ta = (0 - p0) / d, tb = (TILE - p0) / d;
+        t0 = Math.max(t0, Math.min(ta, tb)); t1 = Math.min(t1, Math.max(ta, tb));
+      }
+      if (t1 - t0 < 1e-4) continue;
+      let sag = 0;
+      for (let q = 0; q <= 4; q++) { const t = t0 + (t1 - t0) * q / 4; sag = Math.max(sag, ay + vy * t - (hAt(Math.min(TILE - 1e-3, ax + vx * t), Math.min(TILE - 1e-3, az + vz * t)) + 0.05)); }
+      if (sag <= 0.35) continue;
+      const at = t => [ax + vx * t, ay + vy * t, az + vz * t];
+      if (!runs.has(e)) runs.set(e, []);
+      runs.get(e).push({ j, t0, t1, a: at(t0), b: at(t1), hw });
+    }
+    for (const [e, list] of runs) {
+      // consecutive pieces of a road make one deck; where a piece stops at the tile edge the deck goes on in
+      // the neighbour, so no end wall there
+      list.sort((p, q) => p.j - q.j);
+      let cur = null;
+      const flush = () => { if (cur) ribbonDeck(G, S, cur.pts, cur.hw * 2, 0, hAt, false, (cur.c0 ? 0 : 1) | (cur.c1 ? 0 : 2), site); cur = null; };
+      for (const p of list) {
+        if (cur && p.j === cur.j + 1 && cur.t1 === 1 && p.t0 === 0) { cur.pts.push(p.b); cur.j = p.j; cur.t1 = p.t1; cur.c1 = p.t1 < 1; }
+        else { flush(); cur = { pts: [p.a, p.b], hw: p.hw, c0: p.t0 > 0, c1: p.t1 < 1, j: p.j, t1: p.t1 }; }
+        deckSegs.push(p.j); addPiece(e, p.a, p.b, p.hw);
+      }
+      flush();
+    }
+  }
+  out.decks = new Int32Array(deckSegs);
+  out.deckLines = new Float32Array(deckLines);
+  out.piers = new Float32Array(site.piers);
   buildBarriers(S, header.ix, header.iz, ox, oz);
   // ---------------- rails
   {
@@ -389,6 +832,7 @@ function build(header, A, lod) {
       const sb = gs > l / 2 ? 0.45 : l - 1.35, ang = Math.atan2(uz, ux);
       for (let k = 0; k < (seed % 3 ? 2 : 1); k++) {
         const [bx, bz] = P(sb + k * 0.68, 0.55), y = hAt(bx, bz), v0 = vtx();
+        if (blocked(bx, bz, 0.45)) continue;   // a garden drawn over the carriageway: no bin in the road
         wheelieBin(S, bx, y, bz, ang, k ? [11, 12][seed % 2] : (seed % 4 ? 10 : 17));
         if (!lod) brkRec(2, v0, bx, bz, ang, 0, 0.36, 1.1);
       }
@@ -433,7 +877,7 @@ function build(header, A, lod) {
         const side = hh & 1 ? 1 : -1, off = side * (w / 2 + 0.9), sp = 32, s0 = 4 + (hh % 14);
         let prev = null;
         for (let sv = s0; sv < cum - 4; sv += sp) {
-          const [x, z] = at(sv, off); if (!inTile(x, z)) { prev = null; continue; }
+          const [x, z] = at(sv, off); if (!inTile(x, z) || blocked(x, z, 0.6)) { prev = null; continue; }
           const y = hAt(x, z), top = y + 8.4, p0 = vtx();
           box(S, x, y, z, 0, 0.13, 4.2, 0.13, 15);
           const [, , ang] = at(sv, off);
@@ -458,12 +902,12 @@ function build(header, A, lod) {
           brk[rec * BR + 9] = w0; brk[rec * BR + 10] = vtx() - w0;                 // drop wires + span back
           prev = [x, top, ang, z, rec];
         }
-        if (hh % 23 === 0) { const [x, z, ang] = at(Math.min(8, cum / 2), -side * (w / 2 + 0.7)); if (inTile(x, z)) { const v0 = vtx(); pillarBox(S, x, hAt(x, z), z, ang); brkRec(5, v0, x, z, ang, 0, 0.27, 1.56); } }
+        if (hh % 23 === 0) { const [x, z, ang] = at(Math.min(8, cum / 2), -side * (w / 2 + 0.7)); if (inTile(x, z) && !blocked(x, z, 0.5)) { const v0 = vtx(); pillarBox(S, x, hAt(x, z), z, ang); brkRec(5, v0, x, z, ang, 0, 0.27, 1.56); } }
       }
       if (header.core && /^(primary|secondary|tertiary)$/.test(cn)) {
         // high-street furniture on the pavement edge: litter bins, the odd bench
         for (let sv = 10 + (hh % 25); sv < cum - 6; sv += 42) {
-          const sd = (Math.round(sv) & 1) ? 1 : -1, [x, z, ang] = at(sv, sd * (w / 2 + 0.55)); if (!inTile(x, z)) continue;
+          const sd = (Math.round(sv) & 1) ? 1 : -1, [x, z, ang] = at(sv, sd * (w / 2 + 0.55)); if (!inTile(x, z) || blocked(x, z, 0.9)) continue;
           const y = hAt(x, z) + 0.15, v0 = vtx();
           if ((h32i(e * 17 + Math.round(sv)) % 5) === 0) { bench(S, x, y, z, ang + (sd > 0 ? 0 : Math.PI)); brkRec(4, v0, x - Math.cos(ang) * 0.9, z - Math.sin(ang) * 0.9, x + Math.cos(ang) * 0.9, z + Math.sin(ang) * 0.9, 0.5, 0.75); }
           else { litterBin(S, x, y, z); brkRec(3, v0, x, z, 0.3, 0, 0.29, 1.05); }
@@ -471,7 +915,7 @@ function build(header, A, lod) {
       }
       if (/^(pedestrian|footway)$/.test(cn) && (header.core || /pedestrian/.test(cn))) {
         for (let sv = 8 + (hh % 20); sv < cum - 3; sv += 32) {
-          const [x, z, ang] = at(sv, (hh & 2 ? 1 : -1) * (w / 2 + 0.5)); if (!inTile(x, z)) continue;
+          const [x, z, ang] = at(sv, (hh & 2 ? 1 : -1) * (w / 2 + 0.5)); if (!inTile(x, z) || blocked(x, z, 0.9)) continue;
           const y = hAt(x, z) + 0.1, v0 = vtx();
           if ((h32i(e * 31 + Math.round(sv)) & 3) === 0) { bench(S, x, y, z, ang); brkRec(4, v0, x - Math.cos(ang) * 0.9, z - Math.sin(ang) * 0.9, x + Math.cos(ang) * 0.9, z + Math.sin(ang) * 0.9, 0.5, 0.75); }
           else { litterBin(S, x, y, z); brkRec(3, v0, x, z, 0.3, 0, 0.29, 1.05); }
@@ -499,11 +943,15 @@ function build(header, A, lod) {
   out.ground = G.pack();
   out.struct = S.pack();
   out.brk = new Float32Array(brk);
-  out.markings = buildMarkings(addedHere.length ? { ...header, edges: [...header.edges, ...addedHere] } : header, ox, oz, hAt);
+  out.markings = buildMarkings(addedHere.length ? { ...header, edges: [...header.edges, ...addedHere] } : header, ox, oz, hAt, deckOf);
 
   // ---------------- instances: trees, lamps, slots
-  const tr = A.tr, trees = new Float32Array(tr.length);
-  for (let k = 0; k < tr.length; k += 4) { trees[k] = tr[k]; trees[k + 1] = hAt(tr[k], tr[k + 1]); trees[k + 2] = tr[k + 1]; trees[k + 3] = tr[k + 2] + (tr[k + 3] || 0) * 10; }
+  const tr = A.tr, trL = [];
+  for (let k = 0; k < tr.length; k += 4) {
+    if (!lod && blocked(tr[k], tr[k + 1], 0.9)) continue;     // never a trunk in the road (or on the line)
+    trL.push(tr[k], hAt(tr[k], tr[k + 1]), tr[k + 1], tr[k + 2] + (tr[k + 3] || 0) * 10);
+  }
+  const trees = new Float32Array(trL);
   out.trees = trees;
   // ---------------- planting (inferred): leafy hedges, shrubs and extra trees in open green space
   if (!lod) {
@@ -511,8 +959,20 @@ function build(header, A, lod) {
     out.bushes = P.bushes;
     if (P.trees.length) { const t2 = new Float32Array(trees.length + P.trees.length); t2.set(trees); t2.set(P.trees, trees.length); out.trees = t2; }
   }
-  const lp = A.lp, lamps = new Float32Array(lp.length);
-  for (let k = 0; k < lp.length; k += 4) { lamps[k] = lp[k]; lamps[k + 1] = hAt(lp[k], lp[k + 1]) + 0.17; lamps[k + 2] = lp[k + 1]; lamps[k + 3] = lp[k + 2]; }
+  // street lamps: one standing in a carriageway (an OSM position a little off, or an inferred one at a junction
+  // mouth or on the far carriageway) is moved just behind the nearest kerb, or dropped if there's no room there
+  const lp = A.lp, lampL = [];
+  for (let k = 0; k < lp.length; k += 4) {
+    let x = lp[k], z = lp[k + 1], a = lp[k + 2];
+    if (!lod && inRoad(x, z, 0.35)) {
+      const q = inRoad.outside(x, z, 0.75);
+      if (!q || inRoad(q[0], q[1], 0.35) || lcAt(q[0], q[1]) === 3 || lcAt(q[0], q[1]) === 9) continue;
+      a = Math.atan2(z - q[1], x - q[0]);          // the arm still reaches out over the road
+      x = q[0]; z = q[1];
+    }
+    lampL.push(x, hAt(x, z) + 0.17, z, a);
+  }
+  const lamps = new Float32Array(lampL);
   out.lamps = lamps;
   const pk = A.pk, slots = new Float32Array(pk.length);
   for (let k = 0; k < pk.length; k += 4) { slots[k] = pk[k]; slots[k + 1] = hAt(pk[k], pk[k + 1]) + 0.05; slots[k + 2] = pk[k + 1]; slots[k + 3] = pk[k + 2]; }
@@ -678,7 +1138,7 @@ function permanentWay(buf,pts){
     }
   }
 }
-function ribbonDeck(G, S, pts, w, kind, hAt) {
+function ribbonDeck(G, S, pts, w, kind, hAt, parapets = true, ends = 3, site = null) {
   // deck surface (ground mesh, surf 5 road / 6 foot / 7 rail deck) + sides, parapets, piers (struct)
   const surfId = kind === 0 ? 5 : kind === 1 ? 6 : 7;
   const hw = w / 2;
@@ -694,6 +1154,7 @@ function ribbonDeck(G, S, pts, w, kind, hAt) {
       // side face down 1.1 m
       quad(S, [x0 + ex, y0 - 1.2, z0 + ez], [x1 + ex, y1 - 1.2, z1 + ez], [x1 + ex, y0 === y0 ? y1 : y1, z1 + ez], [x0 + ex, y0, z0 + ez], [nx * s, 0, nz * s], null, [0]);
       // parapet 1.1 m high, 0.3 thick
+      if (!parapets) continue;
       const ix = nx * (e - 0.3) * s, iz = nz * (e - 0.3) * s;
       quad(S, [x0 + ex, y0, z0 + ez], [x1 + ex, y1, z1 + ez], [x1 + ex, y1 + 1.1, z1 + ez], [x0 + ex, y0 + 1.1, z0 + ez], [nx * s, 0, nz * s], null, [0]);
       quad(S, [x0 + ix, y0, z0 + iz], [x1 + ix, y1, z1 + iz], [x1 + ix, y1 + 1.1, z1 + iz], [x0 + ix, y0 + 1.1, z0 + iz], [-nx * s, 0, -nz * s], null, [0]);
@@ -704,40 +1165,62 @@ function ribbonDeck(G, S, pts, w, kind, hAt) {
   }
   // abutments: a concrete wall across each end of a deck that stands clear of the ground, facing the span
   // (the embankment behind it stops at the bridge end)
-  for (const [i, j] of [[0, 1], [pts.length - 1, pts.length - 2]]) {
-    if (j < 0 || j >= pts.length) continue;
+  for (const [i, j, bit] of [[0, 1, 1], [pts.length - 1, pts.length - 2, 2]]) {
+    if (j < 0 || j >= pts.length || !(ends & bit)) continue;
     const [x0, y0, z0] = pts[i], [x1, , z1] = pts[j];
     const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.05) continue;
     const ux = dx / l, uz = dz / l, nx = -uz, nz = ux, e = hw + 0.4;
     const inner = hAt(x0 + ux * Math.min(3, l), z0 + uz * Math.min(3, l));
     if (y0 - inner < 1.5) continue;
+    if (site && !site.wallOk(x0 + nx * e, z0 + nz * e, x0 - nx * e, z0 - nz * e)) continue;   // never across a road or the railway
     const g = Math.min(inner, hAt(x0 + nx * e, z0 + nz * e), hAt(x0 - nx * e, z0 - nz * e)) - 0.6;
     const a = [x0 + nx * e, y0 - 1.2, z0 + nz * e], b = [x0 - nx * e, y0 - 1.2, z0 - nz * e];
     quad(S, [a[0], g, a[2]], [b[0], g, b[2]], b, a, [ux, 0, uz], null, [0]);
     quad(S, b, a, [a[0], g, a[2]], [b[0], g, b[2]], [-ux, 0, -uz], null, [0]);
   }
-  // piers every ~22 m where the deck is well above ground
-  let acc = 11;
-  for (let i = 0; i < pts.length - 1; i++) {
-    const [x0, y0, z0] = pts[i], [x1, y1, z1] = pts[i + 1];
-    const l = Math.hypot(x1 - x0, z1 - z0);
-    while (acc < l) {
-      const t = acc / l, x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t, y = y0 + (y1 - y0) * t;
-      const g = hAt(x, z);
-      if (y - g > 3) {
-        const dx = (x1 - x0) / l, dz = (z1 - z0) / l, nx = -dz, nz = dx;
-        for (const s of (w > 8 ? [-hw * 0.6, hw * 0.6] : [0])) {
-          const cx = x + nx * s, cz = z + nz * s, r = 0.55;
-          const P = [[cx - r, cz - r], [cx + r, cz - r], [cx + r, cz + r], [cx - r, cz + r]];
-          for (let q = 0; q < 4; q++) {
-            const [ax, az] = P[q], [bx, bz] = P[(q + 1) % 4];
-            quad(S, [ax, g - 0.5, az], [bx, g - 0.5, bz], [bx, y - 1.2, bz], [ax, y - 1.2, az], [(ax + bx) / 2 - cx, 0, (az + bz) / 2 - cz], null, [0]);
-          }
-        }
-      }
-      acc += 22;
+  piers(S, pts, w, hAt, site);
+}
+// Piers where a deck stands well above the ground: one in the central reservation of each dual carriageway it
+// passes over, and every ~22 m elsewhere, always clear of the carriageways, railway lines, paths and water
+// beneath (site.under: what passes under a line; site.ok: the land cover at a spot)
+function piers(S, pts, w, hAt, site) {
+  const hw = w / 2;
+  for (const o of (w > 8 ? [-hw * 0.6, hw * 0.6] : [0])) {
+    // this column's line under the deck
+    const line = pts.map((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dz = b[2] - a[2], l = Math.hypot(dx, dz) || 1;
+      return [p[0] - dz / l * o, p[1], p[2] + dx / l * o];
+    });
+    const cum = [0]; for (let i = 1; i < line.length; i++) cum.push(cum[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][2] - line[i - 1][2]));
+    const total = cum[cum.length - 1];
+    const at = sv => {
+      let i = 0; while (i < line.length - 2 && cum[i + 1] < sv) i++;
+      const t = Math.max(0, Math.min(1, (sv - cum[i]) / ((cum[i + 1] - cum[i]) || 1))), a = line[i], b = line[i + 1];
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    };
+    const obs = site ? site.under(line, cum) : [];   // [s, half width along the line, kind (1 road, 2 railway), road dx, dz]
+    const spots = [];
+    for (let k = 0; k + 1 < obs.length; k++) {   // between two carriageways side by side
+      const A = obs[k], B = obs[k + 1]; if (A[2] !== 1 || B[2] !== 1) continue;
+      const gap = (B[0] - B[1]) - (A[0] + A[1]); if (gap < 0.4 || gap > 14) continue;
+      // a column standing along the reservation, as wide as it allows
+      const sin = A[5], across = Math.min(0.55, (gap * sin) / 2 - 0.05), sv = (A[0] + A[1] + B[0] - B[1]) / 2;
+      if (across >= 0.25 && !obs.some(([c, h, kind]) => kind === 2 && Math.abs(sv - c) < h + 1)) spots.push({ s: sv, ux: A[3], uz: A[4], across, along: 0.9 });
     }
-    acc -= l;
+    for (let sv = 11; sv < total - 2; sv += 22)
+      if (!obs.some(([c, h, kind]) => Math.abs(sv - c) < h + (kind === 2 ? 1.5 : 1.2) + 0.8)) spots.push({ s: sv, ux: 1, uz: 0, across: 0.55, along: 0.55, free: true });
+    for (const sp of spots) {
+      const [x, y, z] = at(sp.s), g = hAt(x, z);
+      if (y - g <= 3) continue;
+      if (site && ((sp.free && !site.ok(x, z)) || !site.clear(x, z, y - 1.2, !!sp.free))) continue;
+      const ux = sp.ux, uz = sp.uz, vx = -uz, vz = ux;
+      if (site && site.piers) site.piers.push(x, z, ux, uz, sp.along, sp.across, g - 0.5, y - 1.2);
+      const P = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [x + ux * a * sp.along + vx * b * sp.across, z + uz * a * sp.along + vz * b * sp.across]);
+      for (let q = 0; q < 4; q++) {
+        const [ax, az] = P[q], [bx, bz] = P[(q + 1) % 4];
+        quad(S, [ax, g - 0.5, az], [bx, g - 0.5, bz], [bx, y - 1.2, bz], [ax, y - 1.2, az], [(ax + bx) / 2 - x, 0, (az + bz) / 2 - z], null, [0]);
+      }
+    }
   }
 }
 
@@ -1166,7 +1649,7 @@ function addFrontage(B, F, base, low, wallH, floorH, ex, seed) {
 }
 
 // ------------------------------------------------------------------ road markings
-function buildMarkings(header, ox, oz, hAt) {
+function buildMarkings(header, ox, oz, hAt0, deckOf = new Map()) {
   const B = new Buf(1);
   if (!NET) return B.pack();
   const P = NET.pts, cum = NET.cum;
@@ -1178,6 +1661,17 @@ function buildMarkings(header, ox, oz, hAt) {
     const f = NET.flags[e];
     if (f & 8) continue;
     const bridge = !!(f & 4);
+    // where a deck carries a piece of this road (approach slab, sagging ground) its markings lie on the deck
+    const dk = deckOf.get(e);
+    const hAt = !dk ? hAt0 : (x, z) => {
+      for (const [ax, ay, az, bx, by, bz, hw] of dk) {
+        const vx = bx - ax, vz = bz - az, L2 = vx * vx + vz * vz || 1e-6, t = ((x - ax) * vx + (z - az) * vz) / L2;
+        if (t < -0.02 || t > 1.02) continue;
+        const tc = Math.max(0, Math.min(1, t));
+        if (Math.hypot(ax + vx * tc - x, az + vz * tc - z) <= hw + 0.45) return ay + (by - ay) * tc - 0.04;
+      }
+      return hAt0(x, z);
+    };
     const st = NET.pstart[e], n = NET.pcount[e];
     const L = cum[st + n - 1];
     const pts = []; for (let i = 0; i < n; i++) pts.push([P[(st + i) * 3] - ox, P[(st + i) * 3 + 1], P[(st + i) * 3 + 2] - oz, cum[st + i]]);
@@ -1221,7 +1715,11 @@ function buildMarkings(header, ox, oz, hAt) {
       // motorway (TSRGD 1012.1 / 1005): edge line between the hard shoulder and lane 1, offside edge line
       // beside the hard strip, 2 m lane lines with 7 m gaps; nothing on the hard shoulder itself
       const lwm = (w - hs - hst) / Math.max(1, lf);
-      line(w / 2 - hs, 0.2, s0, s1, 1e4, 0, 0);
+      // the nearside edge line breaks (1.5 m marks) for 150 m where a slip road joins or leaves
+      const zA = NET.linkNode.has(NET.ea[e]) ? Math.min(s1, s0 + 150) : s0, zB = NET.linkNode.has(NET.eb[e]) ? Math.max(zA, s1 - 150) : s1;
+      if (zA > s0) line(w / 2 - hs, 0.2, s0, zA, 1.5, 1.5, 0);
+      if (zB > zA) line(w / 2 - hs, 0.2, zA, zB, 1e4, 0, 0);
+      if (s1 > zB) line(w / 2 - hs, 0.2, zB, s1, 1.5, 1.5, 0);
       line(-(w / 2 - hst), 0.2, s0, s1, 1e4, 0, 0);
       for (let k = 1; k < lf; k++) line(w / 2 - hs - k * lwm, 0.15, s0, s1, 2, 7, 0);
       studs(w / 2 - hs - 0.3, 4); studs(-(w / 2 - hst) + 0.3, 5);
@@ -1242,7 +1740,14 @@ function buildMarkings(header, ox, oz, hAt) {
       const [ld, lg] = fast ? [2, 7] : [1, 5];
       for (let k = 1; k < lf; k++) line(w / 2 - k * lw, 0.1, s0, s1, ld, lg, 0);
       for (let k = 1; k < lb; k++) line(-(w / 2 - k * lw), 0.1, s0, s1, ld, lg, 0);
-      if (/motorway|trunk|primary/.test(name)) { line(w / 2 - 0.25, 0.15, s0, s1, 1e4, 0, 0); line(-(w / 2 - 0.25), 0.15, s0, s1, 1e4, 0, 0); }
+      if (/motorway|trunk|primary/.test(name)) {
+        line(w / 2 - 0.25, 0.15, s0, s1, 1e4, 0, 0);
+        // a slip road's offside edge, where it runs alongside the motorway lane it leaves or joins: broken
+        const lA = name === 'motorway_link' && NET.linkNode.has(NET.ea[e]) ? Math.min(s1, s0 + 80) : s0, lB = name === 'motorway_link' && NET.linkNode.has(NET.eb[e]) ? Math.max(lA, s1 - 80) : s1;
+        if (lA > s0) line(-(w / 2 - 0.25), 0.15, s0, lA, 1.5, 1.5, 0);
+        if (lB > lA) line(-(w / 2 - 0.25), 0.15, lA, lB, 1e4, 0, 0);
+        if (s1 > lB) line(-(w / 2 - 0.25), 0.15, lB, s1, 1.5, 1.5, 0);
+      }
       // dual carriageways and slip roads at speed: red studs on the nearside edge, amber offside, white between lanes
       if (oneway && fast && /motorway|trunk/.test(name)) { studs(w / 2 - 0.45, 4); studs(-(w / 2 - 0.45), 5); for (let k = 1; k < lf; k++) studs(w / 2 - k * lw, 6, 4.5); }
       if (header.core && /primary|secondary|tertiary/.test(name)) { for (const s of [1, -1]) { line(s * (w / 2 - 0.25), 0.08, s0, s1, 1e4, 0, 1); line(s * (w / 2 - 0.42), 0.08, s0, s1, 1e4, 0, 1); } }
@@ -1440,4 +1945,74 @@ function buildWater(A, hAt) {
   }
   if (!idx.length) return null;
   return { position: new Float32Array(pos), depth: new Float32Array(dep), index: new Uint32Array(idx) };
+}
+
+// Exact point-in-carriageway test from the tile's road polygons (pipeline: roadC/roadR/roadP, grid-clipped to 32 m
+// cells, so a point only needs the polygons of its own cell and the neighbours). inRoad(x, z, margin) is true
+// inside a carriageway or within `margin` of one; inRoad.outside(x, z, gap) gives the nearest point `gap` metres
+// beyond the kerb.
+function roadIndex(A) {
+  const C = A.roadC, R = A.roadR, P = A.roadP, cells = new Map(), rings = [];
+  if (C && P) {
+    let ci = 0, ri = 0;
+    for (let pi = 0; pi < P.length; pi++) {
+      const poly = [];
+      let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+      for (let k = 0; k < P[pi]; k++) {
+        const n = R[ri++], ring = new Float32Array(n * 2);
+        for (let q = 0; q < n; q++) { const x = C[(ci + q) * 2] / 10, z = C[(ci + q) * 2 + 1] / 10; ring[q * 2] = x; ring[q * 2 + 1] = z; if (!k) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } }
+        ci += n; poly.push(ring);
+      }
+      const id = rings.length; rings.push(poly);
+      for (let cx = Math.floor(x0 / 32); cx <= Math.floor(x1 / 32); cx++) for (let cz = Math.floor(z0 / 32); cz <= Math.floor(z1 / 32); cz++) {
+        const key = cx * 64 + cz; let l = cells.get(key); if (!l) cells.set(key, l = []); l.push(id);
+      }
+    }
+  }
+  const near = (x, z, m) => {
+    const out = new Set();
+    for (let cx = Math.floor((x - m) / 32); cx <= Math.floor((x + m) / 32); cx++) for (let cz = Math.floor((z - m) / 32); cz <= Math.floor((z + m) / 32); cz++) for (const id of cells.get(cx * 64 + cz) || []) out.add(id);
+    return out;
+  };
+  const inside = (poly, x, z) => {
+    let c = false;
+    for (const ring of poly) for (let i = 0, j = ring.length / 2 - 1; i < ring.length / 2; j = i++) {
+      const xi = ring[i * 2], zi = ring[i * 2 + 1], xj = ring[j * 2], zj = ring[j * 2 + 1];
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  // nearest point on a polygon's boundary, ignoring edges along the 32 m clipping grid (they are not kerbs)
+  const nearestEdge = (poly, x, z) => {
+    let best = null;
+    for (const ring of poly) for (let i = 0, j = ring.length / 2 - 1; i < ring.length / 2; j = i++) {
+      const ax = ring[j * 2], az = ring[j * 2 + 1], bx = ring[i * 2], bz = ring[i * 2 + 1];
+      if ((Math.abs(ax - bx) < 1e-3 && Math.abs(ax / 32 - Math.round(ax / 32)) < 1e-4) || (Math.abs(az - bz) < 1e-3 && Math.abs(az / 32 - Math.round(az / 32)) < 1e-4)) continue;
+      const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1;
+      let t = ((x - ax) * ex + (z - az) * ez) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = ax + ex * t, pz = az + ez * t, d = Math.hypot(x - px, z - pz);
+      if (!best || d < best[2]) best = [px, pz, d];
+    }
+    return best;
+  };
+  const f = (x, z, m = 0) => {
+    for (const id of near(x, z, m)) {
+      const poly = rings[id];
+      if (inside(poly, x, z)) return true;
+      if (m > 0) { const e = nearestEdge(poly, x, z); if (e && e[2] < m) return true; }
+    }
+    return false;
+  };
+  f.outside = (x, z, gap) => {
+    let best = null;
+    for (const id of near(x, z, 12)) {
+      const poly = rings[id]; if (!inside(poly, x, z)) continue;
+      const e = nearestEdge(poly, x, z); if (!e) continue;
+      const d = e[2] || 1e-3, ux = (e[0] - x) / d, uz = (e[1] - z) / d;
+      const q = [e[0] + ux * gap, e[1] + uz * gap];
+      if (!best || e[2] < best[2]) best = [q[0], q[1], e[2]];
+    }
+    return best && [best[0], best[1]];
+  };
+  return f;
 }

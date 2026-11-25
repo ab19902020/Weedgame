@@ -49,7 +49,9 @@ export class Landmarks {
       return Math.atan2(road.dz,road.dx)+(road.side<0 ? Math.PI : 0);
     });
     // the flag stands at the kerb (roadDetail.js); a shelter sits a metre further back, behind the flag
-    G.net.busStops.forEach(([x,z,,shelter],i)=>{if (!shelter) return; const h=this.stopHeadings[i], sx=x+Math.sin(h)*0.95-Math.cos(h)*2.8, sz=z-Math.cos(h)*0.95-Math.sin(h)*2.8;
+    // (or where tools/roads/stops.mjs fitted it clear of roads and buildings: net.shelterPoses)
+    G.net.busStops.forEach(([x,z,,shelter],i)=>{if (!shelter) return; const fit=G.net.shelterPoses?.[i], h=fit?fit[2]:this.stopHeadings[i];
+      const sx=fit?fit[0]:x+Math.sin(h)*0.95-Math.cos(h)*2.8, sz=fit?fit[1]:z-Math.cos(h)*0.95-Math.sin(h)*2.8;
       G.canopies.push({ x: sx, z: sz, h, l: 3.2, w: 1.4, hh: 2.4, kind: 2, y: null, built: false, bus: true });});
     this.stopSigns=new Map();this.nextSigns=0;
     this.group = new THREE.Group(); G.scene.add(this.group);

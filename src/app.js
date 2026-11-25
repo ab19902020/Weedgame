@@ -24,6 +24,7 @@ import { Audio } from './audio.js';
 import { Save } from './save.js';
 import { Perf } from './perf.js';
 import { Trains } from './trains.js';
+import { Stations } from './stations.js';
 
 class Events { constructor() { this.h = {}; } on(n, f) { (this.h[n] ||= []).push(f); } emit(n, e) { for (const f of this.h[n] || []) f(e); } }
 
@@ -77,6 +78,7 @@ G.buses = new Buses(G);
 G.transit = new Transit(G);
 G.traffic.busStop = v => G.buses.stopFor(v);
 G.trains = new Trains(G);
+G.stations = new Stations(G);   // platforms at every station of the lines passengers ride (stations.js)
 G.landmarks = new Landmarks(G);
 G.atmos = new Atmos(G);
 G.shelteredAt = (x, y, z) => G.atmos.sheltered(x, y, z);

@@ -106,9 +106,10 @@ export class PassengerCabin extends T.Group {
     this.openAmount=0;
     this.seatMatrix=new T.Matrix4();this.heads.frustumCulled=this.bodies.frustumCulled=false;
   }
-  doorState(open,dt){
+  // side: which side's doors a train opens (+1 the cabin's +z side, -1 its -z side: the platform side)
+  doorState(open,dt,side=1){
     this.openAmount=T.MathUtils.damp(this.openAmount,open?1:0,5,dt);
-    for(const {leaf,x,sign} of this.leaves)leaf.position.x=x+sign*.55*(this.typeName==='rail' && leaf.position.z<0?0:this.openAmount);
+    for(const {leaf,x,sign} of this.leaves)leaf.position.x=x+sign*.55*(this.typeName==='rail' && leaf.position.z*side<0?0:this.openAmount);
   }
   passengers(people){
     const n=Math.min(24,this.layout.seats.length,people.length);

@@ -144,7 +144,13 @@ export class Network {
     const P = this.pts;
     for (let k = 0; k < l.length; k += 2) {
       const e = l[k], i = l[k + 1];
-      if (!(this.flags[e] & F_BRIDGE)) continue;
+      if (!(this.flags[e] & F_BRIDGE)) {
+        // roads raised to meet a bridge (roadProfile.js) ride on their own surface, whether an embankment
+        // or an approach slab carries them, and so do an approach slab and a deck over sagging ground (tiles.js)
+        const j = this.pstart[e] + i, raised = (this.rise && (this.rise[j] > 0.06 || this.rise[j + 1] > 0.06)) || (this.connector && this.connector[e]) || (this.sagDeck && this.sagDeck.has(j));
+        const rs = this.slabRange?.get(e);
+        if (!raised && !(rs && rs.some(r => this.cum[j + 1] >= r[0] && this.cum[j] <= r[1]))) continue;
+      }
       const a = (this.pstart[e] + i) * 3, b = a + 3;
       const ax = P[a], az = P[a + 2], vx = P[b] - ax, vz = P[b + 2] - az, L2 = vx * vx + vz * vz || 1;
       let t = ((x - ax) * vx + (z - az) * vz) / L2; if (t < -0.05 || t > 1.05) continue; t = Math.max(0, Math.min(1, t));

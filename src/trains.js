@@ -7,12 +7,15 @@
 import * as THREE from 'three/webgpu';
 import { mergeGeos } from './tiles.js';
 
-const CAR_L = 20, CAR_GAP = 0.9, CAR_W = 2.8, CAR_H = 3.7, ACC = 0.6, DEC = 0.75, DWELL = 40, TURN = 240, DT = 0.5;
+// cars are 18 m long, as the passenger car (passengerCabin.js) the riders sit in
+export const CAR_L = 18, CAR_GAP = 0.9, PITCH = CAR_L + CAR_GAP;
+const CAR_W = 2.8, CAR_H = 3.7, ACC = 0.6, DEC = 0.75, DWELL = 40, TURN = 240, DT = 0.5;
 
 export class Trains {
   constructor(G) {
-    this.G = G; this.lines = []; this.trains = []; this.t = 0; this.ready = false; this.drawn = 0;
-    if (G) this.load().catch(e => console.warn('trains: no rail data', e.message));
+    this.G = G; this.lines = []; this.trains = []; this.t = 0; this.ready = false; this.drawn = 0; this.hide = new Set();
+    if (G?.rail) { this.setup(G.rail); this.build(); this.ready = true; }   // rail.json, already fetched at boot (main.js)
+    else if (G) this.load().catch(e => console.warn('trains: no rail data', e.message));
   }
   async load() {
     const r = await fetch('world/rail.json'); if (!r.ok) return;
@@ -23,10 +26,19 @@ export class Trains {
     for (const L of data.lines || []) {
       const n = L.p.length / 3, P = new Float32Array(L.p), S = new Float32Array(n);
       for (let i = 1; i < n; i++) S[i] = S[i - 1] + Math.hypot(P[i * 3] - P[i * 3 - 3], P[i * 3 + 2] - P[i * 3 - 1]);
-      const len = S[n - 1], stops = L.stops.filter(s => s.name).map(s => s.s);
-      const line = { name: L.name, P, S, n, len, stops, cars: L.cars || 4, vmax: L.vmax || 30, color: L.color ?? 0x334488, headway: L.headway || 900 };
-      // run profile for one direction (forward); the return trip mirrors it
-      line.fwd = this.profile(line, stops); line.bwd = this.profile(line, stops.map(s => len - s).reverse());
+      const len = S[n - 1], named = L.stops.filter(s => s.name), stops = named.map(s => s.s);
+      const line = { name: L.name, P, S, n, len, stops, names: named.map(s => s.name), cars: L.cars || 4, vmax: L.vmax || 30, color: L.color ?? 0x334488,
+        headway: L.headway || 900, board: !!L.board, off: L.off || null };
+      // a train stops with its middle at the station (its front half a train beyond), and a line whose first
+      // or last station is at its end turns round there instead of running on to the end of the track
+      const Lt = line.cars * PITCH; line.Lt = Lt;
+      line.centre = stops.map(s => Math.max(Lt / 2, Math.min(len - Lt / 2, s)));
+      const t0 = stops.length && stops[0] < 60, t1 = stops.length && stops.at(-1) > len - 60;
+      line.term0 = !!t0; line.term1 = !!t1;
+      const fStops = line.centre.map(c => c + Lt / 2), bStops = line.centre.map(c => len - c + Lt / 2).reverse();
+      // (a run starts where the reversed train's front is: a train length in from the end it turned at)
+      line.fwd = this.profile(line, fStops, t0 ? fStops[0] : Lt, t1 ? fStops.at(-1) : len);
+      line.bwd = this.profile(line, bStops, t1 ? bStops[0] : Lt, t0 ? bStops.at(-1) : len);
       line.cycle = line.fwd.length * DT + TURN + line.bwd.length * DT + TURN;
       const k = Math.max(1, Math.round(line.cycle / line.headway));
       for (let j = 0; j < k; j++) this.trains.push({ id: `${L.name.split(/[ –]/).map(w => w[0]).join('').toLowerCase()}-${j + 1}`, line, phase: j * line.cycle / k, s: 0, dir: 1, v: 0, status: '' });
@@ -34,31 +46,59 @@ export class Trains {
     }
     return this;
   }
-  // distance along the line every DT seconds for a run that stops at each station (s positions, ascending)
-  profile(line, stops) {
-    const out = []; let s = 0, v = 0, i = 0, dwell = 0, guard = 0;
-    const next = stops.filter(x => x > 1);
-    if (stops[0] <= 1) out.push(...new Array(Math.round(DWELL / DT)).fill(0));
-    while (s < line.len - 0.5 && guard++ < 200000) {
+  // front of the train every DT seconds for a run from start to end that stops at each station front
+  // position on the way (ascending, in the run's own direction)
+  profile(line, stops, start = 0, end = line.len) {
+    const out = []; let s = start, v = 0, i = 0, dwell = 0, guard = 0;
+    const next = stops.filter(x => x > start + 1 && x < end - 1);
+    if (stops.some(x => Math.abs(x - start) <= 1)) out.push(...new Array(Math.round(DWELL / DT)).fill(start));
+    while (s < end - 0.5 && guard++ < 200000) {
       if (dwell > 0) { dwell -= DT; out.push(s); continue; }
-      const target = i < next.length ? next[i] : line.len, d = target - s;
+      const target = i < next.length ? next[i] : end, d = target - s;
       const vStop = Math.sqrt(Math.max(0, 2 * DEC * d));
       v = Math.min(line.vmax, v + ACC * DT, vStop);
-      if (d < 0.6 || (v < 0.05 && d < 3)) { s = target; v = 0; i++; dwell = target < line.len - 1 ? DWELL : 0; out.push(s); continue; }
+      if (d < 0.6 || (v < 0.05 && d < 3)) { s = target; v = 0; i++; dwell = target < end - 1 ? DWELL : 0; out.push(s); continue; }
       s = Math.min(target, s + v * DT); out.push(s);
     }
-    out.push(line.len);
+    out.push(end);
     return Float32Array.from(out);
   }
-  // where a train is at line time tau: [s, direction, speed, status]
+  // where a train's front is at line time tau: [s, direction, speed, status]. At a terminus the train
+  // reverses: its front becomes the old rear, a train length back.
   state(tr, tau) {
     const L = tr.line, a = L.fwd.length * DT, b = a + TURN, c = b + L.bwd.length * DT;
     let t = (tau + tr.phase) % L.cycle;
     const at = (arr, t) => { const i = Math.min(arr.length - 1, Math.floor(t / DT)), j = Math.min(arr.length - 1, i + 1), f = t / DT - i; return [arr[i] + (arr[j] - arr[i]) * f, (arr[j] - arr[i]) / DT]; };
     if (t < a) { const [s, v] = at(L.fwd, t); return [s, 1, v, v < 0.05 ? 'at station' : 'running']; }
-    if (t < b) return [L.len, -1, 0, 'terminus'];
+    if (t < b) return [L.fwd[L.fwd.length - 1] - L.Lt, -1, 0, 'terminus'];
     if (t < c) { const [s, v] = at(L.bwd, t - b); return [L.len - s, -1, v, v < 0.05 ? 'at station' : 'running']; }
-    return [0, 1, 0, 'terminus'];
+    return [L.len - L.bwd[L.bwd.length - 1] + L.Lt, 1, 0, 'terminus'];
+  }
+  // lateral offset (+ left of the line's forward direction) of the track a train going dir uses at s
+  offset(L, s, dir) {
+    const o = L.off; if (!o) return 0;
+    const g = a => { const x = Math.max(0, Math.min(a.length - 1.001, s / o.ds)), i = Math.floor(x), f = x - i; return a[i] + (a[Math.min(a.length - 1, i + 1)] - a[i]) * f; };
+    let v = g(dir > 0 ? o.f : o.b);
+    // at a terminus a train leaves from the platform it came in at: near the end station both directions
+    // use the arrival track, easing back to their own over 120 m
+    if (L.term1 && dir < 0) { const k = (s - (L.centre.at(-1) - L.Lt / 2 - 120)) / 120; if (k > 0) v += (g(o.f) - v) * Math.min(1, k); }
+    if (L.term0 && dir > 0) { const k = ((L.centre[0] + L.Lt / 2 + 120) - s) / 120; if (k > 0) v += (g(o.b) - v) * Math.min(1, k); }
+    return v;
+  }
+  // point on the running track for direction dir at s: [x, y, z, dx, dy, dz] (offset included)
+  track(L, s, dir, out) {
+    this.at(L, s, out);
+    const h = Math.hypot(out[3], out[5]) || 1, o = this.offset(L, s, dir);
+    out[0] += out[5] / h * o; out[2] -= out[3] / h * o;
+    return out;
+  }
+  // the station a stopped train is standing at (index into line.stops), or -1
+  stationOf(tr) {
+    if (tr.status === 'running') return -1;
+    const L = tr.line, mid = tr.s - tr.dir * L.Lt / 2;
+    let best = -1, bd = 6;
+    L.centre.forEach((c, k) => { const d = Math.abs(c - mid); if (d < bd) { bd = d; best = k; } });
+    return best;
   }
   // point and tangent on the line at distance s
   at(L, s, out) {
@@ -89,7 +129,7 @@ export class Trains {
   update(dt) {
     if (!this.ready) return;
     this.t += dt;
-    for (const tr of this.trains) { const [s, dir, v, st] = this.state(tr, this.t); tr.s = s; tr.dir = dir; tr.v = Math.abs(v); tr.status = st; }
+    for (const tr of this.trains) { const [s, dir, v, st] = this.state(tr, this.t); tr.s = s; tr.dir = dir; tr.v = Math.abs(v); tr.status = st; tr.station = this.stationOf(tr); }
   }
   // cars within maxD of the camera, on loaded tiles only
   draw(cam, maxD = 900) {
@@ -97,13 +137,14 @@ export class Trains {
     const M = this.mesh, tiles = this.G.tiles; let n = 0;
     for (const tr of this.trains) {
       const L = tr.line;
+      if (this.hide.has(tr)) continue;           // drawn as passenger cars by transit.js
       for (let c = 0; c < L.cars; c++) {
         // the leading car is at s (front), the rest trail behind it
-        const sm = Math.max(CAR_L / 2, Math.min(L.len - CAR_L / 2, tr.s - tr.dir * (c + 0.5) * (CAR_L + CAR_GAP)));
-        const p = this.at(L, sm, this.tmp);
+        const sm = this.carCentre(tr, c);
+        const p = this.track(L, sm, tr.dir, this.tmp);
         if (Math.abs(p[0] - cam.x) > maxD || Math.abs(p[2] - cam.z) > maxD) continue;
         if (!tiles.tileAt(p[0], p[2])) continue;
-        const bx = p[0], by = p[1], bz = p[2], a = this.at(L, sm - CAR_L * 0.45, this.tmp2), b2 = this.at(L, sm + CAR_L * 0.45, this.tmp3);
+        const bx = p[0], by = p[1], bz = p[2], a = this.track(L, sm - CAR_L * 0.45, tr.dir, this.tmp2), b2 = this.track(L, sm + CAR_L * 0.45, tr.dir, this.tmp3);
         const dx = b2[0] - a[0], dy = b2[1] - a[1], dz = b2[2] - a[2], h = Math.hypot(dx, dz) || 1;
         this.e.set(0, Math.atan2(-dz, dx), Math.atan2(dy, h)); this.q.setFromEuler(this.e);
         this.p.set(bx, by, bz); this.m4.compose(this.p, this.q, this.one);
@@ -114,6 +155,8 @@ export class Trains {
     M.count = n; M.visible = n > 0; this.drawn = n;
     if (n) { M.instanceMatrix.needsUpdate = true; if (M.instanceColor) M.instanceColor.needsUpdate = true; }
   }
-  // for the HUD / tests: trains with their line, position and state
-  list() { return this.trains.map(tr => { const p = this.at(tr.line, tr.s, new Float64Array(6)); return { id: tr.id, line: tr.line.name, s: Math.round(tr.s), x: Math.round(p[0]), z: Math.round(p[2]), dir: tr.dir, v: +tr.v.toFixed(1), status: tr.status }; }); }
+  // centre of car c (0 leads) along the line
+  carCentre(tr, c) { const L = tr.line; return Math.max(CAR_L / 2, Math.min(L.len - CAR_L / 2, tr.s - tr.dir * (c + 0.5) * PITCH)); }
+  // for the HUD / tests: trains with their line, position and state (middle of the train)
+  list() { return this.trains.map(tr => { const p = this.track(tr.line, tr.s - tr.dir * tr.line.Lt / 2, tr.dir, new Float64Array(6)); return { id: tr.id, line: tr.line.name, s: Math.round(tr.s), x: Math.round(p[0]), z: Math.round(p[2]), dir: tr.dir, v: +tr.v.toFixed(1), status: tr.status, station: tr.station >= 0 ? tr.line.names[tr.station] : null }; }); }
 }

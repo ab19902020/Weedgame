@@ -439,6 +439,27 @@ export function alignRoads(net, rail = null) {
     net.nodes[n * 3 + 1] = y;
   }
   net.rise = rise;
+  // approach slabs: where a road next to a bridge still stands well above the ground (the mapped bridge
+  // stops short of the gap, as at the A329(M) over the M4 at junction 10), the deck carries on along it
+  // until the ground catches up: at least 6 m from the bridge (the abutment), at most 45 m.
+  // net.slabRange: edge -> list of [from, to] in metres from the edge's start.
+  net.slabRange = new Map();
+  for (let n = 0; n < nN; n++) {
+    if (!nodeBr[n]) continue;
+    for (const e of inc[n]) {
+      if (inCh(e) || !(fl[e] & F_DRIVE) || (fl[e] & F_TUNNEL)) continue;
+      const s = ps[e], c = pc[e], fwd = ea[e] === n, Le = L[e];
+      let reach = 0;
+      for (let q = 1; q < c; q++) {
+        const k = fwd ? s + q : s + c - 1 - q, d = fwd ? arc[k] : Le - arc[k];
+        if (d > 45) break;
+        if (d <= 6 || ynew[k] - g0[k] > 1.2) reach = d; else break;
+      }
+      reach = Math.max(reach, Math.min(6, Le));
+      if (!net.slabRange.has(e)) net.slabRange.set(e, []);
+      net.slabRange.get(e).push(fwd ? [0, reach] : [Le - reach, Le]);
+    }
+  }
   net.ground = g0;
   net.connector = conn;
   let rampNodes = 0; for (let n = 0; n < nN; n++) if (req[n] > gN[n] + 0.05) rampNodes++;

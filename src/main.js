@@ -4,8 +4,10 @@ import { fog, vec3, float, positionWorld, cameraPosition, length, exp, max, dot,
 import { fetchContainer } from './data.js';
 import { Network } from './network.js';
 import { repairGaps, alignRoads } from './roadProfile.js';
-import { cleanSignals, motorwayLayout, kerbBusStops, barriers } from './roadDetail.js';
+import { cleanSignals, motorwayLayout, kerbBusStops, applyStops, barriers } from './roadDetail.js';
 import { Tiles } from './tiles.js';
+import { Trains } from './trains.js';
+import { Stations } from './stations.js';
 import { U, lightPos, lightCol, NL } from './env.js';
 import { createSky } from './sky.js';
 import { World } from './weather.js';
@@ -24,13 +26,14 @@ export async function boot(extra = {}) {
   const surfaces = loadSurfaces().catch(e => console.warn('surface textures', e));
   const manifest = await (await fetch('world/manifest.json')).json();
   // roads: rejoin dropped motorway spans, then align bridges, flyovers and their approaches (roadProfile.js)
-  const [netData, rail] = await Promise.all([fetchContainer('world/network.bin'), fetch('world/rail.json').then(r => r.ok ? r.json() : null).catch(() => null)]);
+  const json = url => fetch(url).then(r => r.ok ? r.json() : null).catch(() => null);
+  const [netData, rail, stops] = await Promise.all([fetchContainer('world/network.bin'), json('world/rail.json'), json('world/stops.json')]);
   const addedBridges = repairGaps(netData);
   cleanSignals(netData);
   const net = new Network(netData);
   net.addedBridges = addedBridges;
   alignRoads(net, rail);
-  motorwayLayout(net); kerbBusStops(net); barriers(net);
+  motorwayLayout(net); kerbBusStops(net); applyStops(net, stops); barriers(net);
   // ---------------------------------------------------------------- renderer
   const forceWebGL = Q.get('backend') === 'webgl' || !navigator.gpu;
   const quality = Q.get('quality') || (matchMedia('(pointer:coarse)').matches ? 'medium' : 'high');
@@ -76,15 +79,17 @@ export async function boot(extra = {}) {
   sun.shadow.bias = -0.0006; sun.shadow.normalBias = 0.6;
   scene.add(hemi, sun, sun.target);
   // ---------------------------------------------------------------- world
+  // station platforms: the tile worker cuts the ground under them down to the track (stations.js)
+  const platforms = rail ? new Stations({ trains: Object.assign(new Trains(null).setup(rail), { ready: true }) }).footprints() : [];
   const tiles = new Tiles(scene, manifest, net, {
-    renderer,
+    renderer, platforms, railLines: (rail?.lines || []).map(L => ({ p: L.p, off: L.off })),
     shadows: renderer.shadowMap.enabled, r0: Number(Q.get('r0')) || budget.r0, r1: Number(Q.get('r1')) || budget.r1,
     workers: Math.min(3, Math.max(1, (navigator.hardwareConcurrency || 4) - 2)),
   });
   tiles.signAtlas = new SignAtlas();
   tiles.budget = budget;   // bush density per quality (tiles.addBushes)
   const world = new World(extra.weather);
-  const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, budget, Q, U, lightPos, lightCol, NL, frame: 0 };
+  const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, budget, Q, U, lightPos, lightCol, NL, rail, frame: 0 };
   window.GC = G;
   if (Q.has('dbg')) { G.TSL = await import('three/tsl'); G.SURF = await import('./surfaces.js'); }
   await surfaces;
