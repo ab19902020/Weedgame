@@ -4405,7 +4405,7 @@ void main() {
       <div id="fade"></div>
       <div id="btns">
         <div class="top">
-          <button id="bCam" data-act="camera" aria-label="Camera">${fi.cam}</button><button id="bSwap" aria-label="Swap brother">${fi.swap}</button><button id="bMap" aria-label="Map">${fi.map}</button><button id="bMenu" aria-label="Menu">${fi.menu}</button><button id="bDev" aria-label="Developer">${fi.dev}</button>
+          <button id="bCam" data-act="camera" aria-label="Camera">${fi.cam}<b>Camera</b></button><button id="bSwap" aria-label="Swap brother">${fi.swap}<b>Swap</b></button><button id="bMap" aria-label="Map">${fi.map}<b>Map</b></button><button id="bMenu" aria-label="Menu">${fi.menu}<b>Menu</b></button><button id="bDev" aria-label="Developer">${fi.dev}<b>Dev</b></button>
         </div>
         <div class="foot">
           <button id="bUse" class="ctx"><i>${fi.door}</i><span>Enter</span></button>

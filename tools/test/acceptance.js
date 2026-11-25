@@ -12,6 +12,8 @@ const MISSION = /mission|objective|deliver|incoming call|answer call|order compl
 async function launch(video) {
   const b = await chromium.launch({ headless: false, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--autoplay-policy=no-user-gesture-required'], env: { ...process.env, CHROMIUM_WEBGL_RENDERER: 'lavapipe' } });
   const ctx = await b.newContext({ viewport: { width: 915, height: 412 }, deviceScaleFactor: 1, hasTouch: true, ...(video ? { recordVideo: { dir: video, size: { width: 915, height: 412 } } } : {}) });
+  // the start menu opens on every load: tap "Enter free roam" (or "Resume") as a player would
+  await ctx.addInitScript(() => { const iv = setInterval(() => { const b = document.querySelector('[data-go="play"]'); if (b && b.offsetWidth && window.GC && GC.hud && GC.hud.menu) { b.click(); clearInterval(iv); } }, 400); });
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
   // software rendering (SwiftShader) can stall a frame for tens of seconds; give Playwright actions room
   p.setDefaultTimeout(180000);
@@ -135,9 +137,6 @@ async function step(name, fn) {
   await p.goto(BASE + '?backend=webgl');
   await p.evaluate(() => localStorage.clear());
   await p.goto(BASE + '?backend=webgl&sim=2&fixedres=1');
-  // the start menu opens first: tap "Enter free roam" as a player would
-  await p.waitForFunction(() => window.GC && GC.hud && GC.hud.menu && document.querySelector('[data-go="play"]')?.offsetWidth, null, { timeout: 0, polling: 500 });
-  await T.tap('[data-go="play"]').catch(() => p.evaluate(() => document.querySelector('[data-go="play"]').click()));
   await p.waitForFunction(() => window.GC && GC.frame > 3 && document.getElementById('boot').textContent === '', null, { timeout: 0, polling: 500 });
   await T.frames(8);
   log.environment = await p.evaluate(() => ({ userAgent: navigator.userAgent, backend: GC.backend, quality: GC.quality, gl: (() => { try { const c = document.createElement('canvas').getContext('webgl2'); const e = c.getExtension('WEBGL_debug_renderer_info'); return c.getParameter(e.UNMASKED_RENDERER_WEBGL); } catch { return null; } })(), viewport: [innerWidth, innerHeight] }));

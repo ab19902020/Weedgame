@@ -15,7 +15,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #banner.talk{background:#1d3f8ccc}#banner.clear{background:#1d6a3ccc;border-color:#9fffc0}
 @keyframes pulse{to{background:#1d3f8ccc}}
 #toast{position:absolute;bottom:104px;left:50%;transform:translateX(-50%);background:#000b;padding:8px 14px;border-radius:8px;max-width:60vw;text-align:center}
-#feed{position:absolute;top:64px;right:max(10px,env(safe-area-inset-right));width:min(330px,38vw);font-size:12px}
+#feed{position:absolute;top:74px;right:max(10px,env(safe-area-inset-right));width:min(330px,38vw);font-size:12px}
 #feed div{background:#0009;border-left:3px solid #4f8cff;margin-bottom:4px;padding:4px 8px;border-radius:4px}
 #fade{position:absolute;inset:0;display:grid;place-items:center;font-size:22px;font-weight:700;opacity:0;background:#000;color:#fff}
 #fade.go{animation:fade 1.6s ease}
@@ -83,7 +83,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #btns button b{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:3px;font:700 9.5px system-ui;letter-spacing:.09em;text-transform:uppercase;color:#ffffffd0;text-shadow:0 1px 3px #000,0 0 6px #000;white-space:nowrap;pointer-events:none}
 #btns button.on{transform:scale(.92);background:radial-gradient(circle at 50% 32%,#8eb4ffb3,#24467fe6 72%);border-color:#d5e4ffcc}
 #btns button[hidden],#btns [hidden]{display:none}
-#btns .top{position:absolute;top:max(10px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));display:flex;gap:8px}
+#btns .top{position:absolute;top:max(10px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right));display:flex;gap:10px}
+#btns .top button b{font-size:8.5px;margin-top:2px}
 #btns .top button{position:relative;width:calc(var(--u)*42px);height:calc(var(--u)*42px)}
 #btns .big{width:calc(var(--u)*76px);height:calc(var(--u)*76px)}
 #btns .mid{width:calc(var(--u)*58px);height:calc(var(--u)*58px)}

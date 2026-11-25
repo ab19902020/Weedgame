@@ -42,7 +42,7 @@ export class Hud {
       <div id="fade"></div>
       <div id="btns">
         <div class="top">
-          <button id="bCam" data-act="camera" aria-label="Camera">${ICON.cam}</button><button id="bSwap" aria-label="Swap brother">${ICON.swap}</button><button id="bMap" aria-label="Map">${ICON.map}</button><button id="bMenu" aria-label="Menu">${ICON.menu}</button><button id="bDev" aria-label="Developer">${ICON.dev}</button>
+          <button id="bCam" data-act="camera" aria-label="Camera">${ICON.cam}<b>Camera</b></button><button id="bSwap" aria-label="Swap brother">${ICON.swap}<b>Swap</b></button><button id="bMap" aria-label="Map">${ICON.map}<b>Map</b></button><button id="bMenu" aria-label="Menu">${ICON.menu}<b>Menu</b></button><button id="bDev" aria-label="Developer">${ICON.dev}<b>Dev</b></button>
         </div>
         <div class="foot">
           <button id="bUse" class="ctx"><i>${ICON.door}</i><span>Enter</span></button>
