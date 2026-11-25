@@ -370,12 +370,25 @@ function opening(gb, P, s, o, r, side, c, H, top) {
     else if (o.frosted) pane('frosted', 0xffffff);
     else pane('glass', 0xffffff);
     if (o.cover === 'boards') for (let k = 0; k < 4; k++) { const h0 = o.bot + 0.05 + k * hgt / 4, tilt = (k % 2 ? 1 : -1) * 0.02; gb.box('plain', fr, -len / 2 - 0.05, len / 2 + 0.05, 0.0, 0.025, h0, h0 + hgt / 4 - 0.06 + tilt, 0xa88a5e); }
+    // a radiator under the window in homes
+    const home = !P.style.warehouse && !P.style.office && !P.style.shop && !P.style.mall && !P.style.church && !P.style.pub;
+    if (home && o.bot > 0.75 && len > 0.7) {
+      const rw = Math.min(len, 1.4), rc = P.style.trap ? 0xe6e0cf : 0xf6f6f2;
+      gb.box('plain', fr, -rw / 2, rw / 2, 0.04, 0.11, 0.15, Math.min(o.bot - 0.1, 0.72), rc);
+      for (let u = -rw / 2 + 0.05; u < rw / 2; u += 0.06) gb.box('plain', fr, u, u + 0.012, 0.11, 0.115, 0.17, Math.min(o.bot - 0.12, 0.7), shadeK(rc, 0.82));
+      gb.box('plain', fr, rw / 2 - 0.02, rw / 2 + 0.04, 0.05, 0.1, 0.1, 0.2, 0xd8d8d4);
+    }
     // curtains or blinds in homes
     if (!P.style.warehouse && !P.style.office && !P.style.shop && !P.style.mall && !P.style.church && r.kind !== 'bath' && o.cover !== 'boards') {
       const cc = P.style.trap ? 0x5a4f45 : [0x8f6f5f, 0x5f6f8f, 0xd8cfc0, 0x6f8f6f, 0xb3936a][(Math.abs(Math.round(mid * 7)) + r.name.length) % 5];
       gb.box('plain', fr, -len / 2 - 0.15, len / 2 + 0.15, 0.03, 0.05, o.top + 0.05, o.top + 0.09, 0x8a8a88);
       const closed = P.style.trap;
-      for (const sgn of [-1, 1]) gb.box('plain', fr, sgn < 0 ? -len / 2 - 0.25 : (closed ? 0 : len / 2 - 0.05), sgn < 0 ? (closed ? 0 : -len / 2 + 0.05) : len / 2 + 0.25, 0.06, 0.1, Math.max(0, o.bot - 0.12), o.top + 0.07, cc);
+      // each curtain in pleats: narrow folds, alternately forward and back, lighter and darker
+      for (const sgn of [-1, 1]) {
+        const u0 = sgn < 0 ? -len / 2 - 0.25 : (closed ? 0 : len / 2 - 0.05), u1 = sgn < 0 ? (closed ? 0 : -len / 2 + 0.05) : len / 2 + 0.25;
+        const n = Math.max(2, Math.round((u1 - u0) / 0.11));
+        for (let q = 0; q < n; q++) { const a = u0 + (u1 - u0) * q / n, b = u0 + (u1 - u0) * (q + 1) / n, fwd = q % 2 ? 0.02 : 0; gb.box('plain', fr, a, b, 0.06 + fwd, 0.1 + fwd, Math.max(0, o.bot - 0.12), o.top + 0.07, shadeK(cc, q % 2 ? 1.06 : 0.9)); }
+      }
     }
     return;
   }
@@ -550,13 +563,14 @@ const ITEM = {
     gb.box('plain', f, -w / 2, w / 2, -d / 2, d / 2 + 0.02, it.h - 0.04, it.h, top);
     for (let u = -w / 2 + 0.6; u < w / 2 - 0.05; u += 0.6) gb.box('plain', f, u - 0.004, u + 0.004, d / 2 - 0.021, d / 2 - 0.018, 0.12, it.h - 0.06, shadeK(it.col, 0.7));
     for (let u = -w / 2 + 0.3; u < w / 2; u += 0.6) gb.box('plain', f, u - 0.08, u + 0.08, d / 2 - 0.018, d / 2, it.h - 0.15, it.h - 0.13, 0x9a9a98);
+    if (!it.island) gb.box('tile', f, -w / 2, w / 2, -d / 2 - 0.005, -d / 2 + 0.008, it.h, it.h + 0.5, it.splash ?? 0xf2f1ec, { skip: 'bd' });
     if (it.sink) { gb.box('plain', f, -0.3, 0.3, -0.2, 0.2, it.h - 0.001, it.h + 0.003, 0xb9bcbf); gb.box('plain', f, -0.25, 0.25, -0.16, 0.16, it.h + 0.003, it.h + 0.004, 0x55585c); gb.box('plain', f, -0.02, 0.02, -0.22, -0.18, it.h, it.h + 0.3, 0xb9bcbf); }
     const hob = w > 1.8 ? w / 2 - 0.45 : null;
     if (hob != null) { gb.box('plain', f, hob - 0.3, hob + 0.3, -0.25, 0.25, it.h, it.h + 0.01, 0x161616); for (const [a, b] of [[-0.14, -0.12], [0.14, -0.12], [-0.14, 0.12], [0.14, 0.12]]) gb.cyl('plain', f, hob + a, b, 0.07, it.h + 0.01, it.h + 0.012, 0x3a3a3a, 8); gb.box('plain', f, hob - 0.3, hob + 0.3, d / 2 - 0.022, d / 2 - 0.018, 0.2, 0.8, 0x161616); }
   },
   wallunits: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col); for (let u = -it.w / 2 + 0.5; u < it.w / 2; u += 0.5) gb.box('plain', f, u - 0.004, u + 0.004, it.d / 2, it.d / 2 + 0.003, 0.02, it.h - 0.02, shadeK(it.col, 0.7)); },
   fridge: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col); gb.box('plain', f, -it.w / 2, it.w / 2, it.d / 2, it.d / 2 + 0.004, 1.05, 1.06, shadeK(it.col, 0.6)); gb.box('plain', f, it.w / 2 - 0.08, it.w / 2 - 0.05, it.d / 2, it.d / 2 + 0.03, 1.15, 1.5, 0x9a9a98); },
-  island: (gb, it, f) => { ITEM.units(gb, { ...it, d: it.d }, f); for (const sgn of [-0.6, 0, 0.6]) { const sf = { ...f, x: f.x + Math.cos(f.rot) * sgn - Math.sin(f.rot) * (it.d / 2 + 0.35), y: f.y + Math.sin(f.rot) * sgn + Math.cos(f.rot) * (it.d / 2 + 0.35) }; gb.cyl('plain', sf, 0, 0, 0.18, 0.62, 0.68, 0x2b2b2b, 8); gb.box('plain', sf, -0.02, 0.02, -0.02, 0.02, 0, 0.62, 0x9a9a98); } },
+  island: (gb, it, f) => { ITEM.units(gb, { ...it, d: it.d, island: true }, f); for (const sgn of [-0.6, 0, 0.6]) { const sf = { ...f, x: f.x + Math.cos(f.rot) * sgn - Math.sin(f.rot) * (it.d / 2 + 0.35), y: f.y + Math.sin(f.rot) * sgn + Math.cos(f.rot) * (it.d / 2 + 0.35) }; gb.cyl('plain', sf, 0, 0, 0.18, 0.62, 0.68, 0x2b2b2b, 8); gb.box('plain', sf, -0.02, 0.02, -0.02, 0.02, 0, 0.62, 0x9a9a98); } },
   table: (gb, it, f) => {
     gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, it.h - 0.04, it.h, it.col); legs(gb, f, it.w, it.d, it.h - 0.04, shadeK(it.col, 0.85), 0.06, 0.03);
     chairsRound(gb, f, it.w, it.d, it.chairs || 0, it.chairCol || 0x3b3b3b);

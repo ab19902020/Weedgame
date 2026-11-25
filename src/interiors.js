@@ -75,7 +75,13 @@ export class Interiors {
   }
   drop(b) { this.group.remove(b.group); b.group.traverse(o => o.geometry?.dispose()); this.built.delete(b.site.id); }
   // the built interior a brother is in (for walking and the camera), or null
-  at(bro) { if (!bro?.inside || !this.ready) return null; const s = this.byId.get(bro.inside); return s ? this.ensure(s) : null; }
+  at(bro) {
+    if (!bro?.inside || !this.ready) return null;
+    const s = this.byId.get(bro.inside);
+    // (a save from another version might name a building he isn't standing in: then he's simply outside)
+    if (s) { const [lx, ly] = this.toLocal(s, bro.x, bro.z); if (lx > -2 && lx < s.W + 2 && ly > -2 && ly < s.D + 2) return this.ensure(s); }
+    bro.inside = null; return null;
+  }
 
   // ---------------------------------------------------------------- per frame
   update(dt) {

@@ -258,8 +258,8 @@ function house(P, s) {
   if (kind === 'terrace') { P.party.add('x0'); P.party.add('x1'); }
   if (kind === 'semi' || kind === 'trap') P.party.add(R() < 0.5 ? 'x0' : 'x1');
   // style
-  const paint = trap ? pick(R, [PAINT.nicotine, PAINT.magnolia, PAINT.smoke]) : pick(R, Object.values(PAINT));
-  const paint2 = trap ? PAINT.magnolia : pick(R, [PAINT.white, PAINT.magnolia, PAINT.greige, PAINT.grey, PAINT.cream]);
+  const paint = trap ? pick(R, [0xc9b78a, 0xb9ad94, 0xa9a69a]) : pick(R, Object.values(PAINT));
+  const paint2 = trap ? 0xcfc4a8 : pick(R, [PAINT.white, PAINT.magnolia, PAINT.greige, PAINT.grey, PAINT.cream]);
   const feature = trap ? null : R() < 0.5 ? ['wallpaper', pick(R, [0xb7c4cf, 0xd9c7a7, 0x9cae9a, 0xc9a5a0, 0x6f7f95, 0xe6dccb])] : null;
   const carpet = trap ? pick(R, [0x6f6556, 0x6b5f60, 0x5f5c52]) : pick(R, CARPET);
   const woodFloor = !trap && (nice || cottage || R() < 0.45);
@@ -347,7 +347,7 @@ function furnishHouse(P, s) {
   if (kitchen) {
     const run = kitchen.x1 - kitchen.x0 - 0.2;
     const kSide = kitchen.y1 >= P.D - 0.01 ? 'y1' : 'x1';
-    const it = wallItem(P, g, kitchen, kSide, 'units', Math.min(run, nice ? 5 : 3.6), 0.62, 0.92, { col: P.style.units === 'tired white' ? 0xe8e3d6 : UNITS.find(u => u[1] === P.style.units)?.[0], top: trap ? 0x8c8270 : nice ? 0xeae6e0 : pick(R, [0x3b3b3b, 0xd9d2c4, 0x8a6a4a, 0xf0efe9]), tall: false, at: 0.4, sink: true });
+    const it = wallItem(P, g, kitchen, kSide, 'units', Math.min(run, nice ? 5 : 3.6), 0.62, 0.92, { splash: trap ? 0xd9d2bf : pick(R, [0xf2f1ec, 0xdfe8ea, 0x9fb3c8, 0xd9c7a7, 0x2c2c2c]), col: P.style.units === 'tired white' ? 0xe8e3d6 : UNITS.find(u => u[1] === P.style.units)?.[0], top: trap ? 0x8c8270 : nice ? 0xeae6e0 : pick(R, [0x3b3b3b, 0xd9d2c4, 0x8a6a4a, 0xf0efe9]), tall: false, at: 0.4, sink: true });
     if (it) P.add(g, 'wallunits', it.x, it.y, it.w * 0.8, 0.34, 0.7, { rot: it.rot, base: 1.45, col: it.col, solid: false });
     wallItem(P, g, kitchen, kSide === 'y1' ? (R() < 0.5 ? 'x0' : 'x1') : 'y1', 'fridge', 0.62, 0.65, 1.8, { tall: true, col: trap ? 0xe9e7e0 : pick(R, [0xe9e7e0, 0xb9bcbf, 0x2c2c2c]), at: R() < 0.5 ? 0.04 : 0.96 });
     if (nice) { const [cx, cy] = mid(kitchen); P.add(g, 'island', cx, cy - 0.2, 2.2, 1.0, 0.92, { col: UNITS.find(u => u[1] === P.style.units)?.[0] || 0x2e3d55, top: 0xeae6e0 }); }
