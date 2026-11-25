@@ -23,6 +23,9 @@ export const MODELS = {
   rangerover: { L: 4.95, W: 2.02, H: 1.9, wb: 2.91, wr: 0.42, prof: 'glb', max: 6, mass: 2450, glb: 'rangerover', wx: 0.12 },
   bus: { L: 10.6, W: 2.55, H: 4.3, wb: 5.6, wr: 0.5, prof: 'decker', max: 30, mass: 12000 },
   busS: { L: 11.2, W: 2.5, H: 3.05, wb: 5.9, wr: 0.5, prof: 'single', max: 20, mass: 10000 },
+  // town two-wheelers: drawn as a frame plus a rider, two wheels on the centreline
+  moped: { L: 1.85, W: 0.72, H: 1.15, wb: 1.25, wr: 0.28, prof: 'moped', max: 70, mass: 180, wheels: 2, tyre: 0.07 },
+  escooter: { L: 1.15, W: 0.55, H: 1.2, wb: 0.85, wr: 0.15, prof: 'scooter', max: 50, mass: 30, wheels: 2, tyre: 0.045 },
 };
 
 function profile(kind, L, H) {
@@ -48,7 +51,48 @@ export function randomModel(r) {
 const SPORT_PAINTS = [0xb5121b, 0xe8e8e8, 0x111111, 0x1446a0, 0xf2b705, 0xe25a12, 0x2f6d3a, 0x7d8085];
 export function paintFor(model, r) { return (model === 'sports' || model === 'coupe' || model === 'hothatch') ? SPORT_PAINTS[Math.floor(r * SPORT_PAINTS.length)] : PAINTS[Math.floor(r * PAINTS.length)]; }
 
+function buildTwoWheeler(def) {
+  const parts = [];
+  const add = (g, rgb, p, l) => {
+    g = g.toNonIndexed();
+    const c = g.attributes.position.count;
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(c * 3).map((_, i) => rgb[i % 3]), 3));
+    g.setAttribute('vdat', new THREE.BufferAttribute(new Float32Array(c * 4).map((_, i) => [p, l, 0, 0][i % 4]), 4));
+    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color', 'vdat'].includes(k)) g.deleteAttribute(k);
+    parts.push(g);
+  };
+  const scooter = def.prof === 'scooter';
+  if (!scooter) {
+    add(new THREE.BoxGeometry(1.05, 0.07, 0.07).translate(-0.02, 0.42, 0), [0.12, 0.12, 0.13], 0, 0);
+    add(new THREE.BoxGeometry(0.7, 0.26, 0.34).translate(-0.02, 0.5, 0), [1, 1, 1], 1, 0);
+    add(new THREE.BoxGeometry(0.07, 0.38, 0.48).translate(0.38, 0.62, 0), [1, 1, 1], 1, 0);
+    add(new THREE.BoxGeometry(0.52, 0.07, 0.26).translate(-0.1, 0.76, 0), [0.07, 0.07, 0.08], 0, 0);
+    add(new THREE.BoxGeometry(0.05, 0.36, 0.05).translate(0.46, 0.82, 0), [0.1, 0.1, 0.11], 0, 0);
+    add(new THREE.BoxGeometry(0.05, 0.04, 0.58).translate(0.48, 1.0, 0), [0.08, 0.08, 0.09], 0, 0);
+    add(new THREE.BoxGeometry(0.34, 0.035, 0.14).translate(0.52, 0.5, 0), [1, 1, 1], 1, 0);
+    add(new THREE.BoxGeometry(0.3, 0.035, 0.14).translate(-0.52, 0.48, 0), [1, 1, 1], 1, 0);
+    add(new THREE.BoxGeometry(0.06, 0.1, 0.1).translate(0.58, 0.7, 0), [0.9, 0.9, 0.85], 0, 1);
+    add(new THREE.BoxGeometry(0.05, 0.07, 0.1).translate(-0.7, 0.7, 0), [0.55, 0.04, 0.03], 0, 2);
+    add(new THREE.BoxGeometry(0.02, 0.08, 0.12).translate(-0.74, 0.5, 0), [0.95, 0.8, 0.1], 0, 0);
+    add(new THREE.BoxGeometry(0.26, 0.4, 0.3).translate(-0.06, 1.02, 0), [0.16, 0.17, 0.19], 0, 0);
+    add(new THREE.BoxGeometry(0.18, 0.16, 0.18).translate(0.02, 1.3, 0), [0.1, 0.1, 0.12], 0, 0);
+  } else {
+    add(new THREE.BoxGeometry(0.7, 0.05, 0.26).translate(-0.02, 0.2, 0), [0.1, 0.1, 0.11], 0, 0);
+    add(new THREE.BoxGeometry(0.5, 0.03, 0.2).translate(-0.02, 0.25, 0), [0.16, 0.16, 0.17], 0, 0);
+    add(new THREE.BoxGeometry(0.2, 0.14, 0.1).translate(-0.18, 0.3, 0), [1, 1, 1], 1, 0);
+    add(new THREE.BoxGeometry(0.04, 0.7, 0.04).translate(0.3, 0.58, 0), [0.75, 0.77, 0.8], 0, 0);
+    add(new THREE.BoxGeometry(0.04, 0.035, 0.4).translate(0.3, 0.94, 0), [0.08, 0.08, 0.09], 0, 0);
+    add(new THREE.BoxGeometry(0.05, 0.06, 0.07).translate(0.38, 0.48, 0), [0.9, 0.9, 0.85], 0, 1);
+    add(new THREE.BoxGeometry(0.04, 0.05, 0.07).translate(-0.42, 0.3, 0), [0.6, 0.05, 0.04], 0, 2);
+    add(new THREE.BoxGeometry(0.22, 0.5, 0.24).translate(-0.02, 0.62, 0), [0.15, 0.16, 0.18], 0, 0);
+    add(new THREE.BoxGeometry(0.16, 0.16, 0.16).translate(0.02, 0.98, 0), [0.1, 0.1, 0.12], 0, 0);
+  }
+  const g = mergeGeos(parts);
+  if (g.attributes.uv) g.deleteAttribute('uv');
+  return g;
+}
 function buildModel(def, key, lod = 0) {
+  if (def.wheels === 2) return buildTwoWheeler(def);
   if (CAR_SPECS[key]) { const g = mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1, lod).parts); if (g.attributes.uv) g.deleteAttribute('uv'); return g; }
   const { L, W, H, prof } = def;
   const isBus = prof === 'decker' || prof === 'single';
@@ -236,20 +280,22 @@ export class VehicleRenderer {
       }
       }
       if (v.lights && d2 < 140 * 140 && bn < 300 && !(v.dmg && v.dmg[0] > 0.6)) {
-        // beam quad: starts at the nose, 22 m long, 9 m wide at the far end
-        this._sm.makeScale(22, 1, 9).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g);
+        const bike = def.wheels === 2;
+        this._sm.makeScale(bike ? 8 : 22, 1, bike ? 3.2 : 9).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g);
         this.beams.setMatrixAt(bn++, this._sm);
       }
-      // wheels
+      // wheels: two, on the centreline, for a moped or scooter
       if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
         const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
         const wsty = sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
-        for (const [wx, wz, steer] of [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]]) {
+        const posts = def.wheels === 2 ? [[a + o, 0, 1], [-a + o, 0, 0]] : [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]];
+        const tyre = def.tyre || 0.22;
+        for (const [wx, wz, steer] of posts) {
           this.iWheel.array.set(wsty, wn * 4);
           this._w.makeRotationZ(-(v.spin || 0));
           const sa = v.player ? v.steer : v.steerVis;
           if (steer && sa) this._w.premultiply(this._steer.makeRotationY(-sa));
-          this._w.scale(this._v.set(r, r, 0.22)).setPosition(wx, r, wz);
+          this._w.scale(this._v.set(r, r, tyre)).setPosition(wx, r, wz);
           this.wheels.setMatrixAt(wn++, this._w.premultiply(this._g));
         }
       }

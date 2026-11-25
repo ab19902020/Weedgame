@@ -20,10 +20,11 @@ export class Parking {
       const id = `p:${t.key}:${i}`;
       if (G.save.taken.has(id) || G.traffic.byId.has(id)) continue;
       const r = mulberry(hashStr(id))();
-      const occ = K[i] ? 0.28 : 0.42;     // car parks / kerbside: well used but with gaps, not wall-to-wall
+      const occ = K[i] ? 0.14 : 0.21;     // half the old car parks / kerbside fill
       if (r > occ) continue;
       const r2 = mulberry(hashStr(id) ^ 0x5bd1e995);
-      const model = randomModel(r2());
+      const roll = r2();
+      const model = (!K[i] && roll < 0.12) ? (roll < 0.06 ? 'moped' : 'escooter') : randomModel(r2());
       const x = S[i * 4] + t.data.ox, z = S[i * 4 + 2] + t.data.oz;
       if (this.blocked(x, z)) continue;
       const v = G.traffic.add({ id, kind: 'parked', model, paint: paintFor(model, r2()), x, y: S[i * 4 + 1], z, heading: S[i * 4 + 3], parked: true, v: 0 });
