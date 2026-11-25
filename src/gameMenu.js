@@ -2,7 +2,9 @@ const key='green-county-interface-v1';
 const choices={
   orientation:['Minimap orientation','Heading up','North up'],
   size:['Minimap size','Standard','Compact','Large'],
-  colour:['Route colour','Mint','Amber','Blue']
+  colour:['Route colour','Mint','Amber','Blue'],
+  steering:['Steering (touch)','Drag wheel','Arrow buttons','Tilt'],
+  buttons:['Touch button size','Standard','Large','Compact']
 };
 export class GameMenu {
   constructor(hud) {
@@ -49,6 +51,8 @@ export class GameMenu {
   apply(){
     this.hud.nav.colour=({Amber:'#ffbd4a',Blue:'#79bdff'})[this.settings.colour] || '#5df4c2';
     document.documentElement.style.setProperty('--mini-size',({Compact:'112px',Large:'174px'})[this.settings.size] || '150px');
+    document.documentElement.style.setProperty('--u',({Large:'1.18',Compact:'.84'})[this.settings.buttons] || '1');
+    if(this.settings.steering==='Tilt'){try{this.hud.G.input.calibrateTilt();}catch{}}
   }
   resetInput(){const i=this.hud.G.input;i.release();i.keys.clear();i.pressed.clear();i.held.clear();}
   open(){this.resetInput();this.el.hidden=false;this.el.querySelector('nav button').focus();}

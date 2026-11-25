@@ -1,5 +1,5 @@
 {
- "built": "2026-11-25T08:10:10Z",
+ "built": "2026-11-25T11:30:04Z",
  "coverageAreaKm2": 218.68,
  "tiles": 3730,
  "buildings": {
@@ -210,12 +210,12 @@
  },
  "trees": {
   "mapped": 2367,
-  "total": 1274319
+  "total": 1303948
  },
  "shopSigns": 1530,
  "barriers": 2142,
- "parkingSlots": 68037,
- "tileBytes": 52274024,
+ "parkingSlots": 68148,
+ "tileBytes": 52636675,
  "water": {
   "bodies": 450,
   "channels": 37,

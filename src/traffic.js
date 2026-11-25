@@ -229,7 +229,7 @@ export class Traffic {
   }
   leaderGap(v, occ) {
     const net = this.net, L = net.len[v.h >> 1];
-    let gap = 1e9, lv = 0;
+    let gap = 1e9, lv = 0, lead = null;
     const l = occ.get(v.h);
     if (l) for (const o of l) {
       if (o === v || o.s <= v.s) continue;
@@ -237,23 +237,31 @@ export class Traffic {
       if (o.lane !== v.lane && Math.abs(o.lat - v.lat) < 1.2 && net.laneCount(v.h) > 1) continue;
       if (v.passing && Math.abs((o.lat || 0) - (v.lat || 0)) > 1.6) continue;   // overtaking in the opposing lane
       const g = o.s - v.s - o.len / 2 - v.len / 2;
-      if (g < gap) { gap = g; lv = o.v; }
+      if (g < gap) { gap = g; lv = o.v; lead = o; }
       break;
     }
     if (gap > 60 || gap === 1e9) {
       const nh = v.route[v.ri + 1];
       if (nh != null) {
         const l2 = occ.get(nh);
-        if (l2 && l2.length) { const o = l2[0]; const g = L - v.s + o.s - o.len / 2 - v.len / 2; if (g < gap) { gap = g; lv = o.v; } }
+        if (l2 && l2.length) { const o = l2[0]; const g = L - v.s + o.s - o.len / 2 - v.len / 2; if (g < gap) { gap = g; lv = o.v; lead = o; } }
       }
     }
-    return [gap, lv];
+    return [gap, lv, lead];
+  }
+  // Is the stationary thing ahead something to drive round, rather than the back of a queue? Only a car that has
+  // crashed or broken down, a bus at its stop, a police car at a scene, a parked car or the player in the lane.
+  // (Overtaking anything stationary sent whole queues at red lights down the wrong side of the road.)
+  blocking(lead) {
+    if (!lead) return false;
+    if (lead === 'obstacle') return true;
+    return !!(lead.crashed || lead.brokenDown || lead.hazard || lead.parked || lead.status === 'onscene' || lead.atStop);
   }
   drive(v, dt, occ) {
     const net = this.net, e = v.h >> 1, L = net.len[e];
     this.extend(v);
     const vmax = Math.max(4, (net.speed[e] / 3.6) * (v.v0f || 1) * (v.siren ? 1.35 : 1)) * (v.slow || 1);
-    let [gap, lv] = this.leaderGap(v, occ);
+    let [gap, lv, lead] = this.leaderGap(v, occ);
     let stopAt = 1e9;
     const rem = L - v.s;
     // signals
@@ -298,7 +306,7 @@ export class Traffic {
       if (d > 0 && d < 30 && this.zebraBusy.has(e + ':' + Math.round(c.s))) stopAt = Math.min(stopAt, d - 3);
     }
     // overtake / change lane when blocked by a stationary obstacle
-    if (gap < 14 && lv < (v.siren ? 3 : 0.5) && stopAt > gap + 2) {
+    if (gap < 14 && lv < (v.siren ? 3 : 0.5) && stopAt > gap + 2 && (v.siren || this.blocking(lead))) {
       v.stuck += dt;
       if (v.stuck > (v.siren ? 1 : 4)) this.tryPass(v, occ);
     } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing && gap > 25 && v.s > (v.passUntil ?? -1e9)) { v.passing = false; v.latT = 0; } }
@@ -311,17 +319,17 @@ export class Traffic {
       }
     }
     // bus stops
-    if (v.busData && this.busStop) stopAt = Math.min(stopAt, this.busStop(v));
+    if (v.busData && this.busStop) { const bs = this.busStop(v); stopAt = Math.min(stopAt, bs); v.atStop = bs < 2.5 && v.v < 0.5; }
     // player vehicle / people standing in the carriageway ahead
     if (this.obstacles) {
       const c = Math.cos(v.heading), sn = Math.sin(v.heading);
       for (const o of this.obstacles) {
         const dx = o.x - v.x, dz = o.z - v.z; if (dx * dx + dz * dz > 50 * 50) continue;
         const ahead = dx * c + dz * sn, lat = -dx * sn + dz * c;
-        if (ahead > 0 && Math.abs(lat) < (o.r || 1) + 1.1) { const g = ahead - v.len / 2 - (o.r || 1); if (g < gap) { gap = Math.max(0.01, g); lv = o.v || 0; } }
+        if (ahead > 0 && Math.abs(lat) < (o.r || 1) + 1.1) { const g = ahead - v.len / 2 - (o.r || 1); if (g < gap) { gap = Math.max(0.01, g); lv = o.v || 0; lead = 'obstacle'; } }
       }
     }
-    if (stopAt < gap) { gap = Math.max(0.01, stopAt); lv = 0; }
+    if (stopAt < gap) { gap = Math.max(0.01, stopAt); lv = 0; lead = null; }
     // police with sirens: others pull over
     if (v.yieldTo > 0) { v.yieldTo -= dt; v.latT = Math.max(v.latT, 0.9); }
     // IDM
@@ -385,7 +393,9 @@ export class Traffic {
     if (!(net.flags[e] & F_ONEWAY)) { // overtake into the opposing lane when it is clear
       const opp = occ.get(v.h ^ 1) || [];
       const L = net.len[e], myOpp = L - v.s;
-      if (!opp.some(o => Math.abs(o.s - myOpp) < 55)) { v.latT = -this.net.width[e] * 0.5; v.passing = true; v.stuck = 0; const l = occ.get(v.h) || []; const ahead = l.filter(o => o !== v && o.s > v.s && o.s - v.s < 45); v.passUntil = ahead.length ? Math.max(...ahead.map(o => o.s + o.len)) + 4 : v.s + 20; }
+      // never across a junction, on a road too narrow for two, or without a long clear view of oncoming traffic
+      if (L - v.s < 35 || v.s < 8 || net.width[e] < 5.5) return;
+      if (!opp.some(o => o.s > myOpp - 90 && o.s < myOpp + 15)) { v.latT = -this.net.width[e] * 0.5; v.passing = true; v.stuck = 0; const l = occ.get(v.h) || []; const ahead = l.filter(o => o !== v && o.s > v.s && o.s - v.s < 45); v.passUntil = ahead.length ? Math.max(...ahead.map(o => o.s + o.len)) + 4 : v.s + 20; }
     }
   }
   // ----------------------------------------------------------------- persistence

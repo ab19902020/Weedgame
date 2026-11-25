@@ -29,7 +29,7 @@ export class Controller {
     }else{
       I.padX=axis(0);I.padY=car?(pad?.buttons[6]?.value||0)-(pad?.buttons[7]?.value||0):axis(1);
       I.look.dx+=axis(2)*dt*260;I.look.dy+=axis(3)*dt*200;
-      I.padRun=buttons[0]||buttons[10];I.padBrake=car&&(buttons[0]||buttons[2]||buttons[4]);
+      I.padRun=buttons[0]||buttons[10];I.padBrake=car&&(buttons[0]||buttons[2]||buttons[4]);I.padHorn=car&&(buttons[10]||buttons[1]);
       if(tap(3))I.pressed.add('use');
       if(tap(8)||tap(17)||tap(12))H.toggleMap(true);
       if(tap(13))I.pressed.add('swap');

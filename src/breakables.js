@@ -28,7 +28,7 @@ export class Breakables {
     this._m = new THREE.Matrix4(); this._m2 = new THREE.Matrix4(); this._mt = new THREE.Matrix4(); this._gen = 1; this._q = new THREE.Quaternion(); this._q2 = new THREE.Quaternion();
     this._v = new THREE.Vector3(); this._v2 = new THREE.Vector3(); this._s = new THREE.Vector3(); this._a = new THREE.Vector3();
     this._zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    this.smokeT = 0; this.noise = null;
+    this.smokeT = 0;
     G.tiles.listeners.push((ev, t) => { if (ev === 'load') this.index(t); else if (ev === 'unload') this.moving = this.moving.filter(o => o.t !== t); });
     for (const t of G.tiles.tiles.values()) this.index(t);
   }
@@ -387,49 +387,11 @@ export class Breakables {
     return o.rest > 0.6 || o.age > 20;
   }
   // ------------------------------------------------------------------ sound: synthesised one-shots
+  // a recorded impact (www/sfx/world.ogg, tools/audio/build_sfx.py): struck steel for lamp posts, a pillar box's
+  // cast iron, timber cracking for poles, benches, fences and trees, foliage, plastic bins, rubble and glass
   sound(kind, x, z, k = 1) {
-    const A = this.G.audio; if (!A || !A.on || !A.ctx) return;
-    const ctx = A.ctx;
-    if (!this.noise) { const b = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate), d = b.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; this.noise = b; }
-    const N = this.noise;
-    const burst = (C, out, t0, dur, type, f, q, gain) => {
-      const s = C.createBufferSource(); s.buffer = N; s.loop = true;
-      const fl = C.createBiquadFilter(); fl.type = type; fl.frequency.value = f; fl.Q.value = q;
-      const g = C.createGain(); g.gain.setValueAtTime(gain, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-      s.connect(fl); fl.connect(g); g.connect(out); s.start(t0, Math.random() * 0.5); s.stop(t0 + dur + 0.05);
-    };
-    const tone = (C, out, t0, dur, f0, f1, gain, type = 'sine') => {
-      const o = C.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
-      const g = C.createGain(); g.gain.setValueAtTime(gain, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
-      o.connect(g); g.connect(out); o.start(t0); o.stop(t0 + dur + 0.05);
-    };
-    A.oneShot((C, out) => {
-      const t = C.currentTime + 0.01;
-      switch (kind) {
-        case 'lamp': case 'clang': case 'iron': case 'can': {
-          // struck steel: inharmonic partials ringing down, over a crunch
-          const f = kind === 'can' ? 520 : kind === 'iron' ? 140 : 210 + Math.random() * 40;
-          for (const [r, g, d] of [[1, 0.5, 1.4], [2.76, 0.3, 0.9], [5.4, 0.2, 0.5], [8.93, 0.12, 0.3]]) tone(C, out, t, d * (kind === 'can' ? 0.4 : 1), f * r, f * r * 0.995, g * k);
-          burst(C, out, t, 0.15, 'bandpass', 2200, 0.8, 0.9 * k);
-          break;
-        }
-        case 'pole': case 'wood': case 'tree': case 'treefall': {
-          // timber: a sharp crack and a woody knock
-          burst(C, out, t, kind === 'treefall' ? 0.7 : 0.12, 'bandpass', kind === 'treefall' ? 700 : 1500, 1.2, 1.1 * k);
-          tone(C, out, t, 0.25, 180, 70, 0.7 * k);
-          if (kind === 'tree' || kind === 'treefall') burst(C, out, t + 0.03, 0.6, 'highpass', 3500, 0.5, 0.35 * k);   // leaves
-          break;
-        }
-        case 'leaves': burst(C, out, t, 0.45, 'bandpass', 3200, 0.6, 0.6 * k); burst(C, out, t + 0.05, 0.3, 'bandpass', 900, 1, 0.25 * k); break;
-        case 'bin': tone(C, out, t, 0.3, 140, 60, 0.9 * k, 'triangle'); burst(C, out, t, 0.2, 'lowpass', 900, 0.7, 0.6 * k); break;
-        case 'brick': case 'thud':
-          tone(C, out, t, 0.35, 110, 45, 1.0 * k);
-          for (let i = 0; i < (kind === 'brick' ? 6 : 1); i++) burst(C, out, t + i * 0.05 * Math.random(), 0.18, 'bandpass', 600 + Math.random() * 900, 1.5, 0.7 * k);
-          break;
-        case 'glass':
-          for (let i = 0; i < 9; i++) burst(C, out, t + Math.random() * 0.35, 0.06 + Math.random() * 0.1, 'highpass', 4000 + Math.random() * 3000, 1, 0.5 * k);
-          break;
-      }
-    }, x, z, 0.9);
+    const A = this.G.audio; if (!A || !A.on || !A.shot) return;
+    const name = { lamp: 'lamp', clang: 'clang', iron: 'iron', can: 'can', pole: 'pole', wood: 'wood', tree: 'tree', treefall: 'treefall', leaves: 'leaves', bin: 'bin', brick: 'brick', thud: 'thud', glass: 'glass' }[kind] || 'thud';
+    A.shot(name, x, z, 0.35 + 0.65 * Math.max(0, Math.min(1, k)));
   }
 }

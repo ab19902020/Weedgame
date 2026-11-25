@@ -160,7 +160,7 @@ export const YOUNG = {
 };
 export const isYoungSeason = (key, month) => !!YOUNG[key] && YOUNG[key].months.includes(month);
 
-// ---------------------------------------------------------------- calls (wildlifeSounds.js synthesises them)
+// ---------------------------------------------------------------- calls (for when recordings of them are in the sound bank)
 // rate: calls per minute while about; act: an activity curve that shapes it (the dawn chorus); night: also at night
 export const CALLS = {
   dog: { call: 'bark', rate: 0.8 }, cat: { call: 'meow', rate: 0.25 },

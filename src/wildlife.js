@@ -1,10 +1,10 @@
 // Wildlife and pets in the game: wildlifeSim.js decides who is where and what they are doing from the map, the
-// hour, the weather and the people about; this feeds it the game world, draws the animals (wildlifeModels.js),
-// keeps the dogs' leads in their people's hands and plays the animals' calls (wildlifeSounds.js).
+// hour, the weather and the people about; this feeds it the game world, draws the animals (wildlifeModels.js)
+// and keeps the dogs' leads in their people's hands. (The simulation says when each animal calls, sim.calls;
+// they will play once real recordings of them are in the sound bank: the game plays recorded sound only.)
 import * as THREE from 'three/webgpu';
 import { WildSim } from './wildlifeSim.js';
 import { AnimalRenderer, MODELS, COATS } from './wildlifeModels.js';
-import { playCall } from './wildlifeSounds.js';
 
 const TILE = 256, TCELL = 16;
 const LEADS = 24;
@@ -38,7 +38,7 @@ export class Wildlife {
     this.leads.count = 0; this.leads.frustumCulled = false; this.leads.name = 'dog-leads';
     G.scene.add(this.leads);
     this.m = new THREE.Matrix4(); this.q = new THREE.Quaternion(); this.v = new THREE.Vector3(); this.s = new THREE.Vector3(); this.up = new THREE.Vector3(0, 1, 0);
-    this.callT = 0; this.err = 0;
+    this.err = 0;
   }
   focus() {
     const B = this.G.brothers, me = B.me, v = B.vehicleOf(me);
@@ -76,14 +76,6 @@ export class Wildlife {
     if (this.err > 3) return;
     try {
       this.sim.update(dt);
-      // the calls: a few at a time, near enough to hear
-      const cam = this.G.camera.position, A = this.G.audio;
-      this.callT = Math.max(0, this.callT - dt);
-      for (const c of this.sim.calls) {
-        const d = Math.hypot(c.x - cam.x, c.z - cam.z), loud = c.call === 'caw' || c.call === 'rook' || c.call === 'honk' || c.call === 'kite' || c.call === 'hoot' || c.call === 'moo' || c.call === 'foxbark' || c.call === 'pheasant' || c.call === 'bark';
-        if (d > (loud ? 140 : 70) || this.callT > 1.2) continue;
-        this.callT += 0.3; playCall(A, c);
-      }
     } catch (e) { this.err++; console.warn('wildlife', e); }
   }
   modelOf(a) {

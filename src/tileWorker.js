@@ -478,6 +478,10 @@ function build(header, A, lod) {
     return fu >= fv ? h00 + fu * (h10 - h00) + fv * (h11 - h10) : h00 + fv * (h01 - h00) + fu * (h11 - h01);
   };
   const out = { ix: header.ix, iz: header.iz, ox, oz, hmin, heights: H, lc: new Uint8Array(lc) };
+  // exact carriageway test (the tile's road polygons): no lamp post, tree or street furniture stands in a road
+  const inRoad = roadIndex(A);
+  // ...nor on a railway or in water (2 m landcover)
+  const blocked = (x, z, r = 0.5) => inRoad(x, z, r) || [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].some(([a, b]) => { const c = lcAt(x + a, z + b); return c === 9 || c === 4; });
 
   // ---------------- terrain
   const tstep = lod ? 4 : 1; // grid stride in samples
@@ -832,6 +836,7 @@ function build(header, A, lod) {
       const sb = gs > l / 2 ? 0.45 : l - 1.35, ang = Math.atan2(uz, ux);
       for (let k = 0; k < (seed % 3 ? 2 : 1); k++) {
         const [bx, bz] = P(sb + k * 0.68, 0.55), y = hAt(bx, bz), v0 = vtx();
+        if (blocked(bx, bz, 0.45)) continue;   // a garden drawn over the carriageway: no bin in the road
         wheelieBin(S, bx, y, bz, ang, k ? [11, 12][seed % 2] : (seed % 4 ? 10 : 17));
         if (!lod) brkRec(2, v0, bx, bz, ang, 0, 0.36, 1.1);
       }
@@ -876,7 +881,7 @@ function build(header, A, lod) {
         const side = hh & 1 ? 1 : -1, off = side * (w / 2 + 0.9), sp = 32, s0 = 4 + (hh % 14);
         let prev = null;
         for (let sv = s0; sv < cum - 4; sv += sp) {
-          const [x, z] = at(sv, off); if (!inTile(x, z)) { prev = null; continue; }
+          const [x, z] = at(sv, off); if (!inTile(x, z) || blocked(x, z, 0.6)) { prev = null; continue; }
           const y = hAt(x, z), top = y + 8.4, p0 = vtx();
           box(S, x, y, z, 0, 0.13, 4.2, 0.13, 15);
           const [, , ang] = at(sv, off);
@@ -901,12 +906,12 @@ function build(header, A, lod) {
           brk[rec * BR + 9] = w0; brk[rec * BR + 10] = vtx() - w0;                 // drop wires + span back
           prev = [x, top, ang, z, rec];
         }
-        if (hh % 23 === 0) { const [x, z, ang] = at(Math.min(8, cum / 2), -side * (w / 2 + 0.7)); if (inTile(x, z)) { const v0 = vtx(); pillarBox(S, x, hAt(x, z), z, ang); brkRec(5, v0, x, z, ang, 0, 0.27, 1.56); } }
+        if (hh % 23 === 0) { const [x, z, ang] = at(Math.min(8, cum / 2), -side * (w / 2 + 0.7)); if (inTile(x, z) && !blocked(x, z, 0.5)) { const v0 = vtx(); pillarBox(S, x, hAt(x, z), z, ang); brkRec(5, v0, x, z, ang, 0, 0.27, 1.56); } }
       }
       if (header.core && /^(primary|secondary|tertiary)$/.test(cn)) {
         // high-street furniture on the pavement edge: litter bins, the odd bench
         for (let sv = 10 + (hh % 25); sv < cum - 6; sv += 42) {
-          const sd = (Math.round(sv) & 1) ? 1 : -1, [x, z, ang] = at(sv, sd * (w / 2 + 0.55)); if (!inTile(x, z)) continue;
+          const sd = (Math.round(sv) & 1) ? 1 : -1, [x, z, ang] = at(sv, sd * (w / 2 + 0.55)); if (!inTile(x, z) || blocked(x, z, 0.9)) continue;
           const y = hAt(x, z) + 0.15, v0 = vtx();
           if ((h32i(e * 17 + Math.round(sv)) % 5) === 0) { bench(S, x, y, z, ang + (sd > 0 ? 0 : Math.PI)); brkRec(4, v0, x - Math.cos(ang) * 0.9, z - Math.sin(ang) * 0.9, x + Math.cos(ang) * 0.9, z + Math.sin(ang) * 0.9, 0.5, 0.75); }
           else { litterBin(S, x, y, z); brkRec(3, v0, x, z, 0.3, 0, 0.29, 1.05); }
@@ -914,7 +919,7 @@ function build(header, A, lod) {
       }
       if (/^(pedestrian|footway)$/.test(cn) && (header.core || /pedestrian/.test(cn))) {
         for (let sv = 8 + (hh % 20); sv < cum - 3; sv += 32) {
-          const [x, z, ang] = at(sv, (hh & 2 ? 1 : -1) * (w / 2 + 0.5)); if (!inTile(x, z)) continue;
+          const [x, z, ang] = at(sv, (hh & 2 ? 1 : -1) * (w / 2 + 0.5)); if (!inTile(x, z) || blocked(x, z, 0.9)) continue;
           const y = hAt(x, z) + 0.1, v0 = vtx();
           if ((h32i(e * 31 + Math.round(sv)) & 3) === 0) { bench(S, x, y, z, ang); brkRec(4, v0, x - Math.cos(ang) * 0.9, z - Math.sin(ang) * 0.9, x + Math.cos(ang) * 0.9, z + Math.sin(ang) * 0.9, 0.5, 0.75); }
           else { litterBin(S, x, y, z); brkRec(3, v0, x, z, 0.3, 0, 0.29, 1.05); }
@@ -945,8 +950,12 @@ function build(header, A, lod) {
   out.markings = buildMarkings(addedHere.length ? { ...header, edges: [...header.edges, ...addedHere] } : header, ox, oz, hAt, deckOf);
 
   // ---------------- instances: trees, lamps, slots
-  const tr = A.tr, trees = new Float32Array(tr.length);
-  for (let k = 0; k < tr.length; k += 4) { trees[k] = tr[k]; trees[k + 1] = hAt(tr[k], tr[k + 1]); trees[k + 2] = tr[k + 1]; trees[k + 3] = tr[k + 2] + (tr[k + 3] || 0) * 10; }
+  const tr = A.tr, trL = [];
+  for (let k = 0; k < tr.length; k += 4) {
+    if (!lod && blocked(tr[k], tr[k + 1], 0.9)) continue;     // never a trunk in the road (or on the line)
+    trL.push(tr[k], hAt(tr[k], tr[k + 1]), tr[k + 1], tr[k + 2] + (tr[k + 3] || 0) * 10);
+  }
+  const trees = new Float32Array(trL);
   out.trees = trees;
   // ---------------- planting (inferred): leafy hedges, shrubs and extra trees in open green space
   if (!lod) {
@@ -954,8 +963,20 @@ function build(header, A, lod) {
     out.bushes = P.bushes;
     if (P.trees.length) { const t2 = new Float32Array(trees.length + P.trees.length); t2.set(trees); t2.set(P.trees, trees.length); out.trees = t2; }
   }
-  const lp = A.lp, lamps = new Float32Array(lp.length);
-  for (let k = 0; k < lp.length; k += 4) { lamps[k] = lp[k]; lamps[k + 1] = hAt(lp[k], lp[k + 1]) + 0.17; lamps[k + 2] = lp[k + 1]; lamps[k + 3] = lp[k + 2]; }
+  // street lamps: one standing in a carriageway (an OSM position a little off, or an inferred one at a junction
+  // mouth or on the far carriageway) is moved just behind the nearest kerb, or dropped if there's no room there
+  const lp = A.lp, lampL = [];
+  for (let k = 0; k < lp.length; k += 4) {
+    let x = lp[k], z = lp[k + 1], a = lp[k + 2];
+    if (!lod && inRoad(x, z, 0.35)) {
+      const q = inRoad.outside(x, z, 0.75);
+      if (!q || inRoad(q[0], q[1], 0.35) || lcAt(q[0], q[1]) === 3 || lcAt(q[0], q[1]) === 9) continue;
+      a = Math.atan2(z - q[1], x - q[0]);          // the arm still reaches out over the road
+      x = q[0]; z = q[1];
+    }
+    lampL.push(x, hAt(x, z) + 0.17, z, a);
+  }
+  const lamps = new Float32Array(lampL);
   out.lamps = lamps;
   const pk = A.pk, slots = new Float32Array(pk.length);
   for (let k = 0; k < pk.length; k += 4) { slots[k] = pk[k]; slots[k + 1] = hAt(pk[k], pk[k + 1]) + 0.05; slots[k + 2] = pk[k + 1]; slots[k + 3] = pk[k + 2]; }
@@ -1928,4 +1949,74 @@ function buildWater(A, hAt) {
   }
   if (!idx.length) return null;
   return { position: new Float32Array(pos), depth: new Float32Array(dep), index: new Uint32Array(idx) };
+}
+
+// Exact point-in-carriageway test from the tile's road polygons (pipeline: roadC/roadR/roadP, grid-clipped to 32 m
+// cells, so a point only needs the polygons of its own cell and the neighbours). inRoad(x, z, margin) is true
+// inside a carriageway or within `margin` of one; inRoad.outside(x, z, gap) gives the nearest point `gap` metres
+// beyond the kerb.
+function roadIndex(A) {
+  const C = A.roadC, R = A.roadR, P = A.roadP, cells = new Map(), rings = [];
+  if (C && P) {
+    let ci = 0, ri = 0;
+    for (let pi = 0; pi < P.length; pi++) {
+      const poly = [];
+      let x0 = 1e9, z0 = 1e9, x1 = -1e9, z1 = -1e9;
+      for (let k = 0; k < P[pi]; k++) {
+        const n = R[ri++], ring = new Float32Array(n * 2);
+        for (let q = 0; q < n; q++) { const x = C[(ci + q) * 2] / 10, z = C[(ci + q) * 2 + 1] / 10; ring[q * 2] = x; ring[q * 2 + 1] = z; if (!k) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); } }
+        ci += n; poly.push(ring);
+      }
+      const id = rings.length; rings.push(poly);
+      for (let cx = Math.floor(x0 / 32); cx <= Math.floor(x1 / 32); cx++) for (let cz = Math.floor(z0 / 32); cz <= Math.floor(z1 / 32); cz++) {
+        const key = cx * 64 + cz; let l = cells.get(key); if (!l) cells.set(key, l = []); l.push(id);
+      }
+    }
+  }
+  const near = (x, z, m) => {
+    const out = new Set();
+    for (let cx = Math.floor((x - m) / 32); cx <= Math.floor((x + m) / 32); cx++) for (let cz = Math.floor((z - m) / 32); cz <= Math.floor((z + m) / 32); cz++) for (const id of cells.get(cx * 64 + cz) || []) out.add(id);
+    return out;
+  };
+  const inside = (poly, x, z) => {
+    let c = false;
+    for (const ring of poly) for (let i = 0, j = ring.length / 2 - 1; i < ring.length / 2; j = i++) {
+      const xi = ring[i * 2], zi = ring[i * 2 + 1], xj = ring[j * 2], zj = ring[j * 2 + 1];
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c;
+    }
+    return c;
+  };
+  // nearest point on a polygon's boundary, ignoring edges along the 32 m clipping grid (they are not kerbs)
+  const nearestEdge = (poly, x, z) => {
+    let best = null;
+    for (const ring of poly) for (let i = 0, j = ring.length / 2 - 1; i < ring.length / 2; j = i++) {
+      const ax = ring[j * 2], az = ring[j * 2 + 1], bx = ring[i * 2], bz = ring[i * 2 + 1];
+      if ((Math.abs(ax - bx) < 1e-3 && Math.abs(ax / 32 - Math.round(ax / 32)) < 1e-4) || (Math.abs(az - bz) < 1e-3 && Math.abs(az / 32 - Math.round(az / 32)) < 1e-4)) continue;
+      const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1;
+      let t = ((x - ax) * ex + (z - az) * ez) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const px = ax + ex * t, pz = az + ez * t, d = Math.hypot(x - px, z - pz);
+      if (!best || d < best[2]) best = [px, pz, d];
+    }
+    return best;
+  };
+  const f = (x, z, m = 0) => {
+    for (const id of near(x, z, m)) {
+      const poly = rings[id];
+      if (inside(poly, x, z)) return true;
+      if (m > 0) { const e = nearestEdge(poly, x, z); if (e && e[2] < m) return true; }
+    }
+    return false;
+  };
+  f.outside = (x, z, gap) => {
+    let best = null;
+    for (const id of near(x, z, 12)) {
+      const poly = rings[id]; if (!inside(poly, x, z)) continue;
+      const e = nearestEdge(poly, x, z); if (!e) continue;
+      const d = e[2] || 1e-3, ux = (e[0] - x) / d, uz = (e[1] - z) / d;
+      const q = [e[0] + ux * gap, e[1] + uz * gap];
+      if (!best || e[2] < best[2]) best = [q[0], q[1], e[2]];
+    }
+    return best && [best[0], best[1]];
+  };
+  return f;
 }

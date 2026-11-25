@@ -24,7 +24,22 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 
 ## Sound recordings
 
-`www/sfx/berkshire.ogg` holds 124 field-recording and foley cues (traffic, engines, horns, footsteps by surface, crowd, crashes). They are cut from CC0 and CC BY 3.0 recordings on OpenGameArt and Freesound. Each source, author and licence is listed in `www/sfx/CREDITS.txt`, which ships in the APK beside the bank; the CC BY items need that attribution kept. Cue offsets are in `src/soundCues.json`. The player's own engine, tyre squeal and scrape are synthesised (`src/audio.js`).
+`www/sfx/berkshire.ogg` holds 124 field-recording and foley cues (traffic, engines, horns, footsteps by surface, crowd, crashes). They are cut from CC0 and CC BY 3.0 recordings on OpenGameArt and Freesound. Each source, author and licence is listed in `www/sfx/CREDITS.txt`, which ships in the APK beside the bank; the CC BY items need that attribution kept. Cue offsets are in `src/soundCues.json`.
+
+Nothing in the game is synthesised: every sound is a real recording.
+
+`www/sfx/world.ogg` holds the rest of the world's sound, built by `tools/audio/build_sfx.py` from 47 Freesound recordings (45 CC0, two CC BY):
+- tyre squeal, screech and skids, road roar, gravel under the tyres and metal scrape for the player's car;
+- the car itself: a real ignition, switching off, the Peugeot 308's doors, a handbrake ratchet, and a horn whose recorded note sustains for as long as it is held;
+- rain (open air, and drumming on a car roof), wind, wind in leaves and a distant-traffic bed;
+- a British police car siren, and UK pelican-crossing bleeps recorded in Hereford;
+- the impacts of knocked-down street furniture: struck lamp posts, a pillar box, bins, timber poles, fences, trees, hedges, garden walls and glass.
+
+The build excerpts each recording, levels it and turns loops seamless with an equal-power crossfade. The cue offsets are in `src/worldCues.json`.
+
+`www/sfx/inline4.ogg` is the four-cylinder engine used by every car that is not a V8. `tools/vehicles/engine_bank_i4.py` builds it from Nox_Sound's CC0 recordings of a Peugeot 308: its idle is rebuilt as seamless loops at 800–7,200 rpm, with a real throttle blip on top.
+
+Every recording is credited in `www/sfx/CREDITS.txt`.
 
 `www/sfx/rangerover.ogg` is the Range Rover's V8, built by `tools/vehicles/engine_bank.py` from two CC0 recordings on Freesound:
 - "Crown Victoria Startup and idle" by Therancher01 (Ford 4.6 V8, https://freesound.org/s/610774/). The start-up is used as recorded, and its idle is rebuilt as seamless loops at 800–5,600 rpm.
@@ -75,14 +90,13 @@ The leaf-cluster texture for tree crowns is drawn procedurally on a canvas at st
 
 * **Textures**: value-noise, FBM and Worley textures, cloud noise, window interiors (parallax rooms, shop shelving, curtains), road markings and the tree leaf clusters are procedural (`src/env.js`, `src/materials.js`, `src/vegetation.js`). Surface materials (brick, render, roof tiles, asphalt, paving, grass, bark and so on) use the CC0 photographs listed above.
 * **Models**: people, vehicles (hatchback, saloon, estate, SUV, van, single- and double-deck bus, police estate in Battenburg-style livery), street lamps, signal heads, Belisha beacons, bus shelters, canopies, the Cemetery Junction gateway and Reading Town Hall are procedural geometry in `src/`.
-* **Audio**: everything (rain, wind, traffic, footsteps, murmur, horn, two-tone siren, crossing beeps, crashes) is synthesised with WebAudio at runtime in `src/audio.js`; no samples.
 * **Shop fascia text**: rendered at runtime from OSM `name` tags in plain type. These are factual street names and shop names, not logos. Brand marks are never reproduced.
 * **Launcher icon**: drawn by `tools/android/icon.py`.
 * **Railway stations and train paths** (`www/world/rail.json`, built by `tools/rail/build_rail.mjs`): track centre lines are the OSM `railway=rail` lines already in the tiles (ODbL). Station positions are the WGS84 coordinates on the English Wikipedia articles (Reading, Reading West, Earley, Winnersh Triangle, Winnersh, Wokingham, Bracknell, Martins Heron; fetched via the MediaWiki `prop=coordinates` API, Nov 2026), snapped to the nearest track (1–59 m). `manifest.stations` replaces them when the world data provides it. There is no timetable: trains run evenly spaced.
 
 ## Wildlife (references for where and when animals are about)
 
-The animals, their models and their calls are original work (procedural geometry in `src/wildlifeModels.js`, WebAudio synthesis in `src/wildlifeSounds.js`); no recordings or images are used. Which kinds live on the map, where and when they are about, and how shy they are (`src/wildlifeSpecies.js`) follow these published accounts, read in November 2026. No data was copied: they set the habitats, activity hours and relative abundances by hand.
+The animals and their models are original work (procedural geometry in `src/wildlifeModels.js`); no images are used, and their calls wait for real recordings (the game plays recorded sound only). Which kinds live on the map, where and when they are about, and how shy they are (`src/wildlifeSpecies.js`) follow these published accounts, read in November 2026. No data was copied: they set the habitats, activity hours and relative abundances by hand.
 
 | Reference | Used for |
 |---|---|
@@ -103,4 +117,4 @@ The animals, their models and their calls are original work (procedural geometry
 
 ## Signing
 
-`builds/Green-County-0.20.0-dev.apk` is signed (APK signature scheme v2; the app needs Android 8+) with a **development key** generated in its build container (`CN=Green County Development`, SHA-256 `2e5c058127d712fe261a6074481d794115c08e73a50c4d56bbeda295ba650e2b`); v0.6–v0.18 used another (SHA-256 `2e65a803dd6285bca94a1d76cb7ae7dd8ab4475b6d847c957a09bb8c4e2f7ff3`), so uninstall those first. v0.20.0 has the same key as v0.19.0 and installs over it. The container had no Android SDK, so v0.19.0 and v0.20.0 were built from v0.18.0's compiled manifest, resources and wrapper code (unchanged since) with the current `www/` build as their assets, as versions 0.19.0 (code 19) and 0.20.0 (code 20), and signed with apksig. The key isn't committed (`*.keystore` is git-ignored) and the container is ephemeral, so later builds will have a different key. Android won't install a differently-signed update over the top: uninstall first. The previous v0.5 APK used another key, so v0.6 needs a fresh install too. Prototype saves held by the old file:// WebView origin are handed over by `migrate.html` only when that data is still on the device.
+`builds/Green-County-0.21.0-dev.apk` is signed (APK signature scheme v2; the app needs Android 8+) with a **development key** generated in another build container (`CN=Green County Development`, SHA-256 `2e5c058127d712fe261a6074481d794115c08e73a50c4d56bbeda295ba650e2b`), the one that signed v0.19.0. v0.6–v0.18 and v0.20.0–v0.20.1 were signed with the original development key (SHA-256 `2e65a803dd6285bca94a1d76cb7ae7dd8ab4475b6d847c957a09bb8c4e2f7ff3`), so going from v0.20.x to v0.21.0 needs an uninstall; v0.19.0 updates in place. That container had no Android SDK, so v0.21.0 was built from v0.20.1's compiled manifest, resources and wrapper code with the current `www/` build as its assets, as version 0.21.0 (code 22), and signed with apksig. v0.20.1 is version code 21, built with the Android SDK by `tools/android/build.sh`. The keys aren't committed (`*.keystore` is git-ignored). Android won't install a differently-signed update over the top: uninstall first. The previous v0.5 APK used another key, so v0.6 needs a fresh install too. Prototype saves held by the old file:// WebView origin are handed over by `migrate.html` only when that data is still on the device.

@@ -9,6 +9,26 @@ export const TESTSPOTS = [
   ['Woodley precinct', -2869, -2192], ['Woodley signal crossing', -2790, -2318], ['Cemetery Junction arch', -5890, -2190, 0],
   ['Reading Town Hall (from The Forbury)', -7240, -2600, 3.14], ['Suttons Park Ave (A3290 flyover)', -5372, -2681, 0], ['M4 over Reading Road', -289, 790],
 ];
+// line icons for the touch buttons (24-unit grid, stroked with currentColor)
+const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  cam: svg('<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>'),
+  swap: svg('<path d="M4 8h13l-3-3M20 16H7l3 3"/>'),
+  map: svg('<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/>'),
+  menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
+  dev: svg('<path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/>'),
+  door: svg('<path d="M5 20V5l9-2v18zM14 5h5v15h-5M11 12h.5"/>'),
+  exit: svg('<path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/>'),
+  bus: svg('<rect x="5" y="3" width="14" height="15" rx="2"/><path d="M5 11h14M8 21v-3M16 21v-3"/><circle cx="8.5" cy="14.5" r=".6"/><circle cx="15.5" cy="14.5" r=".6"/>'),
+  hand: svg('<path d="M7 12V6.5a1.5 1.5 0 013 0V11M10 10V4.5a1.5 1.5 0 013 0V11M13 10V5.5a1.5 1.5 0 013 0V12M16 11V8.5a1.5 1.5 0 013 0V14c0 4-3 7-7 7-3 0-5-2-6.5-4L3 13.5a1.5 1.5 0 012.4-1.8L7 14"/>'),
+  fist: svg('<path d="M6 10V7.5a1.5 1.5 0 013 0V10M9 9.5V6.5a1.5 1.5 0 013 0V10M12 9.5V7a1.5 1.5 0 013 0v3M15 10V8.5a1.5 1.5 0 013 0V14c0 3.5-2.5 6-6 6H11c-3 0-5-2-5-5v-5z"/>'),
+  run: svg('<circle cx="14" cy="4.5" r="2"/><path d="M5 12l3-4h5l2 4 3 1M11 8l-2 6 4 3-1 5M9 14l-3 6"/>'),
+  jump: svg('<circle cx="12" cy="4" r="2"/><path d="M12 7v7M8 10l4-2 4 2M9 21l3-7 3 7M4 17h3M17 17h3"/>'),
+  horn: svg('<path d="M3 10v4h4l6 4V6L7 10z"/><path d="M16 9a4 4 0 010 6M18.5 6.5a7.5 7.5 0 010 11"/>'),
+  handbrake: svg('<circle cx="12" cy="12" r="8"/><path d="M12 7v6M12 16v.5"/><path d="M2.5 8a11 11 0 000 8M21.5 8a11 11 0 010 8"/>'),
+  left: svg('<path d="M15 5l-7 7 7 7"/>'),
+  right: svg('<path d="M9 5l7 7-7 7"/>'),
+};
 export class Hud {
   constructor(G) {
     this.G = G;
@@ -21,14 +41,25 @@ export class Hud {
       <div id="feed"></div>
       <div id="fade"></div>
       <div id="btns">
-        <button id="bUse" class="big">Enter</button>
-        <button id="bRun" class="big">Run</button>
-        <button id="bHorn" class="big" hidden>Horn</button>
-        <button id="bCam" data-act="camera">Cam</button>
-        <button id="bSwap">Swap</button>
-        <button id="bJump">Jump</button><button id="bHit">Hit</button><button id="bPickup">Pick up</button><button id="bMenu">Menu</button><button id="bMap">Map</button>
-        <button id="bDev">Dev</button>
+        <div class="top">
+          <button id="bCam" data-act="camera" aria-label="Camera">${ICON.cam}<b>Camera</b></button><button id="bSwap" aria-label="Swap brother">${ICON.swap}<b>Swap</b></button><button id="bMap" aria-label="Map">${ICON.map}<b>Map</b></button><button id="bMenu" aria-label="Menu">${ICON.menu}<b>Menu</b></button><button id="bDev" aria-label="Developer">${ICON.dev}<b>Dev</b></button>
+        </div>
+        <div class="foot">
+          <button id="bUse" class="ctx"><i>${ICON.door}</i><span>Enter</span></button>
+          <button id="bPickup" class="mid" aria-label="Pick up">${ICON.hand}<b>Pick up</b></button>
+          <button id="bHit" class="mid" aria-label="Hit">${ICON.fist}<b>Hit</b></button>
+          <button id="bRun" class="big" aria-label="Run">${ICON.run}<b>Run</b></button>
+          <button id="bJump" class="big" aria-label="Jump">${ICON.jump}<b>Jump</b></button>
+        </div>
+        <div class="drive" hidden>
+          <button id="bHorn" class="mid" aria-label="Horn">${ICON.horn}<b>Horn</b></button>
+          <button id="bHand" class="mid" aria-label="Handbrake">${ICON.handbrake}<b>Handbrake</b></button>
+          <div id="pBrake" class="pedal brake" role="button" aria-label="Brake"><span>BRAKE</span><em>R</em></div>
+          <div id="pGas" class="pedal gas" role="button" aria-label="Accelerator"><span>GAS</span></div>
+        </div>
+        <div class="arrows" hidden><div id="sLeft" class="arrow" role="button" aria-label="Steer left">${ICON.left}</div><div id="sRight" class="arrow" role="button" aria-label="Steer right">${ICON.right}</div></div>
       </div>
+      <div id="speedo" hidden><b>0</b><small>MPH</small><i></i></div>
       <div id="map" hidden><canvas id="mapC"></canvas><div class="maptools"><div class="atlasTitle">Green County <em>Road Atlas</em></div><button id="mClose">Close</button></div>
       <div class="atlasPlaces"><select id="mPlaces" aria-label="Route to a place"><option value="">Route to a place…</option></select><button id="mFit" hidden>Route</button><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
       <div class="atlasFooter"><span id="mInfo"></span><button id="mClear">Clear waypoint</button></div></div>
@@ -38,7 +69,8 @@ export class Hud {
     this.el = id => root.querySelector('#' + id);
     const I = G.input;
     for(const [id,action] of [['bJump','jump'],['bHit','hit'],['bPickup','pickup']])I.bindButton(this.el(id),action);
-    I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn');
+    I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn', true);
+    I.bindButton(this.el('bHand'), 'brake', true); I.bindPedals(this.el('pGas'), this.el('pBrake')); I.bindArrows(this.el('sLeft'), this.el('sRight'));
     I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
     this.el('mClose').onclick = () => this.toggleMap(false);
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
@@ -83,15 +115,31 @@ export class Hud {
     const near = !inCar && G.brothers.nearestVehicle();
     const boardable=G.transit.nearby(me);
     const waiting=!inCar && !near && !boardable && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
-    this.el('bUse').textContent=G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":'Get in');
-    this.el('bUse').disabled=!!waiting;
-    this.el('bUse').classList.toggle('dim',!inCar&&!near&&!G.transit.ride&&!boardable);
-    this.el('bRun').textContent = inCar ? 'Handbrake' : 'Run';
-    this.el('bRun').hidden=this.el('bSwap').hidden=!!G.transit.ride;
-    this.el('bHorn').hidden = !inCar;
-    for(const id of ['bJump','bHit','bPickup'])this.el(id).hidden=inCar || !!G.transit.ride;
-    // run button doubles as brake in a vehicle
-    if (inCar) { if (I.held.has('run')) I.held.add('brake'); else if (!I.keys.has('Space')) I.held.delete('brake'); }
+    const useText=G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":'Get in');
+    const use=this.el('bUse');
+    if(use.lastChild.textContent!==useText){use.lastChild.textContent=useText;use.firstChild.innerHTML=inCar||G.transit.ride&&G.transit.currentStop()?ICON.exit:boardable||G.transit.ride?ICON.bus:ICON.door;}
+    use.disabled=!!waiting;
+    const ready=inCar||near||G.transit.ride||boardable;
+    use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable)&&!inCar);
+    // on foot: stick and actions; driving: wheel (or arrows) and pedals; riding a bus or train: just the stop button
+    const ride=!!G.transit.ride, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Drag wheel';
+    I.driving=drive; I.steering=steer;
+    this.el('btns').querySelector('.foot').classList.toggle('driving',drive||ride);
+    this.el('btns').querySelector('.drive').hidden=!drive;
+    this.el('btns').querySelector('.arrows').hidden=!(drive&&steer==='Arrow buttons');
+    I.wheelEl.hidden=!(drive&&steer==='Drag wheel');
+    I.rest.hidden=drive||ride;
+    for(const id of ['bJump','bHit','bPickup','bRun'])this.el(id).hidden=drive||ride;
+    this.el('bSwap').hidden=ride;
+    if(drive!==this._wasDriving){this._wasDriving=drive;if(drive&&steer==='Tilt')I.calibrateTilt();}
+    if(drive){
+      const v=G.traffic.byId.get(me.vehicle),c=I.driveControls(0);
+      const mph=Math.round(Math.abs(v?.sp||0)*2.237),sp=this.el('speedo');sp.hidden=false;
+      if(sp.firstChild.textContent!==String(mph))sp.firstChild.textContent=mph;
+      sp.lastChild.textContent=v?.ph?.gear<0?'R':v?.ph?(Math.abs(v.sp)<0.3&&!c.gas?'N':String(v.ph.gear)):'';
+      I.wheelEl.style.setProperty('--steer',(c.steer*110).toFixed(1)+'deg');
+      this.el('pBrake').classList.toggle('rev',!!(v?.ph?.gear<0&&c.brake>0));
+    } else this.el('speedo').hidden=true;
     this._acc = (this._acc || 0) + dt;
     if (this._acc > 0.1) { this._acc = 0; const notice=this.nav.update(me); if(notice) this.toast(notice); this.drawMini(); this.renderFeed(); this.drawClock(); if (!this.el('map').hidden) this.drawMap(); }
     if(G.transit.ride){this.el('guidance').hidden=false;this.el('guidance').firstChild.textContent=G.transit.ride===G.transit?'RAIL':'BUS '+G.transit.ride.ref;this.el('guidance').lastChild.textContent='Next: '+G.transit.nextName()+(G.transit.request?' · Stop requested':'');}
@@ -167,7 +215,7 @@ export class Hud {
     const brg = ((Math.atan2(Math.cos(me.heading), -Math.sin(me.heading)) * 180 / Math.PI) + 360) % 360;
     const hdg = DIRS[Math.round(brg / 45) % 8];
     const name = G.roadName(me.x, me.z);
-    this.el('road').textContent = `${name || G.districtName(me.x, me.z)} · ${hdg}${me.vehicle ? ` · ${Math.round((G.brothers.speedNow || 0) * 2.237)} mph · ${(() => { const v = G.traffic.byId.get(me.vehicle); return !v || v.gear == null ? '' : v.gear < 0 ? 'R' : v.sp < 0.3 && !(v.ph && v.ph.thr) ? 'N' : 'D' + v.gear; })()}` : ''}`;
+    this.el('road').textContent = `${name || G.districtName(me.x, me.z)} · ${hdg}`;
   }
   // ------------------------------------------------------------------ full map
   zoomMap(factor) { this.mapView.s=Math.max(.04,Math.min(4,this.mapView.s*factor)); }

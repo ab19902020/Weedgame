@@ -12,6 +12,8 @@ const MISSION = /mission|objective|deliver|incoming call|answer call|order compl
 async function launch(video) {
   const b = await chromium.launch({ headless: false, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--autoplay-policy=no-user-gesture-required'], env: { ...process.env, CHROMIUM_WEBGL_RENDERER: 'lavapipe' } });
   const ctx = await b.newContext({ viewport: { width: 915, height: 412 }, deviceScaleFactor: 1, hasTouch: true, ...(video ? { recordVideo: { dir: video, size: { width: 915, height: 412 } } } : {}) });
+  // the start menu opens on every load: tap "Enter free roam" (or "Resume") as a player would
+  await ctx.addInitScript(() => { const iv = setInterval(() => { const b = document.querySelector('[data-go="play"]'); if (b && b.offsetWidth && window.GC && GC.hud && GC.hud.menu) { b.click(); clearInterval(iv); } }, 400); });
   const p = await ctx.newPage(); const cdp = await ctx.newCDPSession(p);
   // software rendering (SwiftShader) can stall a frame for tens of seconds; give Playwright actions room
   p.setDefaultTimeout(180000);
@@ -25,17 +27,27 @@ async function launch(video) {
     runPt: null,
     stickHold: async (sx, sy, run) => {
       const ox = 140, oy = 300;
+      // driving: the left thumb steers (drag sideways) and the right thumb is on the accelerator or the brake
+      if (await p.evaluate(() => !!GC.brothers.me.vehicle && !GC.transit.ride)) {
+        T.car = { gas: await T.rect('#pGas'), brake: await T.rect('#pBrake') };
+        const ped = T.pedalPt(sy);
+        await T.touch('touchStart', [[ox, oy, 1], ...ped]); await T.touch('touchMove', [[ox + sx * 42, oy, 1], ...ped]); await T.touch('touchMove', [[ox + sx * 84, oy, 1], ...ped]);
+        return;
+      }
+      T.car = null;
       let extra = [];
       if (run) { const r = await T.rect('#bRun'); T.runPt = [r.x + r.width / 2, r.y + r.height / 2, 4]; extra = [T.runPt]; } else T.runPt = null;
       await T.touch('touchStart', [[ox, oy, 1], ...extra]); await T.touch('touchMove', [[ox + sx * 30, oy + sy * 30, 1], ...extra]); await T.touch('touchMove', [[ox + sx * 55, oy + sy * 55, 1], ...extra]);
     },
-    stickMove: async (sx, sy) => T.touch('touchMove', [[140 + sx * 55, 300 + sy * 55, 1], ...(T.runPt ? [T.runPt] : [])]),
+    // the right thumb stays down: on the accelerator, on the brake, or slid off both (coasting)
+    pedalPt: sy => { const r = sy < -0.05 ? T.car.gas : sy > 0.05 ? T.car.brake : null; return [r ? [r.x + r.width / 2, r.y + r.height * 0.6, 6] : [T.car.gas.x - 150, T.car.gas.y - 170, 6]]; },
+    stickMove: async (sx, sy) => T.car ? T.touch('touchMove', [[140 + sx * 84, 300, 1], ...T.pedalPt(sy)]) : T.touch('touchMove', [[140 + sx * 55, 300 + sy * 55, 1], ...(T.runPt ? [T.runPt] : [])]),
     stickRelease: async () => T.touch('touchEnd', []),
-    stick: async (sx, sy, n, run) => { await T.stickHold(sx, sy, run); await T.frames(n); await T.stickRelease(); T.runPt = null; },
+    stick: async (sx, sy, n, run) => { await T.stickHold(sx, sy, run); await T.frames(n); await T.stickRelease(); T.runPt = null; T.car = null; },
     look: async (dx, dy = 0) => { const x = 620, y = 200; await T.touch('touchStart', [[x, y, 2]]); for (let k = 1; k <= 6; k++) await T.touch('touchMove', [[x + dx * k / 6, y + dy * k / 6, 2]]); await T.frames(1); await T.touch('touchEnd', []); },
-    // hold the Brake (Run) button until the vehicle has stopped
+    // hold the brake pedal until the vehicle has stopped
     stopVehicle: async () => {
-      const r = await T.rect('#bRun'); const pt = [r.x + r.width / 2, r.y + r.height / 2, 5];
+      const r = await T.rect('#pBrake'); const pt = [r.x + r.width / 2, r.y + r.height / 2, 5];
       await T.touch('touchStart', [pt]);
       for (let i = 0; i < 60; i++) { const sp = await p.evaluate(() => Math.abs(GC.brothers.vehicleOf(GC.brothers.me)?.sp || 0)); if (sp < 0.3) break; await T.frames(1); }
       await T.touch('touchEnd', []); await T.frames(1);
@@ -292,7 +304,7 @@ async function step(name, fn) {
     // stand under the shop canopy: rain is kept out and sound changes
     const can = await p.evaluate(() => { const me = GC.brothers.me; let best = null, bd = 1e9; for (const c of GC.canopies) if (c.kind === 0) { const d = Math.hypot(c.x - me.x, c.z - me.z); if (d < bd) { bd = d; best = c; } } return [best.x, best.z]; });
     await T.walkTo(can[0], can[1], { within: 0.8, bursts: 20, frames: 5 });
-    const under = await p.evaluate(() => { const me = GC.brothers.me, A = GC.audio; return { sheltered: GC.shelteredAt(me.x, me.y + 1.2, me.z), rainGain: A.on ? +A.rain.g.gain.value.toFixed(3) : null, patterGain: A.on ? +A.rainHi.g.gain.value.toFixed(3) : null, lowpassHz: A.on ? Math.round(A.rain.f.frequency.value) : null }; });
+    const under = await p.evaluate(() => { const me = GC.brothers.me, A = GC.audio; return { sheltered: GC.shelteredAt(me.x, me.y + 1.2, me.z), rainGain: A.on ? +A.rain.g.gain.value.toFixed(3) : null, patterGain: A.on ? +A.rainRoof.g.gain.value.toFixed(3) : null, lowpassHz: A.on ? Math.round(A.rain.f.frequency.value) : null }; });
     rec.notes.push(`under canopy: sheltered=${under.sheltered}, rain bed gain ${under.rainGain}, overhead patter gain ${under.patterGain}, rain low-pass ${under.lowpassHz} Hz`);
     rec.shots.push(await T.shot('19-under-canopy-in-rain'));
     await T.dev('weather-clearing', 'speed-600');
