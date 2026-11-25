@@ -57,6 +57,9 @@ export class Traffic {
     const e = h >> 1, w = this.net.width[e], nl = Math.max(1, this.net.lanesF[e] + this.net.lanesB[e]);
     const lw = w / nl;
     const fl = (h & 1) ? this.net.lanesB[e] : this.net.lanesF[e];
+    // motorway carriageway: lanes start inside the nearside hard shoulder and stop at the offside hard strip
+    const hs = this.net.shoulder ? this.net.shoulder[e] : 0;
+    if (hs > 0) return w / 2 - hs - (w - hs - this.net.strip[e]) / nl * (lane + 0.5);
     if (this.net.flags[e] & F_ONEWAY) return w / 2 - lw * (lane + 0.5);
     return Math.max(lw * 0.5, w / 2 - lw * (Math.min(lane, Math.max(0, fl - 1)) + 0.5));
   }
@@ -94,7 +97,12 @@ export class Traffic {
     }
     // weighted random continuation, no U-turns
     const outs = this.net.outD[end].filter(h => (h >> 1) !== (v.h >> 1) || this.net.outD[end].length === 1);
-    if (!outs.length) { v.route = [v.h, v.h ^ 1]; v.ri = 0; return; }
+    if (!outs.length) {
+      // a one-way carriageway that runs out (the motorway at the edge of the mapped area) is never driven
+      // back against its traffic: the car waits at the end and is recycled as soon as nobody can see it
+      if (this.net.flags[v.h >> 1] & F_ONEWAY) { v.route = [v.h]; v.ri = 0; v.deadEnd = true; return; }
+      v.route = [v.h, v.h ^ 1]; v.ri = 0; return;
+    }
     let tot = 0; const w = outs.map(h => { const r = this.rank[h >> 1]; const x = r <= 1 ? 0.15 : r * r; tot += x; return x; });
     let r = this.rand() * tot, pick = outs[0];
     for (let i = 0; i < outs.length; i++) { r -= w[i]; if (r <= 0) { pick = outs[i]; break; } }
@@ -435,7 +443,7 @@ export class Traffic {
       const v = this.list[i];
       if (v.kind !== 'traffic' || v.parked || v.player || v.crashed || v.brokenDown || v.frozen || v.towing) continue;
       const d = Math.hypot(v.x - focus.x, v.z - focus.z);
-      if (d > KILL_R && !info.visible(v.x, v.y, v.z, 0.6)) this.remove(v);
+      if ((d > KILL_R || v.deadEnd) && !info.visible(v.x, v.y, v.z, 0.6)) this.remove(v);
     }
     // target count from network around the focus
     if (!this._edgeCache || Math.hypot(this._edgeCache.x - focus.x, this._edgeCache.z - focus.z) > 80) {

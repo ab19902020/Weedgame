@@ -273,12 +273,17 @@ export function markingMaterial() {
   const relief = float(1).sub(smoothstep(.18,.31,blister)).mul(float(1).sub(smoothstep(.018,.09,fwidth(p.x).add(fwidth(p.z)))));
   const tactile = mix(vec3(.37,.115,.075),vec3(.54,.39,.20),step(2.5,s)).mul(relief.mul(.22).add(.91));
   albedo = mix(albedo,tactile,step(1.5,s));
+  // road studs (cat's eyes, surf 4-7: red nearside edge, amber offside edge, white lane line, green slip
+  // road): a grey body that throws headlight back in its own colour after dark
+  const stud = step(3.5, s);
+  const studCol = sel(s.lessThan(4.5), vec3(1, 0.05, 0.03), sel(s.lessThan(5.5), vec3(1, 0.5, 0.04), sel(s.lessThan(6.5), vec3(1, 0.97, 0.88), vec3(0.08, 1, 0.3))));
+  albedo = mix(albedo, vec3(0.5, 0.5, 0.48), stud);
   const expo = float(1).sub(shelter(p));
   const wet = U.wet.mul(expo);
   albedo = albedo.mul(mix(float(1), float(0.8), wet));
   m.colorNode = albedo.mul(cloudShadow(p));
   m.roughnessNode = mix(float(0.7), float(0.25), wet);
-  m.emissiveNode = lightPool(p).mul(albedo).add(skyReflection(p, vec3(0, 1, 0), wet.mul(0.4)));
+  m.emissiveNode = lightPool(p).mul(albedo).add(skyReflection(p, vec3(0, 1, 0), wet.mul(0.4))).add(studCol.mul(stud).mul(U.night.mul(2.2).add(0.12)));
   return m;
 }
 
