@@ -39,7 +39,8 @@ async function launch(video) {
       if (run) { const r = await T.rect('#bRun'); T.runPt = [r.x + r.width / 2, r.y + r.height / 2, 4]; extra = [T.runPt]; } else T.runPt = null;
       await T.touch('touchStart', [[ox, oy, 1], ...extra]); await T.touch('touchMove', [[ox + sx * 30, oy + sy * 30, 1], ...extra]); await T.touch('touchMove', [[ox + sx * 55, oy + sy * 55, 1], ...extra]);
     },
-    pedalPt: sy => { const r = sy < -0.05 ? T.car.gas : sy > 0.05 ? T.car.brake : null; return r ? [[r.x + r.width / 2, r.y + r.height * 0.6, 6]] : []; },
+    // the right thumb stays down: on the accelerator, on the brake, or slid off both (coasting)
+    pedalPt: sy => { const r = sy < -0.05 ? T.car.gas : sy > 0.05 ? T.car.brake : null; return [r ? [r.x + r.width / 2, r.y + r.height * 0.6, 6] : [T.car.gas.x - 150, T.car.gas.y - 170, 6]]; },
     stickMove: async (sx, sy) => T.car ? T.touch('touchMove', [[140 + sx * 84, 300, 1], ...T.pedalPt(sy)]) : T.touch('touchMove', [[140 + sx * 55, 300 + sy * 55, 1], ...(T.runPt ? [T.runPt] : [])]),
     stickRelease: async () => T.touch('touchEnd', []),
     stick: async (sx, sy, n, run) => { await T.stickHold(sx, sy, run); await T.frames(n); await T.stickRelease(); T.runPt = null; T.car = null; },
