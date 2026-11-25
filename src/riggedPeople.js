@@ -84,7 +84,7 @@ export class RiggedPeople {
     if (a.jumpTime > 0 && R.jump && slot.clip !== R.jump) return { clip: R.jump, scale: R.jumpScale || 1, hold: true };
     if (a.hitTime > 0 && R.hit && slot.clip !== R.hit) return { clip: R.hit, scale: R.hitScale || 1, hold: true };
     if (slot.lock > 0) return { clip: slot.clip, scale: slot.scale };
-    if (a.pose === 'swim' && R.swim) return { clip: R.swim, scale: 1 };
+    if (a.pose === 'swim' && R.swim) return { clip: R.swim, scale: speed > 0.25 ? Math.max(0.8, Math.min(1.5, speed / 1.1)) : 0.45 };   // slow strokes treading water
     if (a.pose === 'weaponHold' && R.weaponHold) return { clip: R.weaponHold, scale: 1 };
     if (a.pose === 'jump' && R.jump) return { clip: R.jump, scale: 1 };
     if (a.phoneT > 0 && R.phone) return { clip: R.phone, scale: 1 };

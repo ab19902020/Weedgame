@@ -16,6 +16,7 @@ const KINDS = {
   leaf: { s: [0.06, 0.004, 0.045], v: 0.5, drag: 3.2, bounce: 0.05, life: 22, col: [0.09, 0.2, 0.05] },
   twig: { s: [0.3, 0.015, 0.015], v: 0.6, drag: 1.2, bounce: 0.1, life: 22, col: [0.18, 0.12, 0.07] },
   plastic: { s: [0.16, 0.015, 0.1], v: 0.8, drag: 0.5, bounce: 0.3, life: 30, col: [0.03, 0.03, 0.03] },
+  drop: { s: [0.035, 0.035, 0.035], v: 0.2, drag: 0.4, bounce: 0, life: 0.9, col: [0.8, 0.86, 0.9] },          // splash droplets
   plate: { s: [0.52, 0.012, 0.11], v: 0.05, drag: 0.3, bounce: 0.3, life: 90, col: [0.85, 0.85, 0.82] },     // number plate
   trim: { s: [0.9, 0.05, 0.12], v: 0.3, drag: 0.15, bounce: 0.25, life: 90, col: [0.025, 0.025, 0.028] },   // bumper trim / grille
 };

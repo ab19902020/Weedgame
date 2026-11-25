@@ -66,6 +66,7 @@ BUILD_KEYS = ('building', 'height', 'building:levels', 'roof:shape', 'roof:heigh
 buildings, landareas, highways, railways, waterlines, barriers = [], [], [], [], [], []
 pnodes = []      # point features
 relations = []   # bus routes
+places = []      # named settlements (place=town/suburb/village/hamlet/...)
 area_hw = []     # pedestrian areas
 way_nodes_tagged = {}  # node id -> tags for nodes we care about on ways
 LAND_TAGS = ('landuse', 'natural', 'leisure', 'amenity', 'waterway', 'water', 'area:highway', 'highway', 'place', 'man_made')
@@ -102,6 +103,8 @@ for o in fp:
             barriers.append((o.id, [(n.lon, n.lat) for n in o.nodes], t))
     elif o.is_node():
         t = dict(o.tags)
+        if t.get('place') in ('town', 'suburb', 'village', 'hamlet', 'quarter', 'neighbourhood') and 'name' in t:
+            places.append((t['name'], t['place'], o.location.lon, o.location.lat))
         keep = (t.get('highway') in ('traffic_signals', 'crossing', 'bus_stop', 'street_lamp', 'give_way', 'stop', 'mini_roundabout')
                 or t.get('crossing') or t.get('natural') == 'tree'
                 or ('name' in t and ('shop' in t or t.get('amenity') in ('cafe', 'pub', 'restaurant', 'fast_food', 'bank', 'pharmacy', 'bar', 'post_office', 'library', 'cinema', 'place_of_worship', 'police'))))
@@ -146,7 +149,10 @@ for wid, nids, ll, t in highways:
         if np.all((xs[:, 0] > -8200) & (xs[:, 0] < 7800)):  # Reading TC (x≈-7.4 km) to Bracknell (x≈7.9 km)
             route_lines.append(LineString(xs))
 corridor = unary_union(route_lines).buffer(380, 16) if route_lines else Polygon()
-coverage = unary_union([d[1] for d in discs] + [corridor]).buffer(0)
+# The world is the whole study area: the OSM extract's bbox inside the LIDAR terrain (it was the district
+# discs plus the A329 corridor, which cut Dinton Pastures, the Thames meadows and lanes like Sandford Lane in half)
+RECT = (-9600.0, -5650.0, 9600.0, 5100.0)   # x0, z0, x1, z1 in world metres
+coverage = box(*RECT) if os.environ.get('COVER', 'rect') == 'rect' else unary_union([d[1] for d in discs] + [corridor]).buffer(0)
 if coverage.geom_type == 'MultiPolygon':
     parts = sorted(coverage.geoms, key=lambda g: -g.area)
     log('coverage parts', [round(p.area / 1e6, 2) for p in parts])
@@ -167,7 +173,7 @@ def district_of(x, z):
     for name, d in discs:
         if d.contains(p):
             return name
-    return 'A329 / A329(M) corridor'
+    return 'Villages, countryside and the A329 corridor'
 
 core_discs = []
 for lon, lat, r, lv in CORES:
@@ -225,6 +231,8 @@ def maxspeed(t, cls):
 
 kept_hw = []
 for wid, nids, ll, t in highways:
+    if t['highway'] == 'road':          # 'road' = type not yet surveyed: drive it as an unclassified road
+        t = {**t, 'highway': 'unclassified'}
     cls = t['highway']
     if cls not in CLS:
         continue
@@ -913,6 +921,8 @@ def land_class(t):
     return None, 0
 
 land_polys = []  # (priority, class, shapely)
+water_bodies = []  # (shapely, kind 'lake'|'river', name) for the water surfaces and carved beds
+RIVER_WATER = ('river', 'canal', 'stream', 'oxbow', 'lock', 'stream_pool', 'ditch', 'drain', 'moat', 'wastewater')
 for oid, rings, t in landareas:
     cl, pr = land_class(t)
     if cl is None:
@@ -922,6 +932,9 @@ for oid, rings, t in landareas:
         if p is None or p.is_empty or not margin_prep.intersects(p):
             continue
         land_polys.append((pr, cl, p))
+        if cl == 'water':
+            kind = 'river' if (t.get('water') in RIVER_WATER or t.get('waterway') in ('riverbank', 'canal', 'dock')) else 'lake'
+            water_bodies.append((p, kind, t.get('name', '')))
 for oid, rings, t in area_hw:
     for poly in proj_rings(rings):
         p = shp(poly)
@@ -932,10 +945,14 @@ landtree = shapely.STRtree([p for _, _, p in land_polys])
 log('landcover polygons', len(land_polys))
 
 # water lines buffered (rivers mapped as lines only)
+water_lines = []   # (LineString, waterway, width) open (not culverted) channels
 for wid, ll, t in waterlines:
     xs = proj(ll)
+    if len(xs) < 2 or t.get('tunnel') in ('culvert', 'yes', 'flooded') or t.get('location') == 'underground':
+        continue
     w = num(t.get('width'), {'river': 12, 'canal': 10, 'stream': 2.5, 'ditch': 1.2, 'drain': 1.5}[t['waterway']])
     land_polys.append((9, 'water', LineString(xs).buffer(w / 2, 4)))
+    water_lines.append((LineString(xs), t['waterway'], w))
 landtree = shapely.STRtree([p for _, _, p in land_polys])
 
 rails = []
@@ -1052,6 +1069,7 @@ for n, es in deg.items():
     if len(es) >= 3:
         no_park.append(Point(node_xyz[n, 0], node_xyz[n, 2])); no_park_r.append(12.0)
 no_park_tree = shapely.STRtree(no_park)
+
 GRID = 32.0   # surface polygon clipping cell (keeps triangles small so they follow terrain)
 RAS = 2.0     # landcover raster resolution
 NR = int(TILE / RAS)
@@ -1084,17 +1102,105 @@ def encode_polys(polys, ox, oz):
         return np.zeros(0, np.int16), np.zeros(0, np.uint16), np.zeros(0, np.uint8)
     return np.concatenate(coords).ravel(), np.array(rsz, np.uint16), np.array(prc, np.uint8)
 
-def grid_clip(geom, ox, oz):
+def grid_clip(geom, ox, oz, grid=None):
     polys = []
     if geom.is_empty:
         return polys
-    n = int(TILE / GRID)
-    cells = [box(ox + i * GRID, oz + j * GRID, ox + (i + 1) * GRID, oz + (j + 1) * GRID) for i in range(n) for j in range(n)]
+    grid = grid or GRID
+    n = int(TILE / grid)
+    cells = [box(ox + i * grid, oz + j * grid, ox + (i + 1) * grid, oz + (j + 1) * grid) for i in range(n) for j in range(n)]
+    tree = shapely.STRtree(cells)
+    cells = [cells[k] for k in tree.query(geom, predicate='intersects')]
     parts = shapely.intersection(np.array(cells, dtype=object), geom)
     for g in parts:
         polys.extend(poly_rings(g))
     return polys
 
+# --------------------------------------------------------------------------- water: levels, carved beds, surfaces
+# The EA DTM is flat over open water (it records the water surface), so each lake's level is the median DTM
+# inside it and a river's level is the DTM smoothed along its channel. Beds are carved below that level,
+# deeper away from the shore (gravel-pit lakes up to 6 m, the Thames ~4 m, brooks ~0.5 m), never under
+# roads, paths or buildings. Tiles get the water polygons (drawn as a separate surface) and the level on
+# their 4 m terrain grid (swimming, wading, cars in water).
+log('water')
+from scipy import ndimage
+Hd, Wd = DEM.shape
+def to_px(x, z):
+    e = np.asarray(x) * K + E0; n = N0 - np.asarray(z) * K
+    return (e - tm['e_min']) / tm['res'] - .5, (tm['n_max'] - n) / tm['res'] - .5
+def px_poly(coords):
+    c, r = to_px(np.asarray(coords)[:, 0], np.asarray(coords)[:, 1])
+    return list(zip(c.tolist(), r.tolist()))
+wimg = Image.new('L', (Wd, Hd), 0); wd = ImageDraw.Draw(wimg)
+LINE_V = {'river': 3, 'canal': 4, 'stream': 5, 'ditch': 6, 'drain': 6}
+for l, ww, w in water_lines:
+    wd.line(px_poly(l.coords), fill=LINE_V[ww], width=max(1, int(round(w / tm['res']))) if ww in ('river', 'canal') else 1)
+for p, kind, name in water_bodies:
+    for poly in poly_rings(p):
+        wd.polygon(px_poly(poly[0]), fill=1 if kind == 'lake' else 2)
+        for hole in poly[1:]:
+            wd.polygon(px_poly(hole), fill=0)
+WV = np.array(wimg, np.uint8)
+# never under roads, paths (bridges excepted) or buildings
+ximg = Image.new('L', (Wd, Hd), 0); xd = ImageDraw.Draw(ximg)
+for e in edges:
+    if e['bridge'] or e['tunnel']:
+        continue
+    xd.line(px_poly(e['pts']), fill=1, width=max(1, int(math.ceil((e['width'] + 1.5) / tm['res']))))
+for recs in bldg_records.values():
+    for r in recs:
+        xd.polygon(px_poly(np.array(r['poly'].exterior.coords)), fill=1)
+WM = (WV > 0) & (np.array(ximg, np.uint8) == 0)
+lab, nlab = ndimage.label(WM, structure=np.ones((3, 3)))
+edt = ndimage.distance_transform_edt(WM)
+cells = np.bincount(lab.ravel(), minlength=nlab + 1)
+maxd = ndimage.maximum(edt, lab, index=np.arange(nlab + 1)); maxd = np.nan_to_num(np.asarray(maxd, np.float64))
+votes = np.zeros((nlab + 1, 7), np.int64)
+np.add.at(votes, (lab[WM], WV[WM]), 1)
+kindv = votes.argmax(1)      # 1 lake, 2 river polygon, 3 river line, 4 canal, 5 stream, 6 ditch/drain
+# per-component class: lakes (flat level), channels (level follows the valley), narrow brooks and ditches
+LAKE, CHAN, NARROW = 1, 2, 3
+comp = np.full(nlab + 1, CHAN, np.int8)
+comp[(kindv == 1)] = LAKE
+comp[(maxd <= 1.5) & (kindv >= 5)] = NARROW
+comp[0] = 0
+cmap = comp[lab]
+DEMf = DEM.astype(np.float64)
+level = np.full(DEM.shape, np.nan)
+lake_ids = np.nonzero(comp == LAKE)[0]
+if len(lake_ids):
+    med = ndimage.median(DEMf, lab, index=lake_ids)
+    lv_of = np.zeros(nlab + 1); lv_of[lake_ids] = np.asarray(med) - 0.05
+    m = cmap == LAKE; level[m] = lv_of[lab[m]]
+for cc, win, drop in ((CHAN, 11, 0.05), (NARROW, 7, 0.12)):
+    m = cmap == cc
+    if not m.any():
+        continue
+    num_ = ndimage.uniform_filter(np.where(m, DEMf, 0.0), win); den = ndimage.uniform_filter(m.astype(np.float64), win)
+    level[m] = (num_[m] / np.maximum(den[m], 1e-6)) - drop
+# depth: deeper with distance from the shore, up to a maximum by kind and size
+area_ha = cells * tm['res'] ** 2 / 1e4
+dmax_c = np.where(comp == LAKE, np.clip(1.2 + 0.9 * np.sqrt(area_ha), 1.5, 6.0), np.clip(0.6 + maxd * tm['res'] * 0.1, 0.8, 4.0))
+dmax = dmax_c[lab]
+dmax = np.where(cmap == NARROW, np.where(WV == 6, 0.4, 0.55), dmax)
+dist_m = np.maximum(edt - 0.5, 0) * tm['res']
+carve = np.minimum(dmax, 0.3 + dist_m * 0.25)
+bed = level - carve
+DEM = np.where(WM, np.minimum(DEMf, bed), DEMf).astype(np.float32)   # terrain() samples the carved DEM from here on
+# level field extended 3 px past the water (the surface polygons are padded under the banks)
+ndist, (ir, ic) = ndimage.distance_transform_edt(~WM, return_indices=True)
+LVX = np.where(ndist <= 3.0, level[ir, ic], np.nan).astype(np.float32)
+def level_at(x, z):
+    c, r = to_px(x, z)
+    c = np.clip(np.round(c).astype(int), 0, Wd - 1); r = np.clip(np.round(r).astype(int), 0, Hd - 1)
+    return LVX[r, c]
+# vector water for the surfaces: polygons plus open channels at least 4.4 m wide
+wsurf = [p for p, _, _ in water_bodies] + [l.buffer(max(w, 4.4) / 2, 4) for l, ww, w in water_lines]
+wtree = shapely.STRtree(wsurf)
+water_stats = dict(bodies=int((comp == LAKE).sum()), channels=int((comp == CHAN).sum()), brooks=int((comp == NARROW).sum()),
+                   areaHa=round(float(WM.sum()) * tm['res'] ** 2 / 1e4, 1),
+                   named=sorted({n for _, _, n in water_bodies if n} | {n for n in []}))
+log('water components', nlab, 'lakes', water_stats['bodies'], 'channels', water_stats['channels'], 'brooks', water_stats['brooks'], 'ha', water_stats['areaHa'])
 def build_tile(ix, iz):
     ox, oz = ix * TILE, iz * TILE
     tb = box(ox, oz, ox + TILE, oz + TILE)
@@ -1194,6 +1300,35 @@ def build_tile(ix, iz):
         dr.line([((x - ox) / RAS, (z - oz) / RAS) for x, z in l], fill=LC['rail'], width=2)
     fill(bunion.intersection(tbm) if near_b else Polygon(), LC['building'])
     A['lc'] = np.array(img, np.uint8).ravel()
+    # water: surface polygons (padded under the banks, clear of roads, paths and buildings) and the level grid
+    wq = wtree.query(tbm)
+    if len(wq):
+        def areal(g):
+            # polygons only (overlay results can be collections with stray lines and points)
+            ps = [q for q in shapely.get_parts(g) if q.geom_type == 'Polygon' and q.area > 0.01]
+            return unary_union(ps) if ps else Polygon()
+        def robust(f, *gs):
+            # GEOS can fail on near-coincident edges; retry valid and on a 5 cm grid, else give up (None)
+            for prep in (lambda g: g, lambda g: shapely.set_precision(shapely.make_valid(g), 0.05), lambda g: g.buffer(0.02)):
+                try:
+                    return areal(f(*[areal(prep(g)) for g in gs]))
+                except Exception:
+                    continue
+            return None
+        wg = robust(lambda *g: unary_union(g).intersection(tbm).buffer(2.5, 4), *[wsurf[j] for j in wq]) or Polygon()
+        cut = [g for g in (road, paths, bunion) if not g.is_empty]
+        if cut and not wg.is_empty:
+            cu = robust(lambda *g: unary_union(g), *cut)
+            if cu is not None and not cu.is_empty:
+                wg = robust(lambda a, b: a.difference(b), wg, cu) or wg
+        wg = robust(lambda a, b: a.intersection(b), wg, tb) or Polygon()
+        if not wg.is_empty and wg.area > 1:
+            # 8 m cells: enough vertices for the depth (and so the colour) to follow the shelving bed
+            c, r, pc = encode_polys(grid_clip(wg, ox, oz, 8.0), ox, oz)
+            if len(r):
+                A['wtC'] = c; A['wtR'] = r; A['wtP'] = pc
+                lvg = level_at(gx.ravel(), gz.ravel())
+                A['wl'] = np.where(np.isnan(lvg), 32767, np.round(lvg * 100)).astype(np.int16)
     # buildings
     recs = bldg_records.get((ix, iz), [])
     # shops mapped as POI nodes inside a footprint mark that building as a shop (shopfront glazing)
@@ -1417,7 +1552,19 @@ log('manifest')
 districts_out = []
 for name, lon, lat, r in DISTRICTS:
     x, z = ll_to_world(lon, lat)
-    districts_out.append(dict(name=name, x=round(x, 1), z=round(z, 1), r=r))
+    districts_out.append(dict(name=name, x=round(x, 1), z=round(z, 1), r=r, kind='district'))
+# every other named town, suburb, village and hamlet in the study area (OSM place nodes), so the whole map has names
+PLACE_R = {'town': 1300, 'suburb': 800, 'village': 750, 'quarter': 600, 'neighbourhood': 400, 'hamlet': 350}
+seen_names = {d['name'] for d in districts_out}
+for name, kind, lon, lat in sorted(places, key=lambda p: list(PLACE_R).index(p[1])):
+    x, z = ll_to_world(lon, lat)
+    if not (RECT[0] <= x <= RECT[2] and RECT[1] <= z <= RECT[3]) or name in seen_names:
+        continue
+    if any(math.hypot(x - d['x'], z - d['z']) < d['r'] * 0.6 for d in districts_out):
+        continue     # inside a district already named
+    seen_names.add(name)
+    districts_out.append(dict(name=name, x=round(x, 1), z=round(z, 1), r=PLACE_R[kind], kind=kind))
+log('named places', len(districts_out))
 route_len = defaultdict(float)
 for e in edges:
     rf = names[e['ref']]
@@ -1457,6 +1604,7 @@ cov = dict(
     shopSigns=sum(s['signs'] for s in stats_tiles.values()),
     barriers=len(barrier_lines), parkingSlots=sum(s['slots'] for s in stats_tiles.values()),
     tileBytes=sum(s['bytes'] for s in stats_tiles.values()),
+    water=water_stats,
 )
 json.dump(cov, open(os.path.join(OUT, 'coverage.json'), 'w'), indent=1)
 log('done')

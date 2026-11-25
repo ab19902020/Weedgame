@@ -2,7 +2,7 @@
 // collision / ground-height data the simulation needs for loaded tiles.
 import * as THREE from 'three/webgpu';
 import { atlasData, atlasTex, ATLAS_N } from './env.js';
-import { terrainMaterial, groundMaterial, markingMaterial, structMaterial, buildingMaterial, treeMaterials, lampMaterial } from './materials.js';
+import { terrainMaterial, groundMaterial, markingMaterial, structMaterial, buildingMaterial, treeMaterials, lampMaterial, waterMaterial } from './materials.js';
 import { crownGeometry, trunkGeometry } from './vegetation.js';
 
 const TILE = 256, NT = 65;
@@ -17,7 +17,7 @@ export class Tiles {
     this.inflight = 0; this.maxInflight = opts.inflight ?? 3;
     this.freeSlots = Array.from({ length: 256 }, (_, i) => i);
     this.mats = {
-      terrain: terrainMaterial(), ground: groundMaterial(), mark: markingMaterial(), struct: structMaterial(),
+      terrain: terrainMaterial(), ground: groundMaterial(), mark: markingMaterial(), struct: structMaterial(), water: waterMaterial(),
       building: buildingMaterial(), lamp: lampMaterial(), ...treeMaterials(),
     };
     this.shadows = !!opts.shadows;
@@ -125,6 +125,17 @@ export class Tiles {
     // buildings
     const bg = geoFrom(d.buildings, 'bA', 4);
     if (bg) this.addMesh(t, bg, this.mats.building, { cast: d.lod === 0, receive: true });
+    // open water: a surface over the carved bed (lakes, rivers, brooks), drawn after the opaque world
+    if (d.water) {
+      const wg = new THREE.BufferGeometry();
+      wg.setAttribute('position', new THREE.BufferAttribute(d.water.position, 3));
+      wg.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(d.water.position.length).map((_, i) => i % 3 === 1 ? 1 : 0), 3));
+      wg.setAttribute('wDepth', new THREE.BufferAttribute(d.water.depth, 1));
+      wg.setIndex(new THREE.BufferAttribute(d.water.index, 1));
+      wg.computeBoundingSphere();
+      const wm = this.addMesh(t, wg, this.mats.water, { receive: true });
+      wm.renderOrder = 1;
+    }
     if (d.lod === 0) {
       const gg = geoFrom(d.ground, 'surf', 1); if (gg) this.addMesh(t, gg, this.mats.ground, { receive: true });
       const mg = geoFrom(d.markings, 'surf', 1); if (mg) this.addMesh(t, mg, this.mats.mark, { receive: true });
@@ -317,6 +328,26 @@ export class Tiles {
     const i = Math.floor(gx), j = Math.floor(gz), fu = gx - i, fv = gz - j;
     const h00 = H[j * NT + i], h10 = H[j * NT + i + 1], h01 = H[(j + 1) * NT + i], h11 = H[(j + 1) * NT + i + 1];
     return fu >= fv ? h00 + fu * (h10 - h00) + fv * (h11 - h10) : h00 + fv * (h01 - h00) + fu * (h11 - h01);
+  }
+  // water surface level at (x, z) in m, or null where there is no open water (tile level grid, 4 m)
+  waterLevel(x, z) {
+    const t = this.tileAt(x, z); if (!t || !t.data.wl) return null;
+    const W = t.data.wl, lx = x - t.data.ox, lz = z - t.data.oz;
+    const gx = Math.max(0, Math.min(NT - 1.0001, lx / 4)), gz = Math.max(0, Math.min(NT - 1.0001, lz / 4));
+    const i = Math.floor(gx), j = Math.floor(gz), fu = gx - i, fv = gz - j;
+    let s = 0, w = 0;
+    for (let b = 0; b < 2; b++) for (let a = 0; a < 2; a++) {
+      const v = W[(j + b) * NT + i + a]; if (v === 32767) continue;
+      const k = (a ? fu : 1 - fu) * (b ? fv : 1 - fv) + 1e-4; s += v * k; w += k;
+    }
+    if (!w) return null;
+    // only where the landcover says water (the grid's level extends a little under the banks)
+    return this.landcover(x, z) === 4 || this.landcover(x + 2, z) === 4 || this.landcover(x - 2, z) === 4 || this.landcover(x, z + 2) === 4 || this.landcover(x, z - 2) === 4 ? s / w / 100 : null;
+  }
+  // depth of water over the ground at (x, z) (0 on dry land)
+  waterDepth(x, z, curY = null) {
+    const l = this.waterLevel(x, z); if (l == null) return 0;
+    const g = this.ground(x, z, curY); return g == null ? 0 : Math.max(0, l - g);
   }
   landcover(x, z) {
     const t = this.tileAt(x, z); if (!t) return 0;

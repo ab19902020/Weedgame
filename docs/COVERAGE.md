@@ -1,10 +1,10 @@
 # Green County · world coverage report (v0.6.0)
 
-Built 2026-11-22T22:02:40Z from the OpenStreetMap South East England extract (2026-11-19T02:11:32Z) and the Environment Agency LIDAR Composite DTM 1m (WCS, resampled to 4 m), Open Government Licence v3.0. Every number below is a count taken from the build or a computed comparison against those inputs. Nothing here is an accuracy estimate.
+Built 2026-11-25T06:56:41Z from the OpenStreetMap South East England extract (2026-11-19T02:11:32Z) and the Environment Agency LIDAR Composite DTM 1m (WCS, resampled to 4 m), Open Government Licence v3.0. Every number below is a count taken from the build or a computed comparison against those inputs. Nothing here is an accuracy estimate.
 
 ## Coverage area
 
-* Continuous coverage polygon: **52.02 km²**, streamed as **1067 tiles** of 256 × 256 m (tiles whose edge comes within 150 m of the polygon).
+* Continuous coverage polygon: **206.4 km²**, streamed as **3432 tiles** of 256 × 256 m (tiles whose edge comes within 150 m of the polygon).
 * Union of district discs (Reading town centre, Cemetery Junction, East Reading, Earley, Lower Earley, Woodley, Winnersh, Wokingham, Bracknell town centre) plus a 380 m buffer around every A329 and A329(M) carriageway between Reading town centre and Bracknell. The polygon is stored in `www/world/manifest.json` (`coverage`).
 * Frame: British National Grid (EPSG:27700, OSTN15) → world metres `x = (E − 479000)/K`, `z = −(N − 171000)/K`, `K = 0.999677` (scale factor at the centre), `y` = metres above Ordnance Datum Newlyn. Each tile renders relative to its own origin.
 * Outside the polygon the streamed tiles still carry terrain, roads and landcover, but no buildings.
@@ -13,36 +13,37 @@ Built 2026-11-22T22:02:40Z from the OpenStreetMap South East England extract (20
 
 | District | Buildings | Height from `height` tag | from `building:levels` | inferred from type / area / location | Roof shape tagged | Roof inferred | Pitched | Flat |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Reading town centre | 10654 | 2 (0.0%) | 369 (3.5%) | 10283 (96.5%) | 133 | 10521 | 8712 | 1942 |
-| Woodley | 9771 | 0 (0.0%) | 80 (0.8%) | 9691 (99.2%) | 0 | 9771 | 8037 | 1734 |
-| Earley | 6578 | 13 (0.2%) | 269 (4.1%) | 6296 (95.7%) | 63 | 6515 | 5600 | 978 |
-| Lower Earley | 5725 | 0 (0.0%) | 15 (0.3%) | 5710 (99.7%) | 0 | 5725 | 4594 | 1131 |
-| A329 / A329(M) corridor | 3510 | 0 (0.0%) | 36 (1.0%) | 3474 (99.0%) | 2 | 3508 | 3134 | 376 |
+| Villages, countryside and the A329 corridor | 42259 | 5 (0.0%) | 1025 (2.4%) | 41229 (97.6%) | 63 | 42196 | 37573 | 4686 |
+| Reading town centre | 10674 | 2 (0.0%) | 369 (3.5%) | 10303 (96.5%) | 133 | 10541 | 8729 | 1945 |
+| Woodley | 9776 | 0 (0.0%) | 80 (0.8%) | 9696 (99.2%) | 0 | 9776 | 8042 | 1734 |
+| Earley | 6584 | 13 (0.2%) | 269 (4.1%) | 6302 (95.7%) | 63 | 6521 | 5606 | 978 |
+| Lower Earley | 5728 | 0 (0.0%) | 15 (0.3%) | 5713 (99.7%) | 0 | 5728 | 4595 | 1133 |
 | Cemetery Junction | 3254 | 0 (0.0%) | 42 (1.3%) | 3212 (98.7%) | 69 | 3185 | 3024 | 230 |
-| Winnersh | 3172 | 0 (0.0%) | 96 (3.0%) | 3076 (97.0%) | 1 | 3171 | 2699 | 473 |
-| Bracknell town centre | 1919 | 74 (3.9%) | 447 (23.3%) | 1398 (72.9%) | 79 | 1840 | 1305 | 614 |
-| Wokingham | 1740 | 0 (0.0%) | 42 (2.4%) | 1698 (97.6%) | 3 | 1737 | 1432 | 308 |
-| East Reading | 305 | 0 (0.0%) | 3 (1.0%) | 302 (99.0%) | 1 | 304 | 235 | 70 |
-| **All** | **46628** | 89 (0.2%) | 1399 (3.0%) | 45140 (96.8%) | 351 | 46277 | 38772 | 7856 |
+| Winnersh | 3173 | 0 (0.0%) | 96 (3.0%) | 3077 (97.0%) | 1 | 3172 | 2700 | 473 |
+| Bracknell town centre | 1920 | 74 (3.9%) | 445 (23.2%) | 1401 (73.0%) | 79 | 1841 | 1307 | 613 |
+| Wokingham | 1744 | 0 (0.0%) | 43 (2.5%) | 1701 (97.5%) | 3 | 1741 | 1434 | 310 |
+| East Reading | 308 | 0 (0.0%) | 3 (1.0%) | 305 (99.0%) | 1 | 307 | 238 | 70 |
+| **All** | **85420** | 94 (0.1%) | 2387 (2.8%) | 82939 (97.1%) | 412 | 85008 | 73248 | 12172 |
 
 *Footprints* are measured geometry (OSM, mostly traced from Ordnance Survey OpenData / aerial imagery by mappers). Each one becomes its own closed mesh with courtyards (inner rings) kept. *Heights* fall back to type-based storey heights when untagged (house 2 storeys × 2.75 m, terrace and semi the same, bungalow 1, garage 2.5 m, town-centre cores 3–5 storeys, retail sheds 6.5 m, industrial 8–11 m). *Pitched roofs* go on houses whose footprint fills its minimum rectangle, or whose largest inscribed rectangle covers at least 45% of it; rear extensions then get flat roofs. Gabled versus hipped is a deterministic per-building choice unless `roof:shape` is tagged.
 
-**Façades are procedural, not photographed.** No façade photography was imported. Brick, render, pebbledash, cladding, window rhythm, stone sills, doors (on the side facing the nearest road), shopfronts (any building containing an OSM shop or amenity point; frontage on the side facing the street or pedestrian precinct) and lit windows at night are generated per building from its type and a stable seed. Shop fascia names come from OSM `shop`/`amenity` nodes (1048 signs).
+**Façades are procedural, not photographed.** No façade photography was imported. Brick, render, pebbledash, cladding, window rhythm, stone sills, doors (on the side facing the nearest road), shopfronts (any building containing an OSM shop or amenity point; frontage on the side facing the street or pedestrian precinct) and lit windows at night are generated per building from its type and a stable seed. Shop fascia names come from OSM `shop`/`amenity` nodes (1492 signs).
 
 ## Roads, junctions and street furniture
 
-* Graph: 41415 edges (23772 drivable, 19232 named), 397 bridge and 139 tunnel edges. Carriageway, pavement, path and plaza surfaces are polygon unions per tile, so junctions have no overlaps; pavements are raised 0.12 m behind kerbs.
-* Lanes tagged on 6317 edges, width tagged on 363, maxspeed on 15572; the rest use UK defaults by road class (documented in `build_world.py`). Pavement presence is tagged on 8293 edges and inferred elsewhere (urban classes within 45 m of a building).
-* Bridges: deck heights interpolate the LIDAR ground at each end and are raised wherever clearance over a lower road, railway or watercourse would fall below 5.6 m, 6.2 m or 1.2 m respectively (730 adjustments). Flyovers and underpasses keep separate surfaces: walkers and vehicles take whichever deck is nearest their current height.
-* Signals: 253 controllers covering 1383 vehicle approaches and 707 signalised pedestrian crossings. **All timings are simulated** (simulated (no published phase data imported)): 14–38 s greens by road class, 3 s amber, 2 s red-amber, 2 s all-red, a demand-called pedestrian stage (7 s green man, 5 s flashing), and pelican-style standalone crossings. Approaches are grouped into stages by road axis at runtime.
-* Crossings mapped on drivable roads: 707 signalised, 307 zebra (with zig-zags and Belisha beacons), 3686 uncontrolled.
-* Buses: 136 of 136 OSM bus-route relations reconstructed onto the graph (longest continuous run inside the area); 645 stops, 207 tagged with shelters (only those get shelter models). Routes: 1, 10, 108, 11, 126, 127, 128, 129, 13, 14, 143, 15, 156, 16, 17, 171, 172, 18, 194, 19a, 19b, 19c, 2, 200, 201, 202, 21, 21a, 22, 23, 24, 25, 26, 27, 28, 28a, 29, 2a, 3, 33, 3b, 4, 400, 401, 403, 444, 4a, 5, 50, 507, 508, 509, 50a, 6, 702, 703, 8, 850, 9, 9a.
-* Street lamps: 97 mapped in OSM; 14824 **inferred** (placed every 30–36 m on urban roads where none are mapped).
-* Trees: 1936 mapped individually; 283304 **scattered** by landcover density (woodland, parks, gardens, cemeteries).
+* Graph: 73384 edges (43549 drivable, 33978 named), 665 bridge and 180 tunnel edges. Carriageway, pavement, path and plaza surfaces are polygon unions per tile, so junctions have no overlaps; pavements are raised 0.12 m behind kerbs.
+* Lanes tagged on 10728 edges, width tagged on 792, maxspeed on 27010; the rest use UK defaults by road class (documented in `build_world.py`). Pavement presence is tagged on 13076 edges and inferred elsewhere (urban classes within 45 m of a building).
+* Bridges: deck heights interpolate the LIDAR ground at each end and are raised wherever clearance over a lower road, railway or watercourse would fall below 5.6 m, 6.2 m or 1.2 m respectively (1216 adjustments). Flyovers and underpasses keep separate surfaces: walkers and vehicles take whichever deck is nearest their current height.
+* Signals: 364 controllers covering 2086 vehicle approaches and 1061 signalised pedestrian crossings. **All timings are simulated** (simulated (no published phase data imported)): 14–38 s greens by road class, 3 s amber, 2 s red-amber, 2 s all-red, a demand-called pedestrian stage (7 s green man, 5 s flashing), and pelican-style standalone crossings. Approaches are grouped into stages by road axis at runtime.
+* Crossings mapped on drivable roads: 1063 signalised, 461 zebra (with zig-zags and Belisha beacons), 5294 uncontrolled.
+* Buses: 136 of 136 OSM bus-route relations reconstructed onto the graph (longest continuous run inside the area); 1034 stops, 340 tagged with shelters (only those get shelter models). Routes: 1, 10, 108, 11, 126, 127, 128, 129, 13, 14, 143, 15, 156, 16, 17, 171, 172, 18, 194, 19a, 19b, 19c, 2, 200, 201, 202, 21, 21a, 22, 23, 24, 25, 26, 27, 28, 28a, 29, 2a, 3, 33, 3b, 4, 400, 401, 403, 444, 4a, 5, 50, 507, 508, 509, 50a, 6, 702, 703, 8, 850, 9, 9a.
+* Street lamps: 97 mapped in OSM; 29532 **inferred** (placed every 30–36 m on urban roads where none are mapped).
+* Trees: 1936 mapped individually; 1169369 **scattered** by landcover density (woodland, parks, gardens, cemeteries).
 * Boundary walls, fences, hedges and guard rails: 1285 mapped lines are modelled with collision.
+* Open water: 604.6 ha in 424 lakes and ponds, 32 river and canal channels and 446 brooks and ditches (OSM water areas and open, non-culverted waterways). Levels are **measured** (the EA DTM is flat over open water: a lake's level is its median, a river's is smoothed along the channel); beds are **inferred** (carved below that level by distance from the shore: up to 6 m in large gravel-pit lakes, about 4 m in the Thames, 0.4–0.6 m in brooks), never under roads, paths or buildings. Swimming, wading and cars in water use these levels. Named: Allsmoor Pond, Bearwood Lake, Black Swan Lake, Campus Lake, Caversham Lock, Caversham Park Pond, Charvil Country Park, County Lock, Disc Filters, Distribution Chamber, Emmer Green Pond, Farnham Flint Lake, Final Settling Tanks, Gold Lake, Gormoor Pond, Herons Water, Lake Lake, Lavell's Lake, Lea Farm Lake, Lily Hill Parl Pond, Little Lake, Longwater Lake, Middlemarsh, Mill Pond, Mungells Lake, Mungells Pond, North Lake, Parks Pond, Playarea Pond, RAS Well, Reading Road Pond, Redgrave Pinsent Rowing Lake, Redwood Lake, Rustic Fountain, Sandford Lake, Sonning Lock, South Lake, St Giles's Mill Stream, Tertiary Sand Filter, The Moors.
 * Front gardens (**inferred**): every house whose frontage wall sits at least 1.6 m behind the back of the pavement gets a boundary. That is a hedge (40%), a low brick wall (42%) or an open frontage, with collision, plus a gap holding either a 3 m driveway (block paving or tarmac) or a flagged front path to the house. Mapped boundaries take precedence visually but are not de-duplicated against the inferred ones.
 * Street furniture (**inferred**, built per tile in `tileWorker.js`): wheelie bins (one or two per front garden, general waste and recycling), wooden telegraph poles every 32 m on about 60% of residential roads with line wires and service drops to the nearest house eaves, the odd pillar box, and litter bins and benches along town-centre main roads and pedestrian streets. Positions are plausible, not surveyed.
-* Parking: 35730 slots, **inferred** (car-park polygons on a 2.6 × 7.5 m grid; kerbside on residential roads). Occupancy is stable per slot ID.
+* Parking: 64959 slots, **inferred** (car-park polygons on a 2.6 × 7.5 m grid; kerbside on residential roads). Occupancy is stable per slot ID.
 
 ## Terrain
 
@@ -75,8 +76,8 @@ Recomputed by `tools/pipeline/verify.py`, which writes `docs/verification.json`.
 | Distances between 6 landmarks (world metres vs WGS84 geodesic) | max difference 0.0050% (e.g. Cemetery Arch (Cemetery Junction) → Woodley Library (precinct): 3072.32 m vs 3072.47 m) |
 | A329 route length, Reading TC to Bracknell (all carriageways, 505 OSM ways) | world 32.09 km vs geodesic 32.089 km (+0.0032%) |
 | A329(M) route length, Reading TC to Bracknell (all carriageways, 41 OSM ways) | world 17.177 km vs geodesic 17.176 km (+0.0043%) |
-| Building footprint areas (48144 footprints) | world 5.9862 km² vs ellipsoid 5.9858 km²; per-building ratio mean 1.00005, 1st–99th percentile 0.99998–1.00012 |
-| Signal coverage | 591 of 593 OSM `traffic_signals` nodes lie within a modelled controller; documented phase timings imported: 0 |
+| Building footprint areas (85413 footprints) | world 11.4124 km² vs ellipsoid 11.4118 km²; per-building ratio mean 1.00005, 1st–99th percentile 0.99998–1.00012 |
+| Signal coverage | 896 of 896 OSM `traffic_signals` nodes lie within a modelled controller; documented phase timings imported: 0 |
 
 ## Acceptance run (touch input)
 

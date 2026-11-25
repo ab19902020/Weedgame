@@ -1,80 +1,81 @@
 {
- "built": "2026-11-22T22:02:40Z",
- "coverageAreaKm2": 52.02,
- "tiles": 1067,
+ "built": "2026-11-25T06:56:41Z",
+ "coverageAreaKm2": 206.4,
+ "tiles": 3432,
  "buildings": {
   "Reading town centre": {
-   "buildings": 10654,
+   "buildings": 10674,
    "height_tag:height": 2,
-   "roof_inferred": 10521,
-   "flat": 1942,
-   "height_inferred": 10283,
+   "roof_inferred": 10541,
+   "flat": 1945,
+   "height_inferred": 10303,
    "height_tag:levels": 369,
-   "pitched": 8712,
+   "pitched": 8729,
    "roof_tag": 133
   },
   "Earley": {
-   "buildings": 6578,
-   "height_inferred": 6296,
-   "roof_inferred": 6515,
+   "buildings": 6584,
+   "height_inferred": 6302,
+   "roof_inferred": 6521,
    "flat": 978,
-   "pitched": 5600,
+   "pitched": 5606,
    "height_tag:levels": 269,
    "roof_tag": 63,
    "height_tag:height": 13
   },
+  "Villages, countryside and the A329 corridor": {
+   "buildings": 42259,
+   "height_inferred": 41229,
+   "roof_inferred": 42196,
+   "flat": 4686,
+   "height_tag:levels": 1025,
+   "pitched": 37573,
+   "roof_tag": 63,
+   "height_tag:height": 5
+  },
   "Wokingham": {
-   "buildings": 1740,
-   "height_inferred": 1698,
-   "roof_inferred": 1737,
-   "flat": 308,
-   "pitched": 1432,
-   "height_tag:levels": 42,
+   "buildings": 1744,
+   "height_inferred": 1701,
+   "roof_inferred": 1741,
+   "flat": 310,
+   "pitched": 1434,
+   "height_tag:levels": 43,
    "roof_tag": 3
   },
   "Bracknell town centre": {
-   "buildings": 1919,
-   "height_inferred": 1398,
-   "roof_inferred": 1840,
-   "flat": 614,
-   "height_tag:levels": 447,
-   "pitched": 1305,
+   "buildings": 1920,
+   "height_inferred": 1401,
+   "roof_inferred": 1841,
+   "flat": 613,
+   "height_tag:levels": 445,
+   "pitched": 1307,
    "height_tag:height": 74,
    "roof_tag": 79
   },
-  "A329 / A329(M) corridor": {
-   "buildings": 3510,
-   "height_inferred": 3474,
-   "roof_inferred": 3508,
-   "flat": 376,
-   "pitched": 3134,
-   "height_tag:levels": 36,
-   "roof_tag": 2
-  },
   "Lower Earley": {
-   "buildings": 5725,
-   "height_inferred": 5710,
-   "roof_inferred": 5725,
-   "flat": 1131,
-   "pitched": 4594,
+   "buildings": 5728,
+   "height_inferred": 5713,
+   "roof_inferred": 5728,
+   "flat": 1133,
+   "pitched": 4595,
    "height_tag:levels": 15
   },
   "Winnersh": {
-   "buildings": 3172,
-   "height_inferred": 3076,
-   "roof_inferred": 3171,
+   "buildings": 3173,
+   "height_inferred": 3077,
+   "roof_inferred": 3172,
    "flat": 473,
-   "pitched": 2699,
+   "pitched": 2700,
    "height_tag:levels": 96,
    "roof_tag": 1
   },
   "Woodley": {
-   "buildings": 9771,
-   "height_inferred": 9691,
-   "roof_inferred": 9771,
+   "buildings": 9776,
+   "height_inferred": 9696,
+   "roof_inferred": 9776,
    "flat": 1734,
    "height_tag:levels": 80,
-   "pitched": 8037
+   "pitched": 8042
   },
   "Cemetery Junction": {
    "buildings": 3254,
@@ -86,42 +87,42 @@
    "roof_tag": 69
   },
   "East Reading": {
-   "buildings": 305,
-   "height_inferred": 302,
-   "roof_inferred": 304,
+   "buildings": 308,
+   "height_inferred": 305,
+   "roof_inferred": 307,
    "flat": 70,
    "height_tag:levels": 3,
-   "pitched": 235,
+   "pitched": 238,
    "roof_tag": 1
   }
  },
  "roads": {
-  "edges": 41415,
-  "drivable": 23772,
-  "named": 19232,
-  "bridges": 397,
-  "tunnels": 139,
-  "bridgeClearanceAdjustments": 730,
-  "pavementsTagged": 8293,
-  "lanesTagged": 6317,
-  "widthTagged": 363,
-  "maxspeedTagged": 15572
+  "edges": 73384,
+  "drivable": 43549,
+  "named": 33978,
+  "bridges": 665,
+  "tunnels": 180,
+  "bridgeClearanceAdjustments": 1216,
+  "pavementsTagged": 13076,
+  "lanesTagged": 10728,
+  "widthTagged": 792,
+  "maxspeedTagged": 27010
  },
  "routeLengthsM": {
   "A329(M)": 17176.9,
-  "A329": 37833.9
+  "A329": 38617.9
  },
  "signals": {
-  "controllers": 253,
-  "approaches": 1383,
-  "standaloneCrossings": 30,
-  "pedestrianSignalCrossings": 707,
+  "controllers": 364,
+  "approaches": 2086,
+  "standaloneCrossings": 45,
+  "pedestrianSignalCrossings": 1061,
   "timings": "simulated (no published phase data imported)"
  },
  "crossings": {
-  "signal": 707,
-  "zebra": 307,
-  "uncontrolled": 3686
+  "signal": 1063,
+  "zebra": 461,
+  "uncontrolled": 5294
  },
  "busRoutes": {
   "relations": 136,
@@ -200,18 +201,72 @@
    "X40"
   ]
  },
- "busStops": 645,
- "busStopsWithShelterTag": 207,
+ "busStops": 1034,
+ "busStopsWithShelterTag": 340,
  "lamps": {
   "mapped": 97,
-  "inferred": 14824
+  "inferred": 29532
  },
  "trees": {
   "mapped": 1936,
-  "total": 285240
+  "total": 1171305
  },
- "shopSigns": 1048,
+ "shopSigns": 1492,
  "barriers": 1285,
- "parkingSlots": 35730,
- "tileBytes": 17347225
+ "parkingSlots": 64959,
+ "tileBytes": 48926632,
+ "water": {
+  "bodies": 424,
+  "channels": 32,
+  "brooks": 446,
+  "areaHa": 604.6,
+  "named": [
+   "Allsmoor Pond",
+   "Bearwood Lake",
+   "Black Swan Lake",
+   "Campus Lake",
+   "Caversham Lock",
+   "Caversham Park Pond",
+   "Charvil Country Park",
+   "County Lock",
+   "Disc Filters",
+   "Distribution Chamber",
+   "Emmer Green Pond",
+   "Farnham Flint Lake",
+   "Final Settling Tanks",
+   "Gold Lake",
+   "Gormoor Pond",
+   "Herons Water",
+   "Lake Lake",
+   "Lavell's Lake",
+   "Lea Farm Lake",
+   "Lily Hill Parl Pond",
+   "Little Lake",
+   "Longwater Lake",
+   "Middlemarsh",
+   "Mill Pond",
+   "Mungells Lake",
+   "Mungells Pond",
+   "North Lake",
+   "Parks Pond",
+   "Playarea Pond",
+   "RAS Well",
+   "Reading Road Pond",
+   "Redgrave Pinsent Rowing Lake",
+   "Redwood Lake",
+   "Rustic Fountain",
+   "Sandford Lake",
+   "Sonning Lock",
+   "South Lake",
+   "St Giles's Mill Stream",
+   "Tertiary Sand Filter",
+   "The Moors",
+   "Tufties Corner",
+   "Waltham Fishery",
+   "Waterman's Lake",
+   "White Swan Lake",
+   "Whiteknights Lake",
+   "Windmill Pond"
+  ]
+ }
 }

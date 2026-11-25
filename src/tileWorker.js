@@ -124,6 +124,8 @@ function build(header, A, lod) {
 
   // ---------------- buildings (both LODs)
   out.buildings = buildBuildings(header, A, lod, hAt, ox, oz, lcAt);
+  // ---------------- open water (both LODs): surfaces over the carved beds, and the level grid for swimming
+  if (A.wl && A.wtP && A.wtP.length) { out.water = buildWater(A, hAt); out.wl = new Int16Array(A.wl); }
   if (lod) return out;
 
   // ---------------- surfaces
@@ -1143,3 +1145,49 @@ function posAt(pts, s) {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, dz, -dx];
 }
 function sampleY(pts, s) { return posAt(pts, s)[1]; }
+
+// Water surfaces: the pipeline's water polygons (tile-local, padded under the banks) at the water level on the
+// tile's 4 m grid (A.wl, cm, 32767 = none). wDepth = level minus the carved bed, for the water shader.
+function buildWater(A, hAt) {
+  const WL = A.wl, C = A.wtC, R = A.wtR, P = A.wtP;
+  const lv = (x, z) => {
+    const gx = Math.max(0, Math.min(NT - 1.0001, x / STEP)), gz = Math.max(0, Math.min(NT - 1.0001, z / STEP));
+    const i = Math.floor(gx), j = Math.floor(gz), fu = gx - i, fv = gz - j;
+    let s = 0, w = 0;
+    for (const [a, b, k] of [[0, 0, (1 - fu) * (1 - fv)], [1, 0, fu * (1 - fv)], [0, 1, (1 - fu) * fv], [1, 1, fu * fv]]) {
+      const v = WL[(j + b) * NT + i + a]; if (v !== 32767) { s += v * (k + 1e-4); w += k + 1e-4; }
+    }
+    if (w) return s / w / 100;
+    // outside the grid's water cells: the nearest level within 3 cells
+    let best = null, bd = 1e9;
+    for (let b = -3; b <= 3; b++) for (let a = -3; a <= 3; a++) {
+      const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= NT || jj >= NT) continue;
+      const v = WL[jj * NT + ii]; if (v === 32767) continue;
+      const d = a * a + b * b; if (d < bd) { bd = d; best = v / 100; }
+    }
+    return best;
+  };
+  const pos = [], dep = [], idx = [];
+  let ci = 0, ri = 0;
+  for (let pi = 0; pi < P.length; pi++) {
+    const flat = [], holes = [];
+    for (let k = 0; k < P[pi]; k++) {
+      const n = R[ri++];
+      if (k) holes.push(flat.length / 2);
+      for (let q = 0; q < n; q++) flat.push(C[(ci + q) * 2] / 10, C[(ci + q) * 2 + 1] / 10);
+      ci += n;
+    }
+    const base = pos.length / 3, nv = flat.length / 2, ys = [];
+    let ok = true;
+    for (let q = 0; q < nv; q++) { const y = lv(flat[q * 2], flat[q * 2 + 1]); if (y == null) { ok = false; break; } ys.push(y); }
+    if (!ok) continue;
+    for (let q = 0; q < nv; q++) {
+      const x = flat[q * 2], z = flat[q * 2 + 1];
+      pos.push(x, ys[q], z); dep.push(Math.max(0, ys[q] - hAt(x, z)));
+    }
+    const t = earcut(flat, holes.length ? holes : null);
+    for (let q = 0; q < t.length; q += 3) idx.push(base + t[q], base + t[q + 2], base + t[q + 1]);
+  }
+  if (!idx.length) return null;
+  return { position: new Float32Array(pos), depth: new Float32Array(dep), index: new Uint32Array(idx) };
+}

@@ -44,7 +44,7 @@ export class Hud {
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
     this.mapView = { x: 0, z: 0, s: 0.25 };
     this.nav = new Navigation(G.net);
-    const places = [...G.transit.stations.map(s=>({...s,name:s.name+" station"})),...G.manifest.districts, ...TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))];
+    const places = [...G.transit.stations.map(s=>({...s,name:s.name+" station"})),...G.manifest.districts.filter(d=>!/hamlet|neighbourhood/.test(d.kind||'')), ...TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))];
     const select = this.el('mPlaces');
     places.forEach((place,index)=>select.add(new Option(place.name,String(index))));
     select.onchange = () => {
@@ -246,7 +246,7 @@ export class Hud {
     }
     // districts
     c.font = 'bold 15px system-ui';
-    for (const d of G.manifest.districts) { c.strokeText(d.name, X(d.x), Z(d.z) - 20); c.fillText(d.name, X(d.x), Z(d.z) - 20); }
+    for (const d of G.manifest.districts) { if (/hamlet|neighbourhood/.test(d.kind || '')) continue; c.strokeText(d.name, X(d.x), Z(d.z) - 20); c.fillText(d.name, X(d.x), Z(d.z) - 20); }
     G.transit.drawMap(c,X,Z,V.s);
     this.nav.draw(c,X,Z);
     // vehicles & brothers
@@ -286,7 +286,7 @@ export class Hud {
       btn('Range Rover', () => { const me = G.brothers.me, h = me.heading || 0; const x = me.x + Math.cos(h) * 7, z = me.z + Math.sin(h) * 7; G.traffic.add({ id: 'dev-rr-' + Date.now(), kind: 'parked', model: 'rangerover', paint: 0x23382c, x, y: G.tiles.ground(x, z, me.y + 1) ?? me.y, z, heading: h, parked: true, free: true }); this.toast('Range Rover delivered'); }, 'spawn-rangerover'),
       btn('Sports car', () => { const me = G.brothers.me, h = me.heading || 0; const x = me.x + Math.cos(h) * 6, z = me.z + Math.sin(h) * 6; G.traffic.add({ id: 'dev-' + Date.now(), kind: 'parked', model: 'sports', paint: 0xb5121b, x, y: G.tiles.ground(x, z, me.y + 1) ?? me.y, z, heading: h, parked: true, free: true }); this.toast('Sports car delivered'); }, 'spawn-sports')]);
     row('Sim', [1, 2, 4, 8].map(k => btn('×' + k + (G.simSteps === k ? ' ✓' : ''), () => G.simSteps = k, 'sim-' + k)));
-    row('Go to', G.manifest.districts.map(di => btn(di.name, () => G.teleport(di.x, di.z), 'goto-' + slug(di.name))));
+    row('Go to', G.manifest.districts.filter(di => !/hamlet|neighbourhood/.test(di.kind || '')).map(di => btn(di.name, () => G.teleport(di.x, di.z), 'goto-' + slug(di.name))));
     row('Test spots', TESTSPOTS.map(([n, x, z, h]) => btn(n, () => G.teleport(x, z, h), 'spot-' + slug(n))));
     const info = document.createElement('p'); info.textContent = `Renderer ${G.backend} · quality ${G.quality} · weather seed ${w.s.seed} · sandbox mode (no missions)`; d.append(info);
     d.append(btn('Close', () => {}));

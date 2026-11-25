@@ -19,6 +19,7 @@ export const U = {
   cloudDark: uniform(0),       // storminess 0..1
   cloudOff: uniform(new THREE.Vector2(0, 0)), // wind-advected offset (m)
   wind: uniform(new THREE.Vector2(3, 1)),
+  wake: uniform(new THREE.Vector3(0, 0, 0)),   // ripples spreading from a swimmer or a car in water: x, z, strength
   t: uniform(0),               // seconds (animation)
   moonDir: uniform(new THREE.Vector3(-0.3, 0.5, -0.2)),
   coverOrigin: uniform(new THREE.Vector2(0, 0)), // rain shelter raster origin (world xz of texel 0)
