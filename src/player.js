@@ -161,16 +161,23 @@ export class Brothers {
     const vel = Math.hypot(ph.vx, ph.vz);
     const mhv = mh != null && vel > 4 && v.sp > 0 ? lerpAngle(v.heading, Math.atan2(ph.vz, ph.vx), 0.55) : mh;
     v.camInside = mode === 3;
+    if (v.player) { const look = this.lookFor(this.active); v.handSkin = look.skin; v.handCloth = look.top; }
     if (mode === 3) this.driverCam(v);
     else if (mode === 4) this.cineCam(dt, v);
     else this.followCam(dt, v.x, camY + (mode === 1 ? 0.4 : mode === 2 ? 1 : 0), v.z, big * [1, 1.65, 2.7][mode] * (1 + Math.min(0.18, vel / 260)), mhv, mode === 2 ? 2.2 : 1.6 + Math.min(1.2, vel / 30), [0.22, 0.3, 0.78][mode]);
     this.cameraFx(dt, vel, mode);
   }
+  setNear(n) {
+    const cam = this.G.camera;
+    if (Math.abs(cam.near - n) > 0.001) { cam.near = n; cam.updateProjectionMatrix(); }
+  }
   // speed widens the field of view a little; hard impacts shake the camera
   cameraFx(dt, vel, mode) {
     const G = this.G, c = this.cam, cam = G.camera;
     c.baseFov = c.baseFov || cam.fov;
-    const want = c.baseFov + (mode === 3 ? 0.5 : 1) * Math.min(12, Math.max(0, vel - 8) * 0.3);
+    const hero = mode === 3 && !!HERO_CARS[this.vehicleOf(this.me)?.model]?.driver;
+    const rest = hero ? 68 : c.baseFov;
+    const want = rest + (mode === 3 ? 0.35 : 1) * Math.min(10, Math.max(0, vel - 8) * 0.28);
     if (Math.abs(cam.fov - want) > 0.05) { cam.fov += (want - cam.fov) * Math.min(1, dt * 2.5); cam.updateProjectionMatrix(); }
     if (c.shake > 0.01) {
       const k = c.shake * 0.22, t = G.time * 37;
@@ -200,7 +207,10 @@ export class Brothers {
     c.yaw = G.time - c.lastUser < 2.5 ? c.yaw : h + Math.PI;
     const lh = h + look;
     G.camera.position.set(c.x, c.y, c.z);
-    G.camera.lookAt(c.x + Math.cos(lh) * 20, c.y - 1.2 - (v.pitch || 0) * 20, c.z + Math.sin(lh) * 20);
+    // hero cars: look down enough that the wheel and the hands sit in the lower third, horizon above centre
+    const ahead = Hd ? 10 : 20, dip = Hd ? 2.05 : 1.2;
+    G.camera.lookAt(c.x + Math.cos(lh) * ahead, c.y - dip - (v.pitch || 0) * ahead, c.z + Math.sin(lh) * ahead);
+    this.setNear(Hd ? 0.1 : 0.28);
   }
   // roadside cameras that hand over as the car passes
   cineCam(dt, v) {
@@ -215,6 +225,7 @@ export class Brothers {
     G.camera.position.set(c.cine.x, c.cine.y, c.cine.z);
     G.camera.lookAt(v.x, v.y + 0.9, v.z);
     c.x = c.cine.x; c.y = c.cine.y; c.z = c.cine.z;
+    this.setNear(0.4);
   }
   followCam(dt, tx, ty, tz, dist, moveHeading, rate = 1.6, pitchTarget = null) {
     const c = this.cam, G = this.G;
@@ -233,6 +244,7 @@ export class Brothers {
     if (gy != null && c.y < gy + 0.5) c.y = gy + 0.5;
     G.camera.position.set(c.x, c.y, c.z);
     G.camera.lookAt(tx, ty, tz);
+    this.setNear(0.4);
   }
   // ------------------------------------------------------------------ actions
   nearestVehicle(maxD = 4.5) {

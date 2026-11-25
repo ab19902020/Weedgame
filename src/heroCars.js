@@ -15,9 +15,10 @@ import { texture, uv, uniform, vec3, vec4, float, mix, step, smoothstep, abs, ma
 export const HERO_CARS = {
   rangerover: {
     file: 'vehicles/rangerover.glb', scale: 5.06,
-    // driver's eye (right-hand drive), metres: behind the body centre, to the right, above the ground.
-    // The seat and wheel live in the GLB; this sits the eye just above the dash, clear of the headrest.
-    driver: { fwd: -0.50, side: 0.40, eye: 1.48 },
+    // driver's eye (right-hand drive), metres in the car frame. The seat's headrest is behind
+    // z ≈ −0.55 m; the wheel centre is 0.11 m ahead and 0.85 m up. Eyes sit in front of the
+    // headrest, a little above the rim, so the wheel and the hands land in the lower third.
+    driver: { fwd: -0.34, side: 0.44, eye: 1.22 },
     // lamp regions (model units) — headlights under the bonnet line, tail clusters on the rear corners
     head: { z: 0.425, x0: 0.112, x1: 0.206, y0: 0.172, y1: 0.228 },
     tail: { z: -0.425, x0: 0.143, x1: 0.212, y0: 0.158, y1: 0.262 },
@@ -30,6 +31,8 @@ export const HERO_CARS = {
 
 // how far the steering wheel turns per radian of front-wheel steer (about three turns lock to lock)
 const STEER_RATIO = 12;
+// the dash, wheel and seats sit this far lower in the shell so the scuttle meets the glass
+const CABIN_DROP = 0.03;
 const hash = p => fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
 
 export class HeroCars {
@@ -71,22 +74,26 @@ export class HeroCars {
     const mBody = new THREE.Group(), mGround = new THREE.Group();
     for (const m of [mBody, mGround]) { m.rotation.y = Math.PI / 2; m.scale.setScalar(C.scale); }
     body.add(mBody); ground.add(mGround);
-    const state = { brake: uniform(0), lights: uniform(0), reverse: uniform(0), indL: uniform(0), indR: uniform(0), camIn: uniform(0), dmg: uniform(new THREE.Vector4()) };
+    const state = { brake: uniform(0), lights: uniform(0), reverse: uniform(0), indL: uniform(0), indR: uniform(0), camIn: uniform(0), dmg: uniform(new THREE.Vector4()), paint: uniform(new THREE.Vector3(1, 1, 1)) };
     const mesh = new THREE.Mesh(parts.body.geo, bodyMaterial(parts.body.mat, C, state));
-    mesh.castShadow = true; mesh.receiveShadow = true;
+    mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
     mBody.add(mesh);
     const cabin = [];
     for (const c of parts.cabin) {
       const cm = new THREE.Mesh(c.geo, cabinMaterial(c.mat));
-      cm.castShadow = true; cm.receiveShadow = true;
+      cm.castShadow = true; cm.receiveShadow = true; cm.frustumCulled = false;
+      cm.position.y = -CABIN_DROP;
       mBody.add(cm); cabin.push(cm);
     }
-    let steering = null;
+    let column = null;
     if (parts.steering) {
-      const piv = new THREE.Group(); piv.position.copy(parts.steering.pos);
+      const piv = new THREE.Group(); piv.position.copy(parts.steering.pos); piv.position.y -= CABIN_DROP;
       const sm = new THREE.Mesh(parts.steering.geo, cabinMaterial(parts.steering.mat));
-      sm.castShadow = true;
-      piv.add(sm); mBody.add(piv); steering = sm;
+      sm.castShadow = true; sm.frustumCulled = false;
+      piv.add(sm);
+      const hands = driverHands();
+      piv.add(hands);
+      mBody.add(piv); column = piv;
     }
     const wheels = {};
     for (const [k, w] of Object.entries(parts.wheels)) {
@@ -95,7 +102,7 @@ export class HeroCars {
       piv.add(wm); mGround.add(piv); wheels[k] = { piv, mesh: wm };
     }
     this.scene.add(body, ground);
-    return { model, body, ground, wheels, steering, cabin, state, mesh };
+    return { model, body, ground, wheels, column, cabin, state, mesh };
   }
   // called by VehicleRenderer for each visible hero car with its ground and sprung body matrices
   place(v, groundM, bodyM) {
@@ -108,10 +115,23 @@ export class HeroCars {
     c.body.matrixWorldNeedsUpdate = c.ground.matrixWorldNeedsUpdate = true;
     const spin = v.spin || 0, steer = v.player ? (v.steer || 0) : (v.steerVis || 0);
     for (const [k, w] of Object.entries(c.wheels)) w.mesh.rotation.set(spin, k[0] === 'f' ? -steer : 0, 0, 'YXZ');
-    // column is model +Z (toward the bonnet): left lock is counterclockwise from the driver's seat
-    if (c.steering) c.steering.rotation.z = -steer * STEER_RATIO;
+    // column is model +Z (toward the bonnet): left lock is counterclockwise from the driver's seat.
+    // The hands are on the same pivot, so they turn with the wheel.
+    if (c.column) {
+      c.column.rotation.z = -steer * STEER_RATIO;
+      const hands = c.column.children.find(n => n.name === 'hands');
+      if (hands) {
+        hands.visible = !!v.camInside;
+        if (v.camInside && v.handSkin != null) {
+          hands.userData.skin.color.setHex(v.handSkin);
+          hands.userData.cloth.color.setHex(v.handCloth);
+        }
+      }
+    }
     const s = c.state, blink = (performance.now() / 666) % 1 < 0.5 ? 1 : 0;
     s.camIn.value = v.camInside ? 1 : 0;
+    const paint = new THREE.Color(v.paint == null ? 0xffffff : v.paint);
+    s.paint.value.set(paint.r, paint.g, paint.b);
     s.brake.value = v.brake ? 1 : 0; s.lights.value = v.lights ? 1 : 0; s.reverse.value = v.reversing ? 1 : 0;
     s.indL.value = (v.ind === 1 || v.hazard) && blink ? 1 : 0; s.indR.value = (v.ind === 2 || v.hazard) && blink ? 1 : 0;
     const d = v.dmg || [0, 0, 0, 0]; s.dmg.value.set(d[0], d[1], d[2], d[3]);
@@ -121,11 +141,41 @@ export class HeroCars {
       this.scene.remove(c.body, c.ground);
       c.mesh.material.dispose();
       for (const m of c.cabin) m.material.dispose();
-      if (c.steering) c.steering.material.dispose();
+      if (c.column) {
+        const seen = new Set();
+        c.column.traverse(o => { if (o.material && !seen.has(o.material)) { seen.add(o.material); o.material.dispose(); } });
+      }
       this.active.delete(id);
     }
     this.seen.clear();
   }
+}
+
+function driverHands() {
+  // model units, on the steering pivot: +Y up the wheel, +X the car's left, +Z toward the bonnet.
+  // High ten-and-two so the knuckles sit in the driver's view. They turn with the wheel.
+  const g = new THREE.Group(); g.name = 'hands';
+  const skin = new THREE.MeshStandardNodeMaterial({ color: 0xb48265, roughness: 0.55 });
+  const cloth = new THREE.MeshStandardNodeMaterial({ color: 0x314958, roughness: 0.82 });
+  g.userData.skin = skin; g.userData.cloth = cloth;
+  const R = 0.043, a = 0.95;
+  for (const sign of [1, -1]) {
+    const h = new THREE.Group();
+    const palm = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.007, 0.010), skin);
+    const fingers = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.006, 0.014), skin);
+    fingers.position.set(0, 0.003, 0.008); fingers.rotation.x = -1.05;
+    const thumb = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.005, 0.011), skin);
+    thumb.position.set(-sign * 0.009, -0.001, -0.002); thumb.rotation.z = -sign * 0.4;
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.010, 0.009, 0.032), cloth);
+    arm.position.set(-sign * 0.002, -0.016, -0.006); arm.rotation.x = 1.05; arm.rotation.z = -sign * 0.35;
+    h.add(palm, fingers, thumb, arm);
+    for (const o of h.children) o.frustumCulled = false;
+    h.position.set(sign * Math.sin(a) * R, Math.cos(a) * R, -0.008);
+    h.rotation.z = -sign * a;
+    g.add(h);
+  }
+  g.visible = false;
+  return g;
 }
 
 function cabinMaterial(src) {
@@ -175,21 +225,31 @@ function bodyMaterial(src, C, s) {
   const indFront = inHead.mul(step(H.x1 - 0.022, ax)), indRear = inTail.mul(step(T.y1 - 0.03, p.y));
   const indOn = mix(s.indR, s.indL, step(0, p.x));   // +X is the car's left
   const brokenF = smoothstep(0.38, 0.6, d.x), brokenR = smoothstep(0.38, 0.6, d.y);
-  // glass: dark texture inside the glasshouse regions becomes tinted, glossy glass
-  const S = C.screen, Bk = C.backlight, Sd = C.sides;
-  const inScreen = step(S.z0, p.z).mul(step(p.z, S.z1)).mul(step(S.y0, p.y)).mul(step(ax, S.x));
+  // glass: the windscreen is a raked pane, not a box. It runs from the scuttle (low, forward) up to the
+  // header (high, back). A box cut left the lower glass solid, so the dash and cowl filled the view.
+  const Bk = C.backlight, Sd = C.sides;
+  // measured outer glass: y 0.24 → z 0.22, y 0.28 → z 0.14, y 0.32 → z 0.10.
+  // The shell is thick: the pane the driver actually looks at sits up to ~0.12 behind that line.
+  // The hole is a volume through both layers, not a razor cut on the outer skin (that left the
+  // inner skin in place and the cabin read as a black wall).
+  const zGlass = float(0.505).sub(p.y.mul(1.28));
+  const dzG = p.z.sub(zGlass);
+  const inScreen = step(0.198, p.y).mul(step(p.y, 0.348)).mul(step(ax, 0.178)).mul(step(-0.16, dzG)).mul(step(dzG, 0.06));
+  // the glass and the headlining that hangs in front of it. The lining drops to about y 0.26
+  // ahead of the driver and hides the pane; cut that lining too, and leave the outer roof (y > 0.335).
+  const screenHole = step(0.198, p.y).mul(step(p.y, 0.336)).mul(step(ax, 0.160)).mul(step(-0.08, p.z)).mul(step(p.z, 0.30));
   const inBack = step(p.z, Bk.z).mul(step(Bk.y0, p.y)).mul(step(p.y, Bk.y1)).mul(step(ax, Bk.x));
   const inSide = step(Sd.x, ax).mul(step(Sd.y0, p.y)).mul(step(p.y, Sd.y1)).mul(step(Sd.z0, p.z)).mul(step(p.z, Sd.z1));
   // the texture has the cabin (seats, dash) baked into the glass, so the middle of each pane is glass whatever
   // its colour; only the edges, where frame and seals meet the glass, go by the texture
-  const coreS = inScreen.mul(step(S.z0 + 0.02, p.z)).mul(step(p.z, S.z1 - 0.022)).mul(step(S.y0 + 0.012, p.y)).mul(step(ax, S.x - 0.02));
+  const coreS = inScreen;
   const coreB = inBack.mul(step(Bk.y0 + 0.01, p.y)).mul(step(p.y, Bk.y1 - 0.01)).mul(step(ax, Bk.x - 0.02));
   const coreSd = inSide.mul(step(Sd.y0 + 0.012, p.y)).mul(step(p.y, Sd.y1 - 0.014)).mul(step(Sd.z0 + 0.025, p.z)).mul(step(p.z, Sd.z1 - 0.02));
   const glass0 = max(max(max(inScreen, inBack), inSide).mul(smoothstep(0.42, 0.22, lum)).mul(smoothstep(0.28, 0.14, sat)), max(max(coreS, coreB), coreSd));
   // the windows are two layers, and the outer one has gaps: from outside, the inner layer shows through them
   // from behind. Seen from outside the car, back faces in (and just inboard of) the glasshouse are glass too,
   // not cabin trim (which drew grey blotches all over the windows)
-  const inScreenL = step(S.z0 - 0.01, p.z).mul(step(p.z, S.z1 + 0.01)).mul(step(S.y0 - 0.01, p.y)).mul(step(ax, S.x + 0.01));
+  const inScreenL = step(0.19, p.y).mul(step(p.y, 0.350)).mul(step(ax, 0.188)).mul(step(-0.18, dzG)).mul(step(dzG, 0.08));
   const inBackL = step(p.z, Bk.z + 0.03).mul(step(Bk.y0 - 0.01, p.y)).mul(step(p.y, Bk.y1 + 0.01)).mul(step(ax, Bk.x + 0.01));
   const inSideL = step(Sd.x - 0.025, ax).mul(step(Sd.y0 - 0.01, p.y)).mul(step(p.y, Sd.y1 + 0.01)).mul(step(Sd.z0 - 0.01, p.z)).mul(step(p.z, Sd.z1 + 0.01));
   const innerGlass = back.mul(max(max(inScreenL, inBackL), inSideL)).mul(float(1).sub(s.camIn));
@@ -201,15 +261,19 @@ function bodyMaterial(src, C, s) {
   col = col.mul(float(1).sub(dm.mul(n1.sub(0.3)).mul(0.35)));
   col = mix(col, vec3(0.3, 0.3, 0.29), scuff);
   col = mix(col, vec3(0.03), brokenF.mul(headLens).mul(step(0.5, n0)));
+  // body colour: bright, low-saturation panels take the car's paint, keeping the texture's shading.
+  // Glass, lamps and dark cladding stay as baked. White paint (1,1,1) leaves the shell white.
+  const panels = smoothstep(0.42, 0.7, lum).mul(smoothstep(0.28, 0.1, sat)).mul(float(1).sub(glass)).mul(float(1).sub(headLens)).mul(float(1).sub(tailLens));
+  col = mix(col, col.mul(s.paint), panels);
   // interior: charcoal trim and leather, a little lighter low down (seats, floor) than up at the headlining
   const trim = vec3(0.028, 0.026, 0.024).mul(float(0.8).add(base.dot(vec3(0.3, 0.59, 0.11)).mul(0.6)));
   m.colorNode = mix(col, trim, inside);
   // from inside, the window openings are cut out so the driver sees the road; from outside they stay glass
-  const winRegion = max(max(inScreen.mul(step(S.y0 + 0.006, p.y)), inBack), inSide.mul(step(Sd.y0 + 0.008, p.y)).mul(step(p.y, Sd.y1 - 0.012)));
+  const winRegion = max(max(inScreen, inBack), inSide.mul(step(Sd.y0 + 0.008, p.y)).mul(step(p.y, Sd.y1 - 0.012)));
   // (the model also has an inner glass layer facing into the cabin: cut that too)
   const inward = step(normalGeometry.dot(p.sub(vec3(0, 0.29, -0.08))), 0);
-  // only while the camera sits inside this car: from outside nothing is cut, gaps show the dark interior
-  m.opacityNode = float(1).sub(max(inside, inward).mul(winRegion).mul(s.camIn));
+  // only while the camera sits inside this car: the windscreen is cut on both faces so the road shows through
+  m.opacityNode = float(1).sub(max(max(inside, inward).mul(winRegion), screenHole).mul(s.camIn));
   m.alphaTest = 0.5;
   // gloss: the paint and glass in the texture get a clearcoat; rubber and trim stay matt
   const rough = rm.g, metal = rm.b;
