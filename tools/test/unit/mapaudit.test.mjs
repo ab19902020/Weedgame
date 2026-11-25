@@ -48,3 +48,22 @@ test('lakes have measured levels and carved beds deep enough to swim in', async 
   const swan = await water(-1064, -1128);            // Black Swan Lake, Dinton Pastures
   assert.ok(swan.level - swan.bed > 5, `Black Swan Lake ${(swan.level - swan.bed).toFixed(2)} m deep`);
 });
+
+test('the M4 runs unbroken across the map, J12 (Theale) to J8/9 (Holyport)', async () => {
+  const net = await loadNet(), N = net.nodes.length / 3, E = net.ea.length;
+  const parent = Int32Array.from({ length: N }, (_, i) => i), find = a => { while (parent[a] !== a) a = parent[a] = parent[parent[a]]; return a; };
+  for (let e = 0; e < E; e++) if (net.flags[e] & F_DRIVE) { const a = find(net.ea[e]), b = find(net.eb[e]); if (a !== b) parent[a] = b; }
+  const refs = new Set(); net.names.forEach((s, i) => { if (/(^|;)M4($|;)/.test(s)) refs.add(i); });
+  const deg = new Map(); let xmin = 1e9, xmax = -1e9, root = null;
+  for (let e = 0; e < E; e++) {
+    if (!refs.has(net.ref[e]) || net.classes[net.cls[e]] !== 'motorway') continue;
+    const r = find(net.ea[e]); if (root == null) root = r; assert.equal(r, root, 'one connected road');
+    for (const v of [net.ea[e], net.eb[e]]) deg.set(v, (deg.get(v) || 0) + 1);
+    const s = net.pstart[e]; for (let k = 0; k < net.pcount[e]; k++) { const x = net.pts[(s + k) * 3]; xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); }
+  }
+  assert.ok(xmin < -14300 && xmax > 10200, `M4 spans x ${xmin.toFixed(0)}..${xmax.toFixed(0)} (J12 at -14282, J8/9 at 10219)`);
+  // the only carriageway ends are where the data stops, beyond both junctions
+  for (const [v, d] of deg) if (d === 1) { const x = net.nodes[v * 3]; assert.ok(x < -14300 || x > 10200, `M4 carriageway ends at x ${x.toFixed(0)}`); }
+  const m = manifest(), tiles = new Set(m.tiles);
+  for (const [x, z] of [[-14282, -891], [-7870, 2128], [133, 647], [10219, -7615]]) assert.ok(tiles.has(`${Math.floor(x / 256)}_${Math.floor(z / 256)}`), `junction at ${x},${z} is built`);
+});

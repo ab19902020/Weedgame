@@ -58,14 +58,16 @@ def write_tile(path, hdr, arrays):
     tmp = path + '.tmp'; open(tmp, 'wb').write(zlib.compress(data, 9)); os.replace(tmp, path)
 
 def fetch(url):
-    for attempt in range(6):
-        try:
-            with urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=180) as r:
-                a = np.array(Image.open(io.BytesIO(r.read())), np.float32)
+    # curl rather than urllib: through some HTTPS proxies urllib's reads stall on this service
+    import subprocess
+    err = None
+    for attempt in range(12):      # a good response takes ~2 s; stalled ones are cut at 15 s and retried
+        r = subprocess.run(['curl', '-sf', '--max-time', '15', '-A', UA['User-Agent'], url], capture_output=True)
+        if r.returncode == 0 and r.stdout[:2] in (b'II', b'MM'):
+            a = np.array(Image.open(io.BytesIO(r.stdout)), np.float32)
             a[(a < -100) | (a > 1000)] = np.nan
             return a
-        except Exception as ex:
-            err = ex; time.sleep(2 + attempt * 3)
+        err = f'curl exit {r.returncode}, {len(r.stdout)} bytes'; time.sleep(1 + attempt * 2)
     raise RuntimeError(f'{url[:120]}: {err}')
 
 def obb(pts):

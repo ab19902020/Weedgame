@@ -1,7 +1,7 @@
 {
- "built": "2026-11-25T06:56:41Z",
- "coverageAreaKm2": 206.4,
- "tiles": 3432,
+ "built": "2026-11-25T08:10:10Z",
+ "coverageAreaKm2": 218.68,
+ "tiles": 3730,
  "buildings": {
   "Reading town centre": {
    "buildings": 10674,
@@ -24,13 +24,13 @@
    "height_tag:height": 13
   },
   "Villages, countryside and the A329 corridor": {
-   "buildings": 42259,
-   "height_inferred": 41229,
-   "roof_inferred": 42196,
-   "flat": 4686,
-   "height_tag:levels": 1025,
-   "pitched": 37573,
-   "roof_tag": 63,
+   "buildings": 43333,
+   "height_inferred": 42276,
+   "roof_inferred": 43268,
+   "flat": 4876,
+   "height_tag:levels": 1052,
+   "pitched": 38457,
+   "roof_tag": 65,
    "height_tag:height": 5
   },
   "Wokingham": {
@@ -97,36 +97,36 @@
   }
  },
  "roads": {
-  "edges": 73384,
-  "drivable": 43549,
-  "named": 33978,
-  "bridges": 665,
-  "tunnels": 180,
-  "bridgeClearanceAdjustments": 1216,
-  "pavementsTagged": 13076,
-  "lanesTagged": 10728,
-  "widthTagged": 792,
-  "maxspeedTagged": 27010
+  "edges": 75916,
+  "drivable": 45210,
+  "named": 34824,
+  "bridges": 715,
+  "tunnels": 190,
+  "bridgeClearanceAdjustments": 1315,
+  "pavementsTagged": 13216,
+  "lanesTagged": 11199,
+  "widthTagged": 824,
+  "maxspeedTagged": 27668
  },
  "routeLengthsM": {
   "A329(M)": 17176.9,
   "A329": 38617.9
  },
  "signals": {
-  "controllers": 364,
-  "approaches": 2086,
-  "standaloneCrossings": 45,
-  "pedestrianSignalCrossings": 1061,
+  "controllers": 379,
+  "approaches": 2148,
+  "standaloneCrossings": 49,
+  "pedestrianSignalCrossings": 1088,
   "timings": "simulated (no published phase data imported)"
  },
  "crossings": {
-  "signal": 1063,
-  "zebra": 461,
-  "uncontrolled": 5294
+  "signal": 1092,
+  "zebra": 495,
+  "uncontrolled": 5398
  },
  "busRoutes": {
-  "relations": 136,
-  "reconstructed": 136,
+  "relations": 145,
+  "reconstructed": 138,
   "refs": [
    "1",
    "10",
@@ -168,6 +168,7 @@
    "2a",
    "3",
    "33",
+   "37",
    "3b",
    "4",
    "400",
@@ -201,29 +202,30 @@
    "X40"
   ]
  },
- "busStops": 1034,
- "busStopsWithShelterTag": 340,
+ "busStops": 1061,
+ "busStopsWithShelterTag": 347,
  "lamps": {
-  "mapped": 97,
-  "inferred": 29532
+  "mapped": 357,
+  "inferred": 30195
  },
  "trees": {
-  "mapped": 1936,
-  "total": 1171305
+  "mapped": 2367,
+  "total": 1274319
  },
- "shopSigns": 1492,
- "barriers": 1285,
- "parkingSlots": 64959,
- "tileBytes": 48926632,
+ "shopSigns": 1530,
+ "barriers": 2142,
+ "parkingSlots": 68037,
+ "tileBytes": 52274024,
  "water": {
-  "bodies": 424,
-  "channels": 32,
-  "brooks": 446,
-  "areaHa": 604.6,
+  "bodies": 450,
+  "channels": 37,
+  "brooks": 551,
+  "areaHa": 952.3,
   "named": [
    "Allsmoor Pond",
    "Bearwood Lake",
    "Black Swan Lake",
+   "Burghfield Lake",
    "Campus Lake",
    "Caversham Lock",
    "Caversham Park Pond",
@@ -232,8 +234,10 @@
    "Disc Filters",
    "Distribution Chamber",
    "Emmer Green Pond",
+   "Englefield Lagoon",
    "Farnham Flint Lake",
    "Final Settling Tanks",
+   "Garston Lock",
    "Gold Lake",
    "Gormoor Pond",
    "Herons Water",

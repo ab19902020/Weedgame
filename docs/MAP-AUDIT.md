@@ -1,4 +1,4 @@
-# Map audit: roads, paths and water (v0.17.0)
+# Map audit: roads, paths and water (v0.17.0, M4 corridor v0.18.0)
 
 What was checked, what was wrong and what changed. Every number is computed from the OSM extract
 (`berks.osm.pbf`, South East England extract of 2026-11-19, cut to lon −1.005…−0.725, lat 51.385…51.485), the
@@ -34,6 +34,23 @@ Detached drivable pieces that remain (3% of the length) are roads that leave the
 private service roads reached only on foot. The largest are Nashgrove Lane (5.8 km) and Oak Drive (2.4 km) at the
 southern edge.
 
+## The M4, end to end (v0.18.0)
+
+The M4 entered the study area from the west and left it through its northern edge near Hurst/Paley Street, so it
+stopped there in the game. The world now also takes in a corridor 500 m either side of the whole M4 across the map,
+**Junction 12 (Theale) to Junction 8/9 (Holyport, Maidenhead)**, past J11 (Reading, Three Mile Cross) and J10
+(Winnersh / A329(M)):
+
+* Terrain extended to BNG E 463000–491000, N 165000–181000 with the same Environment Agency LIDAR DTM at 4 m
+  (`tools/pipeline/extend_terrain.py`; 52 new 2 km tiles, no voids; the existing area is byte-identical).
+* OSM extract widened to lon −1.10…−0.70, lat 51.385…51.52 (`tools/pipeline/extract_osm.py`).
+* World: **218.7 km², 3,730 tiles**. The M4 is 76.9 km of carriageway and slip roads, every edge in the main road
+  network, with no gaps: its only carriageway ends are where the data stops beyond J12 and J8/9
+  (`tools/test/unit/mapaudit.test.mjs` checks this).
+* With the corridor the network is 2,048 km of drivable road (96.3% one connected network) and 3,460 km of roads and
+  paths together (99.4%); open water is 952 ha (450 lakes and ponds, 37 channels, 551 brooks and ditches). Lanes that
+  cross the corridor's outer edge near Theale (Nunhide Lane, North Street) end there, as roads do at any edge.
+
 ## Water
 
 Every mapped water area and open (not culverted) waterway in the study area is now water you can see, wade and
@@ -64,16 +81,17 @@ below it (inferred depths, deepest away from the shore).
 
 * Lake and river **beds are inferred**: no bathymetry was imported. Levels are measured.
 * Narrow brooks and ditches are drawn at least about 4 m wide (the terrain grid is 4 m).
-* **Building heights in the new areas are not yet LIDAR-measured.** The 46,059 buildings measured before were carried
-  across unchanged (`tools/pipeline/carry_lidar.py`, footprints matched exactly; 3 no longer matched). The ~39,000
-  buildings new to the world keep OSM or inferred heights until `tools/pipeline/lidar_buildings.py` is run again: the
-  Environment Agency LIDAR service returned 504 (gateway timeout) when this build was made.
+* Building heights: in v0.17 the buildings new to the world kept OSM or inferred heights (the Environment Agency
+  service was timing out). In v0.18 **every building was measured from LIDAR**: 84,507 of 86,399, over 238 1 km blocks
+  with none failing; the other 1,892 footprints showed no structure in the LIDAR (demolished, or built since).
 * Roads that run out of the study area stop at its edge.
 
 ## Rebuilding
 
 ```
+python3 tools/pipeline/extract_osm.py south_east-latest.osm.pbf data/berks.osm.pbf -1.10 51.385 -0.70 51.52
+python3 tools/pipeline/extend_terrain.py data 463000 491000 165000 181000   # after fetch_terrain.py
 npm run world                                                     # build_world + fit_ll + canopies
-python3 tools/pipeline/carry_lidar.py <previous www/world> www/world # or lidar_buildings.py when the EA WCS is up
+python3 tools/pipeline/lidar_buildings.py www/world --threads 2     # or carry_lidar.py <previous world> www/world if the EA WCS is down
 npm run rail
 ```

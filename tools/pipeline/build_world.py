@@ -153,6 +153,18 @@ corridor = unary_union(route_lines).buffer(380, 16) if route_lines else Polygon(
 # discs plus the A329 corridor, which cut Dinton Pastures, the Thames meadows and lanes like Sandford Lane in half)
 RECT = (-9600.0, -5650.0, 9600.0, 5100.0)   # x0, z0, x1, z1 in world metres
 coverage = box(*RECT) if os.environ.get('COVER', 'rect') == 'rect' else unary_union([d[1] for d in discs] + [corridor]).buffer(0)
+# ...plus the whole M4 across the map, J12 (Theale) to J8/9 (Holyport, Maidenhead), with 500 m either side,
+# as far as the terrain goes (it left the study area to the west and through its northern edge)
+tx0, tz0 = (tm['e_min'] - E0) / K, -(tm['n_max'] - N0) / K
+terr_box = box(tx0 + 64, tz0 + 64, tx0 + tm['width'] * tm['res'] - 64, tz0 + tm['height'] * tm['res'] - 64)
+m4 = []
+for wid, nids, ll, t in highways:
+    if t.get('highway') in ('motorway', 'motorway_link') and 'M4' in re.split(r'[;\s]+', t.get('ref', '')):
+        m4.append(LineString(proj(ll)))
+if m4:
+    m4c = unary_union(m4).intersection(box(-14900, -8300, 10900, 3000)).buffer(500, 8).intersection(terr_box)
+    coverage = unary_union([coverage, m4c]).buffer(0)
+    log('M4 corridor km', round(unary_union(m4).intersection(m4c).length / 2000, 1), 'per carriageway')
 if coverage.geom_type == 'MultiPolygon':
     parts = sorted(coverage.geoms, key=lambda g: -g.area)
     log('coverage parts', [round(p.area / 1e6, 2) for p in parts])
@@ -1558,7 +1570,7 @@ PLACE_R = {'town': 1300, 'suburb': 800, 'village': 750, 'quarter': 600, 'neighbo
 seen_names = {d['name'] for d in districts_out}
 for name, kind, lon, lat in sorted(places, key=lambda p: list(PLACE_R).index(p[1])):
     x, z = ll_to_world(lon, lat)
-    if not (RECT[0] <= x <= RECT[2] and RECT[1] <= z <= RECT[3]) or name in seen_names:
+    if not coverage.contains(Point(x, z)) or name in seen_names:
         continue
     if any(math.hypot(x - d['x'], z - d['z']) < d['r'] * 0.6 for d in districts_out):
         continue     # inside a district already named
