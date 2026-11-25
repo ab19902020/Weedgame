@@ -3,7 +3,7 @@ import { ROLES } from './riggedPeople.js';
 import { GameMenu } from './gameMenu.js';
 import { Navigation, distanceLabel } from './navigation.js';
 import { STATES } from './weather.js';
-import { MapView } from './mapView.js';
+import { MapView, siteIcon, siteDot } from './mapView.js';
 
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 export const TESTSPOTS = [
@@ -80,6 +80,12 @@ export class Hud {
     const places = [...G.transit.stations.map(s=>({...s,name:s.name+" station"})),...G.manifest.districts.filter(d=>!/hamlet|neighbourhood/.test(d.kind||'')), ...TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))];
     const select = this.el('mPlaces');
     places.forEach((place,index)=>select.add(new Option(place.name,String(index))));
+    // the buildings you can go into, once their list has loaded (interiors.js)
+    const addSites=()=>{ if(!G.interiors?.ready){ setTimeout(addSites,500); return; }
+      const grp=document.createElement('optgroup'); grp.label='Buildings you can go into ('+G.interiors.sites.length+')';
+      for(const s of [...G.interiors.sites].sort((a,b)=>(a.kind==='trap'?-2:a.kind==='nice'?-1:0)-(b.kind==='trap'?-2:b.kind==='nice'?-1:0)||a.title.localeCompare(b.title))){ const i=places.length; places.push({name:s.title,x:s.dx,z:s.dz}); grp.appendChild(new Option(s.title+' · '+s.district,String(i))); }
+      select.appendChild(grp); };
+    addSites();
     select.onchange = () => {
       if (!select.value) return;
       const p=places[Number(select.value)]; this.nav.set({x:p.x,z:p.z,name:p.name});
@@ -115,14 +121,15 @@ export class Hud {
     if (I.consume('dev')) this.toggleDev();
     const inCar = !!me.vehicle;
     const near = !inCar && G.brothers.nearestVehicle();
-    const boardable=G.transit.nearby(me);
-    const waiting=!inCar && !near && !boardable && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
-    const useText=G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":'Get in');
+    const door=!inCar&&!G.transit.ride?G.interiors?.prompt:null;   // a building's front door (interiors.js)
+    const boardable=!door&&!me.inside&&G.transit.nearby(me);
+    const waiting=!inCar && !near && !boardable && !door && !me.inside && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
+    const useText=G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
     const use=this.el('bUse');
     if(use.lastChild.textContent!==useText){use.lastChild.textContent=useText;use.firstChild.innerHTML=inCar||G.transit.ride&&G.transit.currentStop()?ICON.exit:boardable||G.transit.ride?ICON.bus:ICON.door;}
     use.disabled=!!waiting;
-    const ready=inCar||near||G.transit.ride||boardable;
-    use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable)&&!inCar);
+    const ready=inCar||near||G.transit.ride||boardable||door;
+    use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable||door)&&!inCar);
     // on foot: stick and actions; driving: wheel (or arrows) and pedals; riding a bus or train: just the stop button
     const ride=!!G.transit.ride, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Steering wheel';
     I.driving=drive; I.steering=steer;
@@ -169,6 +176,7 @@ export class Hud {
     const c = this.mini, R = S / 2;
     this.atlas.minimap(c, S, dpr, me, scale, rot, c => {
       this.nav.draw(c, x => x, z => z, 1 / scale);
+      if (G.interiors?.ready) { const reach = (S / 2) / scale; for (const site of G.interiors.sites) { if (Math.abs(site.dx - me.x) > reach || Math.abs(site.dz - me.z) > reach) continue; siteDot(c, site.dx, site.dz, site.kind, 1 / scale); } }
       const reach = R / scale;
       for (const v of G.traffic.list) {
         if (Math.abs(v.x - me.x) > reach || Math.abs(v.z - me.z) > reach) continue;
@@ -264,10 +272,23 @@ export class Hud {
     const avoid = [];
     for (const q of this.el('map').querySelectorAll('.maptools,.atlasPlaces,.atlasFooter')) { const r = q.getBoundingClientRect(); if (r.width) avoid.push([r.x + r.width / 2, r.y + r.height / 2, r.width + 8, r.height + 8]); }
     for (const b of G.brothers.b) avoid.push([(b.x - V.x) * V.s + W / 2, (b.z - V.z) * V.s + H / 2 - 8, 64, 58]);
+    // and of the buildings you can go into (their marker, and the name beside the main ones)
+    if (G.interiors?.ready) for (const site of G.interiors.sites) {
+      const x = (site.dx - V.x) * V.s + W / 2, z = (site.dz - V.z) * V.s + H / 2; if (x < -200 || x > W + 200 || z < -60 || z > H + 60) continue;
+      const key = site.kind === 'trap' || site.kind === 'nice' || site.kind === 'mall';
+      avoid.push([x, z, 22, 22]);
+      if (V.s >= 0.22 || (key && V.s >= 0.04)) { const w = site.title.length * (key ? 7.4 : 6.6); avoid.push([x + 13 + w / 2, z, w + 6, 18]); }
+    }
     this.atlas.atlas(c, V, W, H, {
       dpr, avoid, ovTile: (i, j) => this.ovTile(i, j),
       over: (c, X, Z, s) => {
         nav.draw(c, X, Z);
+        if (G.interiors?.ready) for (const site of G.interiors.sites) {
+          const x = X(site.dx), z = Z(site.dz); if (x < -30 || x > W + 30 || z < -30 || z > H + 30) continue;
+          const key = site.kind === 'trap' || site.kind === 'nice' || site.kind === 'mall';
+          siteIcon(c, x, z, site.kind, s < 0.05 && !key ? 5.5 : key ? 10 : 8);
+          if (s >= 0.22 || (key && s >= 0.04)) { c.font = `${key ? 800 : 700} ${key ? 12 : 11}px system-ui`; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; const t = key && s < 0.22 ? site.title.replace(/, .*/, '') : site.title; c.strokeText(t, x + 13, z); c.fillStyle = '#1d2420'; c.fillText(t, x + 13, z); }
+        }
         // the brothers' cars and the police
         for (const v of G.traffic.list) {
           const x = X(v.x), z = Z(v.z); if (x < -10 || x > W + 10 || z < -10 || z > H + 10) continue;

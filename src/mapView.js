@@ -565,3 +565,29 @@ export class MapView {
     for (const kd of ORDER) if (paths[kd]) { c.strokeStyle = ROAD[kd].mini; c.lineWidth = w(kd); c.stroke(paths[kd]); }
   }
 }
+
+// ------------------------------------------------------------------ enterable buildings on the maps
+const SITE = { trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', home: '#2a9d8f' };
+const siteCol = k => SITE[k] || SITE.home;
+// a rounded square in the kind's colour with a white glyph: a house, a crate, an office block, a bag, a glass, a cross
+export function siteIcon(c, x, z, kind, r) {
+  c.save(); c.translate(x, z);
+  c.fillStyle = siteCol(kind); c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(1.4, r * 0.2);
+  c.beginPath(); c.roundRect ? c.roundRect(-r, -r, r * 2, r * 2, r * 0.35) : c.rect(-r, -r, r * 2, r * 2); c.fill(); c.stroke();
+  c.fillStyle = '#ffffff'; c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(1, r * 0.16);
+  const k = r * 0.62;
+  c.beginPath();
+  if (kind === 'warehouse') { c.rect(-k, -k * 0.35, k * 2, k * 1.25); c.moveTo(-k, -k * 0.35); c.lineTo(0, -k); c.lineTo(k, -k * 0.35); c.fill(); }
+  else if (kind === 'office') { c.fillRect(-k * 0.65, -k, k * 1.3, k * 1.9); c.fillStyle = siteCol(kind); for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) c.fillRect(-k * 0.45 + j * k * 0.55, -k * 0.75 + i * k * 0.55, k * 0.32, k * 0.3); }
+  else if (kind === 'shop' || kind === 'mall') { c.moveTo(-k * 0.8, -k * 0.25); c.lineTo(k * 0.8, -k * 0.25); c.lineTo(k * 0.65, k * 0.95); c.lineTo(-k * 0.65, k * 0.95); c.closePath(); c.fill(); c.beginPath(); c.arc(0, -k * 0.25, k * 0.42, Math.PI, 0); c.stroke(); }
+  else if (kind === 'pub') { c.moveTo(-k * 0.55, -k * 0.9); c.lineTo(k * 0.55, -k * 0.9); c.lineTo(k * 0.4, k * 0.95); c.lineTo(-k * 0.4, k * 0.95); c.closePath(); c.fill(); }
+  else if (kind === 'church') { c.fillRect(-k * 0.16, -k, k * 0.32, k * 2); c.fillRect(-k * 0.6, -k * 0.45, k * 1.2, k * 0.3); }
+  else { c.moveTo(0, -k); c.lineTo(k, -k * 0.05); c.lineTo(k * 0.7, -k * 0.05); c.lineTo(k * 0.7, k * 0.9); c.lineTo(-k * 0.7, k * 0.9); c.lineTo(-k * 0.7, -k * 0.05); c.lineTo(-k, -k * 0.05); c.closePath(); c.fill(); if (kind === 'trap') { c.fillStyle = siteCol(kind); c.fillRect(-k * 0.22, k * 0.25, k * 0.44, k * 0.65); } }
+  c.restore();
+}
+// on the minimap (which turns): a ringed dot in the kind's colour; u is a CSS pixel in world units
+export function siteDot(c, x, z, kind, u) {
+  c.fillStyle = siteCol(kind); c.strokeStyle = '#ffffff'; c.lineWidth = 1.6 * u;
+  c.beginPath(); c.arc(x, z, 5 * u, 0, 7); c.fill(); c.stroke();
+  c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x, z, 1.8 * u, 0, 7); c.fill();
+}

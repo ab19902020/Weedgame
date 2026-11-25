@@ -133,8 +133,8 @@ export class Transit {
   update(dt){
     const G=this.G,B=G.brothers,me=B.me,I=G.input;
     G.stations?.update(dt,me);
-    const candidate=this.ride||this.nearby(me);
-    if(!candidate && I.pressed.has('use') && (this.platform(me)||this.busStop(me)) && !B.nearestVehicle()) I.consume('use');
+    const candidate=this.ride||(me.inside||G.interiors?.prompt?null:this.nearby(me));
+    if(!candidate && !me.inside && !G.interiors?.prompt && I.pressed.has('use') && (this.platform(me)||this.busStop(me)) && !B.nearestVehicle()) I.consume('use');
     if(candidate && I.consume('use')){
       if(this.ride)this.request=true;
       else {

@@ -20,6 +20,7 @@ import { Police } from './police.js';
 import { Parking, Buses } from './services.js';
 import { Atmos } from './atmos.js';
 import { Landmarks } from './landmarks.js';
+import { Interiors } from './interiors.js';
 import { Audio } from './audio.js';
 import { Save } from './save.js';
 import { Perf } from './perf.js';
@@ -82,7 +83,8 @@ G.trains = new Trains(G);
 G.stations = new Stations(G);   // platforms at every station of the lines passengers ride (stations.js)
 G.landmarks = new Landmarks(G);
 G.atmos = new Atmos(G);
-G.shelteredAt = (x, y, z) => G.atmos.sheltered(x, y, z);
+G.interiors = new Interiors(G);   // enterable buildings: doors, interiors, the indoor camera (interiors.js)
+G.shelteredAt = (x, y, z) => !!G.brothers?.me?.inside || G.atmos.sheltered(x, y, z);
 G.coverNear = (x, z, r) => G.atmos.coverNear(x, z, r);
 G.perf = new Perf(G);
 G.audio = new Audio(G);
@@ -222,6 +224,7 @@ function step(dt, render) {
   G.atmos.updateLights(me.x, me.z);
   G.atmos.updateNearLights(G.camera.position);
   G.landmarks.update();
+  G.interiors.update(dt);
   if ((G._treeT = (G._treeT || 0) - dt) <= 0) {
     G._treeT = 1; let n = 0;
     for (const t of G.tiles.tiles.values()) if (t.trees && Math.abs(t.data.ox + 128 - me.x) < 300 && Math.abs(t.data.oz + 128 - me.z) < 300) for (const [x, z] of t.trees) if (Math.abs(x - me.x) < 25 && Math.abs(z - me.z) < 25) n++;

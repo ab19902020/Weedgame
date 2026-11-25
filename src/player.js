@@ -39,7 +39,7 @@ export class Brothers {
     const veh = this.vehicleOf(me);
     if (veh) this.drive(dt, input, veh); else this.walk(dt, input);
     if (input.consume('camera')) this.cycleCamera(!!veh);
-    if (input.consume('use')) this.toggleVehicle();
+    if (input.consume('use') && !G.interiors?.use()) this.toggleVehicle();
     if (input.consume('swap')) this.swap();
     // update actors for both brothers
     for (let i = 0; i < 2; i++) {
@@ -54,7 +54,8 @@ export class Brothers {
     const ax = input.axis();
     const run = input.padRun || input.held.has('run') || Math.hypot(ax.x, ax.y) > 0.92 && input.held.has('run');
     // water: wade (slower the deeper it gets) and swim where it's over chest height
-    const lvl = G.tiles.waterLevel ? G.tiles.waterLevel(me.x, me.z) : null, gy0 = G.tiles.ground(me.x, me.z, me.y + 0.3);
+    const IN = G.interiors?.at(me);     // inside an enterable building (interiors.js)
+    const lvl = IN ? null : G.tiles.waterLevel ? G.tiles.waterLevel(me.x, me.z) : null, gy0 = IN ? me.y : G.tiles.ground(me.x, me.z, me.y + 0.3);
     const wdep = lvl != null && gy0 != null ? lvl - gy0 : 0;
     me.swimming = me.swimming ? wdep > 1.05 : wdep > 1.3;
     const wade = me.swimming ? 0 : Math.max(0, Math.min(0.65, wdep * 0.55));
@@ -66,18 +67,18 @@ export class Brothers {
     const k = Math.min(1, dt * 8);
     this.vel.x += (tx - this.vel.x) * k; this.vel.z += (tz - this.vel.z) * k;
     let nx = me.x + this.vel.x * dt, nz = me.z + this.vel.z * dt;
-    [nx, nz] = this.collideCircle(nx, nz, 0.32, me.y);
+    [nx, nz] = IN ? IN.collide(nx, nz, 0.3, me.y) : this.collideCircle(nx, nz, 0.32, me.y);
     // other people & vehicles
-    for (const v of G.traffic.list) {
+    if (!IN) for (const v of G.traffic.list) {
       const ddx = nx - v.x, ddz = nz - v.z; if (ddx * ddx + ddz * ddz > 64) continue;
       [nx, nz] = pushFromBox(nx, nz, 0.3, v);
     }
-    const gy = G.tiles.ground(nx, nz, me.y + 0.3);
+    const gy = IN ? IN.floorAt(nx, nz, me.y) : G.tiles.ground(nx, nz, me.y + 0.3);
     if (me.swimming && lvl != null) {
       // float with the head just out of the water; climbing out happens when the bed shelves up
       const target = Math.max(gy ?? -1e9, lvl - SWIM_DEPTH);
       me.y += (target - me.y) * Math.min(1, dt * 6);
-    } else if (gy != null) { me.y = gy > me.y ? me.y + (gy - me.y) * Math.min(1, dt * 14) : gy; }
+    } else if (gy != null) { me.y = IN ? me.y + (gy - me.y) * Math.min(1, dt * 18) : gy > me.y ? me.y + (gy - me.y) * Math.min(1, dt * 14) : gy; }
     const mv = Math.hypot(nx - me.x, nz - me.z);
     me.x = nx; me.z = nz;
     const sp = mv / Math.max(dt, 1e-3);
@@ -85,7 +86,7 @@ export class Brothers {
     a.x = me.x; a.y = me.y; a.z = me.z; a.heading = me.heading; a.speed = sp; a.running = run && sp > 3;
     a.phase = (a.phase + sp * dt * (a.running ? 2.6 : 3.6)) % (Math.PI * 2);
     a.t += dt;
-    a.pose = me.swimming ? 'swim' : G.world.cur.rain > 0.35 && !a.running && !G.shelteredAt(me.x, me.y, me.z) ? 'umbrella' : 'walk';
+    a.pose = me.swimming ? 'swim' : !IN && G.world.cur.rain > 0.35 && !a.running && !G.shelteredAt(me.x, me.y, me.z) ? 'umbrella' : 'walk';
     a.swimming = !!me.swimming; a.wading = wdep > 0.25 && !me.swimming;
     if (me.swimming) a.jumpTime = 0;
     this.speedNow = sp;
@@ -218,6 +219,8 @@ export class Brothers {
   }
   followCam(dt, tx, ty, tz, dist, moveHeading, rate = 1.6, pitchTarget = null) {
     const c = this.cam, G = this.G;
+    const IN = !this.me.vehicle && G.interiors?.at(this.me);
+    if (IN) { if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate)); IN.camera(c, dt, tx, ty, tz); return; }
     if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate));
     if (pitchTarget != null && G.time - c.lastUser > 1.4) c.pitch += (pitchTarget - c.pitch) * Math.min(1, dt * 2);
     c.dist += (dist - c.dist) * Math.min(1, dt * 3);
@@ -237,6 +240,9 @@ export class Brothers {
   // ------------------------------------------------------------------ actions
   nearestVehicle(maxD = 4.5) {
     const me = this.me; let best = null, bd = maxD;
+    if (me.inside) return null;
+    // a front door closer than any car wins the button
+    const door = this.G.interiors?.prompt; if (door && door.act === 'enter') bd = Math.min(bd, door.d + 0.5);
     for (const v of this.G.traffic.list) {
       if (!v.parked || v.hidden || v.occupied) continue;
       // a brother's own car wins when it is within reach
