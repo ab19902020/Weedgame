@@ -16,7 +16,7 @@ $BT/aapt2 link -o $W/base.apk -I $JAR --manifest tools/android/AndroidManifest.x
   --min-sdk-version 26 --target-sdk-version 35 --version-code $CODE --version-name $VERSION -0 bin -0 png
 javac -nowarn --release 11 -classpath $JAR -d $W/classes tools/android/src/uk/greencounty/game/Main.java
 $BT/d8 --release --min-api 26 --lib $JAR --output $W $(find $W/classes -name '*.class')
-(cd $W && zip -q base.apk classes.dex)
+if command -v zip >/dev/null; then (cd $W && zip -q base.apk classes.dex); else python3 -c "import zipfile; z=zipfile.ZipFile('$W/base.apk','a'); z.write('$W/classes.dex','classes.dex'); z.close()"; fi
 $BT/zipalign -p -f 4 $W/base.apk $W/aligned.apk
 KEYSTORE=${KEYSTORE:-$HOME/.android/greencounty-dev.keystore}; KS_PASS=${KS_PASS:-greencounty-dev}
 if [ ! -f "$KEYSTORE" ]; then mkdir -p "$(dirname "$KEYSTORE")"; keytool -genkeypair -keystore "$KEYSTORE" -storepass "$KS_PASS" -keypass "$KS_PASS" -alias gcdev -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Green County Development, O=Green County, C=GB" >/dev/null; fi

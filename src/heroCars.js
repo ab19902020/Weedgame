@@ -15,8 +15,9 @@ import { texture, uv, uniform, vec3, vec4, float, mix, step, smoothstep, abs, ma
 export const HERO_CARS = {
   rangerover: {
     file: 'vehicles/rangerover.glb', scale: 5.06,
-    // driver's eye (right-hand drive): metres ahead of the body centre, to the right, above the ground
-    driver: { fwd: -0.32, side: 0.4, eye: 1.62 },
+    // driver's eye (right-hand drive), metres: behind the body centre, to the right, above the ground.
+    // The seat and wheel live in the GLB; this sits the eye just above the dash, clear of the headrest.
+    driver: { fwd: -0.50, side: 0.40, eye: 1.48 },
     // lamp regions (model units) — headlights under the bonnet line, tail clusters on the rear corners
     head: { z: 0.425, x0: 0.112, x1: 0.206, y0: 0.172, y1: 0.228 },
     tail: { z: -0.425, x0: 0.143, x1: 0.212, y0: 0.158, y1: 0.262 },
@@ -27,6 +28,8 @@ export const HERO_CARS = {
   },
 };
 
+// how far the steering wheel turns per radian of front-wheel steer (about three turns lock to lock)
+const STEER_RATIO = 12;
 const hash = p => fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
 
 export class HeroCars {
@@ -45,13 +48,18 @@ export class HeroCars {
   }
   // one-time: find parts, keep the source textures for per-car materials, build the glass geometry
   prepare(model, gltf) {
-    const C = HERO_CARS[model], parts = { wheels: {} };
+    const C = HERO_CARS[model], parts = { wheels: {}, cabin: [] };
     gltf.scene.traverse(n => {
       if (!n.isMesh) return;
-      if (n.name.startsWith('wheel_') || n.parent?.name?.startsWith('wheel_')) {
-        const key = (n.name.startsWith('wheel_') ? n.name : n.parent.name).slice(6);
-        parts.wheels[key] = { geo: n.geometry, mat: n.material, pos: (n.name.startsWith('wheel_') ? n : n.parent).position.clone() };
+      const keyName = n.name.startsWith('wheel_') ? n.name : n.parent?.name?.startsWith('wheel_') ? n.parent.name : '';
+      if (keyName) {
+        const node = n.name.startsWith('wheel_') ? n : n.parent;
+        parts.wheels[keyName.slice(6)] = { geo: n.geometry, mat: n.material, pos: node.position.clone() };
+      } else if (n.name === 'steering' || n.parent?.name === 'steering') {
+        const node = n.name === 'steering' ? n : n.parent;
+        parts.steering = { geo: n.geometry, mat: n.material, pos: node.position.clone() };
       } else if (n.name === 'body' || n.parent?.name === 'body') parts.body = { geo: n.geometry, mat: n.material };
+      else if (n.name.startsWith('cabin') || n.parent?.name?.startsWith('cabin')) parts.cabin.push({ geo: n.geometry, mat: n.material });
     });
     parts.wheelMat = wheelMaterial(parts.wheels.fl.mat);
     return parts;
@@ -67,6 +75,19 @@ export class HeroCars {
     const mesh = new THREE.Mesh(parts.body.geo, bodyMaterial(parts.body.mat, C, state));
     mesh.castShadow = true; mesh.receiveShadow = true;
     mBody.add(mesh);
+    const cabin = [];
+    for (const c of parts.cabin) {
+      const cm = new THREE.Mesh(c.geo, cabinMaterial(c.mat));
+      cm.castShadow = true; cm.receiveShadow = true;
+      mBody.add(cm); cabin.push(cm);
+    }
+    let steering = null;
+    if (parts.steering) {
+      const piv = new THREE.Group(); piv.position.copy(parts.steering.pos);
+      const sm = new THREE.Mesh(parts.steering.geo, cabinMaterial(parts.steering.mat));
+      sm.castShadow = true;
+      piv.add(sm); mBody.add(piv); steering = sm;
+    }
     const wheels = {};
     for (const [k, w] of Object.entries(parts.wheels)) {
       const piv = new THREE.Group(); piv.position.copy(w.pos);
@@ -74,7 +95,7 @@ export class HeroCars {
       piv.add(wm); mGround.add(piv); wheels[k] = { piv, mesh: wm };
     }
     this.scene.add(body, ground);
-    return { model, body, ground, wheels, state, mesh };
+    return { model, body, ground, wheels, steering, cabin, state, mesh };
   }
   // called by VehicleRenderer for each visible hero car with its ground and sprung body matrices
   place(v, groundM, bodyM) {
@@ -87,6 +108,8 @@ export class HeroCars {
     c.body.matrixWorldNeedsUpdate = c.ground.matrixWorldNeedsUpdate = true;
     const spin = v.spin || 0, steer = v.player ? (v.steer || 0) : (v.steerVis || 0);
     for (const [k, w] of Object.entries(c.wheels)) w.mesh.rotation.set(spin, k[0] === 'f' ? -steer : 0, 0, 'YXZ');
+    // column is model +Z (toward the bonnet): left lock is counterclockwise from the driver's seat
+    if (c.steering) c.steering.rotation.z = -steer * STEER_RATIO;
     const s = c.state, blink = (performance.now() / 666) % 1 < 0.5 ? 1 : 0;
     s.camIn.value = v.camInside ? 1 : 0;
     s.brake.value = v.brake ? 1 : 0; s.lights.value = v.lights ? 1 : 0; s.reverse.value = v.reversing ? 1 : 0;
@@ -94,9 +117,24 @@ export class HeroCars {
     const d = v.dmg || [0, 0, 0, 0]; s.dmg.value.set(d[0], d[1], d[2], d[3]);
   }
   finish() {
-    for (const [id, c] of this.active) if (!this.seen.has(id)) { this.scene.remove(c.body, c.ground); c.mesh.material.dispose(); this.active.delete(id); }
+    for (const [id, c] of this.active) if (!this.seen.has(id)) {
+      this.scene.remove(c.body, c.ground);
+      c.mesh.material.dispose();
+      for (const m of c.cabin) m.material.dispose();
+      if (c.steering) c.steering.material.dispose();
+      this.active.delete(id);
+    }
     this.seen.clear();
   }
+}
+
+function cabinMaterial(src) {
+  const m = new THREE.MeshStandardNodeMaterial({ side: THREE.DoubleSide });
+  m.colorNode = src.map ? texture(src.map, uv()).rgb : vec3(src.color?.r ?? 0.4, src.color?.g ?? 0.4, src.color?.b ?? 0.4);
+  if (src.metalnessMap) { const rm = texture(src.metalnessMap, uv()); m.roughnessNode = rm.g; m.metalnessNode = rm.b; }
+  else if (src.roughnessMap) m.roughnessNode = texture(src.roughnessMap, uv()).g;
+  if (src.normalMap) m.normalMap = src.normalMap;
+  return m;
 }
 
 function wheelMaterial(src) {
