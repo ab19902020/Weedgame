@@ -98,7 +98,9 @@ export class WildSim {
   }
   sample(f) {
     const i = this.si = (this.si + 1) % NS;
-    const r = 8 + Math.pow(this.rand(), 0.75) * (RANGE - 8), a = this.rand() * TAU;
+    // Reserve a quarter of samples for habitats within walking distance.
+    const radius = i % 4 === 0 ? 36 : RANGE;
+    const r = 8 + Math.pow(this.rand(), 0.75) * (radius - 8), a = this.rand() * TAU;
     const x = f.x + Math.cos(a) * r, z = f.z + Math.sin(a) * r, h = this.habitat(x, z);
     this.samples[i] = h ? { x, z, h, w: {} } : null;
   }
@@ -229,12 +231,13 @@ export class WildSim {
     this.calls.length = 0;
     this.gatherThreats(f);
     this.watchFeeder(f, dt);
-    for (let k = 0; k < 4; k++) this.sample(f);
+    // Spend the habitat-query budget per simulated second across frame rates.
+    this.sampleCredit = Math.min(4, (this.sampleCredit ?? 4) + dt * 32);
+    while (this.sampleCredit >= 1) { this.sample(f); this.sampleCredit--; }
     if ((this.planT -= dt) <= 0) {
       this.planT = 1;
-      this.plan(f); this.sitesNear(f); this.nestsNear(f);
+      this.dogWalkers(f); this.plan(f); this.sitesNear(f); this.nestsNear(f);
     }
-    this.dogWalkers(f);
     for (const [site, animals] of this.live) this.runSite(site, animals, dt, f);
     let dead = false, roam = 0, siteN = 0;
     for (const a of this.list) { if (a.site || a.nest) siteN++; else roam++; }
@@ -1136,6 +1139,8 @@ export class WildSim {
   dogWalkers(f) {
     const W = this.W, peds = W.peds();
     const live = new Set();
+    const nearbyDog = this.list.some(a => a.owner && !a.gone && Math.hypot(a.x-f.x,a.z-f.z)<75);
+    let localWalk = nearbyDog;
     for (const p of peds) {
       if (!p.id || p.officer || p.gone) continue;
       live.add(p.id);
@@ -1143,18 +1148,22 @@ export class WildSim {
       // decided once per person, when first met out of sight (or stepping out of their front door, as people
       // do with the dog): more in the morning and evening, in parks and residential streets, fewer in the town
       const d = Math.hypot(p.x - f.x, p.z - f.z);
-      if (p.mode !== 'fromDoor' && d < SPECIES.dog.draw * 0.85 * this.drawScale + 6 && W.visible(p.x, (p.y || 0) + 1, p.z, 4)) { this.dogs.set(p.id, null); continue; }
+      if (p.alpha !== 0 && p.mode !== 'fromDoor' && d < SPECIES.dog.draw * 0.85 * this.drawScale + 6 && W.visible(p.x, (p.y || 0) + 1, p.z, 4)) continue;
       const key = this.quickKey(p.x, p.z, 0.5), busy = W.busy(p.x, p.z);
       const place = key === 'park' || key === 'meadow' || key === 'shore' ? 1.8 : busy > 30 ? 0.25 : 1;
-      const prob = (0.04 + 0.22 * active('walks', this.clockH)) * place;
+      const walks = active('walks', this.clockH);
+      const localCandidate = !localWalk && d < 75 && busy < 30 && walks > .25;
+      const prob = Math.min(1,(0.04 + 0.22 * walks) * place + (localCandidate ? .45 : 0));
       const r = hash3(String(p.id).split('').reduce((h, c) => h * 31 + c.charCodeAt(0), 7) | 0, 3, 1);
-      if (r >= prob || this.roam >= this.max) { this.dogs.set(p.id, null); continue; }
+      if (this.roam >= this.max) continue;
+      if (r >= prob) { this.dogs.set(p.id, null); continue; }
       const a = this.make('dog', p.x - Math.cos(p.heading || 0), p.y || 0, p.z - Math.sin(p.heading || 0), { habit: 1, life: 1e9 });
       a.owner = p; a.state = 'heel'; a.offLead = (key === 'park' || key === 'meadow') && r < prob * 0.45; a.t = 2; a.breed = hash3(r * 1e6 | 0, 5, 5);
-      a.side = 1;
+      this.roam++; a.side = 1;
       this.dogs.set(p.id, a);
+      if (d < 75) localWalk = true;
       // a second dog now and then
-      if (r < prob * 0.12) { const b = this.make('dog', a.x, a.y, a.z, { habit: 1, life: 1e9 }); b.owner = p; b.state = 'heel'; b.offLead = a.offLead; b.t = 3; b.breed = hash3(r * 1e6 | 0, 6, 6); b.side = -1; }
+      if (this.roam < this.max && r < prob * 0.12) { this.roam++; const b = this.make('dog', a.x, a.y, a.z, { habit: 1, life: 1e9 }); b.owner = p; b.state = 'heel'; b.offLead = a.offLead; b.t = 3; b.breed = hash3(r * 1e6 | 0, 6, 6); b.side = -1; }
     }
     for (const [id, a] of this.dogs) if (!live.has(id)) { if (a) a.gone = true; this.dogs.delete(id); }
     for (const a of this.list) if (a.key === 'dog' && (a.owner.gone || !live.has(a.owner.id))) a.gone = true;

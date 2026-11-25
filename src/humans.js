@@ -17,7 +17,7 @@ import { RiggedPeople } from './riggedPeople.js';
 
 const MAX0 = 96, MAX1 = 260;          // near (detailed) and far instance capacity
 const LOD_DIST = 30;                  // metres
-const POSE = { walk: 0, idle: 0, flee: 0, talk: 1, phone: 2, umbrella: 3, wave: 4, point: 5, hands: 6, shelter: 7 };
+const POSE = { walk: 0, idle: 0, flee: 0, talk: 1, phone: 2, umbrella: 3, wave: 4, point: 5, hands: 6, shelter: 7, brace: 8 };
 const TAG = { always: 0, hairShort: 1, hairLong: 2, hairBun: 3, hairCurly: 4, helmet: 10, umbrella: 11, bag: 12, cap: 13, hood: 14 };
 // regions: 0 skin, 1 top, 2 trousers, 3 shoes, 4 hair, 6 helmet, 7 umbrella canopy, 8 bag, 9 dark trim, 10 cap, 11 metal
 
@@ -295,9 +295,10 @@ function crowdMaterial() {
     p = vec3(sel(isLimb.greaterThan(0.5), axX.add(p.x.sub(axX).mul(inflate)).add(shift), p.x.mul(sx)), y, p.z.mul(sel(isLimb.greaterThan(0.5), inflate, sx)).add(chest).add(belly));
     // ---- gait and pose angles
     const psiL = phi.add(float(Math.PI).mul(float(1).sub(odd)));
-    const thigh = amp.mul(sin(psiL)).mul(run.mul(0.25).add(0.42));
+    const brace = eq(pose, 8).mul(iAnim.w);
+    const thigh = brace.mul(odd.mul(.2).add(.28)).add(amp.mul(sin(psiL)).mul(run.mul(0.25).add(0.52)));
     const kneeS = max(sin(psiL.add(1.3)), 0);
-    const knee = amp.mul(kneeS.mul(kneeS).mul(run.mul(0.7).add(0.62)).add(0.1)).add(0.04);
+    const knee = amp.mul(kneeS.mul(kneeS).mul(run.mul(0.7).add(0.62)).add(0.1)).add(0.04).add(brace.mul(.67));
     const ankle = amp.mul(0.25).mul(sin(psiL.sub(0.6)));
     const psiA = psiL.add(Math.PI);
     const idle = float(1).sub(amp.min(1));
@@ -305,7 +306,7 @@ function crowdMaterial() {
     const gElb = amp.mul(max(sin(psiA), 0).mul(0.25).add(0.15)).add(run.mul(1.15)).add(0.16);
     const gAbd = float(0.06).add(build.mul(0.07));
     const isR = float(1).sub(odd);   // the person's right arm carries the props
-    const armPose = isArm.mul(sel(pose.greaterThan(5.5), float(1), isR.mul(step(0.5, pose))));
+    const armPose = isArm.mul(sel(pose.greaterThan(5.5), float(1), isR.mul(step(0.5, pose)))).mul(mix(float(1),brace,eq(pose,8)));
     const pFlex = sel(eq(pose, 1).greaterThan(0.5), sin(t.mul(3.1)).mul(0.25).add(0.5), sel(eq(pose, 2).greaterThan(0.5), float(0.35), sel(eq(pose, 3).greaterThan(0.5), float(1.0),
       sel(eq(pose, 4).greaterThan(0.5), float(0.2), sel(eq(pose, 5).greaterThan(0.5), float(1.45), sel(eq(pose, 6).greaterThan(0.5), float(0.3), float(0.55)))))));
     const pAbd = sel(eq(pose, 1).greaterThan(0.5), float(0.15), sel(eq(pose, 2).greaterThan(0.5), float(0.45), sel(eq(pose, 3).greaterThan(0.5), float(0.05),
@@ -336,7 +337,7 @@ function crowdMaterial() {
     p = about(p, vec3(0, 1.53, 0), rotX, nod.negate().mul(wh)); n = rotX(n, nod.negate().mul(wh));
     const yawP = amp.mul(0.07).mul(sin(phi));
     const wc = sel(isLeg.greaterThan(0.5), float(0), sel(isArm.greaterThan(0.5), float(1), smoothstep(0.98, 1.3, positionGeometry.y)));
-    const lean = amp.mul(0.04).add(run.mul(0.2)).add(eq(pose, 7).mul(0.06));
+    const lean = amp.mul(0.04).add(run.mul(0.2)).add(eq(pose, 7).mul(0.06)).sub(brace.mul(.25));
     const breath = sin(t.mul(1.7)).mul(0.004).mul(idle);
     p = about(p, vec3(0, 1.0, 0), rotY, yawP.mul(-1.4).mul(wc)); n = rotY(n, yawP.mul(-1.4).mul(wc));
     p = about(p, vec3(0, 1.0, 0), rotX, lean.negate().mul(wc)); n = rotX(n, lean.negate().mul(wc));
@@ -486,19 +487,19 @@ export class People {
     }
     for (let k = 0; k < 2; k++) {
       const S = this.sets[k]; S.geo.instanceCount = cnt[k]; S.mesh.visible = cnt[k] > 0;
-      if (cnt[k]) for (const at of [S.iPos, S.iAnim, S.iCol, S.iSty]) at.needsUpdate = true;
+      if (cnt[k]) for (const at of [S.iPos, S.iAnim, S.iCol, S.iSty]) { at.clearUpdateRanges(); at.addUpdateRange(0,cnt[k]*4); at.needsUpdate = true; }
     }
     return cnt[0] + cnt[1] + detailed.size;
   }
   write(S, i, a) {
     const L = a.look || {};
-    const sp = a.speedNow ?? a.speed ?? 0;
+    const sp = a.gaitSpeed ?? a.speedNow ?? a.speed ?? 0;
     const amp = Math.min(1, sp / 1.5);
     const run = a.running || sp > 3.2 ? 2 : 0;
     const pose = POSE[a.pose] ?? 0;
     const fall = Math.min(0.99, Math.max(0, a.fall || 0));
-    S.iPos.array.set([a.x, a.y, a.z, a.heading || 0], i * 4);
-    S.iAnim.array.set([a.phase || 0, amp + run, pose + fall, (a.t || 0) % 1000], i * 4);
+    S.iPos.array.set([a.x, a.y, a.z, (a.heading || 0) + (a.pose === 'flee' ? Math.PI : 0)], i * 4);
+    S.iAnim.array.set([a.gaitPhase ?? a.phase ?? 0, amp + run, pose + fall, a.pose === 'brace' ? a.brace : (a.t || 0) % 1000], i * 4);
     if (!L._pk || L._pkTop !== L.top) { L._pk = [L.skin ?? SKINS[0], L.top ?? TOPS[0], L.legs ?? LEGS[0], L.hair ?? HAIRS[0]]; L._pkTop = L.top; }
     S.iCol.array.set(L._pk, i * 4);
     S.iSty.array.set(packLook(L, a), i * 4);

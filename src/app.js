@@ -94,7 +94,7 @@ G.districtAt = (x, z) => { let best = null, bd = 1e9; for (const d of districts)
 G.districtName = (x, z) => { const d = G.districtAt(x, z); if (!d) return 'Berkshire'; const k = Math.hypot(x - d.x, z - d.z) / d.r; return k < 1.25 ? d.name : k < 4 ? 'near ' + d.name : 'Berkshire'; };
 G.roadName = (x, z) => { const n = G.net.nearest(x, z, 30, e => !!G.net.roadName(e)); return n ? G.net.roadName(n.e) : ''; };
 const frustum = new THREE.Frustum(), pm = new THREE.Matrix4(), sph = new THREE.Sphere();
-const camInfo = { night: 0, rain: 0, hour: 12, visible: (x, y, z, r) => frustum.intersectsSphere(sph.set(new THREE.Vector3(x, y, z), r + 2)) };
+const camInfo = { night: 0, rain: 0, hour: 12, visible: (x, y, z, r) => { sph.center.set(x,y,z); sph.radius = r+2; return frustum.intersectsSphere(sph); } };
 G.wildlife = new Wildlife(G, camInfo);   // wildlife, farm animals and pets: dogs out with their people, cats (wildlife.js)
 function kerbPlace(x, z, filter) {
   const n = G.net.nearest(x, z, 200, filter || (e => (G.net.flags[e] & 16) && !/primary|trunk|motorway/.test(G.net.classes[G.net.cls[e]])));

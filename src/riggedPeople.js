@@ -74,11 +74,27 @@ export class RiggedPeople {
       prop.position.y = .085;
     }
     this.scene.add(root);
-    return {role, root, body, prop, actions, mixer, lock: 0, still: 0};
+    const wardrobe = [];
+    if (role === 'civilian') body.traverse(node => {
+      if (!node.isMesh) return;
+      const tint = material => {
+        const field = {'Green jersey':'top','Indigo denim':'legs'}[material.name];
+        if (!field) return material;
+        const copy = material.clone();
+        wardrobe.push({copy,field});
+        return copy;
+      };
+      node.material = Array.isArray(node.material) ? node.material.map(tint) : tint(node.material);
+    });
+    const reactionJoints = R === NPC ? ['Chest','ArmL','ArmR','ThighL','ShinL','ShinR'].map(name => {
+      const bone = body.getObjectByName(name);
+      return {bone, rest: bone.quaternion.clone()};
+    }) : [];
+    return {role, root, body, prop, actions, mixer, reactionJoints, wardrobe, lock: 0, still: 0};
   }
   // pick the clip for an actor's state; one-shots (jump, kick, fidgets) hold until they finish
   choose(slot, a, R, dt) {
-    const speed = a.speedNow ?? a.speed ?? 0;
+    const speed = a.gaitSpeed ?? a.speedNow ?? a.speed ?? 0;
     if (a.previewClip) return { clip: R === NPC ? a.previewClip : (slot.actions[a.previewClip] ? a.previewClip : R.idle), scale: 1 };
     slot.lock = Math.max(0, slot.lock - dt);
     if (a.jumpTime > 0 && R.jump && slot.clip !== R.jump) return { clip: R.jump, scale: R.jumpScale || 1, hold: true };
@@ -117,11 +133,18 @@ export class RiggedPeople {
       if (slot && slot.role !== role) { this.remove(a.id, slot); slot = null; }
       if (!slot) { slot = this.create(role,asset); this.active.set(a.id,slot); }
       visible.add(a.id);
+      if (role === 'civilian' && a.look && slot.look !== a.look) {
+        for (const {copy,field} of slot.wardrobe) copy.color.setHex(a.look[field]);
+        slot.root.scale.setScalar(a.look.h || 1);
+        slot.look = a.look;
+      }
       const pick = this.choose(slot, a, R, dt);
       const action = slot.actions[pick.clip] || slot.actions[R.idle];
       if (slot.clip !== pick.clip) {
         const previous = slot.actions[slot.clip];
         action.reset().play();
+        if ((pick.clip === R.walk || pick.clip === R.run) && !a.previewClip)
+          action.time = (a.gaitPhase ?? a.phase ?? 0) / (2*Math.PI) * action.getClip().duration;
         if (previous) action.crossFadeFrom(previous, .15, false);
         slot.clip = pick.clip;
         slot.lock = pick.hold ? action.getClip().duration / pick.scale - .15 : 0;
@@ -134,12 +157,23 @@ export class RiggedPeople {
       slot.body.rotation.x = swim && R.swimTilt ? Math.PI*.46 : -(a.fall || 0)*Math.PI/2;
       slot.body.position.y = swim && R.swimTilt ? .5 : .15*(a.fall || 0);
       if (slot.prop) slot.prop.visible = pick.clip === R.weaponHold;
+      // Restore the sampled pose before the mixer evaluates the next frame.
+      if (slot.braced) for (const j of slot.reactionJoints) j.bone.quaternion.copy(j.rest);
       slot.mixer.update(dt);
+      slot.braced = a.brace > 0;
+      if (slot.braced) {
+        const angles = [-.28,-.85,-1.05,-.48,.68,.46];
+        slot.reactionJoints.forEach(({bone,rest},i) => {
+          rest.copy(bone.quaternion);
+          bone.rotateX(angles[i]*a.brace);
+        });
+      }
     }
     for (const [id,slot] of this.active) if (!visible.has(id)) this.remove(id,slot);
     return visible;
   }
   remove(id,slot) {
+    for (const {copy} of slot.wardrobe) copy.dispose();
     slot.mixer.stopAllAction();
     slot.mixer.uncacheRoot(slot.body);
     slot.body.traverse(node => { if (node.isSkinnedMesh) node.skeleton.dispose(); });

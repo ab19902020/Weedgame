@@ -178,9 +178,10 @@ export function treeMaterials() {
   const gust = sin(U.t.mul(0.9).add(tid.mul(30))).mul(0.5).add(0.5);
   const g0 = positionGeometry;
   const sway = sin(U.t.mul(1.6).add(tid.mul(17)).add(g0.x.mul(1.3))).mul(wind.mul(0.008).mul(gust.mul(0.7).add(0.3)));
-  const flutter = sin(U.t.mul(9).add(g0.x.mul(23)).add(g0.z.mul(17))).mul(wind.mul(0.0032));
+  const flutter = sin(U.t.mul(9).add(tid.mul(19)).add(g0.x.mul(23)).add(g0.z.mul(17))).mul(wind.mul(0.0032));
   const lift = g0.y.add(1).max(0).mul(4);
-  crown.positionNode = positionLocal.add(vec3(sway.mul(lift).add(flutter), flutter.mul(0.6), sway.mul(lift).mul(0.6)));
+  const windDir = U.wind.div(wind.max(.01));
+  crown.positionNode = positionLocal.add(vec3(sway.mul(lift).mul(windDir.x).add(flutter), flutter.mul(0.6), sway.mul(lift).mul(windDir.y)));
   const lt = texture(leafTex, uv());
   const dist = length(cameraPosition.sub(p));
   const alpha = lt.a.mul(mix(float(1), float(2.4), smoothstep(25, 160, dist))).mul(treeFade(dist));
