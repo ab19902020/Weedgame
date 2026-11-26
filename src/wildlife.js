@@ -30,7 +30,7 @@ export class Wildlife {
       focus: () => this.focus(),
       peds: () => G.peds.list, cars: () => G.traffic.list,
     };
-    this.sim = new WildSim(this.W, { max: q === 'low' ? 45 : q === 'medium' ? 80 : 110, drawScale: q === 'low' ? 0.75 : 1, seed: (Math.random() * 1e9) | 0 });
+    this.sim = new WildSim(this.W, { max: q === 'low' ? 60 : q === 'medium' ? 100 : 130, drawScale: q === 'low' ? 0.75 : 1, seed: (Math.random() * 1e9) | 0 });
     this.R = new AnimalRenderer(G.scene, G.renderer.shadowMap.enabled);
     // the dogs' leads: two thin pieces each, sagging a little between the hand and the collar
     const lg = new THREE.CylinderGeometry(0.006, 0.006, 1, 4, 1, true); lg.translate(0, 0.5, 0);
@@ -74,6 +74,7 @@ export class Wildlife {
 
   update(dt) {
     if (this.err > 3) return;
+    this.sim.abundance = /^Realistic/.test(this.G.hud?.menu?.settings?.wildlife || '') ? 0 : 1;
     try {
       this.sim.update(dt);
     } catch (e) { this.err++; console.warn('wildlife', e); }

@@ -5,6 +5,7 @@ const choices={
   colour:['Route colour','Mint','Amber','Blue'],
   steering:['Steering (touch)','Steering wheel','Buttons','Tilt'],
   handling:['Handling','Easy (assists on)','Realistic (fewer assists)'],
+  wildlife:['Wildlife','Plenty','Realistic'],
   buttons:['Touch button size','Standard','Large','Compact']
 };
 export class GameMenu {

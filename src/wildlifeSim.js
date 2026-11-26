@@ -51,12 +51,17 @@ const DOG_SCARES = new Set(['cat', 'fox', 'squirrel', 'rabbit', 'hare', 'muntjac
   'robin', 'blackbird', 'bluetit', 'sparrow', 'starling', 'parakeet', 'pheasant', 'greenpecker', 'gull', 'mallard', 'coot', 'moorhen', 'canada', 'greylag', 'egyptian', 'grebe', 'tufted']);
 const FORAGE_GROUND = new Set(['woodpigeon', 'blackbird', 'robin', 'starling', 'magpie', 'crow', 'rook', 'jackdaw', 'sparrow', 'parakeet']);
 const RANGE = 130, NS = 96, CELL = 96;
+// how many more of each to bring out on 'Plenty' (the rest: x1.8 birds, x2.5 mammals); the town fox above all
+const PLENTY = { fox: 3.5, hedgehog: 2.5, badger: 3, muntjac: 3, roe: 2.5, hare: 3, squirrel: 3, rabbit: 1.5, swift: 1, gull: 1.2, pigeon: 1.2, rat: 1.2, mouse: 1.5 };
 const BIRDS = new Set(Object.keys(SPECIES).filter(k => SPECIES[k].plan === 'bird'));
 
 export class WildSim {
   constructor(W, opts = {}) {
     this.W = W; this.rand = mulberry(opts.seed ?? 20240615);
     this.max = opts.max || 100; this.drawScale = opts.drawScale || 1;
+    // Settings > Wildlife: 'Plenty' (1, the default) brings out more of everything than you'd really meet,
+    // so the foxes, hedgehogs, deer and garden birds are actually seen; 'Realistic' (0) is Berkshire's numbers
+    this.abundance = opts.abundance ?? 1;
     this.list = []; this.samples = new Array(NS).fill(null); this.si = 0;
     this.cells = new Map();         // site cells (deterministic: the same herds, flocks and warrens on every visit)
     this.live = new Map();          // active site -> its animals
@@ -109,10 +114,11 @@ export class WildSim {
   rangeOf(S) { return S.plan === 'raptor' ? RANGE : Math.min(RANGE, S.draw * 0.9 * this.drawScale); }
   minR(S) { return S.plan === 'raptor' ? 60 : S.draw > 150 ? 35 : S.draw > 80 ? 18 : 10; }
   hideD(S) { return S.draw * 0.85 * this.drawScale; }   // beyond this they're too small to notice arriving
-  expected(S, mean, range) {
-    if (S.plan === 'raptor') return 3 * S.dens * mean;
+  expected(S, mean, range, key) {
+    const more = this.abundance ? (PLENTY[key] ?? (S.plan === 'bird' ? 1.8 : S.plan === 'quad' || S.plan === 'hog' ? 2.5 : 1.3)) : 1;
+    if (S.plan === 'raptor') return 3 * S.dens * mean * Math.min(more, 1.5);
     const D = S.plan === 'bird' || S.plan === 'bat' || S.plan === 'aerial' ? 2.5 : 0.5;
-    return D * S.dens * mean * Math.PI * range * range / 1e4;
+    return D * S.dens * mean * Math.PI * range * range / 1e4 * more;
   }
   plan(f) {
     const hour = this.hour, rain = this.W.rain();
@@ -128,7 +134,7 @@ export class WildSim {
         n++; sum += s.w[key] = suitability(S, s.h, hour) * weatherFactor(S, rain);
       }
       // (smoothed over half a minute: the samples come and go, the animals shouldn't)
-      const E0 = n && (!S.months || S.months.includes(this.month)) ? this.expected(S, sum / n, range) : 0, prev = this.E[key];
+      const E0 = n && (!S.months || S.months.includes(this.month)) ? this.expected(S, sum / n, range, key) : 0, prev = this.E[key];
       const E = this.E[key] = prev == null ? E0 : prev + (E0 - prev) * 0.06;
       const gMean = (S.group[0] + S.group[1]) / 2;
       const want = Math.min(Math.floor(E + this.u[key]), Math.ceil(S.cap / gMean));
