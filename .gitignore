@@ -8,3 +8,6 @@ build/
 www/test/
 __pycache__/
 *.pyc
+
+# Full episode masters belong to the private animation repository.
+www/assets/home/episodes/*.mp4

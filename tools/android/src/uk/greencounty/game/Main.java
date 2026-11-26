@@ -52,6 +52,7 @@ public class Main extends Activity {
         String path = req.getUrl().getPath();
         if (path == null || path.equals("/") || path.isEmpty()) path = "/index.html";
         try {
+          if(path.endsWith(".mp4"))return episode(path, req.getRequestHeaders().get("Range"));
           InputStream in = getAssets().open("www" + path);
           Map<String, String> h = new HashMap<>();
           h.put("Cache-Control", "no-cache");
@@ -67,6 +68,31 @@ public class Main extends Activity {
     });
     if (!prefs.getBoolean("migrated06", false)) web.loadUrl("file:///android_asset/migrate.html");
     else web.loadUrl(ORIGIN + "index.html");
+  }
+
+  private WebResourceResponse episode(String path, String range) throws java.io.IOException {
+    android.content.res.AssetFileDescriptor asset = getAssets().openFd("www"+path);
+    long size=asset.getLength(), start=0, end=size-1;
+    Map<String,String> headers=new HashMap<>();
+    headers.put("Accept-Ranges","bytes");
+    if(range!=null){
+      try {
+        if(!range.matches("bytes=[0-9]+-[0-9]*"))throw new NumberFormatException();
+        String[] pair=range.substring(6).split("-",-1);
+        start=Long.parseLong(pair[0]);
+        if(!pair[1].isEmpty())end=Math.min(end,Long.parseLong(pair[1]));
+        if(start>end)throw new NumberFormatException();
+      }catch(NumberFormatException invalid){
+        asset.close();headers.put("Content-Range","bytes */"+size);
+        return new WebResourceResponse("video/mp4",null,416,"Range Not Satisfiable",headers,null);
+      }
+      headers.put("Content-Range","bytes "+start+"-"+end+"/"+size);
+    }
+    long length=end-start+1;
+    headers.put("Content-Length",Long.toString(length));
+    android.content.res.AssetFileDescriptor slice=new android.content.res.AssetFileDescriptor(
+        asset.getParcelFileDescriptor(),asset.getStartOffset()+start,length);
+    return new WebResourceResponse("video/mp4",null,range==null?200:206,range==null?"OK":"Partial Content",headers,slice.createInputStream());
   }
 
   static String mime(String p) {

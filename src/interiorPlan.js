@@ -302,9 +302,9 @@ function house(P, s) {
     P.room(f, 'landing2', hx0, yh, hx0 + hw, Math.min(D - 1.8, yh + 0.95), { group: 'landing', floor: ['carpet', carpet], wall: ['plaster', paint2], windows: 0 });
     P.room(f, 'bath', hx0, Math.min(D - 1.8, yh + 0.95), hx0 + hw, D, { floor: ['tile', bathCol], wall: ['tile', 0xf2f1ec], frosted: true, winW: 0.7 });
     P.room(f, 'bed3', 0, yh, hx0, D, { floor: bedFloor, wall: ['plaster', paint2] });
-    P.room(f, 'bed4', hx0 + hw, yh, W, D, { floor: bedFloor, wall: ['plaster', pick(R, Object.values(PAINT))] });
+    P.room(f, s.brothersHome?'study':'bed4', hx0 + hw, yh, W, D, { floor: bedFloor, wall: ['plaster', pick(R, Object.values(PAINT))] });
     P.door(f, 'landing', 'bed1', { at: yh - 0.6 }); P.door(f, 'landing', 'bed2', { at: yh - 0.6 });
-    P.door(f, 'landing2', 'bed3', { at: yh + 0.47 }); P.door(f, 'landing2', 'bed4', { at: yh + 0.47 }); P.door(f, 'landing2', 'bath', {});
+    P.door(f, 'landing2', 'bed3', { at: yh + 0.47 }); P.door(f, 'landing2', s.brothersHome?'study':'bed4', { at: yh + 0.47 }); P.door(f, 'landing2', 'bath', {});
   } else {
     const yb = Math.max(yh + 0.85, Math.min(D - 1.55, yh + 0.95));
     P.room(f, 'bed1', hw, 0, W, yh, { floor: bedFloor, wall: trap ? ['plaster', PAINT.smoke] : ['plaster', pick(R, Object.values(PAINT))], cover: trap ? 'foil' : null });
@@ -331,7 +331,8 @@ function furnishHouse(P, s) {
     const longW = tvSide[0] === 'x' ? L.y1 - L.y0 : L.x1 - L.x0;
     const sw = clamp(longW * 0.55, 1.6, nice ? 3.0 : 2.3);
     const tvU = wallItem(P, g, L, tvSide, 'tvunit', clamp(sw * 0.7, 1.0, 1.8), 0.42, 0.5, { col: trap ? 0x2c2a28 : pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58, 0x55585c]) });
-    if (tvU) P.add(g, 'tv', tvU.x, tvU.y, trap ? 1.45 : nice ? 1.6 : 1.15, 0.08, 0.7, { rot: tvU.rot, base: 0.5, solid: false });
+    if (tvU) P.add(g, 'tv', tvU.x, tvU.y, s.brothersHome ? 1.85 : trap ? 1.45 : nice ? 1.6 : 1.15, 0.08, 0.7, { rot: tvU.rot, base: 0.5, solid: false });
+    if(s.brothersHome && tvU)P.add(g,'box',tvU.x+.55*Math.cos(tvU.rot),tvU.y+.55*Math.sin(tvU.rot),.26,.21,.065,{base:.5,col:0x21252c,rot:tvU.rot,solid:false});
     const so = wallItem(P, g, L, opp, nice ? 'sofaL' : 'sofa', sw, 0.92, 0.85, { col: sofa, col2: trap ? 0x4a3d32 : null, worn: trap });
     if (so && tvU) {
       const [cx, cy] = [(so.x + tvU.x) / 2, (so.y + tvU.y) / 2];

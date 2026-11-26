@@ -38,9 +38,18 @@ export class Brothers {
     const look = input.takeLook();
     if (look.dx || look.dy) { this.cam.yaw += look.dx * 0.0062; this.cam.pitch = Math.max(-0.25, Math.min(1.1, this.cam.pitch + look.dy * 0.0045)); this.cam.lastUser = G.time; }
     const veh = this.vehicleOf(me);
+    if(G.interiors?.homeTV?.seated){G.interiors.homeTV.updateSeat(dt);return;}
+    const law=G.police?.player;
+    if(law?.state==='detained'||law?.stun>0||law?.surrendered){
+      this.speedNow=0;const a=this.actor[this.active];a.speed=0;a.running=false;a.pose='hands';a.t+=dt;
+      return;
+    }
     if (veh) this.drive(dt, input, veh); else this.walk(dt, input);
     if (input.consume('camera')) this.cycleCamera(!!veh);
-    if (input.consume('use') && !G.interiors?.use()) this.toggleVehicle();
+    if (input.consume('use')) {
+      if(law?.state==='footchase' && !veh)law.surrendered=true;
+      else if(!G.interiors?.use())this.toggleVehicle();
+    }
     if (input.consume('swap')) this.swap();
     // update actors for both brothers
     for (let i = 0; i < 2; i++) {
@@ -146,6 +155,9 @@ export class Brothers {
     // carPhysics.js: tyre model, gearbox, assists and impulse collisions
     const ctl = { throttle: c.gas > 0.05 ? c.gas : reverse ? -c.brake : 0, brake: reverse ? 0 : c.brake, steer: c.steer, handbrake: input.padBrake || input.held.has('brake'), assists: input.assists ?? 1 };
     if (G.fuel) ctl.throttle = G.fuel.drive(v, G.driveSeconds ?? dt, ctl.throttle);   // fuel.js: burns fuel; no throttle when dry
+    if(v.spikeStop>0){
+      v.spikeStop=Math.max(0,v.spikeStop-dt);ctl.throttle=0;ctl.brake=Math.max(ctl.brake,.58);
+    }
     G.carDyn.drive(v, dt, ctl);
     const hit = G.carDyn.flush(v);
     if (hit > 2) this.cam.shake = Math.max(this.cam.shake || 0, Math.min(1, hit / 14));

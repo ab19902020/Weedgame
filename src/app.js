@@ -216,7 +216,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt)) { B.update(dt, G.input); G.controller.actions(dt); } }
+  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt)) { B.update(dt, G.input); if(!G.interiors.homeTV.seated)G.controller.actions(dt); } }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3) {

@@ -139,6 +139,7 @@ export class Peds {
       p.t += dt;
       if (p.alpha < 1) p.alpha = Math.min(1, p.alpha + dt);
       if (p.impact) { this.updateImpact(p, dt); continue; }
+      if (p.awaitingMedic) { p.pose="brace"; p.speedNow=0; continue; }
       if (p.reactT > 0) { p.reactT -= dt; p.heading = lerpAngle(p.heading, p.reactHeading, dt * 6); p.pose = p.reactPose; p.speedNow = p.reactPose === 'flee' ? 3.5 : 0; if (p.reactPose === 'flee') { p.phase = (p.phase + dt * 10) % 6.283; p.x += Math.cos(p.reactHeading + Math.PI) * 3.5 * dt; p.z += Math.sin(p.reactHeading + Math.PI) * 3.5 * dt; } this.ground(p); continue; }
       if (p.phoneT > 0) { p.phoneT -= dt; p.pose = 'phone'; p.speedNow = 0; continue; }
       if(p.mode==='greeting'){

@@ -169,15 +169,17 @@ export class RiggedPeople {
     }
     const names = R.source ? ['Spine2','L_Upperarm','R_Upperarm','L_Thigh','L_Calf','R_Calf'] :
       R === NPC ? ['Chest','ArmL','ArmR','ThighL','ShinL','ShinR'] : [];
+    const seatJoints=role==='leon'?['L_Thigh','R_Thigh','L_Calf','R_Calf'].map(name=>body.getObjectByName(name)).filter(Boolean).map(bone=>({bone,rest:bone.quaternion.clone()})):[];
     const reactionJoints = names.map((name,index) => {
       const bone = body.getObjectByName(name);
       return {bone,index, rest: bone?.quaternion.clone()};
     }).filter(joint => joint.bone);
-    return {role, root, body, prop, actions, mixer, reactionJoints, streetMaterials, head:body.getObjectByName('Head'), lock: 0, still: 0};
+    return {role, root, body, prop, actions, mixer, seatJoints, reactionJoints, streetMaterials, head:body.getObjectByName('Head'), lock: 0, still: 0};
   }
   // pick the clip for an actor's state; one-shots (jump, kick, fidgets) hold until they finish
   choose(slot, a, R, dt) {
     const speed = a.gaitSpeed ?? a.speedNow ?? a.speed ?? 0;
+    if(a.pose==='seated' && slot.actions.sit)return {clip:'sit',scale:1};
     if (a.previewClip) return { clip: R === NPC ? a.previewClip : (slot.actions[a.previewClip] ? a.previewClip : R.idle), scale: 1 };
     slot.lock = Math.max(0, slot.lock - dt);
     if (a.jumpTime > 0 && R.jump && slot.clip !== R.jump) return { clip: R.jump, scale: R.jumpScale || 1, hold: true };
@@ -247,7 +249,13 @@ export class RiggedPeople {
       if (slot.prop) slot.prop.visible = pick.clip === R.weaponHold;
       // Restore the sampled pose before the mixer evaluates the next frame.
       if (slot.braced) for (const j of slot.reactionJoints) j.bone.quaternion.copy(j.rest);
+      if(slot.wasSeated)for(const j of slot.seatJoints)j.bone.quaternion.copy(j.rest);
       slot.mixer.update(dt);
+      slot.wasSeated=a.pose==='seated' && slot.seatJoints.length>0;
+      if(slot.wasSeated){
+        slot.body.position.y=-.43;
+        slot.seatJoints.forEach(({bone,rest},i)=>{rest.copy(bone.quaternion);bone.rotateX(i<2?-1.46:1.48);});
+      }
       slot.braced = a.brace > 0;
       if (slot.braced) {
         const angles = [-.28,-.85,-1.05,-.48,.68,.46];
