@@ -8,6 +8,7 @@ import { makePlan } from './interiorPlan.js';
 import { buildInterior, setDaylight } from './interiorMesh.js';
 import { Restaurants } from './restaurants.js';
 import { PubGames } from './pubGames.js';
+import { Robbery } from './robbery.js';
 
 export const KIND_LABEL = { trap: 'Trap house', nice: 'House', terrace: 'Terraced house', semi: 'Semi-detached house', detached: 'Detached house', bungalow: 'Bungalow',
   cottage: 'Cottage', warehouse: 'Warehouse', office: 'Offices', shop: 'Shop', pub: 'Pub', church: 'Church', mall: 'Shopping centre', food: 'Takeaway' };
@@ -29,6 +30,7 @@ export class Interiors {
     this.ringGeo = new THREE.RingGeometry(0.55, 0.78, 40).rotateX(-Math.PI / 2);
     this.discGeo = new THREE.CircleGeometry(0.55, 32).rotateX(-Math.PI / 2);
     this.food = new Restaurants(G, this);
+    this.rob = G.robbery = new Robbery(G, this);   // the shopkeepers and their tills (robbery.js)
     this.games = new PubGames(G);           // darts, pool and the fruit machine in the pubs (pubGames.js)   // staff, diners and ordering in the fast-food places (restaurants.js)
     fetch('world/interiors.json').then(r => r.json()).then(j => { this.load(j.sites); G.fuel?.load(j.fuel || []); }).catch(e => console.warn('interiors', e));
   }
@@ -114,6 +116,7 @@ export class Interiors {
           if (till != null) this.prompt = { text: IN.site.kind === 'pub' ? 'Buy a drink' : 'Order', act: 'order', site: IN.site, till };
           else for (const gm of IN.plan.games || []) if (Math.hypot(lx - gm.x, ly - gm.y) < 1.1) { this.prompt = { text: { darts: 'Play darts', pool: 'Play pool', fruit: 'Fruit machine' }[gm.type], act: 'game', site: IN.site, game: gm }; break; }
         }
+        else if (IN.site.kind === 'shop') { const pr = this.rob.prompt(IN, me); if (pr) this.prompt = pr; }
       } else {
         let best = null, bd = 2.3;
         for (const s of this.sites) { const d = Math.hypot(s.dx - me.x, s.dz - me.z); if (d < bd) { bd = d; best = s; } }
@@ -123,6 +126,7 @@ export class Interiors {
     // doors and markers outside the buildings near you
     if ((this._nearT = (this._nearT || 0) - dt) <= 0) { this._nearT = 0.5; this.refreshNear(me); }
     // the restaurant you're in: staff, your order; the menu closes when you walk off; the takeaway bag on the HUD
+    if (IN && IN.site.kind === 'shop') this.rob.update(dt, IN, me); else if (this.rob.job) this.rob.job = null;
     if (IN && (IN.site.kind === 'food' || IN.site.kind === 'pub')) { this.food.update(dt, IN, me); if (this.food.panel && this.food.tillAt(IN, me) == null) this.food.close(); }
     else if (this.food.panel) this.food.close();
     if (this.food.order && !this.food.order.done && (!IN || IN.site !== this.food.order.site) && G.time > this.food.order.readyAt + 2) { const o = this.food.order; o.ready = true; this.food.takeAway(o); }
@@ -136,7 +140,7 @@ export class Interiors {
     }
   }
   // the people inside the place you're in (staff, diners), drawn with the street's crowd
-  get people() { const b = this.at(this.G.brothers.me); return b && (b.site.kind === 'food' || b.site.kind === 'pub') ? this.food.people(b) : []; }
+  get people() { const b = this.at(this.G.brothers.me); return !b ? [] : b.site.kind === 'food' || b.site.kind === 'pub' ? this.food.people(b) : b.site.kind === 'shop' ? this.rob.people(b) : []; }
   refreshNear(me) {
     const R = 140;
     for (const s of this.sites) {
@@ -183,6 +187,8 @@ export class Interiors {
   // ---------------------------------------------------------------- going in and coming out
   use() {
     const p = this.prompt; if (!p || this.fade.dir) return false;
+    if (p.act === 'none') return false;
+    if (p.act === 'rob') { this.rob.start(this.at(this.G.brothers.me)); return true; }
     if (p.act === 'enter') this.enter(p.site); else if (p.act === 'order') this.food.open(p.site, p.till); else if (p.act === 'game') this.games.start(p.game.type, p.site); else this.leave(p.site);
     return true;
   }

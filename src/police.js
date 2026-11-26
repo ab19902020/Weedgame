@@ -320,14 +320,35 @@ export class Police {
   // are sent on blue lights; a pursuit once they're on you
   callIn(what, x, z, level = 2, n = 2) {
     const G = this.G, P = this.player;
-    const cars = this.units.filter(v => v.def && v.status !== 'onscene' && !(P.backup || []).includes(v) && v !== P.unit)
+    let cars = this.units.filter(v => v.def && v.status !== 'onscene' && !(P.backup || []).includes(v) && v !== P.unit)
       .sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z)).slice(0, n);
+    // the patrols are all miles away: a response car or two from the nearest station, out of sight round the corner
+    const close = cars.filter(c => Math.hypot(c.x - x, c.z - z) < 700).length;
+    for (let k = close; k < Math.min(2, n); k++) { const c = this.respond(x, z, k); if (c) cars = [c, ...cars]; }
+    cars = cars.slice(0, n);
     if (!cars.length && !P.unit) { G.hud.feed(`Reported to the police (${what}) · no units free`); return; }
     for (const c of cars) { c.status = 'pursuit'; c.siren = true; }
     if (P.state === 'pursuit') { P.backup = [...(P.backup || []), ...cars]; P.level = Math.max(P.level, level); return; }
     P.level = Math.max(P.level, level); P.what = what; P.unit = cars[0]; P.backup = cars.slice(1); P.t = 0; P.lost = 0; P.spotted = false;
     P.state = level >= 2 ? 'pursuit' : 'stop';
     G.hud.banner(level >= 2 ? `999 call: ${what} · police on the way — get away` : `Reported: ${what} · an officer is coming to have a word`, 'pursuit');
+  }
+  // a police car on a road 250-450 m from (x, z), heading in to it
+  respond(x, z, k = 0) {
+    const G = this.G, net = G.net;
+    for (let tries = 0; tries < 8; tries++) {
+      const a = this.rand() * Math.PI * 2, r = 260 + this.rand() * 220;
+      const n = net.nearest(x + Math.cos(a) * r, z + Math.sin(a) * r, 150, e => (net.flags[e] & 16) && !/motorway|service|track/.test(net.classes[net.cls[e]]));
+      if (!n) continue;
+      const h = n.e * 2 + (net.flags[n.e] & 1 ? 0 : (this.rand() < 0.5 ? 0 : 1));
+      const v = G.traffic.spawnAt(h, Math.min(n.s, net.len[n.e] - 1), { kind: 'police', model: 'police', paint: 0xf2f2f2 });
+      if (!v) continue;
+      v.id = 'police-r' + (this._resp = (this._resp || 0) + 1); G.traffic.byId.set(v.id, v);
+      v.beat = { x, z, r: 600 }; v.persistent = true; v.status = 'patrol'; v.dest = this.beatNode(v);
+      this.units.push(v);
+      return v;
+    }
+    return null;
   }
   onOffence(what, x, z, level, inc) {
     const w = this.witnessed(x, z);

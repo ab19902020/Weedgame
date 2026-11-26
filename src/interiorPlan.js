@@ -612,31 +612,50 @@ function office(P, s) {
 }
 
 // ------------------------------------------------------------------ a shop (a convenience store)
+// the chain's colours for a shop's fittings (staff tops, the counter front, the chiller trim): by name; an
+// independent gets its own from the seed
+const CHAIN = [[/co-?op/i, 0x00a1cc], [/nisa/i, 0xd71920], [/londis/i, 0xe4002b], [/one stop/i, 0x1d4f91], [/spar/i, 0x00843d], [/premier/i, 0x6a1b9a],
+  [/budgens/i, 0x5c8a2e], [/costcutter/i, 0xe2001a], [/tesco/i, 0x00539f], [/sainsbury/i, 0xf06c00], [/best-?one/i, 0x1b3f8b], [/mace/i, 0xc8102e],
+  [/\bbp\b|bp shop/i, 0x009b3a], [/shell/i, 0xdd1d21], [/esso/i, 0x1a3c8f], [/asda/i, 0x7dc242], [/m&s|marks/i, 0x1c1c1c], [/morrisons/i, 0x00563f]];
+export const shopColour = (name, R) => CHAIN.find(([re]) => re.test(name || ''))?.[1] ?? [0x2f6fb0, 0xd84a3a, 0x3a8a6a, 0x7d3c98, 0xe08a1e, 0x1f7a7a][Math.floor(R() * 6)];
 function shop(P, s) {
   const R = P.R, { W, D, fh } = P;
   P.site.doorX = clamp(s.doorX, 1.5, W - 1.5); P.exit.x = P.site.doorX; P.frontW = 0.85; P.frontTop = 2.2;
   const g = P.level(Math.min(fh - 0.3, 3.2));
   const sd = Math.max(2.2, Math.min(3.5, D * 0.22));
-  P.room(g, 'shop', 0, 0, W, D - sd, { floor: ['tile', 0xdcdad4], wall: ['plaster', PAINT.white], windows: 'many', sill: 0.3, head: 2.3, ceil: 0xf2f2ee, kind: 'shop' });
+  const brand = shopColour(s.name, R);
+  // a few looks: floor tiles, wall colour
+  const floor = pick(R, [0xdcdad4, 0xc9c6bd, 0xe6e2d8, 0xb9b4a8, 0xd8d2c4]), wall = pick(R, [PAINT.white, PAINT.white, PAINT.cream, PAINT.greige]);
+  P.room(g, 'shop', 0, 0, W, D - sd, { floor: ['tile', floor], wall: ['plaster', wall], windows: 'many', sill: 0.3, head: 2.3, ceil: 0xf2f2ee, kind: 'shop' });
   P.room(g, 'stock', 0, D - sd, W, D, { floor: ['concrete', 0xc8c6c0], wall: ['plaster', PAINT.grey], windows: 0 });
   P.door(g, 'shop', 'stock', { at: W - 1.0 });
-  P.style = { shop: true, brand: pick(R, [0x2f6fb0, 0xd84a3a, 0x3a8a6a, 0x7d3c98]) };
+  P.style = { shop: true, brand };
   P.finish();
   const r = P.find(g, 'shop');
-  // the counter by the door, chillers down one side, aisles of shelves
-  const cs = P.site.doorX > W / 2 ? 'x0' : 'x1';
-  wallItem(P, g, r, cs === 'x0' ? 'x1' : 'x0', 'counter', 2.2, 0.7, 1.0, { col: 0x8a6a4a, at: 0.1, till: true, sweets: true });
-  // by the door: a stack of baskets, the newspapers; an ice-cream freezer at the front of the chillers, a cash machine
-  const dsg = cs === 'x0' ? -1 : 1;
-  P.add(g, 'basketstack', clamp(P.site.doorX + dsg * 1.15, 0.5, W - 0.5), 0.7, 0.45, 0.33, 0.62, { col: pick(R, [0xc0392b, 0x2f6fb0, 0x27ae60]) });
-  if (W > 5.5) P.add(g, 'newsstand', clamp(P.site.doorX - dsg * 1.5, 1.0, W - 1.0), 1.25, 1.0, 0.45, 1.05, { rot: 0 });
-  wallItem(P, g, r, cs, 'freezer', 1.3, 0.72, 0.85, { at: 0.04, col: pick(R, [0x2f6fb0, 0xc0392b, 0xe67e22]) });
-  wallItem(P, g, r, cs === 'x0' ? 'x1' : 'x0', 'atm', 0.6, 0.45, 1.7, { tall: true, at: 0.9, col: pick(R, [0x2f6fb0, 0x27ae60, 0x8e44ad]) });
-  P.add(g, 'doormat', P.site.doorX, 0.45, 1.2, 0.6, 0.01, { solid: false, col: 0x2a2a2a });
-  wallItem(P, g, r, cs, 'chiller', Math.min(5, D - sd - 1.5), 0.8, 2.0, { tall: true, at: 0.6 });
+  // the counter: freestanding by the door on one side, the shopkeeper behind it with the gantry (cigarettes behind
+  // their shutters, spirits above) on the wall at their back; the chillers down the other side, aisles between
+  const cs = P.site.doorX > W / 2 ? 'x0' : 'x1', cw = cs === 'x0' ? 'x1' : 'x0', sg = cw === 'x0' ? 1 : -1, wx = cw === 'x0' ? 0 : W;
+  const cy = clamp(2.2 + R() * 0.8, 1.8, r.y1 - 2.2), cl = clamp(2.4 + R() * 0.6, 2, r.y1 - 1.2);
+  const counterX = wx + sg * 1.32, rot = cw === 'x0' ? -Math.PI / 2 : Math.PI / 2;
+  P.add(g, 'counter', counterX, cy, cl, 0.66, 1.0, { col: pick(R, [0x8a6a4a, 0x3b3b3b, 0xe9e4da]), till: true, sweets: true, noBack: true, rot, col2: brand });
+  P.add(g, 'gantry', wx + sg * 0.17, cy, cl + 0.4, 0.32, 2.2, { rot, col: brand });
+  P.tills = [{ x: wx + sg * 2.15, y: cy }];
+  P.staffSpots = [{ x: wx + sg * 0.7, y: cy, dx: sg, dy: 0, till: 0 }];
+  P.seats = []; P.games = [];
+  // the counter's ends meet the wall, so the space behind it is the shopkeeper's
+  P.add(g, 'box', wx + sg * 0.66, cy - cl / 2 - 0.05, 1.32, 0.1, 1.0, { col: 0x8a8a88, rot: 0 });
+  P.add(g, 'box', wx + sg * 0.66, cy + cl / 2 + 0.05, 1.32, 0.1, 1.0, { col: 0x8a8a88, rot: 0 });
+  wallItem(P, g, r, cs, 'chiller', Math.min(5, D - sd - 1.5), 0.8, 2.0, { tall: true, at: 0.6, col: brand });
   wallItem(P, g, r, 'y1', 'gondola', Math.min(W - 2.5, 6), 0.45, 1.7, { at: 0.5, seed: 1 });
-  const ax0 = cs === 'x0' ? 1.6 : 1.4, ax1 = W - (cs === 'x1' ? 1.6 : 1.4);
-  for (let y = 2.4, k = 0; y < D - sd - 1.6; y += 2.0, k++) if (ax1 - ax0 > 2) P.add(g, 'gondola2', (ax0 + ax1) / 2, y, ax1 - ax0 - 0.6, 0.9, 1.5, { seed: k + 2 });
+  const ax0 = cw === 'x0' ? 2.9 : 1.6, ax1 = W - (cw === 'x1' ? 2.9 : 1.6);
+  for (let y = 2.4 + (R() < 0.5 ? 0.4 : 0), k = 0; y < D - sd - 1.6; y += 2.0 + R() * 0.3, k++) if (ax1 - ax0 > 2) P.add(g, 'gondola2', (ax0 + ax1) / 2, y, ax1 - ax0 - 0.6, 0.9, 1.5, { seed: k + 2 });
+  // by the door: baskets, the papers; an ice-cream freezer at the front of the chillers; a cash machine (not every shop)
+  const dsg = cs === 'x0' ? -1 : 1;
+  P.add(g, 'basketstack', clamp(P.site.doorX + dsg * 1.15, 0.5, W - 0.5), 0.7, 0.45, 0.33, 0.62, { col: brand });
+  if (W > 5.5 && R() < 0.75) P.add(g, 'newsstand', clamp(P.site.doorX - dsg * 1.5, 1.0, W - 1.0), 1.0, 1.0, 0.45, 1.05, { rot: 0 });
+  if (R() < 0.8) wallItem(P, g, r, cs, 'freezer', 1.3, 0.72, 0.85, { at: 0.04, col: pick(R, [0x2f6fb0, 0xc0392b, 0xe67e22]) });
+  if (R() < 0.6) wallItem(P, g, r, 'y1', 'atm', 0.6, 0.45, 1.7, { tall: true, at: R() < 0.5 ? 0.05 : 0.95, col: brand });
+  P.add(g, 'doormat', P.site.doorX, 0.45, 1.2, 0.6, 0.01, { solid: false, col: 0x2a2a2a });
   const st = P.find(g, 'stock');
   for (let k = 0; k < 8; k++) P.add(g, 'box', st.x0 + 0.6 + R() * (W - 1.2), st.y0 + 0.5 + R() * (sd - 1), 0.5 + R() * 0.4, 0.4 + R() * 0.3, 0.3 + R() * 0.9, { col: pick(R, [0xb08a5a, 0xc49a68, 0x9c7a50]), rot: R() * 0.4 });
 }

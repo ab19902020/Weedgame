@@ -240,6 +240,41 @@ for (const r of roofs) {
   }
 }
 console.error('fuel', fuel.length, fuel.map(f => f.name + ' (' + f.district + ')').join('; '));
+
+// ------------------------------------------------------------------ corner shops: the real convenience stores on the map
+// (appended after everything else, so the earlier sites keep their ids). A shop each, spread over the districts,
+// no two of a chain close together; restaurants.js puts someone behind the till, robbery.js lets you rob it
+const STORE = /\b(co-?op|nisa|londis|one stop|spar|premier|budgens|costcutter|best-?one|mace|tesco express|sainsbury'?s local|little waitrose|morrisons daily|convenience|mini ?market|food ?store|stores|off licen[cs]e|news(agents?)?|local)\b/i;
+const NOT_STORE = /premier inn|premier gate|smiths news|fuel|petrol|station|church|pharmacy|bank|barber|salon|hair|nails|caf|restaurant|takeaway|kebab|pizza|chicken|chip|post office|library|school|surgery|dental|vets?\b|charity|estate|insurance|hotel|pub|inn|arms|bar\b/i;
+const scand = [];
+for (const b of B) if (b.name && STORE.test(b.name) && !NOT_STORE.test(b.name)) scand.push({ name: b.name, b });
+for (const sg of signs) { if (!STORE.test(sg.name) || NOT_STORE.test(sg.name)) continue; const b = byKey.get(sg.key + ':' + sg.bi); if (b) scand.push({ name: sg.name, b, sx: sg.x, sz: sg.z }); }
+const chainPri = n => /co-?op|nisa|londis|one stop|spar|premier|budgens|costcutter|tesco express|sainsbury/i.test(n) ? 2 : 1;
+scand.sort((a, b) => chainPri(b.name) - chainPri(a.name) || a.name.localeCompare(b.name));
+const stores = [];
+// two passes: at most two of any chain first (variety), then up to six
+for (const cap of [2, 6]) for (const c of scand) {
+  if (stores.length >= 24) break;
+  if (stores.includes(c) || stores.some(o => o.b === c.b)) continue;
+  if (stores.filter(o => chainOf(o.name) === chainOf(c.name)).length >= cap) continue;
+  const k = c.b.key + ':' + c.b.bi; if (usedB.has(k) && !c.b.multi) continue;
+  if (c.b.area > 900 || c.b.area < 45 || c.b.lm || c.b.cls === 13) continue;
+  const [cx, cz] = c.b.c, d = district(cx, cz).name;
+  if (sites.some(s => s.kind === 'shop' && Math.hypot(s.o[0] - cx, s.o[1] - cz) < 120)) continue;   // one shop per corner of town
+  if (stores.some(o => chainOf(o.name) === chainOf(c.name) && Math.hypot(o.x - cx, o.z - cz) < 400)) continue;
+  if (stores.filter(o => o.district === d).length >= 2) continue;
+  const f = frame(c.b, 0.3); if (!f || f.road.d > 50 || f.W < 5 || f.D < 6) continue;
+  if (f.W > 12) {
+    const sx = c.sx ?? f.o[0] + f.ax[0] * f.W / 2, sz = c.sz ?? f.o[1] + f.ax[1] * f.W / 2;
+    const along = (sx - f.o[0]) * f.ax[0] + (sz - f.o[1]) * f.ax[1], w = 11, u0 = Math.max(0, Math.min(f.W - w, along - w / 2));
+    f.o = [f.o[0] + f.ax[0] * u0, f.o[1] + f.ax[1] * u0]; f.W = w; c.b.multi = true;
+  }
+  f.D = Math.min(f.D, 16);
+  add('shop', c.b, f, { name: c.name, doorX: f.W / 2 });
+  const site = sites[sites.length - 1]; site.store = 1; site.lv = 1; site.floorH = +Math.max(2.7, Math.min(3.3, c.b.wall - 0.3)).toFixed(2);
+  stores.push({ name: c.name, x: cx, z: cz, district: site.district, b: c.b });
+}
+console.error('stores', stores.length, stores.map(s => s.name + ' (' + s.district + ')').join('; '));
 fs.writeFileSync(W + 'interiors.json', JSON.stringify({ version: 2, sites, fuel }));
 console.error('sites', sites.length);
 for (const s of sites) console.error(s.id, s.kind, s.name || '-', '|', s.street, '|', s.district, s.W.toFixed(1) + 'x' + s.D.toFixed(1), 'lv' + s.lv, 'fh' + s.floorH);
