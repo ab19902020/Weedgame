@@ -487,6 +487,10 @@ function warehouse(P, s) {
   for (let k = 0; k < 6; k++) P.add(g, 'pallet', 2 + R() * (W - 4), D - 1.6 + (R() - 0.5) * 0.6, 1.2, 1.0, 0.15 + R() * 1.2, { rot: R() < 0.5 ? 0 : Math.PI / 2 });
   P.add(g, 'rollerdoor', W / 2, D - 0.06, Math.min(5, W * 0.3), 0.12, Math.min(5, fh - 1), { solid: false });
   P.add(g, 'floorlines', W / 2, D / 2, W, D, 0.005, { solid: false });
+  P.add(g, 'exitsign', P.site.doorX, 0.1, 0.44, 0.06, 0.16, { base: Math.min(fh - 0.6, 3.2), solid: false, rot: 0 });
+  P.add(g, 'pallettruck', W * 0.5 - 1.6, D - 2.6, 0.6, 1.6, 1.2, { rot: 0.3, col: pick(R, [0xd84a3a, 0x2f5fa8, 0xf0b81c]) });
+  const cbx = corner === 'left' ? ow + 0.5 : W - ow - 0.5;
+  P.add(g, 'barrier', cbx, od / 2, od - 0.4, 0.12, 1.0, { rot: Math.PI / 2 });
 }
 
 // ------------------------------------------------------------------ an office (two floors, stairs in a core)
@@ -530,6 +534,11 @@ function office(P, s) {
     wallItem(P, lv, c, c.x0 < 0.1 ? 'x0' : 'x1', 'units', Math.min(2.6, D * 0.3), 0.62, 0.92, { col: 0xf2f2ee, top: 0x3b3b3b, sink: true, at: 0.35, noHob: true });
     wallItem(P, lv, c, c.x0 < 0.1 ? 'x0' : 'x1', 'fridge', 0.62, 0.65, 1.8, { tall: true, col: 0xb9bcbf, at: 0.15 });
     wallItem(P, lv, r, 'y1', 'plant', 0.5, 0.5, 1.3, { at: 0.05 }); wallItem(P, lv, r, 'y1', 'printer', 0.9, 0.6, 1.0, { at: 0.95, col: 0xe9e9e6 });
+    const side = coreX ? 'x0' : 'x1';
+    if (!i) P.add(lv, 'exitsign', P.site.doorX, 0.1, 0.44, 0.06, 0.16, { base: 2.35, solid: false, rot: 0 });
+    wallItem(P, lv, r, side, 'whiteboard', 1.8, 0.05, 1.1, { base: 0.95, solid: false, tall: true, at: 0.85 });
+    wallItem(P, lv, r, 'y1', 'watercooler', 0.45, 0.4, 1.4, { at: 0.18 });
+    for (const at of [0.62, 0.7]) wallItem(P, lv, r, side, 'filing', 0.5, 0.62, 1.32, { at, col: pick(R, [0x8a8d90, 0xd8d6d0, 0x55585c]) });
   }
 }
 

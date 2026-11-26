@@ -1451,7 +1451,8 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
     const shop = m[12] || ((cls === 6 || cls === 7) && bname) || brand || poiOn.has(bi) ? 1 : 0;
     // a shop the map gives no name still has a board over the window: what kind of shop it is (or To Let)
-    if (!lod && !brand && shop && !bname && cls !== 13 && cls !== 8) brand = fasciaBrand(UNNAMED_SHOPS[Math.abs(Math.floor(seed * 7 + bi)) % UNNAMED_SHOPS.length], true);
+    // (one whose name wasn't taken as a shop's, because the building isn't tagged retail, gets its own name)
+    if (!lod && !brand && shop && cls !== 13 && cls !== 8) brand = (bname && fasciaBrand(bname, true)) || fasciaBrand(UNNAMED_SHOPS[Math.abs(Math.floor(seed * 7 + bi)) % UNNAMED_SHOPS.length], true);
 
     if (cls === 13) { for (let k = 0; k < P[bi]; k++) ci += R[ri++]; continue; } // canopies are drawn by landmarks.js
     // a supermarket is one tall retail front, not two floors of brick with a garage door

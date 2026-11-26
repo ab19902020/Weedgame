@@ -269,10 +269,22 @@ export class Tiles {
       const solid = [u0 + 0.0008, v0 + 0.0008, u0 + 0.0012, v0 + 0.0012];
       // winding A-B-C faces back into the wall; the street side is B-A-D
       const o = off + th;
-      const A = P(0, o, y0), B = P(l, o, y0), C = P(l, o, y1), D = P(0, o, y1);
-      pos.push(...B, ...A, ...D, ...B, ...D, ...C);
-      uvs.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
-      for (let k = 0; k < 6; k++) nor.push(nx, 0, nz);
+      // the name keeps the painted board's shape (8:1) in the middle; the board's own colour carries on to
+      // either end of a longer fascia (it was stretched to fit, and squashed on a narrow one)
+      const front = (sa, sb, ya, yb, ua, va, ub, vb) => {
+        const A = P(sa, o, ya), B = P(sb, o, ya), C = P(sb, o, yb), D = P(sa, o, yb);
+        pos.push(...B, ...A, ...D, ...B, ...D, ...C);
+        uvs.push(ua, va, ub, va, ub, vb, ua, va, ub, vb, ua, vb);
+        for (let k = 0; k < 6; k++) nor.push(nx, 0, nz);
+      };
+      const ASP = 8, eu = 1 / 2048, ev = 1 / 4096;
+      let tw = Math.min(l, h * ASP), hp = h;
+      if (l < h * 6) { hp = l / 6; tw = l; }
+      const s0 = (l - tw) / 2, s1 = s0 + tw, ym0 = y0 + (h - hp) / 2, ym1 = ym0 + hp;
+      front(s0, s1, ym0, ym1, u0, v0, u1, v1);
+      if (s1 < l - 1e-3) front(s1, l, ym0, ym1, u0 + eu, v0, u0 + eu, v1);
+      if (s0 > 1e-3) front(0, s0, ym0, ym1, u1 - eu, v0, u1 - eu, v1);
+      if (ym0 > y0 + 1e-3) { front(0, l, y0, ym0, u0 + eu, v0 + ev, u0 + eu, v0 + ev); front(0, l, ym1, y1, u0 + eu, v1 - ev, u0 + eu, v1 - ev); }
       push(P(l, off, y0), P(0, off, y0), P(0, off, y1), P(l, off, y1), solid, [-nx, 0, -nz]);
       push(P(0, off, y1), P(l, off, y1), P(l, o, y1), P(0, o, y1), solid, [0, 1, 0]);
       push(P(0, o, y0), P(l, o, y0), P(l, off, y0), P(0, off, y0), solid, [0, -1, 0]);

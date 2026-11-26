@@ -248,6 +248,12 @@ export function groundMaterial() {
   const insetX = patchPick.mul(.24), insetZ = fract(patchPick.mul(39)).mul(.32);
   const inPatch = step(0.88, patchPick).mul(smoothstep(insetX,insetX.add(.006),fx)).mul(step(fx, 0.86)).mul(smoothstep(insetZ,insetZ.add(.006),fz)).mul(step(fz, 0.86)).mul(isRoad);
   albedo = mix(albedo, albedo.mul(vec3(0.58, 0.56, 0.52)), inPatch);
+  // sealed cracks ("tar snakes"): thin glossy black wavy lines over stretches of older tarmac, a pixel or so
+  // wide close to, fading out before they could shimmer in the distance
+  const snakeN = nz(p.xz.add(vec2(13.1, 7.7)), 1 / 6.1).r, snakeW = fwidth(snakeN).max(1e-4);
+  const snake = isRoad.mul(float(1).sub(smoothstep(snakeW.mul(0.6), snakeW.mul(1.6).add(0.004), abs(snakeN.sub(0.5)))))
+    .mul(smoothstep(0.55, 0.7, nz(p.xz, 1 / 41).b)).mul(float(1).sub(smoothstep(0.01, 0.03, snakeW)));
+  albedo = mix(albedo, vec3(0.025, 0.025, 0.027), snake.mul(0.85));
   const joint = smoothstep(0.012, 0.04, fract(p.x.div(0.6))).mul(smoothstep(0.012, 0.04, fract(p.z.div(0.9))));
   const flags = isPave.mul(float(1).sub(step(0.5, tarmacPave)));
   albedo = mix(albedo.mul(0.58), albedo, mix(float(1), joint, flags));
@@ -263,7 +269,7 @@ export function groundMaterial() {
   albedo = albedo.mul(mix(float(1), float(0.5), wet)).mul(mix(float(1), float(0.55), pud));
   const d = sDetail(layer, uvm);
   m.colorNode = albedo.mul(cloudShadow(p));
-  m.roughnessNode = mix(mix(d.b.mul(0.3).add(0.66), float(0.2), wet), float(0.025), pud);
+  m.roughnessNode = mix(mix(mix(d.b.mul(0.3).add(0.66), float(0.38), snake), float(0.2), wet), float(0.025), pud);
   const ripple = U.rain.mul(pud).mul(nz(p.xz.add(vec2(U.t.mul(0.31), U.t.mul(-0.2))), 1 / 0.6).r.sub(0.5).mul(0.25));
   const nFlat = normalize(vec3(ripple, 1, ripple.mul(0.7)));
   m.normalNode = worldToView(mix(perturbW(normalWorld, d, mix(float(1.0), float(0.45), wet)), nFlat, smoothstep(0.3, 0.7, pud)));
