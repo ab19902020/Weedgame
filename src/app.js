@@ -24,6 +24,7 @@ import { Interiors } from './interiors.js';
 import { Fuel } from './fuel.js';
 import { Audio } from './audio.js';
 import { Save } from './save.js';
+import { deviceProfile, frameTarget, preferenceKey, presets, qualityFor, tuneGraphics } from './graphics.js';
 import { Perf } from './perf.js';
 import { Trains } from './trains.js';
 import { Stations } from './stations.js';
@@ -52,6 +53,24 @@ const START = { x: -2869, z: -2192, h: -Math.PI / 2 };  // Woodley precinct, fac
 
 const G = await boot();
 G.events = new Events();
+G.setQuality = choice => {
+  if (!presets.includes(choice)) return;
+  if (!G.save.now()) { G.hud.toast('Could not save before changing graphics'); return; }
+  const url = new URL(location.href);
+  try { localStorage.setItem(preferenceKey,choice); url.searchParams.delete('quality'); }
+  catch { url.searchParams.set('quality',choice); }
+  url.searchParams.set('graphicsMenu','1');
+  location.replace(url.href);
+};
+const target = () => frameTarget(G.device,G.Q.get('fps'));
+const tuning = {fps:target(),quiet:0};
+G._fps = tuning.fps;
+addEventListener('gcdevicechange', () => {
+  const previous = target();
+  G.device = deviceProfile();
+  if (previous !== target()) { G._fps = tuning.fps = target(); tuning.quiet = 0; }
+  if (G.hud && qualityFor(G.choice,G.device,G.touch) !== G.quality) G.setQuality(G.choice);
+});
 G.version = APP_VERSION;
 G.retryWebGPU = () => { try { localStorage.removeItem(BACKEND_KEY); } catch { } const q = new URLSearchParams(location.search); q.set('backend', 'webgpu'); G.save.now(); location.replace('?' + q); };
 G.useWebGL = () => { try { localStorage.setItem(BACKEND_KEY, 'webgl:' + APP_VERSION); } catch { } const q = new URLSearchParams(location.search); q.set('backend', 'webgl'); G.save.now(); location.replace('?' + q); };
@@ -164,12 +183,15 @@ G.events.on('parked', () => G.save.now());
 G.simSteps = Number(G.Q.get('sim')) || 1;   // extra simulation substeps per rendered frame (dev/testing)
 function frame() {
   const now = performance.now();
-  // at a 30 fps target, render every other display frame for even pacing
-  if (G._fps && G._fps < 50 && now - (G._lastFrame || 0) < 1000 / G._fps - 4) return;
-  G._lastFrame = now;
-  let dt = Math.min(0.1, (now - last) / 1000); last = now;
+  const interval = 1000 / G._fps;
+  if (now + .8 < (G._nextFrame || 0)) return;
+  const deadline = G._nextFrame || now;
+  G._nextFrame = (now-deadline >= interval ? now : deadline) + interval;
+  const elapsed = now-last;
+  let dt = Math.min(.1,elapsed/1000); last = now;
+  G._renderMs = elapsed;
   G.controller.poll(dt);
-  if (!G.hud.menu.el.hidden) return;
+  if (!G.hud.menu.el.hidden || document.hidden) { G._ema = 0; G._resT = 0; tuning.quiet = 0; return; }
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
   if (G.slowmo > 0) { G.slowmo -= dt; dt *= G.slowmo > 0.35 ? 0.3 : 1 - 0.7 * Math.max(0, G.slowmo) / 0.35; }
   for (let k = 1; k < G.simSteps; k++) step(dt, false);
@@ -263,27 +285,22 @@ function step(dt, render) {
   // otherwise the canvas pixel ratio does. If the frame budget can't be held at the lowest sharp scale,
   // the target drops to 30 fps instead of pixelating further, and returns to 60 when there is headroom.
   if (!G.Q.get('fixedres')) {
-    const ms = dt * 1000; G._ema = G._ema ? G._ema * 0.95 + ms * 0.05 : ms;
-    G._resT = (G._resT || 0) + dt;
-    if (G._resT > 3) {
+    const ms = Math.min(250,G._renderMs);
+    if (ms > 0) {
+      G._ema = G._ema ? G._ema*.95 + ms*.05 : ms;
+      G._resT = (G._resT || 0) + ms/1000;
+    }
+    if (G._resT >= 3) {
       G._resT = 0;
-      const want = Number(G.Q.get('fps')) || G.budget.targetFps || 60;
-      G._fps = G._fps || want;
-      const T = 1000 / G._fps, over = G._ema > T * 1.15;
-      // sharper again only after two quiet checks in a row (6 s), in small steps: stepping straight back up
-      // made the picture pump between soft and sharp, which read as flicker on fine detail
-      G._quiet = G._ema < T * 0.8 ? (G._quiet || 0) + 1 : 0;
-      const under = G._quiet >= 2;
-      if (G.post?.fsr) {
-        const [lo, , hi] = G.budget.scale, sc = G.post.scale;
-        if (over) { if (sc > lo + 0.01) G.post.setScale(Math.max(lo, sc - 0.06)); else if (G._fps > 30) G._fps = 30; }
-        else if (under) { G._quiet = 0; if (sc < hi - 0.01) G.post.setScale(Math.min(hi, sc + 0.03)); else if (G._fps < want && G._ema < 1000 / want * 0.85) G._fps = want; }
-      } else {
-        const [minPr, , maxPr] = G.budget.pixelRatio, cap = Math.min(devicePixelRatio, maxPr), pr = G.renderer.getPixelRatio();
-        let next = pr;
-        if (over) { if (pr > minPr + 0.01) next = Math.max(minPr, pr - 0.1); else if (G._fps > 30) G._fps = 30; }
-        else if (under) { G._quiet = 0; next = Math.min(cap, pr + 0.05); }
-        if (Math.abs(next - pr) > 0.01) { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth, innerHeight); }
+      const fsr = G.post?.fsr;
+      const [min,,max] = fsr ? G.budget.scale : G.budget.pixelRatio;
+      const hi = fsr ? max : Math.min(devicePixelRatio,max);
+      const current = fsr ? G.post.scale : G.renderer.getPixelRatio();
+      const next = tuneGraphics(tuning,G._ema,target(),current,Math.min(min,hi),hi,fsr ? .06 : .1);
+      G._fps = tuning.fps;
+      if (next !== current) {
+        if (fsr) G.post.setScale(next);
+        else { G.renderer.setPixelRatio(next); G.renderer.setSize(innerWidth,innerHeight); }
       }
     }
   }
@@ -302,5 +319,12 @@ async function warmup() {
   const P = G.people.constructor;
   G.people.draw([0, 1].map(k => ({ x: c.x + k * 80, y: c.y - 30, z: c.z, heading: 0, visible: true, look: P.randomLook(), pose: 'umbrella', speed: 1, phase: 0, t: 0 })), c, 1e6);
   try { await G.renderer.compileAsync(G.scene, G.camera); } catch (e) { console.warn('precompile', e); }
+}
+if (G.Q.has('graphicsMenu')) {
+  const url = new URL(location.href); url.searchParams.delete('graphicsMenu'); history.replaceState(null,'',url);
+  G.hud.menu.close(); G.hud.toggleDev();
+  const picker = G.hud.el('devJump');
+  picker.value = [...picker.options].find(o => o.text === 'Graphics')?.value || '';
+  picker.dispatchEvent(new Event('change'));
 }
 G.renderer.setAnimationLoop(frame);

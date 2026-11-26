@@ -1,4 +1,5 @@
 // HUD: minimap, full map, buttons, notices, developer panel and performance overlay.
+import { presets } from './graphics.js';
 import { ROLES } from './riggedPeople.js';
 import { GameMenu } from './gameMenu.js';
 import { Navigation, distanceLabel } from './navigation.js';
@@ -380,6 +381,20 @@ export class Hud {
       ].join('\n');
       for (const update of dynamic) update();
     };
+    section('Graphics');
+    row('Preset · saves and restarts the renderer',presets.map(q => btn(
+      () => q[0].toUpperCase()+q.slice(1)+(G.choice===q ? ' ✓' : ''),
+      () => { if (G.choice!==q) G.setQuality(q); },'quality-'+q)));
+    const metrics = document.createElement('p'); group.append(metrics);
+    dynamic.push(() => {
+      const scale = G.post?.fsr ? G.post.scale : 1, sample = G.perf.samples.at(-1);
+      metrics.textContent = [
+        G.quality+' · '+G.backend+' · '+(G.device.chip || 'Chipset unavailable'),
+        'Android Game Mode: '+G.device.mode+' · target '+G._fps+' FPS',
+        (sample?.fps ?? '…')+' FPS · p95 '+(sample?.p95 ?? '…')+' ms',
+        'Scene '+Math.round(innerWidth*G.renderer.getPixelRatio()*scale)+' × '+Math.round(innerHeight*G.renderer.getPixelRatio()*scale)
+      ].join('\n');
+    });
     section('Characters & animation');
     const rigs = G.people.rigs;
     row('Character preview', ['cal', 'leon', 'officer', 'civilian', 'off'].map(role => btn(role, () => { rigs.previewRole = role === 'off' ? null : role; if (ROLES[role]?.hero) rigs.previewClip = ROLES[role].idle; }, 'preview-' + role)));
