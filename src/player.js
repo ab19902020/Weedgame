@@ -141,6 +141,9 @@ export class Brothers {
     // (so stopping at a junction never lurches backwards). The accelerator brakes a car that is rolling backwards.
     const u = v.ph ? v.ph.vx * Math.cos(v.heading) + v.ph.vz * Math.sin(v.heading) : (v.sp || 0);
     // Reverse carries on only while the press that engaged it is held: a fresh press while rolling backwards brakes.
+    // the brake always wins: pressed while the accelerator is still held (a thumb on each, or sliding across),
+    // it brakes at once instead of waiting for the gas to be let go
+    if (c.brake > 0.05) c.gas = 0;
     const braking = c.brake > 0.05 && c.gas < 0.05;
     if (!braking) { this.stillT = 0; this.revHold = false; } else if (Math.abs(u) < 0.8) this.stillT = (this.stillT || 0) + dt;
     if (braking && this.stillT > 0.45) this.revHold = true;

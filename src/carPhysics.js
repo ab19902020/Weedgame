@@ -110,6 +110,12 @@ export class CarDynamics {
       this.integrate(v, ph, P, h, ctl);
       impact = Math.max(impact, this.collide(v, ph, P, h, true));
     }
+    // brake assist (the player's car): an extra bite straight off the speed on top of what the tyres can do, so the
+    // brakes feel strong and immediate (fun before simulation)
+    if (ctl && ctl.brake > 0.05) {
+      const sp = Math.hypot(ph.vx, ph.vz);
+      if (sp > 0.3) { const k = Math.max(0, sp - Math.min(sp, ctl.brake * 3.2 * dt)) / sp; ph.vx *= k; ph.vz *= k; }
+    }
     // water resistance: a bow wave and spray while ploughing in, then the car wallows to a stop
     if (ph.water > 0.15) {
       const k = Math.exp(-dt * ph.water * 1.8), sp = Math.hypot(ph.vx, ph.vz);
@@ -205,12 +211,12 @@ export class CarDynamics {
     // assists: 1 Easy .. 0 Realistic. Easy gives every car near-full help (the sports cars too); Realistic leaves the
     // light stability and traction control a road car of that sort has (less on the sports cars)
     const A = ctl ? Math.max(0, Math.min(1, ctl.assists ?? 1)) : 0, AS = A * Math.max(0.9, P.assist) + (1 - A) * 0.6 * P.assist;
-    const muS = P.mu * ph.surf;
+    const muS = P.mu * ph.surf * (ctl ? 1.07 : 1);   // a touch more grip for the player than the tyres would give: fun before simulation
     if (ctl) {
       if (ctl.throttle > 0.05) { if (u < -0.8) brk = ctl.throttle; else { thr = ctl.throttle; if (ph.gear < 1) ph.gear = 1; } }
       else if (ctl.throttle < -0.05) { if (u > 0.8) brk = -ctl.throttle; else { thr = -ctl.throttle; ph.gear = -1; } }
       // the brake pedal (separate from the accelerator): full pressure at once, and it holds a stopped car still
-      if (ctl.brake > 0.02 && thr === 0) brk = Math.max(brk, ctl.brake);
+      if (ctl.brake > 0.02) { brk = Math.max(brk, ctl.brake); thr *= 1 - Math.min(1, ctl.brake); }
       hb = !!ctl.handbrake;
       let maxSteer = 0.62 / (1 + Math.max(0, u) / 12);
       // steering assist: no more lock than the front tyres can use at this speed (the angle for the tightest turn
@@ -290,9 +296,9 @@ export class CarDynamics {
     // ABS and EBD: the brakes never lock a wheel, and the rear's share stays well inside the rear's grip (it loses load
     // as the car pitches forward), so the car steers and stays straight under hard braking. Crashed cars with nobody
     // at the wheel skid on locked tyres as before.
-    const bF = brk * mg * 1.05;
-    let bkF = bF * 0.66, bkR = bF * 0.34;
-    if (ctl) { bkF = Math.min(bkF, capF * 0.95); bkR = Math.min(bkR, capR * (0.74 - 0.1 * Math.min(1, AS))); }
+    const bF = brk * mg * (ctl ? 1.25 : 1.05);
+    let bkF = bF * 0.64, bkR = bF * 0.36;
+    if (ctl) { bkF = Math.min(bkF, capF * 1.0); bkR = Math.min(bkR, capR * (0.8 - 0.08 * Math.min(1, AS))); }
     let FxF = dF - sgnU * bkF;
     let FxR = dR - sgnU * bkR;
     let gripR = 1;
