@@ -21,20 +21,24 @@ export function frameTarget(device, requested, preset = 60) {
   return 60;
 }
 // The controller runs once per three-second window of actual rendered frames.
-// Vsync hides spare GPU time. Probe a higher target after a stable capped interval.
+// v0.36: it never drops below 60 (a 30/60 flip-flop is the worst kind of judder; Low and Medium are 60 fps
+// presets, High asks for 30 itself), lowers the internal resolution only after two slow windows in a row, and
+// tries a higher frame rate (120 on Low) once: if that doesn't hold it stays where it was for the session instead
+// of trying again every 20 seconds.
 export function tuneGraphics(state, ms, target, current, low, high, increment) {
   const budget = 1000 / state.fps;
   if (ms > budget*1.15) {
-    state.quiet = 0;
-    if (current > low+.01) return Math.max(low,current-increment);
-    state.fps = state.fps > 60 ? 60 : Math.min(state.fps,30);
+    state.quiet = 0; state.slow = (state.slow || 0) + 1;
+    if (state.fps > 60 && state.fps > (state.floor || 0)) { state.fps = 60; state.noProbe = true; state.slow = 0; return current; }
+    if (state.slow >= 2 && current > low+.01) { state.slow = 0; return Math.max(low,current-increment); }
+    if (state.fps < 60 && target < 60) state.fps = target;
   } else if (ms <= budget*1.05) {
-    state.quiet++;
-    if (state.fps < target && state.quiet >= 6) {
-      state.fps = Math.min(target,state.fps < 60 ? 60 : target); state.quiet = 0;
-    } else if (state.fps === target && state.quiet >= 2 && current < high-.01) {
+    state.quiet++; state.slow = 0;
+    if (state.fps < target && !state.noProbe && state.quiet >= 6) {
+      state.fps = target; state.quiet = 0;
+    } else if (state.fps >= Math.min(target, 60) && state.quiet >= 3 && current < high-.01) {
       state.quiet = 0; return Math.min(high,current+increment/2);
     }
-  } else state.quiet = 0;
+  } else { state.quiet = 0; state.slow = 0; }
   return current;
 }

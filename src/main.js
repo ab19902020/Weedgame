@@ -54,7 +54,8 @@ export async function boot(extra = {}) {
   // the output resolution of the preset (720p / 1080p / 1440p on the screen's short side): with FSR the canvas runs at
   // it and the scene below it; without, the canvas pixel ratio moves between three quarters of it and it
   const outPr = outputRatio(budget);
-  budget.outPr = outPr; budget.pixelRatio = [Math.max(0.5, outPr * 0.75), outPr, outPr];
+  // (without FSR the canvas itself would have to be resized to change resolution, a hitch every time: it stays put)
+  budget.outPr = outPr; budget.pixelRatio = [outPr, outPr, outPr];
   renderer.setPixelRatio(fsrOn ? outPr : budget.pixelRatio[1]);
   renderer.setSize(innerWidth, innerHeight);
   // AgX: filmic highlight roll-off without ACES's hue shifts and over-saturation (?tm=aces to compare)
@@ -128,7 +129,12 @@ export async function boot(extra = {}) {
   // frame. The light's own axes are the shadow camera's: x = up x towards-the-light, y = towards-the-light x x.
   const lightDir = new THREE.Vector3(), lx = new THREE.Vector3(), ly = new THREE.Vector3(), lc = new THREE.Vector3(), upY = new THREE.Vector3(0, 1, 0);
   const texel = (2 * E) / S, stepCos = Math.cos(0.25 * Math.PI / 180);
+  // (Medium redraws the shadow map every other frame: the light, and so the map's place, only moves on the frames
+  // it's redrawn, so what's drawn always matches the map)
+  const every = budget.shadow.every || 1; if (every > 1) sun.shadow.autoUpdate = false;
+  let shadowTick = 0;
   G.placeSun = (fx, fy, fz) => {
+    if (every > 1) { if ((shadowTick++ % every) !== 0) { sky.position.copy(camera.position); return; } sun.shadow.needsUpdate = true; }
     const d = U.sunDir.value;
     if (lightDir.lengthSq() === 0 || lightDir.dot(d) < stepCos * d.length()) lightDir.copy(d).normalize();
     lx.crossVectors(upY, lightDir); if (lx.lengthSq() < 1e-8) lx.set(1, 0, 0); lx.normalize();

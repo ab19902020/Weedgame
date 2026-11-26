@@ -21,7 +21,11 @@ export class Parking {
     const put = (x, z) => { const k = cell(x, z); let l = near.get(k); if (!l) near.set(k, l = []); l.push(x, z); };
     for (const v of G.traffic.list) if (v.parked) put(v.x, v.z);
     this.cell = cell;
+    // (a hard cap on parked cars in the world at once: the nearest tiles load first, so they get them)
+    const cap = G.budget?.parkedMax ?? 1e9; let parked = 0;
+    for (const v of G.traffic.list) if (v.parked && !v.owner && !v.free && !v.player) parked++;
     for (let i = 0; i < S.length / 4; i++) {
+      if (parked >= cap) break;
       const id = `p:${t.key}:${i}`;
       if (G.save.taken.has(id) || G.traffic.byId.has(id)) continue;
       const r = mulberry(hashStr(id))();
@@ -34,7 +38,7 @@ export class Parking {
       if (this.blocked(x, z)) continue;
       const v = G.traffic.add({ id, kind: 'parked', model, paint: paintFor(model, r2()), x, y: S[i * 4 + 1], z, heading: S[i * 4 + 3], parked: true, v: 0 });
       v.y = G.tiles.ground(x, z) ?? v.y;
-      t.parked.push(v); put(x, z);
+      t.parked.push(v); put(x, z); parked++;
     }
   }
   blocked(x, z) {

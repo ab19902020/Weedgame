@@ -15,6 +15,7 @@ const DENS = { motorway: 1 / 120, trunk: 1 / 140, primary: 1 / 110, secondary: 1
 
 export class Traffic {
   setRadius(bubble) { if (bubble > 0) setTrafficRadius(bubble); }
+  cellWeights() { return this._cw || (this._cw = _cellWeights(this.net, DENS, F_DRIVE)); }
   constructor(net, signals, opts = {}) {
     this.net = net; this.sig = signals;
     this.list = []; this.byId = new Map(); this.nextId = 1;
@@ -526,21 +527,19 @@ export class Traffic {
       if ((d > KILL_R || v.deadEnd) && !info.visible(v.x, v.y, v.z, 0.6)) this.remove(v);
     }
     // target count from network around the focus
+    // where cars can appear: the drivable roads round you, weighted by class, lanes and length. Each road's weight
+    // is worked out once, filed under one 50 m cell (cellWeights); moving on just gathers the cells in range and
+    // builds a running total, so picking a road is a binary search. (It used to rescan every road in a 900 m
+    // square every 80 m, and add the whole list up again on every try: a 10-17 ms stall every few seconds at speed.)
     if (!this._edgeCache || Math.hypot(this._edgeCache.x - focus.x, this._edgeCache.z - focus.z) > 80) {
-      const edges = new Set(), w = [];
-      for (let cx = Math.floor((focus.x - BUBBLE_R) / 50); cx <= Math.floor((focus.x + BUBBLE_R) / 50); cx++)
-        for (let cz = Math.floor((focus.z - BUBBLE_R) / 50); cz <= Math.floor((focus.z + BUBBLE_R) / 50); cz++) {
-          const l = net.grid.get(cx * 65536 + cz); if (!l) continue;
-          for (let k = 0; k < l.length; k += 2) edges.add(l[k]);
-        }
-      let target = 0;
-      for (const e of edges) {
-        if (!(net.flags[e] & F_DRIVE)) continue;
-        const d = DENS[net.classes[net.cls[e]]]; if (!d) continue;
-        const lanes = Math.max(1, net.lanesF[e] + net.lanesB[e]);
-        const x = d * net.len[e] * Math.min(lanes, 4) * 0.5; target += x; w.push([e, x]);
+      const CW = this.cellWeights();
+      const e = [], cum = []; let target = 0;
+      const c0x = Math.floor((focus.x - BUBBLE_R) / 50), c1x = Math.floor((focus.x + BUBBLE_R) / 50), c0z = Math.floor((focus.z - BUBBLE_R) / 50), c1z = Math.floor((focus.z + BUBBLE_R) / 50);
+      for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) {
+        const c = CW.get(cx * 65536 + cz); if (!c) continue;
+        for (let k = 0; k < c.e.length; k++) { target += c.w[k]; e.push(c.e[k]); cum.push(target); }
       }
-      this._edgeCache = { x: focus.x, z: focus.z, w, target };
+      this._edgeCache = { x: focus.x, z: focus.z, e, cum, target };
     }
     const hr = info.hour;
     const tod = hr < 5 ? 0.12 : hr < 6.5 ? 0.3 : hr < 9.5 ? 1.15 : hr < 16 ? 0.85 : hr < 18.5 ? 1.15 : hr < 22 ? 0.55 : 0.25;
@@ -549,10 +548,10 @@ export class Traffic {
     for (const v of this.list) if (!v.parked && Math.hypot(v.x - focus.x, v.z - focus.z) < BUBBLE_R) count++;
     let tries = 6;
     while (count < target && tries-- > 0) {
-      const W = this._edgeCache.w; if (!W.length) break;
-      let tot = 0; for (const [, x] of W) tot += x;
-      let r = this.rand() * tot, e = W[0][0];
-      for (const [ee, x] of W) { r -= x; if (r <= 0) { e = ee; break; } }
+      const EC = this._edgeCache; if (!EC.e.length) break;
+      const r = this.rand() * EC.target; let lo = 0, hi = EC.cum.length - 1;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (EC.cum[mid] < r) lo = mid + 1; else hi = mid; }
+      const e = EC.e[lo];
       let h = e * 2;
       if (!(net.flags[e] & F_ONEWAY) && this.rand() < 0.5) h++;
       const s = this.rand() * net.len[e];
@@ -569,6 +568,21 @@ export class Traffic {
   }
 }
 
+function _cellWeights(net, DENS_, F_DRIVE_) {
+  const out = new Map(), seen = new Uint8Array(net.len.length);
+  for (const [key, l] of net.grid) {
+    let c = null;
+    for (let k = 0; k < l.length; k += 2) {
+      const e = l[k]; if (seen[e]) continue; seen[e] = 1;
+      if (!(net.flags[e] & F_DRIVE_)) continue;
+      const d = DENS_[net.classes[net.cls[e]]]; if (!d) continue;
+      const lanes = Math.max(1, net.lanesF[e] + net.lanesB[e]);
+      if (!c) out.set(key, c = { e: [], w: [] });
+      c.e.push(e); c.w.push(d * net.len[e] * Math.min(lanes, 4) * 0.5);
+    }
+  }
+  return out;
+}
 export function setTrafficRadius(bubble) { BUBBLE_R = bubble; FULL_R = Math.max(250, bubble - 170); KILL_R = bubble + 170; }
 export function lerpAngle(a, b, t) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * t; }
 export function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }

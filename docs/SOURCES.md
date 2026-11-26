@@ -56,6 +56,10 @@ No official Land Rover audio is used: none is available under a licence the game
 
 Details in `www/weapons/SOURCES.txt`. The pub games' ball and cue clicks are the footstep bank's heel-on-tile recordings pitched up, and the dart's thud is the world bank's wood impact; nothing is synthesised.
 
+## Model simplification (v0.36, work in progress)
+
+`www/characters/cal.glb`, `leon.glb` and `www/vehicles/rangerover.glb` were simplified with gltfpack 1.2.0 (meshoptimizer, MIT, Arseny Kapoulkine) at 40% / 40% / 30% of their triangles, keeping every named node, material, texture and animation (`-si 0.4|0.3 -kn -km -ke -noq -af 0`): Cal 36,649 to 14,658 triangles, Leon 51,333 to 20,532, the Range Rover 486,415 to 145,960.
+
 ## Ideas taken from other projects (v0.33)
 
 * **GTW — Go To Wherever** (github.com/galatolofederico/gtw, MIT, © 2026 Rolandjg - fableflight and Federico Galatolo): the night city of street lights seen from afar (`src/lampGlow.js` is our own code after that look). Its building facades and filmic AgX grading were compared with ours, which already have both.

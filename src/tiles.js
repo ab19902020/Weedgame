@@ -163,7 +163,7 @@ export class Tiles {
     if (d.lod === 0) {
       const gg = geoFrom(d.ground, 'surf', 1); if (gg) this.addMesh(t, gg, this.mats.ground, { receive: true }).name = 'ground';
       const mg = geoFrom(d.markings, 'surf', 1); if (mg) this.addMesh(t, mg, this.mats.mark, { receive: true }).name = 'markings';
-      const sg = geoFrom(d.struct, 'surf', 1); if (sg) t.structMesh = this.addMesh(t, sg, this.mats.struct, { cast: true, receive: true });
+      const sg = geoFrom(d.struct, 'surf', 1); if (sg) t.structMesh = this.addMesh(t, sg, this.mats.struct, { cast: this.budget?.shadow?.props !== false, receive: true });
       this.addTrees(t, d.trees);
 
       if (d.bushes && d.bushes.length) this.addBushes(t, d.bushes);
@@ -174,7 +174,7 @@ export class Tiles {
     }
     this.addLamps(t,d.lamps || []);
     this.scene.add(t.group);
-    this.tiles.set(d.key, t);
+    this.tiles.set(d.key, t); (this.byNum ||= new Map()).set(d.ix * 100003 + d.iz, t); this._lt = null;
     this.loaded++;
     for (const f of this.listeners) f('load', t);
   }
@@ -212,7 +212,7 @@ export class Tiles {
       t.trees.push([x + t.data.ox, z + t.data.oz, H]);
     }
     if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
-    crowns.castShadow = trunks.castShadow = this.shadows;
+    crowns.castShadow = trunks.castShadow = this.shadows && this.budget?.shadow?.trees !== false;
     crowns.receiveShadow = this.shadows;
     crowns.computeBoundingSphere(); trunks.computeBoundingSphere();
     t.group.add(crowns, trunks);
@@ -358,7 +358,13 @@ export class Tiles {
     });
     return hit;
   }
-  tileAt(x, z) { return this.tiles.get(this.key(Math.floor(x / TILE), Math.floor(z / TILE))); }
+  // (by number, and the last one found first: thousands of height lookups a frame used to build a string key each)
+  tileAt(x, z) {
+    const ix = Math.floor(x / TILE), iz = Math.floor(z / TILE), lt = this._lt;
+    if (lt && lt.ix === ix && lt.iz === iz) return lt;
+    const t = this.byNum?.get(ix * 100003 + iz); if (t) this._lt = t;
+    return t;
+  }
   // terrain height (matches LOD0 terrain triangles) or null when not loaded
   terrain(x, z) {
     const t = this.tileAt(x, z); if (!t) return null;
@@ -413,7 +419,7 @@ export class Tiles {
   unload(k) {
     const t = this.tiles.get(k); if (!t) return;
     this.disposeTile(t, false);
-    this.tiles.delete(k);
+    this.tiles.delete(k); { const [ix, iz] = k.split('_').map(Number); this.byNum?.delete(ix * 100003 + iz); } this._lt = null;
     for (const f of this.listeners) f('unload', t);
   }
   disposeTile(t, keepSlot) {

@@ -145,7 +145,7 @@ export function createIBL(G) {
     update(dt, force = false) {
       t -= dt;
       if (t > 0 && !force) return;
-      t = 3.5;
+      t = G.budget?.iblEvery || 8;    // (each refresh renders the sky six times and filters it: a stall on a phone)
       pos.copy(G.camera.position);
       sky.position.copy(pos); ground.position.copy(pos);
       const prevTM = renderer.toneMapping;

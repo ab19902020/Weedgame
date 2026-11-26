@@ -1,4 +1,5 @@
 // Green County · living Berkshire sandbox. Free roam only: no missions, objectives or calls.
+import './fastmath.js';   // first: a non-allocating Math.hypot for everything after it
 import * as THREE from 'three/webgpu';
 import { boot } from './main.js';
 import { Controller } from './controller.js';
@@ -91,7 +92,7 @@ G.tyreFx = new TyreFx(G.scene);   // skid marks and tyre smoke
 G.lampGlow = new LampGlow(G);       // far street lights at night (lampGlow.js)
 G.breakables = new Breakables(G);   // street furniture, trees, hedges and walls that give way; crash debris
 G.traffic.maxVehicles = G.budget.vehicles; G.traffic.setRadius?.(G.budget.bubble);
-G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled);
+G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled && G.budget.shadow?.traffic !== false);
 G.vehicleRenderer.heroCars = G.heroCars = new HeroCars(G.scene);   // the brothers' Range Rovers (heroCars.js)
 G.people = new People(G.scene, G.renderer.shadowMap.enabled);
 G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
@@ -199,12 +200,21 @@ G.events.on('horn', e => G.audio.horn(e.x, e.z));
 G.events.on('parked', () => G.save.now());
 
 G.simSteps = Number(G.Q.get('sim')) || 1;   // extra simulation substeps per rendered frame (dev/testing)
-function frame() {
-  const now = performance.now();
-  const interval = 1000 / G._fps;
-  if (now + .8 < (G._nextFrame || 0)) return;
-  const deadline = G._nextFrame || now;
-  G._nextFrame = (now-deadline >= interval ? now : deadline) + interval;
+// Frame pacing (v0.36). The screen's own vsync time (the rAF timestamp) drives everything, so motion steps evenly.
+// The limiter only runs when the target is below the screen's rate (60 on a 120 Hz phone, 30 on High), and lets a
+// frame through up to a third of an interval early: callbacks wobble by a millisecond or two, and the old limiter
+// (0.8 ms) threw those frames away, turning a 16.7 ms frame into a 33 ms one now and then: the jitter at any setting.
+let _hzT = [], _lastCb = 0;
+function frame(time) {
+  const now = time || performance.now();
+  // the screen's refresh interval: the median gap between callbacks
+  if (_lastCb) { _hzT.push(now - _lastCb); if (_hzT.length > 61) _hzT.shift(); if (_hzT.length > 20 && (G.frame & 31) === 0) { const s2 = _hzT.slice().sort((a, b) => a - b); G._displayMs = s2[s2.length >> 1]; } }
+  _lastCb = now;
+  const interval = 1000 / G._fps, displayMs = G._displayMs || 16.67;
+  if (interval > displayMs * 1.25) {
+    if (now < (G._nextFrame || 0) - interval * 0.34) return;
+    G._nextFrame = now - (G._nextFrame || now) > interval ? now + interval : (G._nextFrame || now) + interval;
+  }
   const elapsed = now-last;
   let dt = Math.min(.1,elapsed/1000); last = now;
   G._renderMs = elapsed;
@@ -239,8 +249,11 @@ function step(dt, render) {
   if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
-  if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3) {
-    for (const h of G.signalRenderer.heads) if (h.ped && Math.hypot(h.x - me.x, h.z - me.z) < 5) {
+  // (four times a second, squared distances: it ran over every signal head in the loaded world every frame)
+  if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3 && ((G._xingT = (G._xingT || 0) - dt) <= 0)) {
+    G._xingT = 0.25;
+    const H = G.signalRenderer.heads;
+    for (let k = 0; k < H.length; k++) { const h = H[k]; if (!h.ped) continue; const dx = h.x - me.x, dz = h.z - me.z; if (dx * dx + dz * dz >= 25) continue;
       if (!G.signals.ctl[h.ci].demand && G.signals.ped(h.ci) === 'wait') { G.signals.press(h.ci); if (G._pressT !== h.ci) G.hud.toast('Pressed the crossing button · wait for the green man'); G._pressT = h.ci; }
       break;
     }
@@ -249,12 +262,15 @@ function step(dt, render) {
     const fwd = G.camera.getWorldDirection(_fwd), v = G.brothers.vehicleOf(me);
     const sp = v ? (v.sp || 0) : (G.brothers.speedNow || 0), hd = v ? v.heading : me.heading;
     const fl = Math.hypot(fwd.x, fwd.z) || 1;
-    G.tiles.update(me.x, me.z, { x: fwd.x / fl, z: fwd.z / fl, vx: Math.cos(hd) * sp, vz: Math.sin(hd) * sp });
+    const L = G._look ||= { x: 0, z: 0, vx: 0, vz: 0 }; L.x = fwd.x / fl; L.z = fwd.z / fl; L.vx = Math.cos(hd) * sp; L.vz = Math.sin(hd) * sp;
+    G.tiles.update(me.x, me.z, L);
   }
   G.signals.update(dt);
   // player as an obstacle for NPC traffic
   const pv = B.vehicleOf(me);
-  G.traffic.obstacles = G.transit.ride ? [] : [pv ? { x: pv.x, z: pv.z, r: pv.def.L / 2, v: Math.abs(pv.sp || 0) } : { x: me.x, z: me.z, r: 0.5, v: 0 }];
+  { const O = G._obst ||= [{ x: 0, z: 0, r: 0, v: 0 }], o = O[0];
+    if (pv) { o.x = pv.x; o.z = pv.z; o.r = pv.def.L / 2; o.v = Math.abs(pv.sp || 0); } else { o.x = me.x; o.z = me.z; o.r = 0.5; o.v = 0; }
+    G.traffic.obstacles = G.transit.ride ? (G._noObst ||= []) : O; }
   G.traffic.update(dt, G.focus, camInfo);
   G.carDyn.update(dt);
   G.tyreFx.update(dt, G.world.wind);
@@ -273,7 +289,8 @@ function step(dt, render) {
   G.fuel.update(dt);
   if ((G._treeT = (G._treeT || 0) - dt) <= 0) {
     G._treeT = 1; let n = 0;
-    for (const t of G.tiles.tiles.values()) if (t.trees && Math.abs(t.data.ox + 128 - me.x) < 300 && Math.abs(t.data.oz + 128 - me.z) < 300) for (const [x, z] of t.trees) if (Math.abs(x - me.x) < 25 && Math.abs(z - me.z) < 25) n++;
+    // (indexed, not destructured: `for (const [x, z] of trees)` made an iterator per tree, thousands at a time)
+    for (const t of G.tiles.tiles.values()) if (t.trees && Math.abs(t.data.ox + 128 - me.x) < 300 && Math.abs(t.data.oz + 128 - me.z) < 300) { const T = t.trees; for (let k = 0; k < T.length; k++) { const tr = T[k]; if (Math.abs(tr[0] - me.x) < 25 && Math.abs(tr[1] - me.z) < 25) n++; } }
     G.treesNear = Math.min(1, n / 8);
   }
   if (!render) return;
@@ -294,7 +311,7 @@ function step(dt, render) {
   G.combat.beginFrame();
   G.peds.draw(G.people, actors, cam, dt);
   G.wildlife.draw(cam);
-  G.signalRenderer.draw(cam, (x, z) => G.tiles.ground(x, z), G.time);
+  G.signalRenderer.draw(cam, G._groundAt ||= (x, z) => G.tiles.ground(x, z), G.time);
   G.lampGlow.update();
   G.hud.update(dt);
   G.audio.update(dt, G);

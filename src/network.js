@@ -170,32 +170,55 @@ export class Network {
   // A* over half-edges for driving. Returns array of half-edges from node a to node b.
   route(a, b, opts = {}) {
     if (a === b) return [];
-    const N = this.nodes, bx = N[b * 3], bz = N[b * 3 + 2];
-    const g = new Map([[a, 0]]), came = new Map();
-    const heap = [[Math.hypot(N[a * 3] - bx, N[a * 3 + 2] - bz) / 30, a]];
-    const push = it => { heap.push(it); let i = heap.length - 1; while (i) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; } };
-    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (r < heap.length && heap[r][0] < heap[m][0]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
-    let iter = 0;
-    const out = opts.walk ? this.outW : this.outD;
-    while (heap.length && iter++ < (opts.limit || 60000)) {
-      const [, n] = pop();
-      if (n === b) break;
-      const gn = g.get(n);
-      for (const h of out[n]) {
-        const e = h >> 1;
-        if (!opts.walk && this.cls[e] === this.classes.indexOf('service') && opts.noService) continue;
+    // A* in reusable typed arrays (v0.36): the old one allocated a little array per heap entry and per swap and
+    // grew two Maps, megabytes of garbage a second with traffic routing as it drives, which the phone paid for in
+    // collection pauses. Same costs, same search, same result.
+    const N = this.nodes, bx = N[b * 3], bz = N[b * 3 + 2], nN = this.nNodes;
+    let S = this._astar;
+    if (!S || S.g.length < nN) S = this._astar = { g: new Float64Array(nN), came: new Int32Array(nN), stamp: new Uint32Array(nN), id: 0, hc: new Float64Array(1024), hn: new Int32Array(1024) };
+    const id = ++S.id; if (id === 0xffffffff) { S.stamp.fill(0); S.id = 1; }
+    const g = S.g, came = S.came, stamp = S.stamp;
+    let hc = S.hc, hn = S.hn, hl = 0;
+    const walk = !!opts.walk, out = walk ? this.outW : this.outD, svc = this._svc ??= this.classes.indexOf('service'), noSvc = !walk && opts.noService;
+    const dist = n => { const dx = N[n * 3] - bx, dz = N[n * 3 + 2] - bz; return Math.sqrt(dx * dx + dz * dz); };
+    const push = (c, n) => {
+      if (hl === hc.length) { const c2 = new Float64Array(hl * 2), n2 = new Int32Array(hl * 2); c2.set(hc); n2.set(hn); S.hc = hc = c2; S.hn = hn = n2; }
+      let i = hl++;
+      while (i) { const p = (i - 1) >> 1; if (hc[p] <= c) break; hc[i] = hc[p]; hn[i] = hn[p]; i = p; }
+      hc[i] = c; hn[i] = n;
+    };
+    const pop = () => {
+      const top = hn[0]; hl--;
+      if (hl) {
+        const c = hc[hl], n = hn[hl]; let i = 0;
+        for (;;) { const l = 2 * i + 1, r = l + 1; let m = -1, mc = c; if (l < hl && hc[l] < mc) { m = l; mc = hc[l]; } if (r < hl && hc[r] < mc) { m = r; mc = hc[r]; } if (m < 0) break; hc[i] = hc[m]; hn[i] = hn[m]; i = m; }
+        hc[i] = c; hn[i] = n;
+      }
+      return top;
+    };
+    stamp[a] = id; g[a] = 0; came[a] = -1;
+    push(dist(a) / 30, a);
+    let iter = 0, found = false;
+    const limit = opts.limit || 60000;
+    while (hl && iter++ < limit) {
+      const n = pop();
+      if (n === b) { found = true; break; }
+      const gn = g[n], outs = out[n];
+      for (let k = 0; k < outs.length; k++) {
+        const h = outs[k], e = h >> 1;
+        if (noSvc && this.cls[e] === svc) continue;
         const m = this.endNode(h);
-        const sp = opts.walk ? 1.4 : Math.max(4, this.speed[e] / 3.6) * (this.cls[e] === 13 ? 0.5 : 1);
-        const c = gn + this.len[e] / sp + (opts.walk ? 0 : 2);
-        if (c < (g.get(m) ?? Infinity)) {
-          g.set(m, c); came.set(m, h);
-          push([c + Math.hypot(N[m * 3] - bx, N[m * 3 + 2] - bz) / (opts.walk ? 1.4 : 31), m]);
+        const sp = walk ? 1.4 : Math.max(4, this.speed[e] / 3.6) * (this.cls[e] === 13 ? 0.5 : 1);
+        const c = gn + this.len[e] / sp + (walk ? 0 : 2);
+        if (stamp[m] !== id || c < g[m]) {
+          stamp[m] = id; g[m] = c; came[m] = h;
+          push(c + dist(m) / (walk ? 1.4 : 31), m);
         }
       }
     }
-    if (!came.has(b)) return null;
+    if (!found && !(stamp[b] === id && came[b] >= 0)) return null;
     const path = [];
-    for (let n = b; n !== a;) { const h = came.get(n); path.push(h); n = this.startNode(h); if (path.length > 5000) return null; }
+    for (let n = b; n !== a;) { const h = came[n]; if (h < 0) return null; path.push(h); n = this.startNode(h); if (path.length > 5000) return null; }
     return path.reverse();
   }
 }

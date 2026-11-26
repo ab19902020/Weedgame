@@ -116,6 +116,7 @@ function roleOf(a) {
   return look.outfit % 2 ? 'tracksuit' : 'jacket';
 }
 
+const byDistance = (a, b) => a.distance - b.distance;
 export class RiggedPeople {
   constructor(scene) {
     this.scene = scene;
@@ -213,23 +214,27 @@ export class RiggedPeople {
     return { clip: R.idle, scale: 1 };
   }
   update(actors, cam, dt) {
-    const candidates = [];
+    const recs = this._recs ||= [], candidates = this._cands ||= []; candidates.length = 0;
     for (const a of actors) {
       if (!a.visible) continue;
       const role = roleOf(a);
       if (!role || !ROLES[role]) continue;
       const distance = (a.x-cam.x)**2 + (a.z-cam.z)**2;
-      if (distance < ROLES[role].range ** 2 || ((a.react || a.wound) && distance < 60 ** 2)) candidates.push({a,role,distance: ROLES[role].hero ? -1 : a.react || a.wound ? distance * 0.02 : distance});
+      if (distance < ROLES[role].range ** 2 || ((a.react || a.wound) && distance < 60 ** 2)) {
+        const r = recs[candidates.length] ||= {}; r.a = a; r.role = role; r.distance = ROLES[role].hero ? -1 : a.react || a.wound ? distance * 0.02 : distance;
+        candidates.push(r);
+      }
     }
-    candidates.sort((a,b) => a.distance-b.distance);
-    const visible = new Set();
-    for (const {a,role} of candidates.slice(0,8)) {
+    candidates.sort(byDistance);
+    const visible = this._vis ||= new Set(); visible.clear();
+    for (let ci = 0; ci < candidates.length && ci < 8; ci++) {
+      const { a, role } = candidates[ci];
       const asset = this.load(ROLES[role].source || role);
       if (!asset) continue;
       const R = ROLES[role];
       let slot = this.active.get(a.id);
       if (slot && slot.role !== role) { this.remove(a.id, slot); slot = null; }
-      if (!slot) { slot = this.create(role,asset); this.active.set(a.id,slot); }
+      if (!slot) { slot = this.pool?.[role]?.pop() || this.create(role,asset); slot.root.visible = true; this.active.set(a.id,slot); }
       visible.add(a.id);
       if (!R.hero && a.look && slot.look !== a.look) {
         for (const {top,legs} of slot.streetMaterials) {
@@ -287,12 +292,24 @@ export class RiggedPeople {
     for (const [id,slot] of this.active) if (!visible.has(id)) this.remove(id,slot);
     return visible;
   }
+  // a rig no longer needed goes back to a pool for its role, hidden, its pose put back, ready for the next person who
+  // comes close (building one clones a 78-bone skeleton and its materials: a hitch every time the nearest eight
+  // people changed). Past a few spare per role it's thrown away.
   remove(id,slot) {
+    this.active.delete(id);
+    const P = (this.pool ||= {})[slot.role] ||= [];
+    if (!ROLES[slot.role]?.hero && P.length < 4) {
+      if (slot.extra || slot.reacting) for (const [bone, q] of slot.base) bone.quaternion.copy(q);
+      slot.extra = false; slot.reacting = false; slot.braced = false; slot.wasSeated = false;
+      slot.body.quaternion.identity(); slot.body.position.set(0, 0, 0); slot.body.rotation.set(0, 0, 0);
+      slot.mixer.stopAllAction(); slot.clip = null; slot.lock = 0; slot.look = null;
+      slot.root.visible = false; P.push(slot);
+      return;
+    }
     for (const {mat} of slot.streetMaterials) mat.dispose();
     slot.mixer.stopAllAction();
     slot.mixer.uncacheRoot(slot.body);
     slot.body.traverse(node => { if (node.isSkinnedMesh) node.skeleton.dispose(); });
     this.scene.remove(slot.root);
-    this.active.delete(id);
   }
 }
