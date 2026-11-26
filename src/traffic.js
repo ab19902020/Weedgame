@@ -1,3 +1,4 @@
+import {isCycle} from './propulsion.js';
 // Vehicle simulation. Vehicles have stable ids and state independent of rendering.
 // Near the focus they run full car-following (IDM) with lanes, signals and give-way rules;
 // further away they keep moving along their routes at reduced cost, so nothing pops or U-turns
@@ -46,7 +47,8 @@ export class Traffic {
     if (r < (town ? .22 : .055)) {
       const type=this.rand();
       if (!town && /motorway|trunk/.test(name)) return 'motorcycle';
-      return type<.25 ? 'dirtbike' : type<.55 ? 'motorcycle' : type<.81 ? 'moped' : 'escooter';
+      if (!town) return type<.55 ? 'motorcycle' : 'moped';
+      return type<.18 ? 'dirtbike' : type<.36 ? 'motorcycle' : type<.49 ? 'moped' : type<.67 ? 'bicycle' : type<.83 ? 'ebike' : 'escooter';
     }
     return this.randomModel();
   }
@@ -54,7 +56,7 @@ export class Traffic {
     const r = this.rand();
     v.v0f = 0.85 + r * 0.3;        // desired speed factor
     if (v.model === 'moped') v.v0f *= 0.62;
-    if (v.model === 'escooter') v.v0f *= 0.42;
+    if (isCycle(v.model) || v.model==='escooter') { v.v0f*=.55; v.citySpeed = v.model==='bicycle'?5.3:v.model==='ebike'?7.5:6.3; v.v=Math.min(v.v,v.citySpeed); }
     v.T = 1.2 + this.rand() * 0.6; v.s0 = 2 + this.rand(); v.amax = v.model.startsWith('bus') ? 1.0 : v.model === 'escooter' ? 1.1 : v.model === 'moped' ? 1.4 : 1.6 + this.rand() * 0.8; v.bc = 2.2;
   }
   spawnAt(h, s, opts = {}) {
@@ -63,7 +65,7 @@ export class Traffic {
     this.driver(v);
     if (opts.route) { v.route = opts.route; v.ri = opts.ri || 0; v.h = v.route[v.ri]; }
     v.lane = Math.floor(this.rand() * this.net.laneCount(v.h));
-    if (v.model === 'moped' || v.model === 'escooter') v.lane = 0;   // nearside, with the kerb
+    if (v.model === 'moped' || v.citySpeed) v.lane = 0;   // nearside, with the kerb
     this.place(v);
     return v;
   }
@@ -135,14 +137,14 @@ export class Traffic {
     if (v.ri + 1 < v.route.length) return;
     if (v.fixedRoute) return;
     const end = this.net.endNode(v.h);
-    if (v.dest != null && this.routeBudget > 0 && end !== v.dest) {
+    if (!v.citySpeed && v.dest != null && this.routeBudget > 0 && end !== v.dest) {
       this.routeBudget--;
       const r = this.net.route(end, v.dest, { limit: v.kind === 'police' ? 40000 : 9000 });
       if (r && r.length) { v.route = [v.h, ...r]; v.ri = 0; return; }
       v.dest = null;
     }
     // weighted random continuation, no U-turns
-    const outs = this.net.outD[end].filter(h => (h >> 1) !== (v.h >> 1) || this.net.outD[end].length === 1);
+    const outs = this.net.outD[end].filter(h => (!v.citySpeed || !/motorway|trunk/.test(this.net.clsName(h>>1))) && ((h >> 1) !== (v.h >> 1) || this.net.outD[end].length===1));
     if (!outs.length) {
       // a one-way carriageway that runs out (the motorway at the edge of the mapped area) is never driven
       // back against its traffic: the car waits at the end and is recycled as soon as nobody can see it
@@ -309,6 +311,7 @@ export class Traffic {
     const net = this.net, e = v.h >> 1, L = net.len[e];
     this.extend(v);
     let vmax = Math.max(4, (net.speed[e] / 3.6) * (v.v0f || 1) * (v.siren ? 1.35 : 1)) * (v.slow || 1);
+    if (v.citySpeed) vmax = Math.min(vmax,v.citySpeed);
     let [gap, lv, lead] = this.leaderGap(v, occ);
     let stopAt = 1e9;
     const rem = L - v.s;

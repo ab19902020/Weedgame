@@ -191,7 +191,6 @@ export class RenderBudget {
       for (const m of t.group.children) {
         let lim = 0;
         if (m.geometry === T.crownGeo || m.geometry === T.trunkGeo) lim = B.treeDist;
-        else if (m.geometry === T.lampGeo) lim = B.lampDist;
         else if (m.material === mats.mark) lim = B.markDist;
         else if (T.signAtlas && m.material === T.signAtlas.material) lim = B.signDist;
         if (lim) m.visible = d - 181 < lim;

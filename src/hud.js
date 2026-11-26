@@ -1,3 +1,4 @@
+import {isElectric} from './propulsion.js';
 // HUD: minimap, full map, buttons, notices, developer panel and performance overlay.
 import { presets } from './graphics.js';
 import { ROLES } from './riggedPeople.js';
@@ -54,7 +55,7 @@ export class Hud {
           <button id="bJump" class="big" aria-label="Jump">${ICON.jump}<b>Jump</b></button>
         </div>
         <div class="drive" hidden>
-          <button id="bHorn" class="mid" aria-label="Horn">${ICON.horn}<b>Horn</b></button>
+          <button id="bBeam" class="mid" aria-label="Full beam" aria-pressed="false">Beam</button><button id="bHorn" class="mid" aria-label="Horn">${ICON.horn}<b>Horn</b></button>
           <button id="bHand" class="mid" aria-label="Handbrake">${ICON.handbrake}<b>Handbrake</b></button>
           <div id="pBrake" class="pedal brake" role="button" aria-label="Brake"><span>BRAKE</span><em>R</em></div>
           <div id="pGas" class="pedal gas" role="button" aria-label="Accelerator"><span>GAS</span></div>
@@ -72,7 +73,7 @@ export class Hud {
     const I = G.input;
     for(const [id,action] of [['bJump','jump'],['bHit','hit'],['bPickup','pickup']])I.bindButton(this.el(id),action);
     I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn', true);
-    I.bindButton(this.el('bHand'), 'brake', true); I.bindPedals(this.el('pGas'), this.el('pBrake')); I.bindArrows(this.el('sLeft'), this.el('sRight'));
+    I.bindButton(this.el('bBeam'),'beam'); I.bindButton(this.el('bHand'), 'brake', true); I.bindPedals(this.el('pGas'), this.el('pBrake')); I.bindArrows(this.el('sLeft'), this.el('sRight'));
     I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
     this.el('mClose').onclick = () => this.toggleMap(false);
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
@@ -149,9 +150,10 @@ export class Hud {
     if(drive!==this._wasDriving){this._wasDriving=drive;if(drive&&steer==='Tilt')I.calibrateTilt();}
     if(drive){
       const v=G.traffic.byId.get(me.vehicle),c=I.driveControls(0);
+      const beam=this.el('bBeam'); beam.setAttribute('aria-pressed',String(!!v?.fullBeam)); beam.classList.toggle('activeBeam',!!v?.fullBeam);
       const mph=Math.round(Math.abs(v?.sp||0)*2.237),sp=this.el('speedo');sp.hidden=false;
       if(sp.firstChild.textContent!==String(mph))sp.firstChild.textContent=mph;
-      sp.lastChild.textContent=v?.ph?.gear<0?'R':v?.ph?(Math.abs(v.sp)<0.3&&!c.gas?'N':String(v.ph.gear)):'';
+      sp.querySelector('i').textContent=v?.ph?.gear<0?'R':v?.ph?(Math.abs(v.sp)<0.3&&!c.gas?'N':String(v.ph.gear)):'';
       I.wheelEl.style.setProperty('--steer',(c.steer*110).toFixed(1)+'deg');
       this.el('pBrake').classList.toggle('rev',!!(v?.ph?.gear<0&&c.brake>0));
     } else this.el('speedo').hidden=true;
@@ -404,10 +406,11 @@ export class Hud {
     const fuel = amount => {
       const v = G.brothers.vehicleOf(G.brothers.me);
       if (!v) return this.toast('Enter a vehicle to test fuel');
-      v.fuel = amount; G.save.markVehicle(v); this.toast(amount === 1 ? 'Tank filled' : 'Tank set to 2%');
+      if (!G.fuel.hasTank(v)) return this.toast('This vehicle uses no stored energy');
+      v.fuel = amount; G.save.markVehicle(v); this.toast((isElectric(v.model)?'Charge':'Fuel')+' set to '+Math.round(amount*100)+'%');
     };
     row('Money & fuel', [btn('Add £500', () => { const b = G.brothers.me; b.cash = (b.cash ?? 1500) + 500; this.toast(`${b.short} has £${b.cash.toFixed(2)}`); }), btn('Fill this car', () => fuel(1)), btn('Empty this car', () => fuel(.02))]);
-    const vehicles = {dirtbike:'Dirt bike', motorcycle:'Motorcycle', moped:'Moped', escooter:'E-scooter', rangerover:'Range Rover', sports:'Sports car', hatch:'Hatchback', saloon:'Saloon', estate:'Estate', suv:'SUV', coupe:'Coupé', hothatch:'Hot hatch', van:'Van'};
+    const vehicles = {bicycle:'Push bike',ebike:'Electric bike',evsaloon:'Electric fastback',evsuv:'Electric crossover',dirtbike:'Dirt bike', motorcycle:'Motorcycle', moped:'Moped', escooter:'E-scooter', rangerover:'Range Rover', sports:'Sports car', hatch:'Hatchback', saloon:'Saloon', estate:'Estate', suv:'SUV', coupe:'Coupé', hothatch:'Hot hatch', van:'Van'};
     row('Spawn nearby', Object.entries(vehicles).map(([model,label]) => btn(label, () => {
       const me = G.brothers.me, h = me.heading || 0;
       if (me.inside || G.transit.ride) return this.toast('Go outside and leave public transport first');
@@ -415,7 +418,7 @@ export class Hud {
         const x = me.x + Math.cos(h)*offset, z = me.z + Math.sin(h)*offset;
         const y = G.tiles.ground(x,z,me.y+1);
         if (y == null || G.tiles.insideBuilding(x,z,y) || G.traffic.list.some(v => Math.hypot(v.x-x,v.z-z) < (v.len+5)/2)) continue;
-        G.traffic.add({kind:'parked',model,paint:model==='rangerover'?0x23382c:0xb5121b,x,y,z,heading:h,parked:true,free:true});
+        G.traffic.add({id:'dev-'+model+'-'+Date.now(),kind:'parked',model,paint:model==='rangerover'?0x23382c:0xb5121b,x,y,z,heading:h,parked:true,free:true});
         return this.toast(label+' delivered');
       }
       this.toast('No clear space nearby. Move to an open road.');

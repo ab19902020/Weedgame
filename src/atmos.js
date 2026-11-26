@@ -177,6 +177,7 @@ export class Atmos {
         }
     };
     for (const t of this.G.tiles.tiles.values()) {
+      if(t.data.ox+256<ox-16 || t.data.ox>ox+LIGHT_N*LIGHT_RES+16 || t.data.oz+256<oz-16 || t.data.oz>oz+LIGHT_N*LIGHT_RES+16) continue;
       if (t.lamps) for (const L of t.lamps) if (!L.dead) paint(L[0], L[2], 13, 150, 115, 70);   // (knocked-down lamps are dark)
       if (t.data && t.data.signs && t.data.signs.data) {
         const S = t.data.signs.data;
@@ -191,7 +192,7 @@ export class Atmos {
     const G = this.G, list = [];
     const night = U.night.value;
     if (night > 0.2) {
-      for (const t of G.tiles.tiles.values()) if (t.lamps) for (const L of t.lamps) {
+      for (const t of G.tiles.tiles.values()) if (t.lamps && Math.abs(t.data.ox+128-cam.x)<249 && Math.abs(t.data.oz+128-cam.z)<249) for (const L of t.lamps) {
         if (L.dead) continue;
         const [x, y, z] = L;
         const d2 = (x - cam.x) ** 2 + (z - cam.z) ** 2; if (d2 < 120 * 120) list.push([x, y, z, 1.4 * night, 1, 0.75, 0.45, d2]);

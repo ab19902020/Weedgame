@@ -1,3 +1,4 @@
+import {quietDrive} from './propulsion.js';
 import fleet from './fleetCues.json';
 import cues from './soundCues.json';
 import world from './worldCues.json';
@@ -152,7 +153,7 @@ export class Audio {
   // engine start for the car you get into
   engineStart(v) {
     if (!this.on) return;
-    if (v.model === 'escooter' || heavyDiesel(v.model)) return;
+    if (quietDrive(v.model) || heavyDiesel(v.model)) return;
     const kind = engineOf(v.model);
     if(isMotorbike(kind)){
       this.loadEngine(kind).then(()=>this.engineShot(kind,'start',.7)).catch(e=>console.warn(e));
@@ -273,7 +274,7 @@ export class Audio {
       }
       vo.engine?.playbackRate.setTargetAtTime(sound==='dirtbike' ? .9 + Math.min(.38,sp*.012) : (big ? .72 : .9) + Math.min(1.5, Math.abs(sp) * .048), t, .15);
       vo.f.frequency.setTargetAtTime(1000 + Math.abs(sp) * 85, t, 0.1);
-      vo.g.gain.setTargetAtTime(v.model==='escooter' ? 0 : .32 * (0.4 + Math.min(1, sp / 12)), t, 0.1);
+      vo.g.gain.setTargetAtTime(quietDrive(v.model) ? 0 : .32 * (0.4 + Math.min(1, sp / 12)), t, 0.1);
       vo.tyre?.playbackRate.setTargetAtTime(0.8 + Math.min(0.5, sp / 60), t, 0.2);
       vo.tg.gain.setTargetAtTime(Math.min(0.35, sp / 50) * (wet ? 1.6 : 1), t, 0.1);   // louder and hissier when wet
       vo.tf.frequency.setTargetAtTime(wet ? 6000 : 1800, t, 0.2);
@@ -283,7 +284,7 @@ export class Audio {
     const diesel = pv && heavyDiesel(pv.model);
     this.diesel.g.gain.setTargetAtTime(diesel ? .38+.40*(pv.ph?.thr||0) : 0,t,.12);
     if (diesel) this.diesel.src?.playbackRate.setTargetAtTime(.85+Math.min(1,(pv.rpm||900)/4500),t,.09);
-    const kind = pv && !diesel && pv.model !== 'escooter' ? engineOf(pv.model) : null;
+    const kind = pv && !diesel && !quietDrive(pv.model) ? engineOf(pv.model) : null;
     const cockpit = kind === 'i4' && !pv.def?.wheels && G.brothers.cam.car === 3;
     this.carCabin.g.gain.setTargetAtTime(cockpit ? .42 : 0,t,.13);
     if (cockpit) this.carCabin.src?.playbackRate.setTargetAtTime(Math.min(1.6,.82+(pv.rpm||900)/6200),t,.12);

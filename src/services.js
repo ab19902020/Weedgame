@@ -24,7 +24,7 @@ export class Parking {
       if (r > occ) continue;
       const r2 = mulberry(hashStr(id) ^ 0x5bd1e995);
       const roll = r2();
-      const model = (!K[i] && roll < 0.12) ? (roll < .035 ? 'dirtbike' : roll < .07 ? 'motorcycle' : roll < .095 ? 'moped' : 'escooter') : randomModel(r2());
+      const model = (!K[i] && roll < 0.12) ? (roll < .035 ? 'dirtbike' : roll < .07 ? 'motorcycle' : roll < .085 ? 'moped' : roll < .099 ? 'bicycle' : roll < .110 ? 'ebike' : 'escooter') : randomModel(r2());
       const x = S[i * 4] + t.data.ox, z = S[i * 4 + 2] + t.data.oz;
       if (this.blocked(x, z)) continue;
       const v = G.traffic.add({ id, kind: 'parked', model, paint: paintFor(model, r2()), x, y: S[i * 4 + 1], z, heading: S[i * 4 + 3], parked: true, v: 0 });

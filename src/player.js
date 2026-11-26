@@ -1,3 +1,4 @@
+import {quietDrive} from './propulsion.js';
 // Cal and Ward brothers: the only playable people. Walking, running, driving, parking,
 // swapping, and the third-person orbit camera.
 import * as THREE from 'three/webgpu';
@@ -141,10 +142,10 @@ export class Brothers {
     const braking = c.brake > 0.05 && c.gas < 0.05;
     if (!braking) { this.stillT = 0; this.revHold = false; } else if (Math.abs(u) < 0.8) this.stillT = (this.stillT || 0) + dt;
     if (braking && this.stillT > 0.45) this.revHold = true;
-    const reverse = braking && this.revHold;
+    const reverse = braking && this.revHold && v.def.wheels!==2;
     // carPhysics.js: tyre model, gearbox, assists and impulse collisions
     const ctl = { throttle: c.gas > 0.05 ? c.gas : reverse ? -c.brake : 0, brake: reverse ? 0 : c.brake, steer: c.steer, handbrake: input.padBrake || input.held.has('brake'), assists: input.assists ?? 1 };
-    if (G.fuel) ctl.throttle = G.fuel.drive(v, dt, ctl.throttle);   // fuel.js: burns fuel; no throttle when dry
+    if (G.fuel) ctl.throttle = G.fuel.drive(v, G.driveSeconds ?? dt, ctl.throttle);   // fuel.js: burns fuel; no throttle when dry
     G.carDyn.drive(v, dt, ctl);
     const hit = G.carDyn.flush(v);
     if (hit > 2) this.cam.shake = Math.max(this.cam.shake || 0, Math.min(1, hit / 14));
@@ -153,7 +154,8 @@ export class Brothers {
     const ph = v.ph;
     v.brake = ph.brk > 0.05 || (ph.hb && Math.abs(v.sp) > 0.5);
     v.reversing = ph.gear < 0 && v.sp < -0.1;
-    v.lights = G.world.day < 0.6 || G.world.cur.rain > 0.4;
+    if (input.consume('beam')) v.fullBeam=!v.fullBeam;
+    v.lights = v.fullBeam || G.world.day < 0.6 || G.world.cur.rain > 0.4;
     me.x = v.x; me.y = v.y; me.z = v.z; me.heading = v.heading;
     this.speedNow = Math.abs(v.sp);
     if (input.consume('horn')) G.events.emit('horn', { x: v.x, z: v.z, v });
@@ -257,14 +259,14 @@ export class Brothers {
     const G = this.G, me = this.me, v = this.vehicleOf(me);
     if (v) {
       if (Math.abs(v.sp || 0) > 2) { G.hud.toast('Slow down to get out'); return; }
-      v.sp = 0; v.v = 0; v.player = false; v.parked = true; v.owner = v.owner || me.short; v.brake = false; v.reversing = false; v.camInside = false;
+      v.sp = 0; v.v = 0; v.player = false; v.parked = true; v.owner = v.owner || me.short; v.fullBeam=false; v.lights=false; v.brake = false; v.reversing = false; v.camInside = false;
       if (v.ph) { v.ph.vx = v.ph.vz = v.ph.w = 0; v.ph.gear = 1; }
       v.parkedBy = me.short; v.parkedAt = G.world.time;
       const rx = -Math.sin(v.heading), rz = Math.cos(v.heading);
       me.x = v.x + rx * (v.def.W / 2 + 0.7); me.z = v.z + rz * (v.def.W / 2 + 0.7);
       me.y = G.tiles.ground(me.x, me.z, v.y + 0.5) ?? v.y; me.heading = v.heading + Math.PI / 2;
       me.vehicle = null;
-      if(v.def.wheels !== 2) G.audio?.play('Car_Engine_Turning_Off', v.x, v.y, v.z);
+      if(v.def.wheels !== 2 && !quietDrive(v.model)) G.audio?.play('Car_Engine_Turning_Off', v.x, v.y, v.z);
       if(v.def.wheels !== 2) G.audio?.play('Car_Door_Close', me.x, me.y, me.z);
       G.events.emit('parked', { v, by: me });
       G.hud.toast(`${me.short} parked on ${G.roadName(v.x, v.z) || 'the street'}`);
