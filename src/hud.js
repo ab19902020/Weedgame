@@ -178,7 +178,7 @@ export class Hud {
     const c = this.mini, R = S / 2;
     this.atlas.minimap(c, S, dpr, me, scale, rot, c => {
       this.nav.draw(c, x => x, z => z, 1 / scale);
-      if (G.interiors?.ready) { const reach = (S / 2) / scale; for (const site of G.interiors.sites) { if (Math.abs(site.dx - me.x) > reach || Math.abs(site.dz - me.z) > reach) continue; siteDot(c, site.dx, site.dz, site.kind, 1 / scale); } }
+      if (G.interiors?.ready) { const reach = (S / 2) / scale; for (const site of G.interiors.sites) { if (site.kiosk || Math.abs(site.dx - me.x) > reach || Math.abs(site.dz - me.z) > reach) continue; siteDot(c, site.dx, site.dz, site.kind, 1 / scale); } }
       if (G.fuel?.ready) { const reach = (S / 2) / scale; for (const st of G.fuel.stations) { if (Math.abs(st.x - me.x) > reach || Math.abs(st.z - me.z) > reach) continue; siteDot(c, st.x, st.z, 'fuel', 1 / scale); } }
       const reach = R / scale;
       for (const v of G.traffic.list) {
@@ -290,13 +290,14 @@ export class Hud {
         if (G.fuel?.ready) for (const st of G.fuel.stations) {
           const x = X(st.x), z = Z(st.z); if (x < -30 || x > W + 30 || z < -30 || z > H + 30) continue;
           siteIcon(c, x, z, 'fuel', s < 0.05 ? 6 : 8.5);
-          if (s >= 0.12) { c.font = '700 11px system-ui'; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; c.strokeText(st.title, x + 13, z); c.fillStyle = '#1d2420'; c.fillText(st.title, x + 13, z); }
+          if (s >= 0.12 && z > 70 && z < H - 82) { c.font = '700 11px system-ui'; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; c.strokeText(st.title, x + 13, z); c.fillStyle = '#1d2420'; c.fillText(st.title, x + 13, z); }
         }
         if (G.interiors?.ready) for (const site of G.interiors.sites) {
+          if (site.kiosk) continue;   // a petrol station's shop: the station's pump marker stands for it
           const x = X(site.dx), z = Z(site.dz); if (x < -30 || x > W + 30 || z < -30 || z > H + 30) continue;
           const key = site.kind === 'trap' || site.kind === 'nice' || site.kind === 'mall';
           siteIcon(c, x, z, site.kind, s < 0.05 && !key ? 5.5 : key ? 10 : 8);
-          if (s >= 0.22 || (key && s >= 0.04)) { c.font = `${key ? 800 : 700} ${key ? 12 : 11}px system-ui`; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; const t = key && s < 0.22 ? site.title.replace(/, .*/, '') : site.title; c.strokeText(t, x + 13, z); c.fillStyle = '#1d2420'; c.fillText(t, x + 13, z); }
+          if ((s >= 0.22 || (key && s >= 0.04)) && z > 70 && z < H - 82) { c.font = `${key ? 800 : 700} ${key ? 12 : 11}px system-ui`; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; const t = key && s < 0.22 ? site.title.replace(/, .*/, '') : site.title; c.strokeText(t, x + 13, z); c.fillStyle = '#1d2420'; c.fillText(t, x + 13, z); }
         }
         // the brothers' cars and the police
         for (const v of G.traffic.list) {

@@ -139,6 +139,18 @@ if (!G.traffic.byId.has('cal-car')) {
   G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'rangerover', paint: 0x1e4d38, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
   G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'rangerover', paint: 0xffffff, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
 }
+// the brothers' bikes, a scrambler and a road bike, beside the cars (added to older saves too)
+if (!G.traffic.byId.has('cal-bike')) {
+  const c = G.traffic.byId.get('cal-car'), l = G.traffic.byId.get('leon-car');
+  if (c && l) {
+    // across the bay from the Range Rovers, nose in, a metre and a half apart
+    const mx = (c.x + l.x) / 2, mz = (c.z + l.z) / 2, h = c.heading, fx = Math.cos(h), fz = Math.sin(h), sx = -fz, sz = fx;
+    const k = kerbPlace(mx + fx * 12, mz + fz * 12);
+    G.traffic.add({ id: 'cal-bike', kind: 'parked', model: 'dirtbike', paint: 0xd0632a, x: k.x, y: 0, z: k.z, heading: k.heading + 0.25, parked: true, free: true, owner: 'Cal' });
+    G.traffic.add({ id: 'leon-bike', kind: 'parked', model: 'motorcycle', paint: 0x2b2f36, x: k.x + Math.cos(k.heading) * 2.4, y: 0, z: k.z + Math.sin(k.heading) * 2.4, heading: k.heading + 0.25, parked: true, free: true, owner: 'Leon' });
+    void sx; void sz;
+  }
+}
 // the simulated fleet that was around both brothers comes back with the same ids
 G.traffic.anchors = G.brothers.b;
 G.traffic.restoreFleet(G.save.fleet, i => G.buses.routes.find(r => r.i === i));
