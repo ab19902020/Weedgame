@@ -237,6 +237,18 @@ export function buildCar(def, key, modelIndex, lod = 0) {
       const lip = new THREE.BoxGeometry(.45,.026,.055);
       lip.translate(l-.38,S.hs+.035,sd*hw0*.68); parts.add(lip,16,0,[.06,.065,.07]);
     }
+    // Recessed rear bumper reflectors follow the curvature of each model.
+    const rz=sd*hw0*.73, rx=xTail(rz), ry=S.hs+.20;
+    const bezel=new THREE.BoxGeometry(.034,.064,.20).translate(rx-.004,ry,rz);
+    parts.add(bezel,16,0,[.035,.037,.041]);
+    const reflector=new THREE.BoxGeometry(.012,.032,.15).translate(rx-.024,ry,rz);
+    parts.add(reflector,0,0,[.42,.018,.014]);
+    if(S.panelVan){
+      for(const height of [.58,1.32]){
+        const hinge=new THREE.BoxGeometry(.07,.083,.13).translate(rx-.02,height,rz);
+        parts.add(hinge,0,0,[.22,.23,.24]);
+      }
+    }
     // roof rails
     if (S.rails) { const len = S.ws1 - S.rr0 - 0.2, g = new THREE.BoxGeometry(len, 0.03, 0.03); g.translate((S.ws1 + S.rr0) / 2, topF((S.ws1 + S.rr0) / 2) + 0.03, sd * hw0 * 0.62); parts.add(g, 16, 0, [0.05, 0.05, 0.05]); }
   }
@@ -285,10 +297,22 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     parts.add(tunnel.translate(S.ws0-.88,fl+.12,0),0,0,[.052,.055,.059]);
     const sw = new THREE.TorusGeometry(0.18, 0.02, 6, 20); sw.rotateY(Math.PI / 2); sw.rotateZ(0.42); sw.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(sw, 16, 0, [0.02, 0.02, 0.02]);
     const hub = new THREE.CylinderGeometry(0.06, 0.06, 0.04, 10); hub.rotateZ(Math.PI / 2 - 0.42); hub.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(hub, 16, 0, [0.03, 0.03, 0.03]);
+    for(const angle of [-Math.PI/2, Math.PI/2, Math.PI]){
+      const spoke=new THREE.BoxGeometry(.022,.14,.032).translate(0,.10,0);
+      spoke.rotateX(angle).rotateZ(.42).translate(S.ws0-.78,sc-.06,.37);
+      parts.add(spoke,0,0,[.14,.155,.16]);
+    }
+    const selector=new THREE.CylinderGeometry(.035,.043,S.exhaust===0?.036:.11,10);
+    parts.add(selector.translate(S.ws0-.89,fl+(S.exhaust===0?.238:.271),0),0,0,[.23,.25,.26]);
     const seatX = Math.max(S.ws0 - 1.35, S.rr0 + 0.32), headTop = topF(seatX - 0.2) - 0.07;
     for (const z of [0.37, -0.37]) {
       const base = new THREE.BoxGeometry(0.5, 0.12, 0.46); base.translate(seatX + 0.1, fl + 0.2, z); parts.add(base, 16, 0, [0.05, 0.05, 0.055]);
       const back = new THREE.BoxGeometry(0.12, 0.62, 0.46); back.rotateZ(0.22); back.translate(seatX - 0.17, fl + 0.55, z); parts.add(back, 16, 0, [0.05, 0.05, 0.055]);
+      for(const side of [-1,1]){
+        const bolster=new THREE.SphereGeometry(1,8,5).scale(.084,.26,.045);
+        bolster.rotateZ(.22).translate(seatX-.10,fl+.53,z+side*.20);
+        parts.add(bolster,0,0,[.06,.067,.073]);
+      }
       const rest = new THREE.BoxGeometry(0.1, 0.16, 0.26); rest.rotateZ(0.22); rest.translate(seatX - 0.25, Math.min(fl + 0.95, headTop - 0.08), z); parts.add(rest, 16, 0, [0.06, 0.06, 0.065]);
     }
   }

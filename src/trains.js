@@ -123,7 +123,13 @@ export class Trains {
       box(CAR_W, CAR_H - 0.9, CAR_L, 0.9, [1, 1, 1]),                         // body (tinted per line)
       box(CAR_W + 0.04, 0.95, CAR_L - 2.6, 2.1, [0.05, 0.06, 0.08]),            // window band
       box(CAR_W - 0.3, 0.12, CAR_L - 0.4, CAR_H, [0.55, 0.56, 0.58]),            // roof
-      box(CAR_W - 0.5, 0.75, CAR_L - 3, 0.15, [0.08, 0.08, 0.08]),              // underframe and bogies
+      box(CAR_W - .66, .48, CAR_L - 1.8, .42, [.10,.105,.11]),
+      ...[-1,1].flatMap(end=>[-.76,.76].map(offset=>{
+        const wheel=new THREE.CylinderGeometry(.36,.36,2.04,12).rotateX(Math.PI/2).toNonIndexed();
+        wheel.translate(end*(CAR_L/2-2.1)+offset,.34,0);
+        wheel.setAttribute('color',new THREE.BufferAttribute(new Float32Array(wheel.attributes.position.count*3).fill(.065),3));
+        return wheel;
+      })),              // underframe and bogies
       box(1.3, 2.1, 0.06, 0.9, [0.12, 0.12, 0.13]).translate(-CAR_L / 2 + 0.02, 0, 0),  // gangway ends
       box(1.3, 2.1, 0.06, 0.9, [0.12, 0.12, 0.13]).translate(CAR_L / 2 - 0.02, 0, 0),
     ]);

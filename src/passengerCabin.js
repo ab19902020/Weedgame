@@ -31,6 +31,10 @@ function layout(type){
       const spans=hasDoor?[[-L/2,doorX-.62],[doorX+.62,L/2]]:[[-L/2,L/2]];
       if(hasDoor)doors.push([doorX,base,z]);
       for(const [a,b] of spans)box((a+b)/2,base+.37,z,b-a,.74,.09,0xffffff,paint);
+      for(const [a,b] of spans){
+        box((a+b)/2,base+.64,z+side*.052,b-a,.056,.018,rail?0xc7d1cf:0xddd4b3);
+        if(base===floor)box((a+b)/2,base+.075,z+side*.054,b-a,.082,.025,0x444e54);
+      }
       box(0,top-.18,z,L,.25,.09,0xe8e4d4);
       for(const [a,b] of spans)box((a+b)/2,(top+base+.50)/2,z,b-a-.06,top-base-.94,.025,0xffffff,panes);
       // Window sills stop at the doorway. The contrasting threshold meets the saloon floor.
