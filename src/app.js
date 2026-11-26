@@ -183,6 +183,8 @@ function frame() {
   let dt = Math.min(0.1, (now - last) / 1000); last = now;
   G.controller.poll(dt);
   if (!G.hud.menu.el.hidden) return;
+  // a pub game on screen: the world waits (and the phone gets all its time for the game)
+  if (G.interiors?.games?.open) { last = now; return; }
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
   if (G.slowmo > 0) { G.slowmo -= dt; dt *= G.slowmo > 0.35 ? 0.3 : 1 - 0.7 * Math.max(0, G.slowmo) / 0.35; }
   for (let k = 1; k < G.simSteps; k++) step(dt, false);

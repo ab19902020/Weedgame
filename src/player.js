@@ -60,7 +60,9 @@ export class Brothers {
     me.swimming = me.swimming ? wdep > 1.05 : wdep > 1.3;
     const wade = me.swimming ? 0 : Math.max(0, Math.min(0.65, wdep * 0.55));
     const speed = (me.swimming ? (run ? 1.9 : 1.1) : (run && wdep < 0.6 ? 5.4 : 1.7) * (1 - wade)) * Math.min(1, Math.hypot(ax.x, ax.y));
-    const fx = -Math.cos(this.cam.yaw), fz = -Math.sin(this.cam.yaw);
+    if (me.drunk > 0) me.drunk = Math.max(0, me.drunk - dt / 150);   // wears off over a few minutes
+    const tipsy = Math.max(0, Math.min(1, ((me.drunk || 0) - 2) / 7)), wob = tipsy * Math.sin(G.time * 1.3) * 0.45;
+    const fx0 = -Math.cos(this.cam.yaw), fz0 = -Math.sin(this.cam.yaw), fx = fx0 * Math.cos(wob) - fz0 * Math.sin(wob), fz = fx0 * Math.sin(wob) + fz0 * Math.cos(wob);
     const dx = (-ax.y) * fx + ax.x * -fz, dz = (-ax.y) * fz + ax.x * fx;
     const l = Math.hypot(dx, dz);
     const tx = l > 0.01 ? dx / l * speed : 0, tz = l > 0.01 ? dz / l * speed : 0;
@@ -248,7 +250,8 @@ export class Brothers {
     const gy = G.tiles.ground(c.x, c.z, c.y);
     if (gy != null && c.y < gy + 0.5) c.y = gy + 0.5;
     G.camera.position.set(c.x, c.y, c.z);
-    G.camera.lookAt(tx, ty, tz);
+    const sway = Math.max(0, Math.min(1, ((this.me.drunk || 0) - 2) / 7)) * 0.35;
+    G.camera.lookAt(tx + Math.sin(G.time * 0.9) * sway, ty + Math.sin(G.time * 1.4) * sway * 0.4, tz + Math.cos(G.time * 0.7) * sway);
     this.setNear(0.4);
   }
   // ------------------------------------------------------------------ actions

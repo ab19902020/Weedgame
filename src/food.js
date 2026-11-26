@@ -25,14 +25,19 @@ export const MENUS = {
   pizza: { title: 'Pizza', items: [
     ['Margherita (medium)', 12.99], ['Pepperoni (medium)', 14.99], ['Meat feast (large)', 19.99], ['Veggie (medium)', 13.99], ['Garlic bread', 4.99],
     ['Chicken wings', 5.99], ['Potato wedges', 3.99], ['Cookies', 4.49], ['Bottle of cola', 3.49] ] },
+  // the pub: [name, price, alcohol units]
+  pub: { title: 'At the bar', items: [
+    ['Pint of lager', 5.40, 2.3], ['Pint of bitter', 4.90, 2], ['Pint of cider', 5.20, 2.6], ['Pint of stout', 5.70, 2.4], ['Glass of wine', 6.80, 2.3],
+    ['Double vodka & coke', 8.20, 2], ['Pint of shandy', 4.20, 1], ['Soft drink', 2.90, 0], ['Packet of crisps', 1.50, 0], ['Pork scratchings', 1.90, 0], ['Basket of chips', 4.50, 0] ] },
   mex: { title: 'Burritos & tacos', items: [
     ['Burrito', 8.95], ['Burrito bowl', 8.95], ['Tacos (3)', 7.45], ['Quesadilla', 7.25], ['Nachos', 4.95],
     ['Chips & salsa', 2.95], ['Churros', 3.25], ['Fizzy drink', 2.45] ] },
 };
 // what you'd call the main thing you ate (for the messages)
-export const FOOD_WORD = { burger: 'burger', chicken: 'chicken', piri: 'chicken', sub: 'sub', bakery: 'bake', chippy: 'fish and chips', kebab: 'kebab', pizza: 'pizza', mex: 'burrito' };
+export const FOOD_WORD = { pub: 'drink', burger: 'burger', chicken: 'chicken', piri: 'chicken', sub: 'sub', bakery: 'bake', chippy: 'fish and chips', kebab: 'kebab', pizza: 'pizza', mex: 'burrito' };
 // the staff's uniforms and the place's colours (neutral, not any chain's)
 export const STYLE = {
+  pub: { uniform: 0x1c1c1c, wall: 0xb99d6b, accent: 0x5b3a22, floor: 0x6b2f35, seat: 0x4a2f1c, board: '#2a1d14', ink: '#fff2e0', hi: '#e8c26a' },
   burger: { uniform: 0x2b2b2b, wall: 0xe9e4da, accent: 0x4a4f55, floor: 0xb9b0a2, seat: 0x6b4a32, board: '#1d1f22', ink: '#f6efe0', hi: '#f0b43c' },
   chicken: { uniform: 0x7a2420, wall: 0xf2efe9, accent: 0x7a3a2a, floor: 0x9a9a98, seat: 0x3b3b3b, board: '#231a18', ink: '#fff4ec', hi: '#ff8a6a' },
   piri: { uniform: 0x2b2b2b, wall: 0xe9dcc6, accent: 0xb5653f, floor: 0x8a6a4a, seat: 0x5b3a22, board: '#2a211c', ink: '#f8ead8', hi: '#ffb36a' },

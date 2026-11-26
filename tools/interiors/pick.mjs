@@ -87,10 +87,10 @@ const KINDS = {
   warehouse: b => b.cls === 8 && b.area >= 700 && b.area <= 6000 && b.wall >= 5 && fill(b) > 0.7 && !b.lm && !/data cent|substation|depot|power/i.test(b.name),
   office: b => b.cls === 6 && b.area >= 350 && b.area <= 3500 && b.wall >= 6 && fill(b) > 0.65 && !b.lm && (!b.name || /house|court|centre|park|plaza|point|office|ltd|limited|group|tower|building|place|lodge|works/i.test(b.name)) && !/school|church|hospital|station|library|surgery|hall|police|fire|theatre|leisure|sports|community|health|medical|saint|st\.? |pub|inn|arms/i.test(b.name),
   shop: b => (b.cls === 7 || b.shop) && b.area >= 60 && b.area <= 600 && fill(b) > 0.7 && !b.lm && (!b.name || /londis|co-?op|spar|nisa|one stop|premier|budgens|costcutter|best-one|mace|stores|news|convenience|express|local|supermarket|market|shop/i.test(b.name)) && !/station|church|mcdonald|kfc|burger|subway|costa|starbucks|greggs|pizza|domino|nando|caf|restaurant|bar\b|pharmacy|boots|bank|barber|salon|hair|nails|dental|vets?\b/i.test(b.name),
-  pub: b => /\b(Arms|Inn|Tavern|Head|Horse|Lion|Bell|Crown|Swan|Plough|Oak|Bull|Fox|George|Castle|Anchor|Chequers|Ship|Bear|Rose|Hare|Hound|Harrow|Wheatsheaf)\b/.test(b.name) && !/hotel|court|house|road|centre|decorat|ltd|garage|motor|lodge|farm|close|cottage/i.test(b.name) && b.area >= 80 && b.area <= 900 && fill(b) > 0.6 && !b.lm,
+  pub: b => /\b(Arms|Inn|Tavern|Head|Horse|Lion|Bell|Crown|Swan|Plough|Oak|Bull|Fox|George|Castle|Anchor|Chequers|Ship|Bear|Rose|Hare|Hound|Harrow|Wheatsheaf|Rising Sun|Volunteer|Red Cow|Running Horse|Dragon)\b/.test(b.name) && !/hotel|court|house|road|centre|decorat|ltd|garage|motor|lodge|farm|close|cottage|vets|salon|beauty|hall|wharf|care|premier|chemical|cleaning|station/i.test(b.name) && b.area >= 100 && b.area <= 900 && fill(b) > 0.55 && !b.lm,
   church: b => b.cls === 9 && b.area >= 150 && b.area <= 1400 && fill(b) > 0.55 && !b.lm && /church|chapel|\bst\.? |saint|methodist|baptist|united reformed|our lady|holy|christ|all saints|trinity/i.test(b.name),
 };
-const WANT = { terrace: 6, semi: 6, detached: 6, bungalow: 6, cottage: 3, warehouse: 6, office: 6, shop: 6, pub: 2, church: 2 };
+const WANT = { terrace: 6, semi: 6, detached: 6, bungalow: 6, cottage: 3, warehouse: 6, office: 6, shop: 6, pub: 10, church: 2 };
 const VILLAGE = new Set(['v', 'h']);
 const sites = [], usedB = new Set(), usedD = new Map();
 function add(kind, b, f, extra = {}) {
@@ -118,6 +118,8 @@ const nice = B.filter(b => b.cls === 1 && b.lv === 2 && b.wall >= 5 && b.area >=
   .map(b => ({ b, f: frame(b) })).filter(({ f }) => f && /residential|living_street/.test(f.road.cls) && f.road.d < 30 && f.W >= 8.5 && f.W <= 15 && f.D >= 8 && f.D <= 14)
   .sort((a, b) => b.b.area - a.b.area);
 add('nice', nice[0].b, nice[0].f, { name: 'The nicer house' });
+// 2b. Woodley's own pub, the Bull and Chequers on Woodley Green
+{ const b = B.find(q => q.name === 'Bull and Chequers'); const f = b && frame(b); if (f) { f.W = Math.min(f.W, 16); f.D = Math.min(f.D, 16); add('pub', b, f, { name: b.name, doorX: f.W / 2 }); } }
 // 3. The Oracle, Reading
 const oracle = B.find(b => b.name === 'The Oracle');
 { const f = frame(oracle, 1.5);
@@ -149,7 +151,7 @@ for (const [k, n] of Object.entries(WANT)) {
     if (usedB.has(b.key + ':' + b.bi)) continue;
     const f = frame(b, k === 'warehouse' || k === 'office' ? 0.5 : 0.3);
     if (!f || f.road.d > (k === 'warehouse' ? 80 : 40)) continue;
-    const minW = { terrace: 4.2, semi: 5, detached: 7, bungalow: 6.5, cottage: 5, warehouse: 18, office: 12, shop: 5.5, pub: 8, church: 8 }[k];
+    const minW = { terrace: 4.2, semi: 5, detached: 7, bungalow: 6.5, cottage: 5, warehouse: 18, office: 12, shop: 5.5, pub: 7.5, church: 8 }[k];
     const minD = { terrace: 6.5, semi: 6, detached: 7, bungalow: 6.5, cottage: 5.5, warehouse: 18, office: 10, shop: 6, pub: 7, church: 12 }[k];
     if (f.W < minW || f.D < minD) continue;
     // the big ones: keep the interior a sensible size

@@ -144,3 +144,14 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #fuelBtn{position:absolute;left:50%;transform:translateX(-50%);top:calc(64px + env(safe-area-inset-top));z-index:3;background:#17332cf0;color:#fcf5db;border:1px solid #9bb9a0;border-radius:20px;padding:8px 18px;font:700 15px system-ui;pointer-events:auto}
 #fuelBtn[hidden]{display:none}#fuelBtn.on{background:#2f7a5a;border-color:#7fc4a0}
 #speedo #fuelGauge{position:static;margin-left:10px;align-self:center}#speedo #fuelGauge[hidden]{display:none}
+/* pub games (pubGames.js) */
+#gamePanel{position:fixed;inset:0;z-index:9;display:flex;flex-direction:column;background:#0d0a08;pointer-events:auto;font:14px system-ui,sans-serif;color:#fcf5db;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+#gamePanel .gp-top{display:flex;align-items:center;gap:10px;padding:6px 10px;background:#17332cf2;border-bottom:1px solid #3d5a50}
+#gamePanel .gp-top b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:34%}
+#gamePanel .gp-msg{flex:1;color:#ffe9a8;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#gamePanel .gp-cash{background:#29493e;border:1px solid #638275;border-radius:14px;padding:3px 10px;font-weight:700;white-space:nowrap}
+#gamePanel canvas{flex:1;min-height:0;width:100%;touch-action:none;display:block}
+#gamePanel .gp-btns{display:flex;gap:8px;justify-content:center;padding:6px;background:#17332cf2;flex-wrap:wrap}
+#gamePanel .gp-btns:empty{display:none}
+#gamePanel button{background:#29493e;color:#fff5db;border:1px solid #638275;border-radius:8px;min-height:40px;padding:4px 16px;font:700 15px system-ui}
+#gamePanel button.big{background:#2f7a5a;border-color:#7fc4a0;min-width:140px}#gamePanel button.on{background:#a8781c;border-color:#ffd25a}

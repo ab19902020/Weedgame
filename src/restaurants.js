@@ -6,6 +6,7 @@ import { People } from './characters.js';
 import { MENUS, STYLE, FOOD_WORD, price, cash, spend } from './food.js';
 export { cash, spend };
 
+const BAR = ['There you go, that\'s', 'Cheers mate, that\'s', 'Lovely, that\'ll be', 'Coming up, that\'s'];
 const LINES = { hello: ['Hiya, what can I get you?', 'Hi there, what would you like?', 'Next please! What can I get you?', 'Alright? What are you having?'],
   thanks: ['Cheers, it won\'t be long.', 'Lovely, just a couple of minutes.', 'Thank you! Your number\'s on the receipt.', 'Ta. Take a seat, I\'ll call you.'] };
 const pick = a => a[Math.floor(Math.random() * a.length)];
@@ -32,13 +33,14 @@ export class Restaurants {
         pose: 'idle', till: sp.till, kitchen: !!sp.kitchen, staff: true });
     }
     // a few people eating (more at lunch and teatime)
-    const hr = this.G.world.hours(), busy = hr > 11.5 && hr < 14 || hr > 17 && hr < 20.5 ? 1 : hr > 7 && hr < 23 ? 0.5 : 0.1;
+    const hr = this.G.world.hours(), pubby = s.food === 'pub';
+    const busy = pubby ? (hr >= 17 && hr < 23.5 ? 1 : hr >= 12 && hr < 17 ? 0.5 : hr >= 11 ? 0.25 : 0.08) : hr > 11.5 && hr < 14 || hr > 17 && hr < 20.5 ? 1 : hr > 7 && hr < 23 ? 0.5 : 0.1;
     const seats = P.seats.slice(), room = P.W * P.D;
     const n = Math.min(seats.length, Math.round(Math.min(10, 1 + room / 28) * busy * (0.5 + R() * 0.6)));
     for (let i = 0; i < n; i++) {
       const sp = seats.splice(Math.floor(R() * seats.length), 1)[0], look = People.randomLook(R); look.umbrella = 0;
       const [x, z] = toW(sp.x, sp.y);
-      out.push({ id: `diner-${s.id}-${i}`, x, y: b.floor0 + 0.5 - 0.87 * (look.h || 1), z, heading: head(sp.dx, sp.dy), look, visible: true, speed: 0, t: R() * 9, phase: 0, pose: R() < 0.25 ? 'phone' : 'seated', seat: sp });
+      out.push({ id: `diner-${s.id}-${i}`, x, y: b.floor0 + (sp.stool ? 0.78 : 0.5) - 0.87 * (look.h || 1), z, heading: head(sp.dx, sp.dy), look, visible: true, speed: 0, t: R() * 9, phase: 0, pose: R() < 0.25 ? 'phone' : 'seated', seat: sp });
     }
     for (const a of out) if (a.pose === 'phone') { a.pose = 'seated'; }
     return (b.people = out);
@@ -59,7 +61,7 @@ export class Restaurants {
     // your order coming up
     if (o && o.site === b.site && !o.ready && G.time >= o.readyAt) {
       o.ready = true;
-      G.hud?.toast?.(`Order ${o.number}, ready!`, 3);
+      if (!o.pub) G.hud?.toast?.(`Order ${o.number}, ready!`, 3);
       if (o.mode === 'in') this.eatIn(b, o); else this.takeAway(o);
     }
   }
@@ -80,7 +82,7 @@ export class Restaurants {
     const el = document.createElement('div'); el.id = 'orderPanel';
     el.innerHTML = `<div class="op-card"><div class="op-head"><div><b>${esc(site.title)}</b><small>${esc(pick(LINES.hello))}</small></div><span class="op-cash"></span></div>
       <div class="op-items"></div>
-      <div class="op-foot"><div class="op-basket">Nothing yet</div><div class="op-btns"><button class="op-cancel">Cancel</button><button class="op-take" disabled>Takeaway</button><button class="op-in" disabled>Eat in</button></div></div></div>`;
+      <div class="op-foot"><div class="op-basket">Nothing yet</div><div class="op-btns"><button class="op-cancel">Cancel</button>${site.food === 'pub' ? '' : '<button class="op-take" disabled>Takeaway</button>'}<button class="op-in" disabled>${site.food === 'pub' ? 'Buy' : 'Eat in'}</button></div></div></div>`;
     document.body.appendChild(el);
     const basket = new Map();
     const list = el.querySelector('.op-items');
@@ -104,14 +106,15 @@ export class Restaurants {
     refresh();
     const go = mode => {
       const t = total(); if (!basket.size || !spend(me, t)) return;
-      const items = [...basket].map(([i, n]) => [menu.items[i][0], n]);
+      const items = [...basket].map(([i, n]) => [menu.items[i][0], n]), units = [...basket].reduce((a, [i, n]) => a + (menu.items[i][2] || 0) * n, 0);
       const n = ++this.number;
-      this.order = { site, items, total: t, mode, number: n, readyAt: G.time + 4 + Math.random() * 4 + items.length * 0.6, ready: false, done: false, word: FOOD_WORD[site.food] || 'food' };
-      G.hud?.toast?.(`${pick(LINES.thanks)} Order ${n} · ${price(t)} paid`, 4);
+      const pubOrder = site.food === 'pub';
+      this.order = { site, items, total: t, mode, number: n, units, pub: pubOrder, readyAt: G.time + (pubOrder ? 3 : 4 + Math.random() * 4 + items.length * 0.6), ready: false, done: false, word: FOOD_WORD[site.food] || 'food' };
+      G.hud?.toast?.(pubOrder ? `${pick(BAR)} ${price(t)}, ta.` : `${pick(LINES.thanks)} Order ${n} · ${price(t)} paid`, 4);
       this.close();
     };
     el.querySelector('.op-cancel').onclick = () => this.close();
-    el.querySelector('.op-take').onclick = () => go('away');
+    if (el.querySelector('.op-take')) el.querySelector('.op-take').onclick = () => go('away');
     el.querySelector('.op-in').onclick = () => go('in');
     this.panel = el; this.panelTill = till; this.panelSite = site;
   }
@@ -119,7 +122,14 @@ export class Restaurants {
   describe(items) { return items.map(([nm, n]) => (n > 1 ? n + ' × ' : '') + nm.toLowerCase()).join(', '); }
   // eat in: you sit at a free table and eat; a quarter of an hour goes by
   eatIn(b, o) {
-    const G = this.G, I = this.I;
+    const G = this.G, I = this.I, me = G.brothers.me;
+    if (o.pub) {
+      // at the bar: no fade, you just have it; a few go to your head
+      me.drunk = Math.min(12, (me.drunk || 0) + o.units);
+      const d = me.drunk;
+      G.hud?.toast?.(`${me.short} has ${this.describe(o.items)}.${d >= 9 ? ' Steady on: you\'re hammered.' : d >= 6 ? ' You\'re well on your way.' : d >= 3 ? ' You\'re feeling it.' : ''}`, 4);
+      o.done = true; this.order = null; return;
+    }
     I.fadeOut(() => {
       const w = G.world; w.setHour((w.hours() + 0.25) % 24);
       G.hud?.toast?.(`You sit down and eat: ${this.describe(o.items)}. Lovely.`, 5);

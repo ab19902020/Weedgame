@@ -805,7 +805,45 @@ const ITEM = {
   fireplace: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, 0x7a6a5a); gb.box('plain', f, -it.w / 2 + 0.3, it.w / 2 - 0.3, it.d / 2 - 0.01, it.d / 2 + 0.001, 0.1, it.h - 0.35, 0x161616); gb.box('glow', f, -0.3, 0.3, it.d / 2 - 0.2, it.d / 2 - 0.05, 0.12, 0.35, 0xff8a3a, { flat: 1.5 }); gb.box('plain', f, -it.w / 2 - 0.1, it.w / 2 + 0.1, -it.d / 2, it.d / 2 + 0.08, it.h, it.h + 0.08, 0x5b3a22); },
   pubtable: (gb, it, f) => { gb.cyl('plain', f, 0, 0, it.w / 2, it.h - 0.04, it.h, it.col, 10); gb.box('plain', f, -0.04, 0.04, -0.04, 0.04, 0, it.h - 0.04, 0x2a2a2a); chairsRound(gb, f, it.w, it.d, it.chairs, it.chairCol); gb.cyl('plain', f, 0.1, 0.05, 0.04, it.h, it.h + 0.15, 0xd9a03a, 6); },
   banquette: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.45, it.col); gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, -it.d / 2 + 0.15, 0.45, it.h, shadeK(it.col, 0.9)); },
-  dartboard: (gb, it, f) => { gb.cyl('plain', { ...f, rot: f.rot }, 0, 0.0, 0.23, 0, 0.02, 0x1c1c1c, 12); gb.box('plain', f, -0.23, 0.23, -0.02, 0.0, -0.23, 0.23, 0x1c1c1c); gb.box('plain', f, -0.18, 0.18, 0.0, 0.005, -0.18, 0.18, 0xd9c9a0); gb.box('plain', f, -0.04, 0.04, 0.005, 0.008, -0.04, 0.04, 0xc0392b); },
+  dartboard: (gb, it, f) => {
+    // the cabinet doors open either side, the board (rings and segments as rings of quads), the number ring
+    gb.box('wood', f, -0.62, 0.62, -0.05, 0.0, -0.15, 0.77, 0x5b3a22); gb.box('plain', f, -0.36, 0.36, 0.0, 0.03, -0.06, 0.68, 0x1a1a1a);
+    const cx = 0, cz = 0.31, ring = (r0, r1, a0, a1, col, z) => { const seg = 3; for (let k = 0; k < seg; k++) { const t0 = a0 + (a1 - a0) * k / seg, t1 = a0 + (a1 - a0) * (k + 1) / seg; const P = (r, t) => [f.x + Math.cos(f.rot) * (cx + Math.cos(t) * r) - Math.sin(f.rot) * z, f.h + cz + Math.sin(t) * r, f.y + Math.sin(f.rot) * (cx + Math.cos(t) * r) + Math.cos(f.rot) * z]; const a = P(r0, t0), b = P(r1, t0), c = P(r1, t1), d = P(r0, t1); gb.quad('plain', a, [b[0] - a[0], b[1] - a[1], b[2] - a[2]], [d[0] - a[0], d[1] - a[1], d[2] - a[2]], col, { flat: 0.95 }); void c; } };
+    for (let i = 0; i < 20; i++) {
+      const a0 = (i - 0.5) / 20 * Math.PI * 2 + Math.PI / 2, a1 = a0 + Math.PI * 2 / 20, dark = i % 2 === 0;
+      ring(0.016, 0.099, a0, a1, dark ? 0x1c1c1c : 0xe8dcc0, 0.032); ring(0.099, 0.107, a0, a1, dark ? 0xc0392b : 0x2e8b4a, 0.033);
+      ring(0.107, 0.162, a0, a1, dark ? 0x1c1c1c : 0xe8dcc0, 0.032); ring(0.162, 0.17, a0, a1, dark ? 0xc0392b : 0x2e8b4a, 0.033);
+      ring(0.17, 0.225, a0, a1, 0x161616, 0.031);
+    }
+    ring(0.0064, 0.016, 0, Math.PI * 2, 0x2e8b4a, 0.034); ring(0, 0.0064, 0, Math.PI * 2, 0xc0392b, 0.035);
+  },
+  oche: (gb, it, f) => gb.box('plain', f, -it.w / 2, it.w / 2, -0.025, 0.025, 0.001, 0.02, 0xc9b26a, { skip: 'd' }),
+  beam: (gb, it, f) => gb.box('wood', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col, { skip: 't' }),
+  pooltable: (gb, it, f) => {
+    const L = it.w, Wd = it.d, h = it.h, cloth = 0x1f6b3a, rail = it.col;
+    // legs and the body, the slate with its cloth, cushions, rails, pockets, a racked set of balls
+    for (const [u, v] of [[-L / 2 + 0.12, -Wd / 2 + 0.12], [L / 2 - 0.12, -Wd / 2 + 0.12], [-L / 2 + 0.12, Wd / 2 - 0.12], [L / 2 - 0.12, Wd / 2 - 0.12]]) gb.box('plain', f, u - 0.07, u + 0.07, v - 0.07, v + 0.07, 0, h - 0.18, shadeK(rail, 0.8));
+    gb.box('plain', f, -L / 2 + 0.05, L / 2 - 0.05, -Wd / 2 + 0.05, Wd / 2 - 0.05, h - 0.32, h - 0.04, shadeK(rail, 0.9));
+    gb.box('plain', f, -L / 2 + 0.1, L / 2 - 0.1, -Wd / 2 + 0.1, Wd / 2 - 0.1, h - 0.04, h, cloth, { skip: 'd' });
+    for (const s2 of [-1, 1]) { gb.box('plain', f, -L / 2 + 0.14, L / 2 - 0.14, s2 * (Wd / 2 - 0.1) - (s2 > 0 ? 0.04 : 0), s2 * (Wd / 2 - 0.1) + (s2 > 0 ? 0 : 0.04), h, h + 0.035, shadeK(cloth, 0.85)); gb.box('plain', f, s2 * (L / 2 - 0.1) - (s2 > 0 ? 0.04 : 0), s2 * (L / 2 - 0.1) + (s2 > 0 ? 0 : 0.04), -Wd / 2 + 0.14, Wd / 2 - 0.14, h, h + 0.035, shadeK(cloth, 0.85)); }
+    for (const s2 of [-1, 1]) { gb.box('wood', f, -L / 2, L / 2, s2 * Wd / 2 - (s2 > 0 ? 0.1 : 0), s2 * Wd / 2 + (s2 > 0 ? 0 : 0.1), h - 0.12, h + 0.045, rail); gb.box('wood', f, s2 * L / 2 - (s2 > 0 ? 0.1 : 0), s2 * L / 2 + (s2 > 0 ? 0 : 0.1), -Wd / 2, Wd / 2, h - 0.12, h + 0.045, rail); }
+    for (const [u, v] of [[-L / 2 + 0.11, -Wd / 2 + 0.11], [0, -Wd / 2 + 0.1], [L / 2 - 0.11, -Wd / 2 + 0.11], [-L / 2 + 0.11, Wd / 2 - 0.11], [0, Wd / 2 - 0.1], [L / 2 - 0.11, Wd / 2 - 0.11]]) gb.cyl('plain', { ...f, h: f.h }, u, v, 0.05, h + 0.046, h + 0.047, 0x0a0a0a, 10);
+    const r = 0.026, fx = L * 0.22;
+    let k = 0; for (let row = 0; row < 5; row++) for (let q = 0; q <= row; q++) { const u = fx + row * r * 1.75, v = (q - row / 2) * r * 2.02; const col = row === 2 && q === 1 ? 0x111111 : (k++ % 2 ? 0xd8b21c : 0xc0281e); gb.cyl('plain', f, u, v, r, h, h + r * 2, col, 8); }
+    gb.cyl('plain', f, -L * 0.3, 0, r, h, h + r * 2, 0xf4f2ea, 8);
+    // two cues lying on the table's end
+    for (const v of [-0.15, 0.15]) gb.box('wood', f, -L / 2 + 0.2, L / 2 - 0.3, v - 0.008, v + 0.008, h + 0.05, h + 0.066, 0xc49a68);
+  },
+  poollight: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, 0x1f4a30); gb.box('glow', f, -it.w / 2 + 0.05, it.w / 2 - 0.05, -it.d / 2 + 0.05, it.d / 2 - 0.05, -0.01, 0.0, 0xfff1d0, { flat: 1.5 }); for (const u of [-it.w / 3, it.w / 3]) gb.box('plain', f, u - 0.006, u + 0.006, -0.006, 0.006, it.h, it.h + 0.7, 0x2a2a2a); },
+  fruitmachine: (gb, it, f) => {
+    gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, 0x1d1d2a);
+    gb.box('glow', f, -it.w / 2 + 0.04, it.w / 2 - 0.04, it.d / 2, it.d / 2 + 0.005, 1.42, it.h - 0.05, 0xd84a9a, { flat: 1.25 });          // the lit top panel
+    gb.box('glow', f, -it.w / 2 + 0.06, it.w / 2 - 0.06, it.d / 2, it.d / 2 + 0.006, 1.0, 1.36, 0xfff4d8, { flat: 1.3 });            // the reels' window
+    for (let q = 0; q < 3; q++) { const u = -0.2 + q * 0.2; gb.box('plain', f, u - 0.08, u + 0.08, it.d / 2 + 0.006, it.d / 2 + 0.008, 1.06, 1.3, [0xc0392b, 0xf1c40f, 0x7d3c98][q]); }
+    gb.box('plain', f, -it.w / 2, it.w / 2, it.d / 2 - 0.05, it.d / 2 + 0.12, 0.88, 0.94, 0x2a2a3a);                               // the button deck
+    for (let q = 0; q < 4; q++) gb.box('glow', f, -0.24 + q * 0.16 - 0.05, -0.24 + q * 0.16 + 0.05, it.d / 2 + 0.02, it.d / 2 + 0.09, 0.94, 0.955, [0xff5a4a, 0x5aff8a, 0xffd25a, 0x5ab8ff][q], { flat: 1.2 });
+    gb.box('glow', f, -it.w / 2 + 0.06, it.w / 2 - 0.06, it.d / 2, it.d / 2 + 0.005, 0.15, 0.8, 0x5a3a8a, { flat: 0.9 });
+  },
   // ------------------------------------------------ church
   dais: (gb, it, f) => gb.box('wood', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col, { skip: 'd' }),
   altar: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.3, 0.3 + it.h, it.col); gb.box('plain', f, -it.w / 2 + 0.2, it.w / 2 - 0.2, it.d / 2, it.d / 2 + 0.005, 0.35, 0.3 + it.h - 0.05, it.col2); gb.box('plain', f, -0.02, 0.02, -0.02, 0.02, 0.3 + it.h, 0.3 + it.h + 0.5, 0xc9b26a); gb.box('plain', f, -0.15, 0.15, -0.02, 0.02, 0.3 + it.h + 0.32, 0.3 + it.h + 0.36, 0xc9b26a); },

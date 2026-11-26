@@ -547,28 +547,82 @@ function shop(P, s) {
 
 // ------------------------------------------------------------------ a pub
 function pub(P, s) {
-  const R = P.R, { W, D, fh } = P;
+  const R = P.R, { W, D } = P;
   P.site.doorX = clamp(s.doorX, 1.5, W - 1.5); P.exit.x = P.site.doorX;
-  const g = P.level(Math.min(fh - 0.2, 2.7));
-  const carpet = pick(R, [0x6b2f35, 0x2f4a3a, 0x3a3550, 0x5a3a2a]);
-  P.room(g, 'bar', 0, 0, W, D, { floor: ['carpet', carpet], wall: ['wallpaper', pick(R, [0xb99d6b, 0x9a6b5b, 0x7a8a6b])], windows: 'many', ceil: 0xe9dcc0, kind: 'pub', sill: 0.85 });
+  const ceil = clamp(P.fh - 0.15, 2.45, 3.0);
+  const g = P.level(ceil);
+  const carpet = pick(R, [0x6b2f35, 0x2f4a3a, 0x3a3550, 0x5a3a2a]), paper = pick(R, [0xb99d6b, 0x9a6b5b, 0x7a8a6b, 0x8a7a9a]);
+  P.room(g, 'bar', 0, 0, W, D, { floor: ['carpet', carpet], wall: ['wallpaper', paper], windows: 'many', ceil: 0xe9dcc0, kind: 'pub', sill: 0.85, winW: 1.2 });
   P.style = { pub: true };
   P.finish();
-  const r = P.find(g, 'bar');
-  // the bar along the back, the back bar behind it; tables and stools; benches round the walls; a fireplace
-  const barW = Math.min(W - 3, 7);
-  P.add(g, 'barcounter', W / 2, D - 1.9, barW, 0.7, 1.08, { col: 0x5b3a22 });
-  P.add(g, 'backbar', W / 2, D - 0.25, barW, 0.4, 2.1, { col: 0x5b3a22, solid: true });
-  wallItem(P, g, r, R() < 0.5 ? 'x0' : 'x1', 'fireplace', 1.5, 0.45, 1.2, { at: 0.5 });
-  let k = 0;
-  for (let y = 2.2; y < D - 3.8; y += 2.7) for (let x = 2.0; x < W - 1.8; x += 3.0) {
-    if (Math.abs(x - P.site.doorX) < 1.4 && y < 3) continue;
-    if (R() < 0.25) continue;
-    const jx = (R() - 0.5) * 0.6, jy = (R() - 0.5) * 0.5, round = (k++ + Math.floor(y)) % 2 === 0;
-    P.add(g, round ? 'pubtable' : 'table', x + jx, y + jy, round ? 0.75 : 0.9, round ? 0.75 : 0.75, round ? 0.74 : 0.74, { col: 0x5b3a22, chairs: round ? 2 : 4, chairCol: pick(R, [0x4a2f1c, 0x6b2f35, 0x2f4a3a]), rot: (R() - 0.5) * 0.4 });
+  const r = P.find(g, 'bar'); r.dado = true;
+  s.food = 'pub';
+  const wood = pick(R, [0x5b3a22, 0x4a2f1c, 0x6b4a2f]);
+  // the bar along the back, a staff aisle behind it, the back bar on the wall; closed at the ends
+  const barW = Math.min(W - 2.4, 8.5), bx = W / 2, yb = D - 1.95;
+  P.add(g, 'barcounter', bx, yb, barW, 0.7, 1.08, { col: wood });
+  P.add(g, 'backbar', bx, D - 0.25, barW + 0.6, 0.4, 2.1, { col: wood });
+  for (const sgn of [-1, 1]) P.add(g, 'box', bx + sgn * (barW / 2 + 0.3), (yb + 0.35 + D - 0.45) / 2, 0.6, D - 0.45 - yb - 0.35 + 0.05, 1.08, { col: wood });
+  P.tills = []; P.staffSpots = []; P.seats = []; P.games = [];
+  const n = clamp(Math.floor(barW / 2.6), 1, 3);
+  for (let k = 0; k < n; k++) { const x = bx - barW / 2 + barW * (k + 0.5) / n; P.tills.push({ x, y: yb - 0.95 }); P.staffSpots.push({ x, y: yb + 0.95, dx: 0, dy: -1, till: k }); }
+  // drinkers on the bar stools (barcounter draws them 0.45 m in front, 0.8 m apart)
+  for (let u = -barW / 2 + 0.4; u < barW / 2; u += 0.8) if (!P.tills.some(t => Math.abs(t.x - (bx + u)) < 0.6)) P.seats.push({ x: bx + u, y: yb - 0.8, dx: 0, dy: 1, stool: true });
+  // the front of the room, clear of the door and the queue at the bar
+  const front = yb - 1.7, used = [];
+  const free = (x0, y0, x1, y1) => x0 >= 0.15 && x1 <= W - 0.15 && y0 >= 0.15 && y1 <= front && Math.abs((x0 + x1) / 2 - P.site.doorX) > (x1 - x0) / 2 + 0.9 - 0.01 * 0 && !used.some(u => x0 < u[2] && x1 > u[0] && y0 < u[3] && y1 > u[1]);
+  const take = (a) => used.push(a);
+  take([P.site.doorX - 1.0, 0, P.site.doorX + 1.0, 1.6]);
+  // a pool table (2.0 x 1.1) with room to play round it, on the side away from the door
+  const tl = 2.0, tw = 1.1, mx = 1.15, my = 1.0;
+  const left = P.site.doorX > W / 2;
+  for (const cx of left ? [mx + tl / 2 + 0.1, W - mx - tl / 2 - 0.1, W / 2] : [W - mx - tl / 2 - 0.1, mx + tl / 2 + 0.1, W / 2]) {
+    const cy = clamp(front / 2 + 0.2, my + tw / 2, front - my - tw / 2);
+    const a = [cx - tl / 2 - mx, cy - tw / 2 - my, cx + tl / 2 + mx, cy + tw / 2 + my];
+    if (a[0] < 0 || a[2] > W || a[1] < 0 || a[3] > front + 0.3 || used.some(u => a[0] < u[2] && a[2] > u[0] && a[1] < u[3] && a[3] > u[1])) continue;
+    P.add(g, 'pooltable', cx, cy, tl, tw, 0.8, { col: wood });
+    P.add(g, 'poollight', cx, cy, 1.6, 0.4, 0.25, { base: ceil - 0.85, solid: false });
+    P.add(g, 'cuerack', 0, 0, 0, 0, 0, { skip: true, solid: false });
+    take(a); P.games.push({ type: 'pool', x: cx, y: cy - tw / 2 - 0.55, look: [cx, cy] });
+    break;
   }
-  wallItem(P, g, r, 'x0', 'banquette', Math.min(D - 4, 5), 0.6, 0.9, { col: 0x6b2f35, at: 0.3 });
-  wallItem(P, g, r, 'x1', 'dartboard', 0.5, 0.08, 0.5, { base: 1.5, solid: false, at: 0.2 });
+  // the dartboard on a side wall, the oche 2.37 m out from it
+  for (const side of left ? ['x0', 'x1'] : ['x1', 'x0']) {
+    const wx = side === 'x0' ? 0 : W, dir = side === 'x0' ? 1 : -1;
+    for (const cy of [front * 0.5, front * 0.3, front * 0.7]) {
+      const a = side === 'x0' ? [0, cy - 0.7, 3.1, cy + 0.7] : [W - 3.1, cy - 0.7, W, cy + 0.7];
+      if (cy < 1 || used.some(u => a[0] < u[2] && a[2] > u[0] && a[1] < u[3] && a[3] > u[1]) || Math.abs(cy - 0) < 0.5) continue;
+      P.add(g, 'dartboard', wx + dir * 0.06, cy, 0.62, 0.1, 0.62, { base: 1.42, solid: false, rot: dir > 0 ? -Math.PI / 2 : Math.PI / 2 });
+      P.add(g, 'oche', wx + dir * 2.37, cy, 0.6, 0.05, 0.01, { solid: false, rot: dir > 0 ? -Math.PI / 2 : Math.PI / 2 });
+      take(a); P.games.push({ type: 'darts', x: wx + dir * 2.6, y: cy, look: [wx, cy] });
+      break;
+    }
+    if (P.games.some(q => q.type === 'darts')) break;
+  }
+  // the fruit machine against the front wall, else a side wall
+  for (const [x, y, rot] of [[left ? 0.5 : W - 0.5, 0.45, 0], [0.45, front - 0.6, -Math.PI / 2], [W - 0.45, front - 0.6, Math.PI / 2], [left ? W - 0.5 : 0.5, 0.45, 0]]) {
+    const a = [x - 0.5, y - 0.5, x + 0.5, y + 0.5];
+    if (used.some(u => a[0] < u[2] && a[2] > u[0] && a[1] < u[3] && a[3] > u[1]) || a[0] < 0 || a[2] > W) continue;
+    P.add(g, 'fruitmachine', x, y, 0.7, 0.6, 1.85, { rot });
+    take([x - 0.8, y - 0.8, x + 0.8, y + 0.8]);
+    const dx = -Math.sin(rot), dy = Math.cos(rot);
+    P.games.push({ type: 'fruit', x: x + dx * 0.9, y: y + dy * 0.9, look: [x, y] });
+    break;
+  }
+  // a fireplace on a side wall if there's room, a banquette, tables and chairs in what's left
+  wallItem(P, g, r, R() < 0.5 ? 'x0' : 'x1', 'fireplace', 1.5, 0.45, 1.2, { at: 0.85 });
+  let k = 0;
+  for (let y = 1.2; y + 0.9 < front; y += 2.2) for (let x = 1.2; x < W - 1.0; x += 2.4) {
+    const round = (k++ + Math.floor(y)) % 2 === 0, hw = round ? 0.95 : 1.15, hd = round ? 0.95 : 1.0;
+    if (!free(x - hw, y - hd, x + hw, y + hd)) continue;
+    take([x - hw, y - hd, x + hw, y + hd]);
+    P.add(g, round ? 'pubtable' : 'table', x, y, round ? 0.75 : 0.9, 0.75, 0.74, { col: wood, chairs: round ? 2 : 4, chairCol: pick(R, [0x4a2f1c, 0x6b2f35, 0x2f4a3a]) });
+    if (round) { P.seats.push({ x, y: y - 0.62, dx: 0, dy: 1 }, { x, y: y + 0.62, dx: 0, dy: -1 }); }
+    else for (const u of [-0.225, 0.225]) P.seats.push({ x: x + u, y: y - 0.69, dx: 0, dy: 1 }, { x: x + u, y: y + 0.69, dx: 0, dy: -1 });
+  }
+  // dark beams across the ceiling, pictures and brass on the walls
+  for (let x = 1.2; x < W - 0.5; x += 1.7) P.add(g, 'beam', x, D / 2, 0.22, D, 0.2, { base: ceil - 0.2, solid: false, col: 0x3a2616 });
+  for (const side of ['y0', 'x0', 'x1']) for (let q = 0; q < 2; q++) wallItem(P, g, r, side, 'picture', 0.55 + R() * 0.3, 0.04, 0.45 + R() * 0.2, { base: 1.5, solid: false, tall: true, seed: Math.floor(R() * 16), at: 0.2 + q * 0.55, col: 0xc9b26a });
 }
 
 // ------------------------------------------------------------------ a church
