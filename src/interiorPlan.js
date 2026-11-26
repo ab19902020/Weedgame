@@ -367,6 +367,8 @@ function furnishHouse(P, s) {
     if (trap) P.add(g, 'post', P.site.doorX + 0.15, 0.7, 0.5, 0.4, 0.03, { solid: false });
     else wallItem(P, g, H, H.x0 > 0.1 ? 'x0' : 'x1', 'console', 0.8, 0.3, 0.8, { at: 0.08 });
   }
+  // the nicer houses: a dado rail in the hall, the living and dining rooms
+  if (!trap && (nice || P.R() < 0.4)) for (const r of [H, L, Dn]) if (r) r.dado = true;
   // pictures on the walls (not in the trap house)
   if (!trap) for (const r of [L, H, Dn, ...f.rooms.filter(q => /^bed/.test(q.name))]) if (r) for (let k = 0; k < (r === L ? 2 : 1); k++) wallItem(P, r.lv ? f : g, r, pick(R, sides), 'picture', 0.5 + R() * 0.5, 0.04, 0.4 + R() * 0.35, { base: 1.35, solid: false, tall: true, seed: Math.floor(R() * 16), col: pick(R, [0x2a2a2a, 0xc9b26a, 0xf2f1ec, 0x8a6a4a]) });
   // upstairs: beds (a mattress on the floor in the trap house), wardrobes, bedside tables; the bathroom suite
@@ -701,6 +703,10 @@ function food(P, s) {
     for (let x = a + 0.4; x < b - 0.2; x += 0.7) { P.add(g, 'stool', x, 0.85, 0.36, 0.36, 0.75, { col: st.seat }); seat(x, 0.85, 0, -1); }
   }
   wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'binunit', 0.9, 0.55, 1.15, { col: st.accent, at: 0.15 });
+  // framed pictures along the side walls, a feature panel in the house colour, plants by the door
+  for (const side of ['x0', 'x1']) for (let k = 0; k < Math.max(1, Math.floor(qy / 3)); k++) wallItem(P, g, r, side, 'picture', 0.9, 0.04, 0.65, { base: 1.5, solid: false, tall: true, seed: (s.seed + k * 7 + (side === 'x1' ? 3 : 0)) % 16, at: (k + 0.5) / Math.max(1, Math.floor(qy / 3)) * (qy / D), col: 0x2a2a2a });
+  r.feature = st.accent;
+  if (W >= 7) for (const sgn of [-1, 1]) { const x = P.site.doorX + sgn * 1.25; if (x > 0.5 && x < W - 0.5) P.add(g, 'plant', x, 0.55, 0.45, 0.45, 1.2, {}); }
   wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'condiments', 1.0, 0.5, 1.0, { col: 0xd8d6d0, at: 0.55 });
   if (cat === 'burger' && W >= 8) for (const sgn of [-1, 1]) P.add(g, 'orderkiosk', P.site.doorX + sgn * 1.7, 2.4, 0.55, 0.35, 1.75, { rot: Math.PI });
   if (cat === 'chippy' || cat === 'kebab') wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'fridge2', 0.9, 0.7, 1.9, { tall: true, at: 0.9, cat });

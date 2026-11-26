@@ -112,7 +112,7 @@ export function materials() {
 }
 // the overall brightness (and a warmer cast at night) for every interior
 export function setDaylight(day) {
-  const m = materials(), k = 1.0 + 0.1 * day;
+  const m = materials(), k = 0.94 + 0.1 * day;
   const warm = new THREE.Color(1.0, 0.97 - 0.03 * (1 - day), 0.92 - 0.06 * (1 - day)).multiplyScalar(k);
   for (const [n, mm] of Object.entries(m)) if (n !== 'glass' && n !== 'frosted') mm.color.copy(n === 'glow' || n === 'stained' || n === 'sign' || n.startsWith('menu:') ? new THREE.Color(1.6, 1.6, 1.6) : warm);
 }
@@ -153,9 +153,22 @@ class GB {
     const nx = u[1] * v[2] - u[2] * v[1], ny = u[2] * v[0] - u[0] * v[2], nz = u[0] * v[1] - u[1] * v[0], nl = Math.hypot(nx, ny, nz) || 1;
     const n = [nx / nl, ny / nl, nz / nl];
     const lu = Math.hypot(...u), lv = Math.hypot(...v);
-    const P = [p, [p[0] + u[0], p[1] + u[1], p[2] + u[2]], [p[0] + u[0] + v[0], p[1] + u[1] + v[1], p[2] + u[2] + v[2]], [p[0] + v[0], p[1] + v[1], p[2] + v[2]]];
     const U = o.uv || [[0, 0], [lu / rep, 0], [lu / rep, lv / rep], [0, lv / rep]];
     const u0 = o.uv0 || [0, 0];
+    if (o.sub && (o.sub[0] > 1 || o.sub[1] > 1)) {
+      // a grid of smaller quads (the corners of each shaded on its own)
+      const [nu, nv] = o.sub, at = (a, b) => [p[0] + u[0] * a + v[0] * b, p[1] + u[1] * a + v[1] * b, p[2] + u[2] * a + v[2] * b];
+      const uvAt = (a, b) => [U[0][0] + (U[1][0] - U[0][0]) * a + (U[3][0] - U[0][0]) * b, U[0][1] + (U[1][1] - U[0][1]) * a + (U[3][1] - U[0][1]) * b];
+      const b = this.buf(mat); C.set(col ?? 0xffffff);
+      const cache = new Map(), vtx = (i, j) => { const k = i * 1000 + j; let e = cache.get(k); if (!e) { const q = at(i / nu, j / nv); e = [q, this.shade(n, q, o), uvAt(i / nu, j / nv)]; cache.set(k, e); } return e; };
+      for (let i = 0; i < nu; i++) for (let j = 0; j < nv; j++) {
+        const Q = [vtx(i, j), vtx(i + 1, j), vtx(i + 1, j + 1), vtx(i, j + 1)];
+        for (const k of [0, 1, 2, 0, 2, 3]) { const [q, sh, t] = Q[k]; b.p.push(q[0], q[1], q[2]); b.c.push(C.r * sh, C.g * sh, C.b * sh); b.u.push(t[0] + u0[0], t[1] + u0[1]); }
+        this.tris += 2;
+      }
+      return;
+    }
+    const P = [p, [p[0] + u[0], p[1] + u[1], p[2] + u[2]], [p[0] + u[0] + v[0], p[1] + u[1] + v[1], p[2] + u[2] + v[2]], [p[0] + v[0], p[1] + v[1], p[2] + v[2]]];
     C.set(col ?? 0xffffff);
     const S = P.map(q => this.shade(n, q, o));
     for (const k of [0, 1, 2, 0, 2, 3]) {
@@ -172,7 +185,33 @@ class GB {
     const dir = n[1] > 0.5 ? 1.0 : n[1] < -0.5 ? 0.78 : 0.86 + 0.06 * n[0] + 0.03 * n[2];
     const dx = q[0] - c.cx, dy = q[2] - c.cy, fall = 0.66 + 0.46 * Math.exp(-(dx * dx + dy * dy) / (c.r * c.r));
     const hh = q[1] - c.h, low = Math.abs(n[1]) < 0.5 ? 0.78 + 0.22 * Math.min(1, Math.max(0, hh / 1.4)) : 1;
-    return dir * fall * low * c.k;
+    return dir * fall * low * c.k * (o.bake && c.room ? this.bake(n, q) : 1);
+  }
+  bake(n, q) {
+    const c = this.ctx, r = c.room, x = q[0], y = q[2], h = q[1] - c.h;
+    const dx0 = x - r.x0, dx1 = r.x1 - x, dy0 = y - r.y0, dy1 = r.y1 - y, ex = Math.max(0, Math.min(dx0, dx1)), ey = Math.max(0, Math.min(dy0, dy1));
+    let f = 1;
+    if (n[1] > 0.5) {
+      // the floor: darker along the skirting and into the corners, under furniture; light from the windows and the lamp
+      f *= (1 - 0.4 * Math.exp(-Math.min(ex, ey) / 0.32)) * (1 - 0.25 * Math.exp(-Math.hypot(ex, ey) / 0.45));
+      for (const it of c.items || []) {
+        const lx = (x - it.x) * it.c + (y - it.y) * it.s, ly = -(x - it.x) * it.s + (y - it.y) * it.c;
+        const d = Math.max(Math.abs(lx) - it.hw, Math.abs(ly) - it.hd);
+        if (d < it.soft) f *= 1 - it.k * (d <= 0 ? 1 : 1 - d / it.soft);
+      }
+      for (const w of c.wins || []) {
+        const along = w.o === 'h' ? x : y, dist = Math.abs((w.o === 'h' ? y : x) - w.c);
+        if (along > w.a - 0.2 && along < w.b + 0.2 && dist < 2.6) f *= 1 + 0.22 * Math.exp(-dist / 0.9) * Math.min(1, (Math.min(along - w.a, w.b - along) + 0.2) / 0.4);
+      }
+      if (c.pool) f *= 1 + c.pool * Math.exp(-((x - c.cx) ** 2 + (y - c.cy) ** 2) / (c.r * c.r * 0.35));
+    } else if (n[1] < -0.5) f *= (1 - 0.32 * Math.exp(-Math.min(ex, ey) / 0.3)) * (1 - 0.2 * Math.exp(-Math.hypot(ex, ey) / 0.4));
+    else {
+      // the walls: shaded at the foot, under the ceiling and into the corners
+      f *= (1 - 0.42 * Math.exp(-Math.max(0, h) / 0.22)) * (1 - 0.26 * Math.exp(-Math.max(0, (c.ceil ?? 2.5) - h) / 0.2));
+      f *= 1 - 0.34 * Math.exp(-(Math.abs(n[0]) > 0.5 ? ey : ex) / 0.28);
+      f *= 0.93 + 0.07 * Math.min(1, Math.max(0, h) / 2);   // a little lighter towards the top
+    }
+    return f;
   }
   // an axis-free box in an item's frame: centre (x, y), turned rot, u across, v depth (+v the front), h up
   box(mat, f, u0, u1, v0, v1, h0, h1, col, o = {}) {
@@ -271,10 +310,11 @@ export function buildInterior(P) {
     const next = P.levels[lv.i + 1];
     // floors and ceilings
     for (const r of lv.rooms) {
-      gb.ctx = lightOf(r, H, dim * (r.light ?? 1));
-      for (const [x0, y0, x1, y1] of subtract(r, lv.holes)) gb.quad(mat(r.floor), [x0, H, y0], [0, 0, y1 - y0], [x1 - x0, 0, 0], r.floor[1]);
+      gb.ctx = { ...lightOf(r, H, dim * (r.light ?? 1)), room: r, ceil: lv.ceil, items: shadowsIn(P, lv, r), wins: windowsOf(lv, r), pool: /warehouse|mall/.test(r.kind || '') ? 0 : 0.1 };
+      const g = (L, step) => Math.max(1, Math.min(48, Math.ceil(L / step))), st = Math.max(0.4, Math.sqrt((r.x1 - r.x0) * (r.y1 - r.y0)) / 40);
+      for (const [x0, y0, x1, y1] of subtract(r, lv.holes)) gb.quad(mat(r.floor), [x0, H, y0], [0, 0, y1 - y0], [x1 - x0, 0, 0], r.floor[1], { bake: true, sub: [g(y1 - y0, st), g(x1 - x0, st)] });
       const ceilMat = r.kind === 'office' || r.kind === 'shop' ? 'ceiling' : 'plain';
-      for (const [x0, y0, x1, y1] of subtract(r, next ? next.holes : [])) gb.quad(ceilMat, [x0, top, y0], [x1 - x0, 0, 0], [0, 0, y1 - y0], r.ceil);
+      for (const [x0, y0, x1, y1] of subtract(r, next ? next.holes : [])) gb.quad(ceilMat, [x0, top, y0], [x1 - x0, 0, 0], [0, 0, y1 - y0], r.ceil, { bake: true, sub: [g(x1 - x0, st * 1.6), g(y1 - y0, st * 1.6)] });
       // the stairwell's sides, between this ceiling and the next floor
       if (next) for (const h of next.holes) {
         const hh = next.h - top; if (hh <= 0.01) continue;
@@ -305,6 +345,24 @@ export function buildInterior(P) {
   return group;
 }
 
+// what casts a soft shadow on a room's floor: everything standing on it, as rectangles
+function shadowsIn(P, lv, r) {
+  const out = [];
+  for (const it of P.items) {
+    if (it.lv !== lv.i || it.solid === false || it.base > 0.05 || it.w < 0.15 || it.d < 0.15 || NO_SHADOW.has(it.type)) continue;
+    if (it.x < r.x0 - 1 || it.x > r.x1 + 1 || it.y < r.y0 - 1 || it.y > r.y1 + 1) continue;
+    const big = it.chairs ? 0.32 : 0;
+    out.push({ x: it.x, y: it.y, c: Math.cos(it.rot || 0), s: Math.sin(it.rot || 0), hw: it.w / 2 * 0.9 + big, hd: it.d / 2 * 0.9 + big, soft: Math.min(0.6, 0.25 + Math.max(it.w, it.d) * 0.08), k: it.h > 1.2 ? 0.55 : it.chairs ? 0.4 : 0.48 });
+  }
+  return out;
+}
+const NO_SHADOW = new Set(['rug', 'doormat', 'runner', 'floorlines', 'dais', 'gallery', 'post', 'clothes', 'cans', 'pizzaboxes', 'escalator', 'racking']);
+// the windows on a room's outer walls (they light the floor in front of them)
+function windowsOf(lv, r) {
+  const out = [];
+  for (const s of lv.walls) if (s.outer && s.rooms[0] === r) for (const o of s.open) if (o.kind === 'window' && o.bot < 1.6 && !o.cover) out.push({ o: s.o, c: s.c, a: o.a, b: o.b });
+  return out;
+}
 // a wall: its face on each side it has a room, cut round its openings, with skirting, reveals, frames, glass, doors
 function drawWall(gb, P, lv, s, H, top) {
   const horiz = s.o === 'h', ceil = top - H;
@@ -313,7 +371,7 @@ function drawWall(gb, P, lv, s, H, top) {
   s.rooms.forEach((r, i) => faces.push({ r, side: s.sides[i] }));
   const ops = s.open;
   for (const { r, side } of faces) {
-    gb.ctx = lightOf(r, H, (P.style.trap ? 0.8 : 1) * (r.light ?? 1));
+    gb.ctx = { ...lightOf(r, H, (P.style.trap ? 0.8 : 1) * (r.light ?? 1)), room: r, ceil };
     // the face lies at c + side*t, facing the room (side +1: room on the +c side)
     const c = s.c + side * t;
     const wm = mat(r.wall), wc = r.wall[1];
@@ -331,7 +389,10 @@ function drawWall(gb, P, lv, s, H, top) {
         for (const pp of [p0, p1]) { const fr2 = horiz ? { x: pp, y: c, rot: 0, h: H } : { x: c, y: pp, rot: Math.PI / 2, h: H }; gb.box('plain', fr2, -0.04, 0.04, -0.04, 0.04, 0, sf.top, 0x3b3b3b); }
         continue;
       }
-      face(gb, horiz, c, side, p0, p1, H + h0, H + h1, wm, wc);
+      const big = /warehouse|mall|church/.test(r.kind || ''), stp = big ? 1.4 : 0.45;
+      const sub = [Math.max(1, Math.min(40, Math.ceil((p1 - p0) / stp))), Math.max(1, Math.min(10, Math.ceil((h1 - h0) / (big ? 1.2 : 0.3))))];
+      face(gb, horiz, c, side, p0, p1, H + h0, H + h1, wm, wc, { bake: true, sub });
+      if (h1 >= ceil - 0.01 && !big && !/office|shop|food|unit/.test(r.kind || '')) face(gb, horiz, c + side * 0.02, side, p0, p1, top - 0.07, top, 'plain', 0xf7f6f1);
     }
     // skirting along the floor (not across doorways)
     if (!r.kind || !/warehouse|mall|church/.test(r.kind)) {
@@ -339,7 +400,11 @@ function drawWall(gb, P, lv, s, H, top) {
       const sk = [];
       for (const o of ops) { if (o.bot < 0.3) { if (o.a > sa) sk.push([sa, o.a]); sa = o.b; } }
       if (s.b > sa) sk.push([sa, s.b]);
-      for (const [p0, p1] of sk) face(gb, horiz, c + side * 0.012, side, p0, p1, H, H + 0.1, 'plain', P.style.trap ? 0xd8d0bc : 0xf6f5f0);
+      for (const [p0, p1] of sk) { face(gb, horiz, c + side * 0.012, side, p0, p1, H, H + 0.12, 'plain', P.style.trap ? 0xd8d0bc : 0xf6f5f0); face(gb, horiz, c + side * 0.016, side, p0, p1, H + 0.1, H + 0.12, 'plain', 0xfbfaf6); }
+      // a dado rail (and the wall below it a shade deeper) in the nicer rooms; a feature colour band in restaurants
+      const runs2 = []; { let a = s.a; for (const o of ops) { if (o.bot < 1.05) { if (o.a > a) runs2.push([a, o.a]); a = o.b; } } if (s.b > a) runs2.push([a, s.b]); }
+      if (r.dado) for (const [p0, p1] of runs2) { face(gb, horiz, c + side * 0.006, side, p0, p1, H + 0.12, H + 0.9, r.wall[0] || 'plaster', shadeK(r.wall[1], 0.9), { bake: true, sub: [Math.max(1, Math.ceil((p1 - p0) / 0.45)), 3] }); face(gb, horiz, c + side * 0.018, side, p0, p1, H + 0.88, H + 0.94, 'plain', 0xf6f5f0); }
+      if (r.feature) for (const [p0, p1] of runs2) { face(gb, horiz, c + side * 0.006, side, p0, p1, H + 0.12, H + 1.0, 'plain', r.feature, { bake: true, sub: [Math.max(1, Math.ceil((p1 - p0) / 0.45)), 3] }); face(gb, horiz, c + side * 0.014, side, p0, p1, H + 0.98, H + 1.03, 'metal', 0xc9cdd2); }
     }
     // openings: reveals through the wall's thickness, frames, glass or a door
     for (const o of ops) opening(gb, P, s, o, r, side, c, H, top);
@@ -445,7 +510,10 @@ function opening(gb, P, s, o, r, side, c, H, top) {
       const hx = fr.x + (-len / 2) * c2, hy = fr.y + (-len / 2) * s2;
       f2.x = hx; f2.y = hy;
       gb.box('plain', f2, 0.0, 0.04, 0.05, 0.05 + len - 0.04, 0, hgt - 0.02, lc);
-      gb.box('plain', f2, -0.03, 0.0, 0.05 + len - 0.16, 0.05 + len - 0.1, 0.98, 1.03, 0xb8b8b4);
+      // four raised panels each side, a lever handle
+      const L = len - 0.04, pc = shadeK(lc, 0.93);
+      for (const u of [-0.006, 0.04]) for (const [a, b, h0, h1] of [[0.1, L / 2 - 0.03, 0.12, 0.9], [L / 2 + 0.03, L - 0.1, 0.12, 0.9], [0.1, L / 2 - 0.03, 1.05, hgt - 0.14], [L / 2 + 0.03, L - 0.1, 1.05, hgt - 0.14]]) gb.box('plain', f2, u, u + 0.006, 0.05 + a, 0.05 + b, h0, h1, pc);
+      gb.box('plain', f2, -0.05, 0.0, 0.05 + len - 0.17, 0.05 + len - 0.08, 0.99, 1.02, 0xb8b8b4); gb.box('plain', f2, 0.04, 0.09, 0.05 + len - 0.17, 0.05 + len - 0.08, 0.99, 1.02, 0xb8b8b4);
     }
     return;
   }
@@ -487,7 +555,8 @@ function lights(gb, r, lv, top, style) {
   if (r.x1 - r.x0 < 0.9 || r.y1 - r.y0 < 0.9) return;
   if (style.trap) { gb.box('plain', f, -0.01, 0.01, -0.01, 0.01, top - 0.35, top, 0x3a3a3a); gb.cyl('glow', f, 0, 0, 0.05, top - 0.45, top - 0.35, 0xfff3d0, 6, { flat: 1.5 }); return; }
   if (r.name === 'bath' || /landing|hall|corridor/.test(r.name)) { gb.cyl('glow', f, 0, 0, 0.16, top - 0.06, top - 0.01, 0xfffbf0, 10, { flat: 1.35 }); return; }
-  // a pendant with a shade
+  // a pendant with a shade, hung from a ceiling rose
+  gb.cyl('plain', f, 0, 0, 0.16, top - 0.035, top - 0.002, 0xfbfaf6, 12); gb.cyl('plain', f, 0, 0, 0.09, top - 0.05, top - 0.035, 0xfbfaf6, 10);
   gb.box('plain', f, -0.008, 0.008, -0.008, 0.008, top - 0.55, top, 0x3a3a3a);
   gb.cyl('plain', f, 0, 0, 0.22, top - 0.78, top - 0.55, style.nice ? 0x2b2b2b : 0xe9e1d0, 10, { open: true });
   gb.cyl('glow', f, 0, 0, 0.07, top - 0.74, top - 0.62, 0xfff3d0, 6, { flat: 1.6 });
@@ -546,8 +615,10 @@ function chairsRound(gb, f, w, d, n, col) {
   for (const [u, v, r] of pos.slice(0, n)) {
     const c = Math.cos(f.rot), s = Math.sin(f.rot);
     const cf = { x: f.x + u * c - v * s, y: f.y + u * s + v * c, rot: f.rot + r, h: f.h };
-    gb.box('plain', cf, -0.22, 0.22, -0.22, 0.22, 0.43, 0.48, col); legs(gb, cf, 0.44, 0.44, 0.43, shadeK(col, 0.7), 0.04, 0.02);
-    gb.box('plain', cf, -0.22, 0.22, -0.24, -0.2, 0.48, 0.9, col);
+    gb.box('plain', cf, -0.21, 0.21, -0.2, 0.22, 0.43, 0.47, col); gb.box('plain', cf, -0.2, 0.2, -0.18, 0.21, 0.47, 0.485, shadeK(col, 1.08));
+    legs(gb, cf, 0.42, 0.42, 0.43, shadeK(col, 0.7), 0.035, 0.018);
+    for (const u of [-0.19, 0.17]) gb.box('plain', cf, u, u + 0.03, -0.22, -0.19, 0.47, 0.88, shadeK(col, 0.85));
+    gb.box('plain', cf, -0.2, 0.2, -0.225, -0.19, 0.74, 0.9, col); gb.box('plain', cf, -0.19, 0.19, -0.215, -0.2, 0.56, 0.6, col);
   }
 }
 const ITEM = {
@@ -599,6 +670,7 @@ const ITEM = {
   island: (gb, it, f) => { ITEM.units(gb, { ...it, d: it.d, island: true }, f); for (const sgn of [-0.6, 0, 0.6]) { const sf = { ...f, x: f.x + Math.cos(f.rot) * sgn - Math.sin(f.rot) * (it.d / 2 + 0.35), y: f.y + Math.sin(f.rot) * sgn + Math.cos(f.rot) * (it.d / 2 + 0.35) }; gb.cyl('plain', sf, 0, 0, 0.18, 0.62, 0.68, 0x2b2b2b, 8); gb.box('plain', sf, -0.02, 0.02, -0.02, 0.02, 0, 0.62, 0x9a9a98); } },
   table: (gb, it, f) => {
     gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, it.h - 0.04, it.h, it.col); legs(gb, f, it.w, it.d, it.h - 0.04, shadeK(it.col, 0.85), 0.06, 0.03);
+    gb.box('plain', f, -it.w / 2 + 0.05, it.w / 2 - 0.05, -it.d / 2 + 0.05, it.d / 2 - 0.05, it.h - 0.12, it.h - 0.04, shadeK(it.col, 0.8), { skip: 'td' });
     chairsRound(gb, f, it.w, it.d, it.chairs || 0, it.chairCol || 0x3b3b3b);
     if (it.clutter === 'scales') { gb.box('plain', f, -0.25, -0.05, -0.1, 0.1, it.h, it.h + 0.03, 0xb9bcbf); gb.box('glow', f, -0.2, -0.1, -0.09, -0.05, it.h + 0.03, it.h + 0.032, 0x7aff9a, { flat: 0.9 }); for (let k = 0; k < 6; k++) gb.box('plain', f, 0.05 + (k % 3) * 0.12, 0.13 + (k % 3) * 0.12, -0.15 + Math.floor(k / 3) * 0.15, -0.07 + Math.floor(k / 3) * 0.15, it.h, it.h + 0.04, 0x7fae5a); gb.box('plain', f, -0.45, -0.3, 0.05, 0.25, it.h, it.h + 0.05, 0xd9d9d9); }
     if (it.clutter === 'fruit') { gb.cyl('plain', f, 0, 0, 0.16, it.h, it.h + 0.06, 0xe9e4da, 10); for (let k = 0; k < 4; k++) gb.cyl('plain', f, Math.cos(k * 1.6) * 0.07, Math.sin(k * 1.6) * 0.07, 0.04, it.h + 0.06, it.h + 0.12, [0xd84a3a, 0xf1c40f, 0x7fae3a, 0xe67e22][k], 6); }
