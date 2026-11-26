@@ -6,10 +6,11 @@
 import * as THREE from 'three/webgpu';
 import { makePlan } from './interiorPlan.js';
 import { buildInterior, setDaylight } from './interiorMesh.js';
+import { Restaurants } from './restaurants.js';
 
 export const KIND_LABEL = { trap: 'Trap house', nice: 'House', terrace: 'Terraced house', semi: 'Semi-detached house', detached: 'Detached house', bungalow: 'Bungalow',
-  cottage: 'Cottage', warehouse: 'Warehouse', office: 'Offices', shop: 'Shop', pub: 'Pub', church: 'Church', mall: 'Shopping centre' };
-export const KIND_COLOUR = { trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1' };
+  cottage: 'Cottage', warehouse: 'Warehouse', office: 'Offices', shop: 'Shop', pub: 'Pub', church: 'Church', mall: 'Shopping centre', food: 'Takeaway' };
+export const KIND_COLOUR = { trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', food: '#f08a24' };
 const HOME = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage']);
 
 export class Interiors {
@@ -26,7 +27,8 @@ export class Interiors {
     this.ringMat = new THREE.MeshBasicNodeMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
     this.ringGeo = new THREE.RingGeometry(0.55, 0.78, 40).rotateX(-Math.PI / 2);
     this.discGeo = new THREE.CircleGeometry(0.55, 32).rotateX(-Math.PI / 2);
-    fetch('world/interiors.json').then(r => r.json()).then(j => this.load(j.sites)).catch(e => console.warn('interiors', e));
+    this.food = new Restaurants(G, this);   // staff, diners and ordering in the fast-food places (restaurants.js)
+    fetch('world/interiors.json').then(r => r.json()).then(j => { this.load(j.sites); G.fuel?.load(j.fuel || []); }).catch(e => console.warn('interiors', e));
   }
   load(sites) {
     for (const s of sites) {
@@ -45,6 +47,7 @@ export class Interiors {
     if (s.kind === 'trap') return `Trap house, ${s.street}`;
     if (s.kind === 'nice') return `The nicer house, ${s.street}`;
     if (s.kind === 'mall') return 'The Oracle';
+    if (s.kind === 'food') return s.name + (s.street && !/^A\d|^M\d/.test(s.street) ? ', ' + s.street : ', ' + s.district);
     if (s.name && !HOME.has(s.kind)) return s.name;
     return `${KIND_LABEL[s.kind] || 'Building'}${s.street ? ', ' + s.street : ''}`;
   }
@@ -98,6 +101,7 @@ export class Interiors {
       if (IN) {
         const [lx, ly] = this.toLocal(IN.site, me.x, me.z), P = IN.plan;
         if (Math.hypot(lx - P.exit.x, ly - P.exit.y) < 1.3 && me.y - IN.floor0 < 0.8) this.prompt = { text: 'Leave', act: 'leave', site: IN.site };
+        else if (IN.site.kind === 'food') { const till = this.food.tillAt(IN, me); if (till != null) this.prompt = { text: 'Order', act: 'order', site: IN.site, till }; }
       } else {
         let best = null, bd = 2.3;
         for (const s of this.sites) { const d = Math.hypot(s.dx - me.x, s.dz - me.z); if (d < bd) { bd = d; best = s; } }
@@ -106,6 +110,11 @@ export class Interiors {
     }
     // doors and markers outside the buildings near you
     if ((this._nearT = (this._nearT || 0) - dt) <= 0) { this._nearT = 0.5; this.refreshNear(me); }
+    // the restaurant you're in: staff, your order; the menu closes when you walk off; the takeaway bag on the HUD
+    if (IN && IN.site.kind === 'food') { this.food.update(dt, IN, me); if (this.food.panel && this.food.tillAt(IN, me) == null) this.food.close(); }
+    else if (this.food.panel) this.food.close();
+    if (this.food.order && !this.food.order.done && (!IN || IN.site !== this.food.order.site) && G.time > this.food.order.readyAt + 2) { const o = this.food.order; o.ready = true; this.food.takeAway(o); }
+    this.food.hud();
     const t = G.time || performance.now() / 1000;
     for (const [id, n] of this.near) {
       const s = this.byId.get(id);
@@ -114,6 +123,8 @@ export class Interiors {
       n.ring.scale.set(k, 1, k); n.ring.visible = n.disc.visible = !IN;
     }
   }
+  // the people inside the place you're in (staff, diners), drawn with the street's crowd
+  get people() { const b = this.at(this.G.brothers.me); return b && b.site.kind === 'food' ? this.food.people(b) : []; }
   refreshNear(me) {
     const R = 140;
     for (const s of this.sites) {
@@ -160,7 +171,7 @@ export class Interiors {
   // ---------------------------------------------------------------- going in and coming out
   use() {
     const p = this.prompt; if (!p || this.fade.dir) return false;
-    if (p.act === 'enter') this.enter(p.site); else this.leave(p.site);
+    if (p.act === 'enter') this.enter(p.site); else if (p.act === 'order') this.food.open(p.site, p.till); else this.leave(p.site);
     return true;
   }
   // trees and shrubs whose leaves reach into the building (the shell hides them from outside; inside it doesn't)
@@ -211,7 +222,7 @@ export class Interiors {
   // ---------------------------------------------------------------- the indoor camera: in the room, under the ceiling
   camera(b, c, dt, tx, ty, tz) {
     const G = this.G, s = b.site, P = b.plan;
-    const big = !HOME.has(s.kind) && s.kind !== 'trap' && s.kind !== 'nice';
+    const big = !HOME.has(s.kind) && !['trap', 'nice', 'food', 'shop'].includes(s.kind);
     const want = big ? [4.2, 6.5, 9][c.foot] ?? 4.2 : [2.3, 3.0, 3.6][c.foot] ?? 2.3;
     c.dist += (want - c.dist) * Math.min(1, dt * 3);
     c.pitch = Math.max(-0.15, Math.min(big ? 0.9 : 0.6, c.pitch));

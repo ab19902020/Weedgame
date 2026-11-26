@@ -82,9 +82,11 @@ export class Hud {
     places.forEach((place,index)=>select.add(new Option(place.name,String(index))));
     // the buildings you can go into, once their list has loaded (interiors.js)
     const addSites=()=>{ if(!G.interiors?.ready){ setTimeout(addSites,500); return; }
-      const grp=document.createElement('optgroup'); grp.label='Buildings you can go into ('+G.interiors.sites.length+')';
-      for(const s of [...G.interiors.sites].sort((a,b)=>(a.kind==='trap'?-2:a.kind==='nice'?-1:0)-(b.kind==='trap'?-2:b.kind==='nice'?-1:0)||a.title.localeCompare(b.title))){ const i=places.length; places.push({name:s.title,x:s.dx,z:s.dz}); grp.appendChild(new Option(s.title+' · '+s.district,String(i))); }
-      select.appendChild(grp); };
+      const group=(label,list,name)=>{ const grp=document.createElement('optgroup'); grp.label=label+' ('+list.length+')'; for(const s of list){ const i=places.length; places.push({name:name(s),x:s.dx??s.x,z:s.dz??s.z}); grp.appendChild(new Option(name(s)+' · '+s.district,String(i))); } select.appendChild(grp); };
+      const sites=G.interiors.sites;
+      group('Takeaways',sites.filter(s=>s.kind==='food').sort((a,b)=>a.title.localeCompare(b.title)),s=>s.title);
+      if(G.fuel?.ready) group('Petrol stations',[...G.fuel.stations].sort((a,b)=>a.title.localeCompare(b.title)),s=>s.title);
+      group('Buildings you can go into',sites.filter(s=>s.kind!=='food').sort((a,b)=>(a.kind==='trap'?-2:a.kind==='nice'?-1:0)-(b.kind==='trap'?-2:b.kind==='nice'?-1:0)||a.title.localeCompare(b.title)),s=>s.title); };
     addSites();
     select.onchange = () => {
       if (!select.value) return;
@@ -177,6 +179,7 @@ export class Hud {
     this.atlas.minimap(c, S, dpr, me, scale, rot, c => {
       this.nav.draw(c, x => x, z => z, 1 / scale);
       if (G.interiors?.ready) { const reach = (S / 2) / scale; for (const site of G.interiors.sites) { if (Math.abs(site.dx - me.x) > reach || Math.abs(site.dz - me.z) > reach) continue; siteDot(c, site.dx, site.dz, site.kind, 1 / scale); } }
+      if (G.fuel?.ready) { const reach = (S / 2) / scale; for (const st of G.fuel.stations) { if (Math.abs(st.x - me.x) > reach || Math.abs(st.z - me.z) > reach) continue; siteDot(c, st.x, st.z, 'fuel', 1 / scale); } }
       const reach = R / scale;
       for (const v of G.traffic.list) {
         if (Math.abs(v.x - me.x) > reach || Math.abs(v.z - me.z) > reach) continue;
@@ -277,12 +280,18 @@ export class Hud {
       const x = (site.dx - V.x) * V.s + W / 2, z = (site.dz - V.z) * V.s + H / 2; if (x < -200 || x > W + 200 || z < -60 || z > H + 60) continue;
       const key = site.kind === 'trap' || site.kind === 'nice' || site.kind === 'mall';
       avoid.push([x, z, 22, 22]);
+      if (site === G.interiors.sites[0] && G.fuel?.ready) for (const st of G.fuel.stations) { const fx = (st.x - V.x) * V.s + W / 2, fz = (st.z - V.z) * V.s + H / 2; avoid.push([fx, fz, 22, 22]); if (V.s >= 0.12) avoid.push([fx + 13 + st.title.length * 3.3, fz, st.title.length * 6.6 + 6, 18]); }
       if (V.s >= 0.22 || (key && V.s >= 0.04)) { const w = site.title.length * (key ? 7.4 : 6.6); avoid.push([x + 13 + w / 2, z, w + 6, 18]); }
     }
     this.atlas.atlas(c, V, W, H, {
       dpr, avoid, ovTile: (i, j) => this.ovTile(i, j),
       over: (c, X, Z, s) => {
         nav.draw(c, X, Z);
+        if (G.fuel?.ready) for (const st of G.fuel.stations) {
+          const x = X(st.x), z = Z(st.z); if (x < -30 || x > W + 30 || z < -30 || z > H + 30) continue;
+          siteIcon(c, x, z, 'fuel', s < 0.05 ? 6 : 8.5);
+          if (s >= 0.12) { c.font = '700 11px system-ui'; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; c.strokeText(st.title, x + 13, z); c.fillStyle = '#1d2420'; c.fillText(st.title, x + 13, z); }
+        }
         if (G.interiors?.ready) for (const site of G.interiors.sites) {
           const x = X(site.dx), z = Z(site.dz); if (x < -30 || x > W + 30 || z < -30 || z > H + 30) continue;
           const key = site.kind === 'trap' || site.kind === 'nice' || site.kind === 'mall';
@@ -325,6 +334,7 @@ export class Hud {
     row('Character preview', ['cal', 'leon', 'officer', 'civilian', 'off'].map(role => btn(role, () => { rigs.previewRole = role === 'off' ? null : role; if (ROLES[role]?.hero) rigs.previewClip = ROLES[role].idle; }, 'preview-' + role)));
     for (const hero of ['cal', 'leon']) row(hero === 'cal' ? 'Cal' : 'Leon', ROLES[hero].clips.map(clip => btn(clip.replace(/_0?(\d)$/, ' $1').replace(/_/g, ' '), () => { rigs.previewRole = hero; rigs.previewClip = clip; }, hero + '-' + clip)));
     row('Animation', ['Idle', 'Walk', 'Run', 'Jump', 'Swim', 'WeaponHold'].map(clip => btn(clip, () => { if (!rigs.previewRole || ROLES[rigs.previewRole]?.hero) rigs.previewRole = 'civilian'; rigs.previewClip = clip; }, 'anim-' + clip.toLowerCase())));
+    row('Money & fuel', [btn('Add £500', () => { const b = G.brothers.me; b.cash = (b.cash ?? 1500) + 500; this.toast(`${b.short} has £${b.cash.toFixed(2)}`); }), btn('Fill this car', () => { const v = G.brothers.vehicleOf(G.brothers.me); if (v) { v.fuel = 1; this.toast('Tank filled'); } }), btn('Empty this car', () => { const v = G.brothers.vehicleOf(G.brothers.me); if (v) v.fuel = 0.02; })]);
     row('Time', [6, 8, 12, 16, 18.5, 21, 0].map(h => btn(String(h).replace('.5', ':30'), () => w.setHour(h), 'time-' + h)));
     row('Speed', [1, 30, 120, 600].map(s => btn(s + '×' + (w.s.scale === s ? ' ✓' : ''), () => w.s.scale = s, 'speed-' + s)));
     row('Weather', Object.keys(STATES).map(k => btn(k + (w.stateName() === k ? ' ✓' : ''), () => w.force(k), 'weather-' + k)));

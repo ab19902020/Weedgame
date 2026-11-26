@@ -21,6 +21,7 @@ import { Parking, Buses } from './services.js';
 import { Atmos } from './atmos.js';
 import { Landmarks } from './landmarks.js';
 import { Interiors } from './interiors.js';
+import { Fuel } from './fuel.js';
 import { Audio } from './audio.js';
 import { Save } from './save.js';
 import { Perf } from './perf.js';
@@ -83,6 +84,7 @@ G.trains = new Trains(G);
 G.stations = new Stations(G);   // platforms at every station of the lines passengers ride (stations.js)
 G.landmarks = new Landmarks(G);
 G.atmos = new Atmos(G);
+G.fuel = new Fuel(G);             // every car's tank, the fuel gauge and the petrol stations (fuel.js)
 G.interiors = new Interiors(G);   // enterable buildings: doors, interiors, the indoor camera (interiors.js)
 G.shelteredAt = (x, y, z) => !!G.brothers?.me?.inside || G.atmos.sheltered(x, y, z);
 G.coverNear = (x, z, r) => G.atmos.coverNear(x, z, r);
@@ -127,7 +129,7 @@ G.controller=new Controller(G);
 // the brothers' own cars are Range Rovers (older saves had a hatch and an estate under these ids)
 const OWN = { 'cal-car': 'rangerover', 'leon-car': 'rangerover' };
 for (const sv of G.save.vehicles) {
-  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: OWN[sv.id] || sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined });
+  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: OWN[sv.id] || sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined, fuel: typeof sv.fuel === 'number' ? sv.fuel : undefined });
   if (sv.id.startsWith('p:')) G.save.taken.add(sv.id);
 }
 if (!G.traffic.byId.has('cal-car')) {
@@ -225,6 +227,7 @@ function step(dt, render) {
   G.atmos.updateNearLights(G.camera.position);
   G.landmarks.update();
   G.interiors.update(dt);
+  G.fuel.update(dt);
   if ((G._treeT = (G._treeT || 0) - dt) <= 0) {
     G._treeT = 1; let n = 0;
     for (const t of G.tiles.tiles.values()) if (t.trees && Math.abs(t.data.ox + 128 - me.x) < 300 && Math.abs(t.data.oz + 128 - me.z) < 300) for (const [x, z] of t.trees) if (Math.abs(x - me.x) < 25 && Math.abs(z - me.z) < 25) n++;
@@ -237,7 +240,7 @@ function step(dt, render) {
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.budget.vehicleDist);
   G.trains.draw(cam, Math.max(600, G.budget.vehicleDist * 2));
-  const actors = [B.actor[B.active], ...G.transit.people, ...G.neighbourhood.actors]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
+  const actors = [B.actor[B.active], ...G.transit.people, ...G.neighbourhood.actors, ...G.interiors.people]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
   const rigs = G.people.rigs;
   if (rigs.previewRole) {
     const heading = B.cam.yaw;

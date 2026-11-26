@@ -567,7 +567,7 @@ export class MapView {
 }
 
 // ------------------------------------------------------------------ enterable buildings on the maps
-const SITE = { trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', home: '#2a9d8f' };
+const SITE = { trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', home: '#2a9d8f', food: '#f08a24', fuel: '#1d6fa5' };
 const siteCol = k => SITE[k] || SITE.home;
 // a rounded square in the kind's colour with a white glyph: a house, a crate, an office block, a bag, a glass, a cross
 export function siteIcon(c, x, z, kind, r) {
@@ -582,6 +582,8 @@ export function siteIcon(c, x, z, kind, r) {
   else if (kind === 'shop' || kind === 'mall') { c.moveTo(-k * 0.8, -k * 0.25); c.lineTo(k * 0.8, -k * 0.25); c.lineTo(k * 0.65, k * 0.95); c.lineTo(-k * 0.65, k * 0.95); c.closePath(); c.fill(); c.beginPath(); c.arc(0, -k * 0.25, k * 0.42, Math.PI, 0); c.stroke(); }
   else if (kind === 'pub') { c.moveTo(-k * 0.55, -k * 0.9); c.lineTo(k * 0.55, -k * 0.9); c.lineTo(k * 0.4, k * 0.95); c.lineTo(-k * 0.4, k * 0.95); c.closePath(); c.fill(); }
   else if (kind === 'church') { c.fillRect(-k * 0.16, -k, k * 0.32, k * 2); c.fillRect(-k * 0.6, -k * 0.45, k * 1.2, k * 0.3); }
+  else if (kind === 'food') { c.beginPath(); c.arc(0, -k * 0.15, k * 0.8, Math.PI, 0); c.fill(); c.fillRect(-k * 0.85, k * 0.05, k * 1.7, k * 0.22); c.fillRect(-k * 0.8, k * 0.4, k * 1.6, k * 0.42); }
+  else if (kind === 'fuel') { c.fillRect(-k * 0.75, -k * 0.9, k * 1.0, k * 1.8); c.fillStyle = siteCol(kind); c.fillRect(-k * 0.55, -k * 0.7, k * 0.6, k * 0.5); c.fillStyle = '#ffffff'; c.fillRect(k * 0.3, -k * 0.45, k * 0.2, k * 1.1); c.fillRect(k * 0.25, -k * 0.6, k * 0.45, k * 0.18); }
   else { c.moveTo(0, -k); c.lineTo(k, -k * 0.05); c.lineTo(k * 0.7, -k * 0.05); c.lineTo(k * 0.7, k * 0.9); c.lineTo(-k * 0.7, k * 0.9); c.lineTo(-k * 0.7, -k * 0.05); c.lineTo(-k, -k * 0.05); c.closePath(); c.fill(); if (kind === 'trap') { c.fillStyle = siteCol(kind); c.fillRect(-k * 0.22, k * 0.25, k * 0.44, k * 0.65); } }
   c.restore();
 }

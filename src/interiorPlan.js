@@ -4,6 +4,8 @@
 // you round it.
 // Local frame: x along the front wall (0..W), y from the front wall inwards (0..D), h up from the ground floor.
 
+import { STYLE } from './food.js';
+
 export function rng(seed) { let s = (seed >>> 0) || 1; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
 const pick = (R, a) => a[Math.floor(R() * a.length) % a.length];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -638,7 +640,73 @@ function mall(P, s) {
   }
 }
 
-const LAYOUT = { trap: house, nice: house, terrace: house, semi: house, detached: house, cottage: house, bungalow, warehouse, office, shop, pub, church, mall };
+// ------------------------------------------------------------------ a fast-food place: dining room, counter with
+// tills and menu boards over it, staff behind, the kitchen along the back wall
+function food(P, s) {
+  const R = P.R, { W, D } = P, cat = s.food || 'burger', st = STYLE[cat] || STYLE.burger;
+  const ceil = Math.max(2.7, Math.min(P.fh - 0.15, 3.3));
+  P.site.doorX = clamp(s.doorX, 1.3, W - 1.3); P.exit.x = P.site.doorX; P.frontW = 0.9; P.frontTop = 2.2;
+  const g = P.level(ceil);
+  P.room(g, 'restaurant', 0, 0, W, D, { floor: ['tile', st.floor], wall: ['plaster', st.wall], windows: 'many', sill: 0.4, head: Math.min(2.4, ceil - 0.3), ceil: 0xf2f2ee, kind: 'food', winW: 1.6 });
+  P.style = { food: cat, st };
+  P.finish();
+  const r = P.find(g, 'restaurant');
+  // the counter right across the room (staff only behind it), tills along it
+  const back = clamp(D * 0.36, 3.2, 5.2), yc = D - back;
+  P.add(g, 'foodcounter', W / 2, yc + 0.35, W, 0.7, 1.05, { col: st.accent, top: 0xd8d6d0, cat });
+  const n = clamp(Math.floor((W - 1) / 2.3), 1, 4);
+  P.tills = []; P.staffSpots = []; P.seats = [];
+  for (let k = 0; k < n; k++) {
+    const x = W * (k + 0.5) / n;
+    P.add(g, 'till', x, yc + 0.45, 0.42, 0.36, 0.32, { base: 1.05, solid: false, rot: Math.PI });
+    P.tills.push({ x, y: yc - 0.55 }); P.staffSpots.push({ x, y: yc + 1.05, dx: 0, dy: -1, till: k });
+  }
+  // menu boards hung over the back of the counter, facing the customers
+  const nb = clamp(Math.round(W / 3.2), 1, 4), bw = Math.min(2.6, (W - 0.6) / nb - 0.2), bh = Math.min(0.9, ceil - 2.15);
+  for (let k = 0; k < nb; k++) P.add(g, 'menuboard', W * (k + 0.5) / nb, yc + 0.9, bw, 0.06, bh, { rot: Math.PI, base: ceil - bh - 0.12, solid: false, cat, panel: k, panels: nb });
+  // the kitchen along the back wall, by the kind of place
+  const K = { burger: ['grill', 'fryer', 'fryer', 'warmer', 'drinks'], chicken: ['fryer', 'fryer', 'fryer', 'warmer', 'drinks'], piri: ['grill', 'grill', 'steel', 'drinks'],
+    sub: ['breadoven', 'steel', 'fridge2', 'drinks'], bakery: ['breadoven', 'breadoven', 'breadrack', 'coffee'], chippy: ['fryrange', 'steel', 'fridge2'],
+    kebab: ['doner', 'doner', 'grill', 'fryer', 'steel'], pizza: ['pizzaoven', 'steel', 'fridge2', 'steel'], mex: ['grill', 'steel', 'warmer', 'drinks'] }[cat] || ['steel'];
+  const KW = { grill: 1.3, fryer: 0.8, warmer: 1.2, drinks: 1.0, steel: 1.4, breadoven: 1.0, fridge2: 0.9, breadrack: 0.9, coffee: 0.9, fryrange: 2.8, doner: 0.7, pizzaoven: 1.6 };
+  let at = 0.06;
+  for (const t of K) { const it = wallItem(P, g, r, 'y1', t, KW[t] || 1, t === 'pizzaoven' ? 1.3 : 0.75, t === 'drinks' || t === 'fridge2' || t === 'breadrack' ? 1.9 : 0.95, { at, cat, tall: t === 'drinks' || t === 'fridge2' || t === 'breadrack' }); if (it) P.staffSpots.push({ x: it.x, y: it.y - 0.95, dx: 0, dy: 1, kitchen: true }); at = Math.min(0.94, at + 0.22); }
+  // on the counter: a glass case of bakes, or a sub line
+  if (cat === 'bakery' || cat === 'sub' || cat === 'chippy') P.add(g, cat === 'sub' ? 'subline' : 'pastrycase', W / 2 + (n > 1 ? W / (2 * n) : 0) * 0, yc + 0.35, Math.min(W * 0.4, 2.4), 0.6, 0.45, { base: 1.05, solid: false, cat });
+  // the dining room: booths along the side walls, tables in the middle, a window bar, condiments and a bin
+  const qy = yc - 1.7;                               // keep the queue clear in front of the counter
+  const aisle = (x, w) => Math.abs(x - P.site.doorX) < 0.95 + w / 2;
+  const seat = (x, y, hx, hy) => P.seats.push({ x, y, dx: hx, dy: hy });
+  if (W >= 6.4) for (const side of [0, 1]) {
+    const bx = side ? W - 0.62 : 0.62;
+    for (let y = 1.4; y + 1.6 < qy; y += 2.0) {
+      if (aisle(bx, 1.2)) continue;
+      P.add(g, 'banquette', bx, y, 1.2, 0.55, 0.95, { col: st.seat, rot: 0 });
+      P.add(g, 'table', bx, y + 0.8, 1.0, 0.7, 0.74, { col: 0xd8c29a, chairs: 0 });
+      P.add(g, 'banquette', bx, y + 1.6, 1.2, 0.55, 0.95, { col: st.seat, rot: Math.PI });
+      seat(bx - 0.28, y + 0.05, 0, 1); seat(bx + 0.28, y + 0.05, 0, 1); seat(bx - 0.28, y + 1.55, 0, -1); seat(bx + 0.28, y + 1.55, 0, -1);
+    }
+  }
+  const mx0 = W >= 6.4 ? 1.9 : 0.9, mx1 = W >= 6.4 ? W - 1.9 : W - 0.9;
+  for (let y = 1.7; y + 0.9 < qy; y += 2.0) for (let x = mx0 + 0.55; x + 0.55 < mx1 + 0.01; x += 1.9) {
+    if (aisle(x, 1.6)) continue;
+    const four = R() < 0.55, w = four ? 1.0 : 0.75;
+    P.add(g, 'table', x, y, w, 0.75, 0.74, { col: pick(R, [0xd8c29a, 0xe9e4da, 0x3b3b3b]), chairs: four ? 4 : 2, chairCol: st.seat });
+    if (four) for (const u of [-w / 4, w / 4]) { seat(x + u, y - 0.69, 0, 1); seat(x + u, y + 0.69, 0, -1); }
+    else { seat(x, y - 0.69, 0, 1); seat(x, y + 0.69, 0, -1); }
+  }
+  // the window bar either side of the door, with stools
+  for (const [a, b] of [[0.3, P.site.doorX - 1.1], [P.site.doorX + 1.1, W - 0.3]]) if (b - a > 1.4) {
+    P.add(g, 'windowbar', (a + b) / 2, 0.32, b - a, 0.4, 1.05, { col: 0xd8c29a });
+    for (let x = a + 0.4; x < b - 0.2; x += 0.7) { P.add(g, 'stool', x, 0.85, 0.36, 0.36, 0.75, { col: st.seat }); seat(x, 0.85, 0, -1); }
+  }
+  wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'binunit', 0.9, 0.55, 1.15, { col: st.accent, at: 0.15 });
+  wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'condiments', 1.0, 0.5, 1.0, { col: 0xd8d6d0, at: 0.55 });
+  if (cat === 'burger' && W >= 8) for (const sgn of [-1, 1]) P.add(g, 'orderkiosk', P.site.doorX + sgn * 1.6, 2.2, 0.55, 0.35, 1.75, { rot: Math.PI / 2 * -sgn });
+  if (cat === 'chippy' || cat === 'kebab') wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'fridge2', 0.9, 0.7, 1.9, { tall: true, at: 0.9, cat });
+}
+
+const LAYOUT = { food, trap: house, nice: house, terrace: house, semi: house, detached: house, cottage: house, bungalow, warehouse, office, shop, pub, church, mall };
 export function makePlan(site) {
   const P = new Plan({ ...site });
   (LAYOUT[site.kind] || house)(P, P.site);

@@ -160,6 +160,84 @@ for (const [k, n] of Object.entries(WANT)) {
   }
   console.error(k, got, 'from', pool[k].length);
 }
-fs.writeFileSync(W + 'interiors.json', JSON.stringify({ version: 1, sites }));
+// ------------------------------------------------------------------ fast food: the real places on the map
+// names from the tiles' building names and point signs (the sign carries its building's index)
+import zlibM from 'node:zlib';
+const { decode: decodeC } = await import('../../src/data.js');
+const signs = [];
+for (const key of man.tiles.map(t => typeof t === 'string' ? t : t.key)) {
+  const raw = zlibM.inflateSync(fs.readFileSync(W + 'tiles/' + key + '.bin'));
+  const { header: h, arrays: A } = decodeC(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+  const [ti, tj] = key.split('_').map(Number);
+  if (h.sn && A.sg) for (let i = 0; i < h.sn.length; i++) if (h.sn[i]) signs.push({ name: h.sn[i], key, bi: A.sg[i * 7 + 5] | 0, x: A.sg[i * 7] + ti * 256, z: A.sg[i * 7 + 2] + tj * 256 });
+}
+const FOOD = [
+  [/^mcdonald/i, 'burger', 10], [/^burger king/i, 'burger', 10], [/^kfc$/i, 'chicken', 10], [/^popeyes/i, 'chicken', 9], [/^wendy/i, 'burger', 9], [/^five guys/i, 'burger', 8],
+  [/^taco bell/i, 'mex', 8], [/gourmet burger/i, 'burger', 6], [/^nando/i, 'piri', 7], [/^subway$/i, 'sub', 6], [/^greggs$/i, 'bakery', 6],
+  [/chicken/i, 'chicken', 5], [/fish|chips/i, 'chippy', 5], [/kebab/i, 'kebab', 5], [/^domino|^pizza hut/i, 'pizza', 4], [/pizza/i, 'pizza', 3], [/^tortilla$/i, 'mex', 4],
+];
+const foodOf = n => { for (const [re, cat, pri] of FOOD) if (re.test(n)) return { cat, pri }; return null; };
+const byKey = new Map(B.map(b => [b.key + ':' + b.bi, b]));
+const cand = [];
+for (const b of B) if (b.name) { const f = foodOf(b.name); if (f) cand.push({ name: b.name, b, ...f }); }
+for (const sg of signs) { const f = foodOf(sg.name); if (!f) continue; const b = byKey.get(sg.key + ':' + sg.bi); if (b) cand.push({ name: sg.name, b, sx: sg.x, sz: sg.z, ...f }); }
+cand.sort((a, b) => b.pri - a.pri || a.name.localeCompare(b.name));
+const food = [], CHAIN_GAP = 450;
+const chainOf = n => n.toLowerCase().replace(/[^a-z]/g, '').slice(0, 8);
+// (a mix: no more than a few of any one chain or kind of food)
+const CHAIN_CAP = { mcdonald: 4, burgerki: 2, kfc: 3, nandos: 1, greggs: 2, subway: 2, wendys: 1, popeyes: 1 }, CAT_CAP = { burger: 7, chicken: 6, piri: 1, sub: 2, bakery: 2, chippy: 2, kebab: 2, pizza: 2, mex: 1 };
+for (const c of cand) {
+  if (food.length >= 25) break;
+  if (food.filter(o => chainOf(o.name) === chainOf(c.name)).length >= (CHAIN_CAP[chainOf(c.name)] ?? 2)) continue;
+  if (food.filter(o => o.cat === c.cat).length >= (CAT_CAP[c.cat] ?? 2)) continue;
+  const k = c.b.key + ':' + c.b.bi;
+  if (usedB.has(k) && !c.b.multi) continue;
+  if (c.b.area > 6000 || c.b.lm || /oracle|broad street mall/i.test(c.b.name || '')) continue;      // a unit in a shopping centre: no
+  // (the same chain twice close together: the second stays shut; so does a third of one category in a district)
+  const [cx, cz] = c.b.c;
+  if (food.some(o => chainOf(o.name) === chainOf(c.name) && Math.hypot(o.x - cx, o.z - cz) < CHAIN_GAP)) continue;
+  const d = district(cx, cz).name;
+  if (food.filter(o => o.cat === c.cat && o.district === d).length >= (c.pri >= 8 ? 3 : 1)) continue;
+  const f = frame(c.b, 0.3); if (!f || f.road.d > 60 || f.W < 5.2 || f.D < 7) continue;
+  // a parade of shops: just this unit, around its sign along the front (or the middle), up to 11 m wide
+  if (f.W > 13 || c.b.area > 400) {
+    const sx = c.sx ?? f.o[0] + f.ax[0] * f.W / 2, sz = c.sz ?? f.o[1] + f.ax[1] * f.W / 2;
+    const along = (sx - f.o[0]) * f.ax[0] + (sz - f.o[1]) * f.ax[1];
+    const w = Math.min(f.W, c.pri >= 8 ? 14 : 10), u0 = Math.max(0, Math.min(f.W - w, along - w / 2));
+    f.o = [f.o[0] + f.ax[0] * u0, f.o[1] + f.ax[1] * u0]; f.W = w; f.D = Math.min(f.D, c.pri >= 8 ? 20 : 15);
+    c.b.multi = true;
+  }
+  f.D = Math.min(f.D, 22);
+  add('food', c.b, f, { name: c.name, doorX: f.W / 2 });
+  const site = sites[sites.length - 1]; site.food = c.cat; site.lv = 1; site.floorH = +Math.max(2.8, Math.min(3.6, c.b.wall - 0.3)).toFixed(2);
+  food.push({ name: c.name, cat: c.cat, x: cx, z: cz, district: site.district });
+}
+console.error('food', food.length, food.map(f => f.name + ' (' + f.district + ')').join('; '));
+
+// ------------------------------------------------------------------ petrol stations: the forecourt canopy and its shop
+const FUELNAME = /fuel station|\bbp\b|bp shop|^shell$|^esso|petrol|filling|asda express|asda on the move|tesco express|m&s simply food|wild bean|^tesco$|morrisons/i;
+const fuel = [];
+const roofs = B.filter(r => r.cls === 13 && r.area >= 140 && r.area <= 1000);
+for (const r of roofs) {
+  const [x, z] = r.c;
+  const shopB = B.filter(b => b !== r && b.cls !== 13 && b.name && FUELNAME.test(b.name) && Math.hypot(b.c[0] - x, b.c[1] - z) < 60).sort((a, b) => Math.hypot(a.c[0] - x, a.c[1] - z) - Math.hypot(b.c[0] - x, b.c[1] - z))[0];
+  if (!shopB) continue;
+  // a big supermarket with a canopy by the door isn't a forecourt: its fuel needs a petrol-ish name or a small shop
+  if (shopB.area > 1500 && !/fuel|petrol/i.test(shopB.name)) { if (!/morrisons/i.test(shopB.name)) continue; }
+  if (fuel.some(f => Math.hypot(f.x - x, f.z - z) < 80)) continue;
+  const near = man.canopies.some(c => Math.hypot((c[0] + c[2]) / 2 - x, (c[1] + c[3]) / 2 - z) < 12);
+  const o = r.obb, L = o[1] - o[0], Dp = o[3] - o[2];
+  const road = nearestRoad(x, z, 120);
+  const brand = /sainsbury/i.test(shopB.name) ? "Sainsbury's" : /\bbp\b|wild bean|m&s/i.test(shopB.name) ? 'BP' : /shell/i.test(shopB.name) ? 'Shell' : /esso|tesco/i.test(shopB.name) ? 'Esso' : /asda/i.test(shopB.name) ? 'Asda' : /morrisons/i.test(shopB.name) ? 'Morrisons' : 'Fuel';
+  fuel.push({ id: fuel.length + 1, name: brand === 'Fuel' ? shopB.name : brand + (road?.name ? ', ' + road.name : ''), brand, shop: shopB.name, x: +x.toFixed(2), z: +z.toFixed(2),
+    ang: r.ang, L: +Math.max(L, Dp).toFixed(2), D: +Math.min(L, Dp).toFixed(2), long: L >= Dp ? 'u' : 'v', draw: !near, base: r.base, district: district(x, z).name, street: road?.name || '' });
+  // the station's shop: a kiosk you can go into
+  if (!usedB.has(shopB.key + ':' + shopB.bi) && shopB.area < 700) {
+    const f = frame(shopB, 0.3);
+    if (f && f.W >= 5 && f.D >= 5) { f.W = Math.min(f.W, 16); f.D = Math.min(f.D, 14); add('shop', shopB, f, { name: shopB.name, doorX: f.W / 2 }); sites[sites.length - 1].kiosk = 1; }
+  }
+}
+console.error('fuel', fuel.length, fuel.map(f => f.name + ' (' + f.district + ')').join('; '));
+fs.writeFileSync(W + 'interiors.json', JSON.stringify({ version: 2, sites, fuel }));
 console.error('sites', sites.length);
 for (const s of sites) console.error(s.id, s.kind, s.name || '-', '|', s.street, '|', s.district, s.W.toFixed(1) + 'x' + s.D.toFixed(1), 'lv' + s.lv, 'fh' + s.floorH);

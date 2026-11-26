@@ -3,6 +3,7 @@
 // unlit with light baked into the vertex colours (ceiling-light falloff, darker corners, faces by direction),
 // so interiors cost no lights or shadows, look the same on every phone and never flicker.
 import * as THREE from 'three/webgpu';
+import { MENUS, STYLE, price } from './food.js';
 
 // ------------------------------------------------------------------ textures (canvas, made once)
 const TEX = {};
@@ -113,7 +114,32 @@ export function materials() {
 export function setDaylight(day) {
   const m = materials(), k = 1.0 + 0.1 * day;
   const warm = new THREE.Color(1.0, 0.97 - 0.03 * (1 - day), 0.92 - 0.06 * (1 - day)).multiplyScalar(k);
-  for (const [n, mm] of Object.entries(m)) if (n !== 'glass' && n !== 'frosted') mm.color.copy(n === 'glow' || n === 'stained' || n === 'sign' ? new THREE.Color(1.6, 1.6, 1.6) : warm);
+  for (const [n, mm] of Object.entries(m)) if (n !== 'glass' && n !== 'frosted') mm.color.copy(n === 'glow' || n === 'stained' || n === 'sign' || n.startsWith('menu:') ? new THREE.Color(1.6, 1.6, 1.6) : warm);
+}
+
+// the menu boards over the counter: dishes and prices on a dark board, lit (one texture per place kind and panel)
+function menuMaterial(cat, k, n) {
+  const M = materials(), name = `menu:${cat}:${k}:${n}`;
+  if (M[name]) return name;
+  const menu = MENUS[cat] || MENUS.burger, st = STYLE[cat] || STYLE.burger;
+  const c = document.createElement('canvas'); c.width = 768; c.height = 256;
+  const g = c.getContext('2d');
+  g.fillStyle = st.board; g.fillRect(0, 0, 768, 256);
+  g.strokeStyle = st.hi; g.lineWidth = 6; g.strokeRect(6, 6, 756, 244);
+  const per = Math.ceil(menu.items.length / n), items = menu.items.slice(k * per, k * per + per);
+  g.textBaseline = 'middle';
+  g.fillStyle = st.hi; g.font = '800 34px system-ui, sans-serif'; g.textAlign = 'left';
+  g.fillText(k === 0 ? menu.title.toUpperCase() : k === n - 1 ? 'DRINKS & SIDES' : 'MORE', 26, 36);
+  const rows = Math.max(1, Math.ceil(items.length / 2)), lh = Math.min(48, 190 / rows);
+  items.forEach(([nm, pr], i) => {
+    const col = Math.floor(i / rows), row = i % rows, x = 26 + col * 372, y = 82 + row * lh;
+    g.fillStyle = st.ink; g.font = `600 ${Math.min(26, lh * 0.62)}px system-ui, sans-serif`; g.textAlign = 'left'; g.fillText(nm, x, y);
+    g.fillStyle = st.hi; g.textAlign = 'right'; g.fillText(price(pr), x + 340, y);
+  });
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  const m = new THREE.MeshBasicNodeMaterial({ map: t, vertexColors: true }); m.userData.rep = 1; m.color.setScalar(1.5);
+  M[name] = m;
+  return name;
 }
 
 // ------------------------------------------------------------------ geometry builder
@@ -611,6 +637,44 @@ const ITEM = {
   toilet: (gb, it, f) => { gb.box('plain', f, -0.19, 0.19, -it.d / 2, -it.d / 2 + 0.18, 0.4, 0.8, it.col); gb.box('plain', f, -0.16, 0.16, -it.d / 2 + 0.18, it.d / 2, 0, 0.4, it.col); gb.box('plain', f, -0.18, 0.18, -it.d / 2 + 0.2, it.d / 2 + 0.02, 0.4, 0.43, 0xf2f2ee); },
   basin: (gb, it, f) => { gb.box('plain', f, -0.04, 0.04, -it.d / 2, -it.d / 2 + 0.08, 0, it.h - 0.15, it.col); gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, it.h - 0.15, it.h, it.col); gb.box('plain', f, -it.w / 2 + 0.05, it.w / 2 - 0.05, -it.d / 2 + 0.08, it.d / 2 - 0.04, it.h - 0.001, it.h + 0.001, 0xdfe8ea); if (it.mirror) { gb.box('plain', f, -0.3, 0.3, -it.d / 2 - 0.02, -it.d / 2 + 0.01, it.h + 0.25, it.h + 0.95, 0xc9c9c9); gb.box('glow', f, -0.27, 0.27, -it.d / 2 + 0.01, -it.d / 2 + 0.013, it.h + 0.28, it.h + 0.92, 0xc9d9e2, { flat: 0.95 }); } },
   picture: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col ?? 0x2a2a2a); gb.quad('art', [f.x - Math.cos(f.rot) * (it.w / 2 - 0.05) - Math.sin(f.rot) * (it.d / 2 + 0.002), f.h + 0.05, f.y - Math.sin(f.rot) * (it.w / 2 - 0.05) + Math.cos(f.rot) * (it.d / 2 + 0.002)], [Math.cos(f.rot) * (it.w - 0.1), 0, Math.sin(f.rot) * (it.w - 0.1)], [0, it.h - 0.1, 0], 0xffffff, { uv: (() => { const k = (it.seed || 0) % 16, u0 = (k % 4) / 4, v0 = Math.floor(k / 4) / 4; return [[u0, v0], [u0 + 0.25, v0], [u0 + 0.25, v0 + 0.25], [u0, v0 + 0.25]]; })() }); },
+  // ------------------------------------------------ fast food
+  foodcounter: (gb, it, f) => {
+    gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h - 0.05, it.col);
+    gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2 - 0.04, it.d / 2, it.h - 0.05, it.h, it.top);
+    gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2 - 0.005, -it.d / 2, 0.0, 0.12, 0x2a2a2a);
+    gb.box('glow', f, -it.w / 2 + 0.1, it.w / 2 - 0.1, -it.d / 2 - 0.035, -it.d / 2 - 0.03, it.h - 0.09, it.h - 0.06, 0xfff1d8, { flat: 1.3 });
+    // the pass behind: a heated shelf where the orders wait
+    gb.box('metal', f, -it.w / 2 + 0.2, it.w / 2 - 0.2, it.d / 2 + 0.45, it.d / 2 + 0.75, 0, 1.1, 0xc9cdd2);
+  },
+  till: (gb, it, f) => { gb.box('plain', f, -0.18, 0.18, -0.14, 0.14, 0, 0.06, 0x2a2a2a); gb.box('plain', f, -0.02, 0.02, -0.02, 0.02, 0.06, 0.2, 0x2a2a2a); gb.box('plain', f, -0.19, 0.19, -0.03, 0.0, 0.18, 0.42, 0x1a1a1a); gb.box('glow', f, -0.17, 0.17, 0.0, 0.004, 0.2, 0.4, 0x4a8acf, { flat: 1.0 }); gb.box('plain', f, -0.08, 0.08, -0.2, -0.14, 0, 0.12, 0x2a2a2a); },
+  menuboard: (gb, it, f) => {
+    gb.box('plain', f, -it.w / 2 - 0.04, it.w / 2 + 0.04, -0.03, 0.03, -0.04, it.h + 0.04, 0x1a1a1a);
+    const m = menuMaterial(it.cat, it.panel, it.panels), c = Math.cos(f.rot), s = Math.sin(f.rot);
+    // the face, on the board's front (+v) side, reading left to right from in front
+    const p = [f.x + c * it.w / 2 - s * 0.032, f.h, f.y + s * it.w / 2 + c * 0.032];
+    gb.quad(m, p, [-c * it.w, 0, -s * it.w], [0, it.h, 0], 0xffffff, { uv: [[0, 0], [1, 0], [1, 1], [0, 1]], flat: 1 });
+    for (const u of [-it.w * 0.35, it.w * 0.35]) gb.box('plain', f, u - 0.01, u + 0.01, -0.01, 0.01, it.h, it.h + 1.2, 0x3a3a3a);
+  },
+  hood: (gb, it, f) => { gb.box('metal', f, -it.w / 2 - 0.05, it.w / 2 + 0.05, -it.d / 2, it.d / 2 + 0.1, 2.05, 2.45, 0xc9cdd2); },
+  grill: (gb, it, f) => { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0xb9bcbf); gb.box('plain', f, -it.w / 2 + 0.05, it.w / 2 - 0.05, -it.d / 2 + 0.05, it.d / 2 - 0.05, 0.9, 0.93, 0x2a2a2a); gb.box('glow', f, -it.w / 2 + 0.1, it.w / 2 - 0.1, -it.d / 2 + 0.1, it.d / 2 - 0.1, 0.93, 0.935, 0xff7a3a, { flat: 0.7 }); ITEM.hood(gb, it, f); },
+  fryer: (gb, it, f) => { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0xb9bcbf); for (const u of [-it.w / 4, it.w / 4]) { gb.box('plain', f, u - 0.16, u + 0.16, -0.2, 0.2, 0.9, 0.91, 0xb07a2a); gb.box('metal', f, u - 0.12, u + 0.12, -0.12, 0.12, 0.95, 1.12, 0x9a9a98); } ITEM.hood(gb, it, f); },
+  warmer: (gb, it, f) => { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0xb9bcbf); gb.box('glass', f, -it.w / 2, it.w / 2, -it.d / 2 + 0.1, it.d / 2, 0.9, 1.4, 0xffffff); gb.box('glow', f, -it.w / 2 + 0.05, it.w / 2 - 0.05, -it.d / 2 + 0.15, it.d / 2 - 0.05, 1.38, 1.4, 0xffb060, { flat: 1.3 }); for (let k = 0; k < 6; k++) gb.box('plain', f, -it.w / 2 + 0.1 + k * (it.w - 0.2) / 6, -it.w / 2 + 0.06 + (k + 1) * (it.w - 0.2) / 6, -0.15, 0.15, 0.92, 1.0, [0xe9d9a0, 0xd8a050, 0xf2f2ee][k % 3]); },
+  drinks: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0x55585c); gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, -it.d / 2 + 0.35, 0.9, 1.75, 0x2a2a2a); gb.box('glow', f, -it.w / 2 + 0.05, it.w / 2 - 0.05, -it.d / 2 + 0.35, -it.d / 2 + 0.36, 1.35, 1.7, 0x7ab8e8, { flat: 1.2 }); for (let k = 0; k < 4; k++) gb.box('plain', f, -it.w / 2 + 0.12 + k * 0.22, -it.w / 2 + 0.2 + k * 0.22, -it.d / 2 + 0.35, -it.d / 2 + 0.45, 1.15, 1.3, 0x9a9a98); },
+  steel: (gb, it, f) => { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0xc9cdd2); gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, -it.d / 2 + 0.3, 1.5, 1.53, 0xc9cdd2); for (let k = 0; k < 3; k++) gb.box('plain', f, -it.w / 2 + 0.2 + k * 0.4, -it.w / 2 + 0.45 + k * 0.4, -0.15, 0.1, 0.9, 0.96, [0xe9e4da, 0xc0392b, 0x7fae3a][k]); },
+  breadoven: (gb, it, f) => { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 1.6, 0xb9bcbf); gb.box('plain', f, -it.w / 2 + 0.08, it.w / 2 - 0.08, it.d / 2, it.d / 2 + 0.01, 0.6, 1.4, 0x161616); gb.box('glow', f, -it.w / 2 + 0.12, it.w / 2 - 0.12, it.d / 2 + 0.01, it.d / 2 + 0.012, 0.65, 1.35, 0xffa050, { flat: 0.8 }); },
+  fridge2: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, 0x2a2a2a, { skip: 'f' }); gb.quad('products', [f.x - Math.cos(f.rot) * it.w / 2 - Math.sin(f.rot) * (it.d / 2 - 0.12), f.h + 0.1, f.y - Math.sin(f.rot) * it.w / 2 + Math.cos(f.rot) * (it.d / 2 - 0.12)], [Math.cos(f.rot) * it.w, 0, Math.sin(f.rot) * it.w], [0, it.h - 0.3, 0], 0xffffff, { uv: [[0, 0], [it.w, 0], [it.w, 1], [0, 1]], flat: 1.25 }); gb.box('glass', f, -it.w / 2, it.w / 2, it.d / 2 - 0.02, it.d / 2, 0.05, it.h - 0.1, 0xffffff); },
+  breadrack: (gb, it, f) => { for (let k = 0; k < 5; k++) { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.2 + k * 0.38, 0.23 + k * 0.38, 0xb9bcbf); for (let q = 0; q < 4; q++) gb.box('plain', f, -it.w / 2 + 0.08 + q * 0.2, -it.w / 2 + 0.24 + q * 0.2, -0.2, 0.2, 0.23 + k * 0.38, 0.31 + k * 0.38, [0xd8a050, 0xc9883a, 0xe9c080][q % 3]); } for (const u of [-it.w / 2, it.w / 2 - 0.03]) gb.box('metal', f, u, u + 0.03, -it.d / 2, it.d / 2, 0, it.h, 0x9a9a98); },
+  coffee: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0x55585c); gb.box('metal', f, -0.35, 0.35, -0.25, 0.2, 0.9, 1.45, 0xc9cdd2); gb.box('plain', f, -0.3, 0.3, 0.2, 0.25, 1.0, 1.1, 0x2a2a2a); },
+  fryrange: (gb, it, f) => { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0xc9cdd2); for (let k = 0; k < 3; k++) { const u = -it.w / 2 + 0.5 + k * (it.w - 1) / 2; gb.box('plain', f, u - 0.32, u + 0.32, -0.25, 0.25, 0.9, 0.91, 0xb07a2a); } gb.box('glass', f, -it.w / 2, it.w / 2, it.d / 2 - 0.05, it.d / 2, 0.9, 1.35, 0xffffff); gb.box('glow', f, -it.w / 2 + 0.1, it.w / 2 - 0.1, it.d / 2 - 0.3, it.d / 2 - 0.1, 1.3, 1.33, 0xffb060, { flat: 1.2 }); ITEM.hood(gb, it, f); },
+  doner: (gb, it, f) => { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0xb9bcbf); gb.box('plain', f, -0.25, 0.25, -it.d / 2, -it.d / 2 + 0.12, 0.9, 1.8, 0x3a3a3a); gb.box('glow', f, -0.22, 0.22, -it.d / 2 + 0.12, -it.d / 2 + 0.13, 0.95, 1.75, 0xff6a2a, { flat: 1.1 }); gb.cyl('plain', f, 0, 0.05, 0.16, 0.95, 1.6, 0x9a5a32, 10); gb.cyl('plain', f, 0, 0.05, 0.012, 0.9, 1.75, 0xb9bcbf, 6); },
+  pizzaoven: (gb, it, f) => { gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.7, 0x55585c); gb.box('metal', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.7, 1.45, 0xb9bcbf); gb.box('plain', f, -it.w / 2 + 0.1, it.w / 2 - 0.1, it.d / 2, it.d / 2 + 0.01, 0.95, 1.15, 0x161616); gb.box('glow', f, -it.w / 2 + 0.15, it.w / 2 - 0.15, it.d / 2 + 0.01, it.d / 2 + 0.012, 0.98, 1.12, 0xff8a3a, { flat: 1.0 }); },
+  pastrycase: (gb, it, f) => { gb.box('glass', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, 0xffffff); gb.box('glow', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, it.h - 0.02, it.h, 0xfff1d8, { flat: 1.2 }); for (let row = 0; row < 2; row++) for (let k = 0; k < Math.floor(it.w / 0.18); k++) gb.box('plain', f, -it.w / 2 + 0.05 + k * 0.18, -it.w / 2 + 0.19 + k * 0.18, -0.2 + row * 0.22, -0.05 + row * 0.22, 0.02 + row * 0.18, 0.08 + row * 0.18, [0xd8a050, 0xc9883a, 0xe9c080, 0xb06a3a][(k + row) % 4]); },
+  subline: (gb, it, f) => { gb.box('glass', f, -it.w / 2, it.w / 2, -it.d / 2, -it.d / 2 + 0.02, 0.1, it.h, 0xffffff); gb.box('glass', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, it.h - 0.02, it.h, 0xffffff); for (let k = 0; k < Math.floor(it.w / 0.2); k++) gb.box('plain', f, -it.w / 2 + 0.04 + k * 0.2, -it.w / 2 + 0.2 + k * 0.2, -0.1, 0.15, 0, 0.06, [0x7fae3a, 0xc0392b, 0xf1c40f, 0xe9e4da, 0x8e44ad, 0xe67e22][k % 6]); },
+  windowbar: (gb, it, f) => { gb.box('wood', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, it.h - 0.04, it.h, it.col); for (const u of [-it.w / 2 + 0.1, it.w / 2 - 0.15]) gb.box('plain', f, u, u + 0.05, -0.05, 0.05, 0, it.h - 0.04, 0x3a3a3a); },
+  stool: (gb, it, f) => { gb.cyl('plain', f, 0, 0, 0.17, it.h - 0.05, it.h, it.col, 8); gb.box('plain', f, -0.02, 0.02, -0.02, 0.02, 0, it.h - 0.05, 0x3a3a3a); gb.cyl('plain', f, 0, 0, 0.18, 0, 0.03, 0x3a3a3a, 8); },
+  binunit: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col); gb.box('plain', f, -it.w / 2 + 0.1, it.w / 2 - 0.1, it.d / 2, it.d / 2 + 0.01, it.h - 0.35, it.h - 0.15, 0x1a1a1a); gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, it.h, it.h + 0.03, 0xb9bcbf); for (let k = 0; k < 3; k++) gb.box('plain', f, -it.w / 2 + 0.1 + k * 0.12, -it.w / 2 + 0.2 + k * 0.12, -0.1, 0.1, it.h + 0.03, it.h + 0.05 + k * 0.03, 0x7a5a3a); },
+  condiments: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, 0.9, 0x55585c); gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.9, 0.93, it.col); for (let k = 0; k < 5; k++) gb.cyl('plain', f, -it.w / 2 + 0.15 + k * 0.18, 0, 0.04, 0.93, 1.1, [0xc0392b, 0xf1c40f, 0x7a4a2a, 0xe9e4da, 0x2f6fb0][k], 6); },
+  orderkiosk: (gb, it, f) => { gb.box('plain', f, -0.06, 0.06, -0.06, 0.06, 0, 1.0, 0x3a3a3a); gb.box('plain', f, -it.w / 2, it.w / 2, -0.05, 0.05, 0.95, it.h, 0x1a1a1a); gb.box('glow', f, -it.w / 2 + 0.03, it.w / 2 - 0.03, 0.05, 0.053, 1.0, it.h - 0.05, 0xe9f0f6, { flat: 1.2 }); gb.box('plain', f, -0.2, 0.2, -0.2, 0.2, 0, 0.04, 0x3a3a3a); },
   // ------------------------------------------------ warehouse
   cabin: (gb, it, f) => {
     const w = it.w, d = it.d, h = it.h;
