@@ -1,0 +1,17 @@
+Weapon models (www/weapons/*.glb)
+
+Quaternius, Ultimate Guns Pack, CC0 1.0 (public domain dedication)
+https://quaternius.com/packs/ultimateguns.html
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Taken from the owner's Silo game repository (ab19902020/silo-), which carries them from the same author's
+Lost Signal repository, re-exported there with an orientation marker and front and rear sight nodes.
+Used here unchanged: combat_knife, glock_19, pistol_04, smg_01, smg_02, mossberg_590a1, shotgun_sawed_off,
+akm, assault_rifle_01, sniper_rifle_02. The grip, handguard, butt, muzzle and sight points in
+src/weaponsData.js were measured from the meshes.
+
+Firing and handling recordings (www/sfx/guns/*.mp3)
+
+Real recordings supplied by the repository owner to the Lost Signal and Silo repositories: 9 mm, .308 and
+20-gauge reports; magazine out and in (9 mm, AK, AR, bolt gun), pistol slide racks and reloads, and a
+shotgun shell going in. Copied unchanged from the Silo repository.

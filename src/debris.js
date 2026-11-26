@@ -12,6 +12,7 @@ const KINDS = {
   chip: { s: [0.11, 0.01, 0.08], v: 0.8, drag: 0.6, bounce: 0.3, life: 25, col: [0.02, 0.02, 0.022] },
   brick: { s: [0.2, 0.065, 0.1], v: 0.35, drag: 0.05, bounce: 0.18, life: 60, col: [0.36, 0.13, 0.08] },
   rubble: { s: [0.09, 0.06, 0.08], v: 0.7, drag: 0.08, bounce: 0.2, life: 50, col: [0.3, 0.28, 0.26] },
+  grit: { s: [0.028, 0.02, 0.024], v: 0.6, drag: 0.15, bounce: 0.2, life: 14, col: [0.3, 0.28, 0.26] },        // a bullet's chips of brick and tarmac
   splinter: { s: [0.45, 0.025, 0.07], v: 0.6, drag: 0.2, bounce: 0.25, life: 40, col: [0.3, 0.2, 0.11] },
   leaf: { s: [0.06, 0.004, 0.045], v: 0.5, drag: 3.2, bounce: 0.05, life: 22, col: [0.09, 0.2, 0.05] },
   twig: { s: [0.3, 0.015, 0.015], v: 0.6, drag: 1.2, bounce: 0.1, life: 22, col: [0.18, 0.12, 0.07] },

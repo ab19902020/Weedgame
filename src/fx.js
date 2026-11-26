@@ -56,7 +56,7 @@ export class GunFx {
     this.hCol = new THREE.InstancedBufferAttribute(new Float32Array(NH * 4), 4); hg.setAttribute('hcol', this.hCol);
     const hm = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, roughness: 0.95 });
     const hc = attribute('hcol', 'vec4'), hr = length(uv().sub(0.5)).mul(2);
-    const pit = float(1).sub(smoothstep(0.18, 0.34, hr)), rim = smoothstep(0.3, 0.42, hr).mul(float(1).sub(smoothstep(0.55, 0.95, hr)));
+    const pit = float(1).sub(smoothstep(0.14, 0.26, hr)), rim = smoothstep(0.2, 0.32, hr).mul(float(1).sub(smoothstep(0.5, 0.95, hr)));
     hm.colorNode = mix(mix(hc.rgb.mul(1.35), hc.rgb.mul(0.55), rim.mul(0.5)), vec3(0.015, 0.014, 0.013), pit);
     hm.opacityNode = pit.add(rim.mul(hc.a)).min(1);
     this.holes = pool(hg, hm, NH, scene, { renderOrder: 2, receiveShadow: true });

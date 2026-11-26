@@ -180,6 +180,12 @@ export class Audio {
     const gy = y ?? (this.G.tiles.terrain?.(x, z) ?? this.G.brothers.me.y) + 0.5;
     this.shotFrom(this.wbank, options, 'w:' + name, x, gy, z, gain, 8, 0.94 + Math.random() * 0.12);
   }
+  // a short recording from the footstep bank played right at the listener, at `rate` (the pub games: a heel on
+  // tile pitched up is the click of the balls and the cue's tip)
+  tap(name, gain = 0.4, rate = 1) {
+    if (!this.bank || !cues[name]) return;
+    const p = this.G.camera.position; this.shotFrom(this.bank, cues[name], 't:' + name, p.x, p.y, p.z, gain, 5, rate);
+  }
   shotFrom(buf, options, key, x, y, z, gain, ref, rate = 1) {
     let index = Math.floor(Math.random() * options.length);
     if (options.length > 1 && index === this.lastCue.get(key)) index = (index + 1) % options.length;

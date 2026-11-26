@@ -270,16 +270,16 @@ export class Combat {
     switch (hit.kind) {
       case 'wall': case 'floor': case 'ceiling': {
         const col = hit.inside ? [0.62, 0.6, 0.56] : [0.5, 0.38, 0.32];
-        fx.hole(p, hit.n, 0.075 * big, col);
+        fx.hole(p, hit.n, 0.13 * big, col);
         fx.puff(_a.copy(p).addScaledVector(hit.n, 0.06), _b.copy(hit.n).multiplyScalar(1.6), [col[0] * 1.1, col[1] * 1.1, col[2] * 1.1], 0.75, 0.1, 0.7 * big, 1.1);
-        D?.burst('rubble', 2, p.x + hit.n.x * 0.05, p.y, p.z + hit.n.z * 0.05, hit.n.x * 2.2, 1, hit.n.z * 2.2, 0.8, [col[0] * 0.8, col[1] * 0.8, col[2] * 0.8]);
+        D?.burst('grit', 4, p.x + hit.n.x * 0.05, p.y, p.z + hit.n.z * 0.05, hit.n.x * 2.2, 1, hit.n.z * 2.2, 0.8, [col[0] * 0.8, col[1] * 0.8, col[2] * 0.8]);
         if (Math.random() < 0.6) G.audio?.shot?.('brick', p.x, p.z, 0.25, p.y);
         break;
       }
       case 'ground': {
-        fx.hole(p, hit.n, 0.06 * big, [0.25, 0.24, 0.23]);
+        fx.hole(p, hit.n, 0.11 * big, [0.25, 0.24, 0.23]);
         fx.puff(_a.copy(p).add(_b.set(0, 0.05, 0)), _b.set(-d.x * 0.5, 1.2, -d.z * 0.5), [0.45, 0.42, 0.38], 0.7, 0.1, 0.55 * big, 1.0);
-        D?.burst('rubble', 1, p.x, p.y + 0.04, p.z, -d.x, 1.4, -d.z, 0.6, [0.2, 0.2, 0.2]);
+        D?.burst('grit', 3, p.x, p.y + 0.04, p.z, -d.x, 1.4, -d.z, 0.6, [0.2, 0.2, 0.2]);
         break;
       }
       case 'car': {
