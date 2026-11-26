@@ -651,8 +651,8 @@ const ITEM = {
     gb.box('plain', f, -it.w / 2 - 0.04, it.w / 2 + 0.04, -0.03, 0.03, -0.04, it.h + 0.04, 0x1a1a1a);
     const m = menuMaterial(it.cat, it.panel, it.panels), c = Math.cos(f.rot), s = Math.sin(f.rot);
     // the face, on the board's front (+v) side, reading left to right from in front
-    const p = [f.x + c * it.w / 2 - s * 0.032, f.h, f.y + s * it.w / 2 + c * 0.032];
-    gb.quad(m, p, [-c * it.w, 0, -s * it.w], [0, it.h, 0], 0xffffff, { uv: [[0, 0], [1, 0], [1, 1], [0, 1]], flat: 1 });
+    const p = [f.x - c * it.w / 2 - s * 0.032, f.h, f.y - s * it.w / 2 + c * 0.032];
+    gb.quad(m, p, [c * it.w, 0, s * it.w], [0, it.h, 0], 0xffffff, { uv: [[0, 0], [1, 0], [1, 1], [0, 1]], flat: 1 });
     for (const u of [-it.w * 0.35, it.w * 0.35]) gb.box('plain', f, u - 0.01, u + 0.01, -0.01, 0.01, it.h, it.h + 1.2, 0x3a3a3a);
   },
   hood: (gb, it, f) => { gb.box('metal', f, -it.w / 2 - 0.05, it.w / 2 + 0.05, -it.d / 2, it.d / 2 + 0.1, 2.05, 2.45, 0xc9cdd2); },

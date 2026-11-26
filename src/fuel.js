@@ -4,7 +4,7 @@
 // pump islands, and a canopy where the world doesn't already draw one: pull up beside a pump, stop and Fill up.
 // Paid from the brother's cash (restaurants.js). Stranded, you can ring a mate to bring a can.
 import * as THREE from 'three/webgpu';
-import { cash, spend } from './restaurants.js';
+import { cash, spend } from './food.js';
 
 const TANK = { rangerover: 90, sports: 65, coupe: 60, hothatch: 50, hatch: 45, saloon: 60, estate: 60, suv: 70, van: 75, police: 60, moped: 7, bus: 0, busS: 0, escooter: 0 };
 const RANGE_KM = 60, PRICE = 1.45, FILL_RATE = 0.14;   // tank fractions a second at the pump
@@ -103,14 +103,14 @@ export class Fuel {
     const G = this.G, me = G.brothers.me, v = G.brothers.vehicleOf(me), sp = document.getElementById('speedo');
     if (!this.gaugeEl && sp) {
       this.gaugeEl = document.createElement('span'); this.gaugeEl.id = 'fuelGauge'; this.gaugeEl.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M4 3h9v18H4zM6 5v5h5V5zM14 8h2l3 3v7a2 2 0 0 1-4 0v-4h-1v-2h3v6h0V11.8L15.2 10H14z"/></svg><span class="fg-bar"><i></i></span>';
-      sp.appendChild(this.gaugeEl);
+      sp.insertBefore(this.gaugeEl, sp.querySelector('i'));   // (the HUD writes the gear into the last element)
       this.btn = document.createElement('button'); this.btn.id = 'fuelBtn'; this.btn.hidden = true; this.btn.onclick = () => this.press();
       (document.getElementById('hud') || document.body).appendChild(this.btn);
     }
     if (!this.gaugeEl) return;
     const tank = v && this.hasTank(v);
     this.gaugeEl.hidden = !tank;
-    if (tank) { const lv = this.level(v); this.gaugeEl.lastChild.firstChild.style.width = Math.round(lv * 100) + '%'; this.gaugeEl.classList.toggle('low', lv < 0.12); }
+    if (tank) { const lv = this.level(v); this.gaugeEl.querySelector('.fg-bar i').style.width = Math.round(lv * 100) + '%'; this.gaugeEl.classList.toggle('low', lv < 0.12); }
     let text = '';
     if (tank && this.filling) text = `Filling · ${this.filling.litres.toFixed(1)} L · £${this.filling.cost.toFixed(2)} · Stop`;
     else if (tank && this.at) { const need = (1 - v.fuel) * tankOf(v); text = need < 0.2 ? `${this.at.title} · Full tank` : `Fill up · ${need.toFixed(0)} L · £${(need * PRICE).toFixed(2)}`; }

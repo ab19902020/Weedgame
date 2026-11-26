@@ -3,11 +3,8 @@
 // eat while the clock moves on) or take it away in a bag and eat it wherever you like. Also the brothers' cash
 // (each has his own; fuel.js spends it too).
 import { People } from './characters.js';
-import { MENUS, STYLE, FOOD_WORD, price } from './food.js';
-
-const START_CASH = 1500;   // each brother's to start with (no wages yet: Dev adds more)
-export const cash = b => (b.cash ??= START_CASH);
-export function spend(b, amount) { if (cash(b) + 1e-6 < amount) return false; b.cash = Math.round((b.cash - amount) * 100) / 100; return true; }
+import { MENUS, STYLE, FOOD_WORD, price, cash, spend } from './food.js';
+export { cash, spend };
 
 const LINES = { hello: ['Hiya, what can I get you?', 'Hi there, what would you like?', 'Next please! What can I get you?', 'Alright? What are you having?'],
   thanks: ['Cheers, it won\'t be long.', 'Lovely, just a couple of minutes.', 'Thank you! Your number\'s on the receipt.', 'Ta. Take a seat, I\'ll call you.'] };
@@ -32,11 +29,12 @@ export class Restaurants {
       if (sp.kitchen && k++ >= 2) continue;
       const [x, z] = toW(sp.x, sp.y);
       out.push({ id: `staff-${s.id}-${out.length}`, x, y: b.floor0, z, heading: head(sp.dx, sp.dy), base: head(sp.dx, sp.dy), look: staffLook(), visible: true, speed: 0, t: R() * 9, phase: 0,
-        pose: sp.kitchen ? 'hands' : 'idle', till: sp.till, kitchen: !!sp.kitchen, staff: true });
+        pose: 'idle', till: sp.till, kitchen: !!sp.kitchen, staff: true });
     }
     // a few people eating (more at lunch and teatime)
-    const hr = this.G.world.hours(), busy = hr > 11.5 && hr < 14 || hr > 17 && hr < 20.5 ? 0.6 : hr > 7 && hr < 23 ? 0.3 : 0.05;
-    const seats = P.seats.slice(); const n = Math.min(seats.length, Math.round(seats.length * busy * (0.6 + R() * 0.6)));
+    const hr = this.G.world.hours(), busy = hr > 11.5 && hr < 14 || hr > 17 && hr < 20.5 ? 1 : hr > 7 && hr < 23 ? 0.5 : 0.1;
+    const seats = P.seats.slice(), room = P.W * P.D;
+    const n = Math.min(seats.length, Math.round(Math.min(10, 1 + room / 28) * busy * (0.5 + R() * 0.6)));
     for (let i = 0; i < n; i++) {
       const sp = seats.splice(Math.floor(R() * seats.length), 1)[0], look = People.randomLook(R); look.umbrella = 0;
       const [x, z] = toW(sp.x, sp.y);
@@ -54,7 +52,7 @@ export class Restaurants {
       // the one at your till looks at you and talks while you order; the kitchen works away
       const near = Math.hypot(me.x - a.x, me.z - a.z) < 3.2;
       const serving = this.panel && this.panelTill === a.till && this.panelSite === b.site;
-      if (a.kitchen) { a.pose = 'hands'; a.heading = a.base + Math.sin(a.t * 0.6) * 0.5; }
+      if (a.kitchen) { a.pose = 'idle'; a.heading = a.base + Math.sin(a.t * 0.6) * 0.5; }
       else if (serving || (near && a.till != null)) { a.heading = Math.atan2(me.z - a.z, me.x - a.x); a.pose = serving ? 'talk' : 'idle'; }
       else { a.heading += (a.base - a.heading) * Math.min(1, dt * 2); a.pose = 'idle'; }
     }

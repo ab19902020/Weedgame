@@ -702,7 +702,7 @@ function food(P, s) {
   }
   wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'binunit', 0.9, 0.55, 1.15, { col: st.accent, at: 0.15 });
   wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'condiments', 1.0, 0.5, 1.0, { col: 0xd8d6d0, at: 0.55 });
-  if (cat === 'burger' && W >= 8) for (const sgn of [-1, 1]) P.add(g, 'orderkiosk', P.site.doorX + sgn * 1.6, 2.2, 0.55, 0.35, 1.75, { rot: Math.PI / 2 * -sgn });
+  if (cat === 'burger' && W >= 8) for (const sgn of [-1, 1]) P.add(g, 'orderkiosk', P.site.doorX + sgn * 1.7, 2.4, 0.55, 0.35, 1.75, { rot: Math.PI });
   if (cat === 'chippy' || cat === 'kebab') wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'fridge2', 0.9, 0.7, 1.9, { tall: true, at: 0.9, cat });
 }
 
