@@ -5,7 +5,9 @@ import { texture, uv } from 'three/tsl';
 import { U } from './env.js';
 import { fasciaBrand } from './brands.js';
 
-const W = 2048, H = 2048, SW = 256, SH = 32, COLS = W / SW, ROWS = H / SH;
+// 336 x 42 slots (a third sharper than before), 6 x 97 = 582 of them (Reading's centre needs ~400);
+// painted at 256 x 32 and scaled
+const W = 2048, H = 4096, SW = 336, SH = 42, COLS = Math.floor(W / SW), ROWS = Math.floor(H / SH), K = SW / 256;
 const FALLBACK = { bg: '#16324F', fg: '#F4F0E6', weight: 700, track: '0px', serif: false, italic: false, upper: false, bar: null, barColor: '#ffffff', mark: null };
 
 function shade(hex, f) {
@@ -34,10 +36,10 @@ export class SignAtlas {
     this.dirty = false;
   }
   alloc(text) {
-    const slot = this.free_.shift(); if (slot == null || !text) { if (slot != null) this.free_.unshift(slot); return null; }
+    const slot = this.free_.shift(); if (slot == null || !text) { if (slot != null) this.free_.unshift(slot); else this.misses = (this.misses || 0) + 1; return null; }
     const b = fasciaBrand(text, true) || FALLBACK;
     const cx = (slot % COLS) * SW, cy = Math.floor(slot / COLS) * SH, p = this.ctx;
-    paintFascia(p, cx, cy, SW, SH, b.label || text, b);
+    p.save(); p.translate(cx, cy); p.scale(K, K); paintFascia(p, 0, 0, 256, 32, b.label || text, b); p.restore();
     this.dirty = true;
     return { slot, uv: [cx / W, 1 - (cy + SH) / H, (cx + SW) / W, 1 - cy / H] };
   }
@@ -82,7 +84,8 @@ function paintFascia(p, x, y, w, h, text, b) {
   const light = parseInt(b.fg.slice(1), 16) > 0x888888;
   p.shadowColor = light ? 'rgba(0,0,0,0.35)' : 'rgba(255,255,255,0.25)';
   p.shadowBlur = 0; p.shadowOffsetY = 1;
-  let size = b.serif ? 18 : 20;
+  // letters most of the board's height, as on a real fascia (shrunk to fit long names)
+  let size = b.serif ? 22 : 24;
   p.font = fontOf(b, size);
   const maxW = w - left - 10;
   while (p.measureText(label).width > maxW && size > 9) { size--; p.font = fontOf(b, size); }

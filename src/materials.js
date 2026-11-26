@@ -87,8 +87,9 @@ palTex.magFilter = palTex.minFilter = THREE.NearestFilter; palTex.colorSpace = T
 // landcover class -> surface layer
 // classes (build_world.py LC): 0 grass 1 road 2 pavement 3 building 4 water 5 wood 6 farm 7 park 8 parking
 // 9 rail 10 path 11 garden 12 plaza 13 pitch 14 allotment 15 scrub 16 cemetery 17 hard 18 brownfield 19 sand
-const LAYER_OF = [L.grass, L.asphalt, L.flags, L.concrete, L.soil, L.forest, L.soil, L.grass, L.asphalt, L.gravel,
-  L.gravel, L.grass, L.blocks, L.grass, L.soil, L.forest, L.grass, L.asphalt, L.soil, L.gravel];
+// (3, the 2 m cells round a building's walls: paving, like the pavement beside it; 10, paths: tarmac)
+const LAYER_OF = [L.grass, L.asphalt, L.flags, L.flags, L.soil, L.forest, L.soil, L.grass, L.asphalt, L.gravel,
+  L.asphalt, L.grass, L.blocks, L.grass, L.soil, L.forest, L.grass, L.asphalt, L.soil, L.gravel];
 const classLayer = (c) => {
   let n = int(LAYER_OF[19]);
   for (let i = 18; i >= 0; i--) n = sel(c.lessThan(i + 0.5), int(LAYER_OF[i]), n);
@@ -100,12 +101,15 @@ export function terrainMaterial() {
   const m = std();
   const slot = attribute('aslot', 'vec2');
   const p = positionWorld;
-  // jitter the 2 m landcover lookup so class boundaries read as organic edges, not pixels
-  const jit = nz(p.xz, 1 / 5.3).rg.sub(0.5).mul(2.4);
   const cls = Fn(([off]) => {
     const t = slot.mul(128).add(positionLocal.xz.add(off).div(2)).div(ATLAS_N);
     return texture(atlasTex, t).r.mul(255);
   });
+  // jitter the 2 m landcover lookup so soft boundaries (grass, woods, fields) read as organic edges, not
+  // pixels; hard town ground (roads, pavements, car parks, hard standing, building edges) keeps straight edges
+  const c00 = cls(vec2(0, 0));
+  const hardG = step(0.5, c00).mul(step(c00, 3.5)).add(step(7.5, c00).mul(step(c00, 10.5))).add(step(11.5, c00).mul(step(c00, 12.5))).add(step(16.5, c00).mul(step(c00, 17.5))).min(1);
+  const jit = nz(p.xz, 1 / 5.3).rg.sub(0.5).mul(mix(float(2.4), float(0.45), hardG));
   const palC = Fn(([c]) => texture(palTex, vec2(c.add(0.5).div(32), 0.5)).rgb);
   const c0 = cls(jit);
   const tintRaw = palC(c0).mul(0.5).add(palC(cls(jit.add(vec2(1.6, 0)))).mul(0.25)).add(palC(cls(jit.add(vec2(0, -1.6)))).mul(0.25));
@@ -399,9 +403,15 @@ export function buildingMaterial() {
   const between = (x, lo, hi, f) => smoothstep(lo.sub(f), lo.add(f), x).mul(float(1).sub(smoothstep(hi.sub(f), hi.add(f), x)));
   const below = (x, e, f) => float(1).sub(smoothstep(e.sub(f), e.add(f), x));
   const lineAA = (d, hw, f) => float(1).sub(smoothstep(hw.sub(f), hw.add(f), d)).mul(min(float(1), hw.div(f)));   // a bar of half width hw, d from its middle
-  const ww = sel(isOffice.greaterThan(0.5), mix(float(0.42), float(0.58), r1), sel(isInd.greaterThan(0.5), float(0.25), float(0.42)));
-  const winTop = sel(isInd.greaterThan(0.5), float(0.9), float(0.78));
-  const winBot = sel(isInd.greaterThan(0.5), float(0.72), float(0.38));
+  // offices come in three kinds: punched windows, ribbon glazing (bands of windows floor by floor) and curtain
+  // walling (glass floor to floor); blocks of flats get wider windows with coloured panels under them
+  const offStyle = floor(h1(seed.add(61.7)).mul(3));
+  const ribbon = isOffice.mul(step(0.5, offStyle)).mul(step(offStyle, 1.5)), curtainW = isOffice.mul(step(1.5, offStyle));
+  const isFlats = step(2.5, cls).mul(step(cls, 3.5));
+  const ww0 = sel(isOffice.greaterThan(0.5), mix(float(0.42), float(0.58), r1), sel(isInd.greaterThan(0.5), float(0.25), mix(float(0.42), float(0.56), isFlats)));
+  const ww = mix(mix(ww0, float(0.965), ribbon), float(0.985), curtainW);
+  const winTop = mix(mix(sel(isInd.greaterThan(0.5), float(0.9), float(0.78)), float(0.84), ribbon), float(0.975), curtainW);
+  const winBot = mix(mix(sel(isInd.greaterThan(0.5), float(0.72), float(0.38)), float(0.3), ribbon), float(0.03), curtainW);
   const shopUp = shop.mul(front).mul(step(0.5, fi));
   const wwS = mix(ww, float(0.36), shopUp);
   const botS = mix(winBot, float(0.46), shopUp);
@@ -482,10 +492,25 @@ export function buildingMaterial() {
   const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.1)).mul(detail);
   const along = sel(hitBack.greaterThan(0.5), hx, hz);
   const cell = h3(vec3(floor(along.div(0.28)), floor(hy.div(0.42)), roomSeed.mul(53)));
-  const stock = mix(vec3(0.5), mix(vec3(0.7, 0.3, 0.22), vec3(0.3, 0.4, 0.62), cell), 0.45).mul(cell.mul(0.5).add(0.55));
+  const hue = fract(cell.mul(7.13));
+  const stockHue = sel(hue.lessThan(0.2), vec3(0.72, 0.16, 0.12), sel(hue.lessThan(0.4), vec3(0.15, 0.32, 0.66), sel(hue.lessThan(0.55), vec3(0.85, 0.68, 0.12), sel(hue.lessThan(0.7), vec3(0.18, 0.5, 0.22), sel(hue.lessThan(0.85), vec3(0.9, 0.88, 0.84), vec3(0.45, 0.2, 0.5))))));
+  const stock = mix(vec3(0.3), stockHue, 0.8).mul(cell.mul(0.45).add(0.45));
   const shelfEdge = step(fract(hy.div(0.42)), 0.09);
   let roomCol = room.mul(float(1).sub(furniture));
-  roomCol = mix(roomCol, mix(stock, vec3(0.85), shelfEdge), shelfZone.mul(step(0.18, fract(along.div(0.28)))));
+  // a shop's walls a mid grey (not the homes' wallpaper), its shelves full of coloured stock
+  roomCol = mix(roomCol, room.mul(vec3(0.62, 0.62, 0.64)), shopFront);
+  roomCol = mix(roomCol, mix(stock, vec3(0.75), shelfEdge), shelfZone.mul(step(0.18, fract(along.div(0.28)))));
+  // strip lights across a shop's ceiling, and now and then someone browsing against the shelves
+  const hitCeil = float(1).sub(hitBack).mul(float(1).sub(hitSide)).mul(float(1).sub(hitFloor));
+  const strip = shopFront.mul(hitCeil).mul(step(fract(hz.div(1.6)), 0.12)).mul(step(abs(fract(hx.div(2.4)).sub(0.5)), 0.38));
+  roomCol = mix(roomCol, vec3(2.2, 2.15, 2.0), strip);
+  const pu = fract(hx.div(2.9).add(roomSeed.mul(3))), pid = floor(hx.div(2.9).add(roomSeed.mul(3)));
+  const pOn = step(h1(pid.add(roomSeed.mul(11))), 0.45);
+  const body = step(abs(pu.sub(0.5)), float(0.07).sub(max(hy.sub(1.25), 0).mul(0.05))).mul(step(hy, 1.5)).mul(step(0.0, hy));
+  const head = step(length(vec2(pu.sub(0.5).mul(2.9), hy.sub(1.62))), 0.11);
+  const person = shopFront.mul(hitBack).mul(pOn).mul(body.add(head).min(1)).mul(detail);
+  const coat = mix(vec3(0.08, 0.09, 0.12), vec3(0.35, 0.12, 0.1), h1(pid.mul(5.3)));
+  roomCol = mix(roomCol, mix(coat, vec3(0.55, 0.4, 0.32), head.mul(0.9)), person);
   roomCol = roomCol.mul(exp(tHit.mul(-0.12)));
   // further off, the parallax room's walls, floor and ceiling (which swap as the view angle changes) settle to
   // the room's average, so distant windows don't flicker as you move
@@ -508,9 +533,16 @@ export function buildingMaterial() {
   const frameCol = sel(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), sel(r3.lessThan(0.85), vec3(0.9, 0.9, 0.88), vec3(0.15, 0.12, 0.1)));
   albedo = mix(albedo, frameCol, frame.mul(float(1).sub(doorZone)));
   albedo = mix(albedo, wallCol.mul(mix(float(0.55), float(0.8), step(0, ry))), reveal.mul(float(1).sub(shopFront)));
-  const sill = insideU(cu, ww.mul(0.5).add(0.06), fcu).mul(between(fv, winBot.sub(0.05), winBot, ffv)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(doorZone)).mul(step(0, u.y));
+  const sill = insideU(cu, ww.mul(0.5).add(0.06), fcu).mul(between(fv, winBot.sub(0.05), winBot, ffv)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(doorZone)).mul(step(0, u.y))
+    .mul(float(1).sub(rearShop.max(blankSide))).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5)))).mul(float(1).sub(curtainW));   // (only under a window that's there)
   albedo = mix(albedo, vec3(0.7, 0.68, 0.62), sill);
-  albedo = mix(albedo, vec3(0.012, 0.014, 0.016), glass);
+  const panelCol = sel(r1.lessThan(0.25), vec3(0.62, 0.3, 0.2), sel(r1.lessThan(0.5), vec3(0.3, 0.32, 0.34), sel(r1.lessThan(0.7), vec3(0.2, 0.42, 0.44), sel(r1.lessThan(0.85), vec3(0.8, 0.8, 0.78), vec3(0.14, 0.14, 0.15)))));
+  const flatPanel = isFlats.mul(insideU(cu, ww.mul(0.5), fcu)).mul(between(fv, float(0.06), winBot.sub(0.04), ffv)).mul(isWall).mul(step(0, u.y)).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5))));
+  albedo = mix(albedo, panelCol, flatPanel);
+  // spandrels between a curtain wall's floors: a dark band at each slab
+  const spandrel = curtainW.mul(isWall).mul(float(1).sub(between(fv, winBot, winTop, ffv))).mul(step(0, u.y)).mul(float(1).sub(shopG));
+  albedo = mix(albedo, vec3(0.16, 0.18, 0.2), spandrel);
+  albedo = mix(albedo, mix(vec3(0.012, 0.014, 0.016), vec3(0.03, 0.06, 0.07), curtainW.add(ribbon.mul(0.5))), glass);
   albedo = mix(albedo, doorRGB, isDoor.mul(float(1).sub(doorGlass)));
   albedo = mix(albedo, frameCol, doorFrame);
   albedo = mix(albedo, vec3(0.012, 0.014, 0.016), doorGlass);
@@ -546,7 +578,7 @@ export function buildingMaterial() {
   const stallCol = mix(mix(mix(vec3(0.16, 0.16, 0.17), fasciaCol.mul(0.55), big), vec3(0.45, 0.43, 0.4), bank), vec3(0.1, 0.09, 0.08), isPub);
   const stall = shopG.mul(step(0.0, u.y)).mul(below(fv, gBot, ffv));
   albedo = mix(albedo, mix(vec3(0.2, 0.2, 0.21), stallCol, hasBrand), stall);
-  const frameB = mix(vec3(0.14, 0.15, 0.16), mix(fasciaCol.mul(0.4), vec3(0.08, 0.09, 0.1), big), hasBrand);
+  const frameB = mix(vec3(0.07, 0.075, 0.08), mix(vec3(0.07, 0.075, 0.08), fasciaCol.mul(0.3), 0.3), hasBrand.mul(float(1).sub(big)));
   const sHalf = doorHalf;
   const sDoor = shopG.mul(step(0.4, doorU)).mul(below(abs(u.x.sub(doorU)), sHalf, fU)).mul(step(0.02, u.y)).mul(below(u.y, floorH.mul(fascia0), fV));
   const sFrame = shopG.mul(step(0.4, doorU)).mul(below(abs(u.x.sub(doorU)), sHalf.add(0.08), fU)).mul(step(-0.02, u.y)).mul(below(u.y, floorH.mul(fascia0).add(0.04), fV)).mul(float(1).sub(sDoor));
@@ -562,16 +594,17 @@ export function buildingMaterial() {
   albedo = albedo.mul(mix(float(1), mix(float(0.8), float(0.6), isRoof.add(isFlat)), wet));
   const d = sDetail(layer, uvm);
   m.colorNode = albedo.mul(cloudShadow(p));
-  m.roughnessNode = mix(mix(mix(d.b.mul(0.3).add(0.62), float(0.35), wet.mul(isRoof.add(isFlat).add(isWall.mul(0.4)))), float(0.42), trimAll), float(0.04), glass.add(isDoor.mul(0.6)).min(1));
+  // (shop glass a touch less mirror-like than house windows, and the frames satin, not glossy)
+  m.roughnessNode = mix(mix(mix(mix(d.b.mul(0.3).add(0.62), float(0.35), wet.mul(isRoof.add(isFlat).add(isWall.mul(0.4)))), float(0.42), trimAll), float(0.62), shopFrame.add(sFrame).min(1)), mix(float(0.04), float(0.16), shopFront), glass.add(isDoor.mul(0.6)).min(1));
   m.metalnessNode = float(0);
   const plain = glass.add(frame).add(isDoor).add(sill).add(trimAll).min(1);
   m.normalNode = perturb(nW, d, mix(float(1.0), float(0.7), isRender).mul(float(1).sub(plain)));
-  const refl = skyReflection(p, nW, glass.mul(0.6).add(wet.mul(isRoof).mul(0.25)));
+  const refl = skyReflection(p, nW, glass.mul(mix(mix(float(0.6), float(1.0), curtainW.add(ribbon.mul(0.5))), float(0.18), shopFront)).add(wet.mul(isRoof).mul(0.25)));
   const daylight = float(1).sub(U.night).mul(mix(float(0.07), float(0.04), U.cover));
   // ceiling light: brighter towards the top of the room and the back wall
   const pool = hy.div(fh).mul(0.6).add(0.55).mul(mix(float(0.8), float(1.15), hitBack));
-  const lamp = lit.mul(mix(float(0.55), mix(float(0.35), float(0.85), U.night), shopFront)).mul(pool);
-  const shopDay = shopFront.add(sDoor).min(1).mul(float(1).sub(U.night)).mul(1.05);
+  const lamp = lit.mul(mix(float(0.55), mix(float(0.3), float(0.85), U.night), shopFront)).mul(pool);
+  const shopDay = shopFront.add(sDoor).min(1).mul(float(1).sub(U.night)).mul(0.42);
   const seeIn = max(glass, sDoor);
   const interior = roomCol.mul(seeIn).mul(warm.mul(lamp).add(daylight).add(shopDay));
   m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo)).add(fascia.mul(fasciaCol).mul(U.night).mul(0.55));
