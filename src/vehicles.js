@@ -58,52 +58,8 @@ export function randomModel(r) {
 const SPORT_PAINTS = [0xb5121b, 0xe8e8e8, 0x111111, 0x1446a0, 0xf2b705, 0xe25a12, 0x2f6d3a, 0x7d8085];
 export function paintFor(model, r) { return (model === 'sports' || model === 'coupe' || model === 'hothatch') ? SPORT_PAINTS[Math.floor(r * SPORT_PAINTS.length)] : PAINTS[Math.floor(r * PAINTS.length)]; }
 
-function buildTwoWheeler(def) {
-  const parts = [];
-  const add = (g, rgb, p, l) => {
-    g = g.toNonIndexed();
-    const c = g.attributes.position.count;
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(c * 3).map((_, i) => rgb[i % 3]), 3));
-    g.setAttribute('vdat', new THREE.BufferAttribute(new Float32Array(c * 4).map((_, i) => [p, l, 0, 0][i % 4]), 4));
-    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color', 'vdat'].includes(k)) g.deleteAttribute(k);
-    parts.push(g);
-  };
-  for (const side of [-1,1]) {
-    add(new THREE.BoxGeometry(.105,.038,.09).translate(.04,def.H-.06,side*.24),[.08,.09,.10],0,0);
-  }
-  const scooter = def.prof === 'scooter';
-  if (!scooter) {
-    add(new THREE.BoxGeometry(1.05, 0.07, 0.07).translate(-0.02, 0.42, 0), [0.12, 0.12, 0.13], 0, 0);
-    add(new THREE.BoxGeometry(0.7, 0.26, 0.34).translate(-0.02, 0.5, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.07, 0.38, 0.48).translate(0.38, 0.62, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.52, 0.07, 0.26).translate(-0.1, 0.76, 0), [0.07, 0.07, 0.08], 0, 0);
-    add(new THREE.BoxGeometry(0.05, 0.36, 0.05).translate(0.46, 0.82, 0), [0.1, 0.1, 0.11], 0, 0);
-    add(new THREE.BoxGeometry(0.05, 0.04, 0.58).translate(0.48, 1.0, 0), [0.08, 0.08, 0.09], 0, 0);
-    add(new THREE.BoxGeometry(0.34, 0.035, 0.14).translate(0.52, 0.5, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.3, 0.035, 0.14).translate(-0.52, 0.48, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.06, 0.1, 0.1).translate(0.58, 0.7, 0), [0.9, 0.9, 0.85], 0, 1);
-    add(new THREE.BoxGeometry(0.05, 0.07, 0.1).translate(-0.7, 0.7, 0), [0.55, 0.04, 0.03], 0, 2);
-    add(new THREE.BoxGeometry(0.02, 0.08, 0.12).translate(-0.74, 0.5, 0), [0.95, 0.8, 0.1], 0, 0);
-  } else {
-    add(new THREE.BoxGeometry(.57,.066,.18).translate(-.02,.15,0),[.14,.18,.20],0,0);
-    add(new THREE.BoxGeometry(.1,.026,.1).rotateZ(-.2).translate(.30,.96,0),[.13,.34,.39],0,0);
-    add(new THREE.BoxGeometry(.19,.035,.095).translate(-.43,.325,0),[.15,.18,.19],0,0);
-    add(new THREE.BoxGeometry(0.7, 0.05, 0.26).translate(-0.02, 0.2, 0), [0.1, 0.1, 0.11], 0, 0);
-    add(new THREE.BoxGeometry(0.5, 0.03, 0.2).translate(-0.02, 0.25, 0), [0.16, 0.16, 0.17], 0, 0);
-    add(new THREE.BoxGeometry(0.2, 0.14, 0.1).translate(-0.18, 0.3, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.04, 0.7, 0.04).translate(0.3, 0.58, 0), [0.75, 0.77, 0.8], 0, 0);
-    add(new THREE.BoxGeometry(0.04, 0.035, 0.4).translate(0.3, 0.94, 0), [0.08, 0.08, 0.09], 0, 0);
-    add(new THREE.BoxGeometry(0.05, 0.06, 0.07).translate(0.38, 0.48, 0), [0.9, 0.9, 0.85], 0, 1);
-    add(new THREE.BoxGeometry(0.04, 0.05, 0.07).translate(-0.42, 0.3, 0), [0.6, 0.05, 0.04], 0, 2);
-  }
-  const g = mergeGeos(parts);
-  if (g.attributes.uv) g.deleteAttribute('uv');
-  return g;
-}
 function buildModel(def, key, lod = 0) {
-  if (def.prof==='cycle') return motorcycleMesh(false,false,key);
-  if (key === 'motorcycle' || key === 'dirtbike') return motorcycleMesh(key === 'dirtbike');
-  if (def.wheels === 2) return buildTwoWheeler(def);
+  if (def.wheels === 2) return motorcycleMesh(key === 'dirtbike', false, key);
   if (CAR_SPECS[key]) { const g = mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1, lod).parts); if (g.attributes.uv) g.deleteAttribute('uv'); return g; }
   const { L, W, H, prof } = def;
   const isBus = prof === 'decker' || prof === 'single';
@@ -180,9 +136,13 @@ function buildModel(def, key, lod = 0) {
         add(new THREE.BoxGeometry((L-1.9)/5-.10,.82,.034).translate(x,y,side*(W/2+.006)),[.075,.12,.15],0,14);
       }
     }
+    if(side<0)for(const offset of [-.59,0,.59]){
+      add(new THREE.BoxGeometry(.046,1.9,.06).translate(l-1.5+offset,1.37,side*(W/2+.03)),[.045,.056,.061],0,0);
+    }
     add(new THREE.BoxGeometry(.14,.26,.11).translate(l-.67,2.15,side*(W/2+.13)),[.09,.11,.12],0,0);
   }
   if(def.livery===2) for(const side of [-1,1]){
+    for(let row=0;row<8;row++)add(new THREE.BoxGeometry(4.05,.019,.035).translate(-.65,1.12+row*.14,side*(W/2+.02)),[.29,.32,.34],0,0);
     for(let i=0;i<4;i++)add(new THREE.BoxGeometry(.045,1.22,.054).translate(-2.63+i*1.31,1.62,side*(W/2+.018)),[.24,.28,.30],0,0);
     add(new THREE.BoxGeometry(3.95,.08,.19).translate(-.68,.69,side*W/2),[.54,.57,.6],0,0);
   }

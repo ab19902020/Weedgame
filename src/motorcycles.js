@@ -30,6 +30,56 @@ export function motorcycleMesh(dirt, rider=false, model='motorcycle') {
     part(geometry.translate(0,0,z),colour,paint);
   }
   const cycle = model==='bicycle' || model==='ebike', stand = model==='escooter';
+  // A curved strip over a tyre, open below so the wheel and fork remain visible.
+  function guard(x,y,r,width,colour,paint=0) {
+    const points=[];
+    for(let i=0;i<=8;i++){
+      const angle=Math.PI*(.12+.78*i/8);
+      points.push([x+(r+.018)*Math.cos(angle),y+(r+.018)*Math.sin(angle)]);
+    }
+    for(let i=8;i>=0;i--){
+      const angle=Math.PI*(.12+.78*i/8);
+      points.push([x+r*Math.cos(angle),y+r*Math.sin(angle)]);
+    }
+    panel(points,-width/2,width,colour,paint);
+  }
+  if(!rider && (stand || model==='moped')){
+    const axle=stand?.425:.625, radius=stand?.15:.28, y=stand?.96:1.01;
+    const gripX=stand?.30:.40, stemX=stand?.39:.51;
+    for(const side of [-1,1]){
+      const z=side*(stand?.052:.088);
+      tube([axle,radius,z],[stemX,stand?.39:.65,z],stand?.018:.031,metal);
+      tube([-axle,radius,z],[-.16,stand?.18:.41,z],stand?.019:.041,rubber);
+      tube([gripX,y,0],[gripX,y,side*.25],.015,metal);
+      tube([gripX,y,side*.20],[gripX-.025,y,side*.30],.023,rubber);
+      tube([gripX+.019,y-.013,side*.18],[gripX+.044,y-.03,side*.26],.008,metal);
+    }
+    tube([stemX,stand?.36:.57,0],[gripX,y,0],stand?.025:.048,rubber);
+    if(stand){
+      panel([[-.36,.16],[.18,.16],[.39,.37],[.40,.31],[.22,.13],[-.35,.12]],-.094,.188,0xffffff,1);
+      panel([[-.35,.16],[.19,.16],[.16,.183],[-.32,.183]],-.096,.192,rubber);
+      tube([.34,.36,-.041],[.34,.36,.041],.041,metal);
+      guard(-axle,radius,.17,.11,rubber);
+      tube([gripX+.02,.93,0],[.43,.64,0],.006,rubber);
+      tube([.43,.64,0],[.39,.36,0],.006,rubber);
+    }else{
+      oval(-.35,.52,0,.98,.47,.44,0xffffff,1);
+      oval(-.26,.742,0,.78,.16,.40,rubber,0,0,-.05);
+      panel([[-.11,.35],[.26,.35],[.45,.70],[.52,.77],[.42,.33],[.28,.27],[-.16,.27]],-.16,.32,0xffffff,1);
+      oval(.452,.68,0,.16,.56,.39,0xffffff,1,0,-.21);
+      oval(gripX+.03,y-.02,0,.19,.13,.36,0xffffff,1);
+      guard(axle,radius,.305,.17,0xffffff,1);
+      for(const side of [-1,1]){
+        tube([gripX,y,side*.18],[.39,y+.16,side*.30],.009,metal);
+        oval(.39,y+.17,side*.30,.072,.071,.115,rubber);
+        oval(-.43,.52,side*.212,.44,.037,.022,metal);
+      }
+      tube([-.34,.34,.17],[-.71,.41,.19],.046,metal,.063);
+    }
+    oval(gripX+(stand?.033:.119),y-.025,0,.052,stand?.06:.088,stand?.064:.19,0xfff3dc,0,1);
+    oval(stand?-.52:-.79,stand?.295:.55,0,.04,.053,stand?.075:.19,0xdf3429,0,2);
+    return mergeGeos(parts);
+  }
   if(cycle && !rider){
     const axle=model==='ebike'?.57:.54, rear=[-axle,.35,0], crank=[-.055,.30,0], saddle=[-.20,.84,0], head=[.33,.86,0];
     tube(crank,saddle,.024,frame); tube(crank,head,model==='ebike'?.052:.026,frame);
@@ -43,7 +93,19 @@ export function motorcycleMesh(dirt, rider=false, model='motorcycle') {
     tube([-.52,.35,-.077],[-.055,.365,-.077],.009,0x494a41);
     oval(-.23,.93,0,.26,.075,.16,rubber); oval(.34,.94,0,.076,.06,.077,0xf4f3dd,0,1);
     oval(-.35,.84,0,.05,.044,.07,0xcb2822,0,2);
-    if(model==='ebike')oval(-.06,.30,0,.17,.15,.145,0x34393a);
+    if(model==='ebike'){
+      oval(-.06,.30,0,.17,.15,.145,0x34393a);
+      panel([[.01,.42],[.08,.40],[.30,.73],[.24,.76]],-.053,.106,0x323c40);
+      guard(-axle,.35,.373,.077,0x363f43);
+      for(const side of [-1,1]){
+        tube([-.70,.78,side*.09],[-.40,.78,side*.09],.013,metal);
+        tube([-axle,.35,side*.08],[-.68,.78,side*.09],.012,metal);
+        tube([-.41,.78,side*.09],saddle,.012,metal);
+      }
+    }else{
+      tube([.05,.53,0],[.16,.69,0],.036,0xb8c6c9);
+      tube([.16,.69,0],[.18,.72,0],.022,rubber);
+    }
     return mergeGeos(parts);
   }
   const axle=dirt?.735:.765,radius=dirt?.335:.315,seat=cycle?.93:stand?.99:dirt?.94:.76;
@@ -59,10 +121,16 @@ export function motorcycleMesh(dirt, rider=false, model='motorcycle') {
       tube([shoulder[0],shoulder[1],sign*.15],elbow,.075,0x364450,.055);
       tube(elbow,hand,.054,0x303b46,.042);oval(...hand,.12,.085,.085,rubber);
     }
+    if(cycle || stand){
+      oval(shoulder[0]+.055,seat+.655,0,.202,.23,.181,0xb78060);
+      oval(shoulder[0]+.05,seat+.75,0,.256,.13,.218,0x7696a0,0,0,-.08);
+      for(const z of [-.055,0,.055])oval(shoulder[0]+.05,seat+.805,z,.119,.015,.014,rubber);
+    }else{
     oval(shoulder[0]+.06,seat+.68,0,.27,.31,.24,0xd9dbd6);
     oval(shoulder[0]+.116,seat+.70,0,.176,.112,.238,0x253745);
     oval(shoulder[0]+.14,seat+.637,0,.12,.067,.197,0xb6b8b3);
     if(dirt)oval(shoulder[0]+.16,seat+.798,0,.21,.027,.25,0x495059);
+    }
   } else {
     for(const sign of [-1,1]){
       const z=sign*.105;
@@ -96,11 +164,13 @@ export function motorcycleMesh(dirt, rider=false, model='motorcycle') {
       tube([axle,radius+.025,sign*.112],[.60,.59,sign*.112],.043,dirt?0xd5cbb0:metal);
     }
     if(dirt){
+      for(let i=0;i<5;i++)tube([-.43+i*.065,.986,-.085],[-.43+i*.065,.986,.085],.008,rubber);
       // The two-stroke expansion chamber swells at the cylinder, before the narrow tailpipe.
       tube([.18,.53,.16],[.30,.46,.195],.032,0x847c70,.085);
       tube([.30,.46,.195],[.08,.39,.20],.085,0x918275,.057);
       tube([.08,.39,.20],[-.18,.57,.19],.057,0x847b70,.029);
     }else{
+      panel([[.48,.94],[.53,.96],[.42,1.13],[.38,1.14]],-.105,.21,0x384c58);
       part(new T.BoxGeometry(.075,.085,.19).rotateZ(-.24).translate(.38,seat+.25,0),0x405c62);
     }
     tube([-.45,.58,.01],[-.19,.83,.01],.039,0xb4ada2);
