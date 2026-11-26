@@ -188,8 +188,8 @@ export class Hud {
     const i = G.brothers.active, s = C.s[i], w = C.weapon(i), me = G.brothers.me;
     const gun = !!w && !w.melee && !me.vehicle && !this.wheelOpen, aiming = gun && C.aiming(i);
     const R = gun && C.reticle(i);
-    // the crosshair while Aim is held; otherwise the auto-aim's mark on whoever the shots are going to
-    const show = aiming || (gun && s.aim > 0.2 && !!R);
+    // whenever the gun is up (Aim held, or firing): the crosshair where the rounds go (combat.js aim())
+    const show = aiming || (gun && s.aim > 0.2);
     let x = innerWidth / 2, y = innerHeight / 2, cls = 'free';
     if (R) {
       const v = (this._rv ||= new G.THREE.Vector3()).set(R.x, R.y, R.z).project(G.camera);
@@ -471,7 +471,7 @@ export class Hud {
       for (const update of dynamic) update();
     };
     section('Graphics');
-    const TARGET = { low: ' · 720p 60', medium: ' · 1080p 60', high: ' · 1440p 30' };
+    const TARGET = { low: ' · 720p 120', medium: ' · 1080p 60', high: ' · 4K 30' };
     row('Preset · saves and restarts the renderer',presets.map(q => btn(
       () => q[0].toUpperCase()+q.slice(1)+(TARGET[q] || '')+(G.choice===q ? ' ✓' : ''),
       () => { if (G.choice!==q) G.setQuality(q); },'quality-'+q)));

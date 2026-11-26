@@ -43,7 +43,11 @@ export class GunFx {
     fm.colorNode = vec3(9, 5.2, 1.8).mul(star); fm.opacityNode = star;
     this.flashes = pool(fg, fm, NF, scene, { renderOrder: 4 });
     this.fA = new Float32Array(NF).fill(9); this.fi = 0; this.fMat = Array.from({ length: NF }, () => new THREE.Matrix4());
-    this.light = new THREE.PointLight(0xffc27a, 0, 9, 2); this.light.castShadow = false; scene.add(this.light); this.lightT = 0;
+    // the muzzle flash's light on its surroundings: High only (any light in the scene costs every lit pixel, firing
+    // or not); elsewhere the flash and the bloom carry it
+    if (G.quality === 'high') { this.light = new THREE.PointLight(0xffc27a, 0, 9, 2); this.light.castShadow = false; scene.add(this.light); }
+    else this.light = { position: new THREE.Vector3(), intensity: 0 };
+    this.lightT = 0;
     // ---- tracers
     const NT = 40; this.NT = NT;
     const tm = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });

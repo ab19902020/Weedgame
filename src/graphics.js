@@ -15,6 +15,8 @@ export function frameTarget(device, requested, preset = 60) {
   if (device.mode === 'battery') return 30;
   if (Number(requested)>0) return Math.max(15,Math.min(144,Number(requested)));
   if (preset < 60) return preset;
+  // a preset that asks for more than 60 (low: 120) gets what the screen can show
+  if (preset > 60) return device.hz >= 119 ? 120 : device.hz >= 89 ? 90 : 60;
   if (device.mode === 'performance' && device.hz >= 89) return device.hz >= 119 ? 120 : 90;
   return 60;
 }

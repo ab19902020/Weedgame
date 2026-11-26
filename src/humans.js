@@ -14,6 +14,7 @@ import { U, cloudShadow } from './env.js';
 import { lightPool } from './materials.js';
 import { worldToView } from './surfaces.js';
 import { RiggedPeople } from './riggedPeople.js';
+import { length as tslLength, uv as tslUv, vec3 as tslVec3, float as tslFloat, smoothstep as tslSmooth } from 'three/tsl';
 
 const MAX0 = 96, MAX1 = 260;          // near (detailed) and far instance capacity
 const LOD_DIST = 30;                  // metres
@@ -536,6 +537,17 @@ export class People {
       return set;
     });
     this.tris = this.sets.map(s => s.geo.index.count / 3);
+    // without shadow maps (low, medium): a soft dark blob on the ground under everyone, as games did before them
+    this.blobs = null;
+    if (!shadows) {
+      const g = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+      const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const r = tslLength(tslUv().sub(0.5)).mul(2);
+      m.colorNode = tslVec3(0, 0, 0); m.opacityNode = tslFloat(1).sub(tslSmooth(0.25, 1.0, r)).mul(0.42);
+      this.blobs = new THREE.InstancedMesh(g, m, 160); this.blobs.count = 0; this.blobs.frustumCulled = false; this.blobs.renderOrder = 1;
+      this.blobs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(this.blobs); this._bm = new THREE.Matrix4();
+    }
   }
   static randomLook(r = Math.random) {
     const pick = a => a[Math.floor(r() * a.length)];
@@ -559,6 +571,16 @@ export class People {
       const lod = d2 < LOD_DIST * LOD_DIST ? 0 : 1, S = this.sets[lod];
       let i = cnt[lod]; if (i >= S.max) { if (lod === 0 && cnt[1] < this.sets[1].max) { i = cnt[1]; writeCrowdMember(this.sets[1], i, a); cnt[1]++; } continue; }
       writeCrowdMember(S, i, a); cnt[lod]++;
+    }
+    if (this.blobs) {
+      let n = 0; const B = this.blobs, m = this._bm;
+      for (const a of actors) {
+        if (!a.visible || n >= 160 || (a.fall || 0) > 0.5) continue;
+        const dx = a.x - camPos.x, dz = a.z - camPos.z; if (dx * dx + dz * dz > 70 * 70) continue;
+        m.makeScale(0.85, 1, 0.85); m.elements[12] = a.x; m.elements[13] = (a.y || 0) + 0.03; m.elements[14] = a.z;
+        B.setMatrixAt(n++, m);
+      }
+      B.count = n; if (n) B.instanceMatrix.needsUpdate = true;
     }
     for (let k = 0; k < 2; k++) {
       const S = this.sets[k]; S.geo.instanceCount = cnt[k]; S.mesh.visible = cnt[k] > 0;

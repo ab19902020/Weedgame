@@ -22,21 +22,25 @@ import * as THREE from 'three/webgpu';
 // vehicles: moving traffic within `bubble` m of the player (parked cars are on top, at `parkFill` of the slots);
 // people: pedestrians. Medium has no GTAO (a full-screen pass a phone GPU can't afford at 60) and a tighter shadow box.
 export const BUDGETS = {
+  // v0.35: what a phone can hold. Shadow maps and real lights (each one is paid for by every lit pixel) are High
+  // only; Low and Medium have blob shadows under people and cars and painted light pools instead. Low runs 720p
+  // with nothing extra, up to the screen's refresh rate (120 Hz phones: 120 fps); Medium 1080p at 60 with FSR
+  // upscaling from a lower internal resolution; High the screen's full resolution (up to 4K) at 30 with everything.
   low: {
-    r0: 240, r1: 520, tiles: 30, drawCalls: 120, tris: 300e3, people: 40, vehicles: 28, bubble: 420, parkFill: 0.45, cloudSteps: 8,
+    r0: 220, r1: 480, tiles: 26, drawCalls: 110, tris: 250e3, people: 30, vehicles: 22, bubble: 380, parkFill: 0.25, cloudSteps: 6,
     outH: 720, pixelRatio: [0.8, 1.0, 1.25], shadow: { size: 0, extent: 0, far: 0 }, antialias: false,
-    treeDist: 180, lampDist: 150, signDist: 110, markDist: 220, vehicleDist: 320, peopleDist: 100,
-    post: false, ao: { scale: 0, samples: 0 }, bloom: 0, ibl: 0, grass: false, ssr: null, targetFps: 60, bushes: 0.35,
+    treeDist: 160, lampDist: 140, signDist: 100, markDist: 200, vehicleDist: 300, peopleDist: 90,
+    post: false, ao: { scale: 0, samples: 0 }, bloom: 0, ibl: 0, grass: false, ssr: null, targetFps: 120, bushes: 0.25,
   },
   medium: {
-    r0: 280, r1: 700, tiles: 42, drawCalls: 200, tris: 550e3, people: 70, vehicles: 48, bubble: 480, parkFill: 0.65, cloudSteps: 10,
-    outH: 1080, pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 60, far: 380 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.5, 0.72, 1.0],
-    treeDist: 260, lampDist: 220, signDist: 160, markDist: 320, vehicleDist: 420, peopleDist: 130,
-    post: true, ao: { scale: 0, samples: 0 }, bloom: 0.22, ibl: 64, grass: false, ssr: null, targetFps: 60, bushes: 0.55,
+    r0: 260, r1: 650, tiles: 38, drawCalls: 170, tris: 450e3, people: 50, vehicles: 36, bubble: 440, parkFill: 0.3, cloudSteps: 8,
+    outH: 1080, pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 0, extent: 0, far: 0 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.5, 0.62, 0.85],
+    treeDist: 220, lampDist: 200, signDist: 150, markDist: 300, vehicleDist: 380, peopleDist: 120,
+    post: true, ao: { scale: 0, samples: 0 }, bloom: 0.18, ibl: 0, grass: false, ssr: null, targetFps: 60, bushes: 0.45,
   },
   high: {
-    r0: 380, r1: 950, tiles: 70, drawCalls: 320, tris: 900e3, people: 110, vehicles: 70, bubble: 580, parkFill: 0.9, cloudSteps: 16,
-    outH: 1440, pixelRatio: [0.8, 1.5, 1.5], shadow: { size: 2048, extent: 100, far: 600 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.55, 0.8, 1.0],
+    r0: 380, r1: 950, tiles: 70, drawCalls: 320, tris: 900e3, people: 100, vehicles: 60, bubble: 560, parkFill: 0.7, cloudSteps: 16,
+    outH: 2160, pixelRatio: [0.8, 1.5, 1.5], shadow: { size: 2048, extent: 100, far: 600 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.55, 0.8, 1.0],
     treeDist: 480, lampDist: 360, signDist: 260, markDist: 480, vehicleDist: 650, peopleDist: 170,
     post: true, ao: { scale: 0.5, samples: 10 }, bloom: 0.3, ibl: 128, grass: true, ssr: { scale: 0.5, quality: 0.45 }, targetFps: 30, bushes: 1,
   },

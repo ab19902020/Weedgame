@@ -237,6 +237,7 @@ export class Combat {
     if (pressed && !w.automatic) s.queued = true;
     this.aim(i, w);
     const want = w.automatic ? held || pressed : s.queued;
+    if (want && s.reloadT <= 0 && s.fireT <= 0 && s.aim >= 0.55) this.aim(i, w, true);
     if (!want || s.reloadT > 0 || s.fireT > 0 || s.aim < 0.55) return;
     if ((s.mag[w.key] ?? w.mag) <= 0) { this.reload(i); return; }
     s.queued = false;
@@ -246,35 +247,34 @@ export class Combat {
     if (s.mag[w.key] <= 0) setTimeout(() => this.reload(i), 250);
   }
   // what the active brother is aiming at: the nearest person (then vehicle) near the line of the camera
-  aim(i, w) {
+  aim(i, w, fresh = false) {
     const G = this.G, B = G.brothers, me = B.b[i], s = this.s[i];
+    const o = s.posed ? s.muzzle : _a.set(me.x, me.y + 1.4, me.z);
     // locked on (the Aim button): straight at them, the chest or (swiped up) the head
-    if (s.lock) {
-      const L = s.lock, ty = L.y + (L.dead ? 0.3 : s.lockHead ? 1.62 : 1.25);
-      const o = s.posed ? s.muzzle : _a.set(me.x, me.y + 1.4, me.z);
+    // the one the crosshair has snapped to and marked (hoverTarget): at them
+    const L = s.lock || (s.hover && !s.hover.dead ? s.hover : null);
+    if (L) {
+      const ty = L.y + (L.dead ? 0.3 : s.lock && s.lockHead ? 1.62 : 1.25);
       s.target = { kind: 'ped', p: L, x: L.x, y: ty, z: L.z };
       s.aimDir.set(L.x - o.x, ty - o.y, L.z - o.z).normalize(); s.aimYaw = Math.atan2(L.z - me.z, L.x - me.x);
       return;
     }
-    const yaw = B.cam.yaw + Math.PI, fx = Math.cos(yaw), fz = Math.sin(yaw);
-    let best = null, bs = 1e9;
-    const range = Math.min(w.range, w.zoom ? 90 : 45);
-    for (const p of G.peds.list) {
-      if (p.dead && p.react?.t > 1.5) continue;
-      const dx = p.x - me.x, dz = p.z - me.z, d = Math.hypot(dx, dz); if (d < 0.6 || d > range || Math.abs(p.y - me.y) > 6) continue;
-      const ang = Math.acos(clamp((dx * fx + dz * fz) / d, -1, 1)); if (ang > (d < 6 ? 0.75 : 0.42)) continue;
-      const score = ang * 3 + d * 0.04; if (score < bs) { bs = score; best = { kind: 'ped', p, x: p.x, y: p.y + (p.dead ? 0.3 : 1.25), z: p.z }; }
-    }
-    if (!best) for (const v of G.traffic.list) {
-      const dx = v.x - me.x, dz = v.z - me.z, d = Math.hypot(dx, dz); if (d < 1.5 || d > Math.min(range, 40)) continue;
-      const ang = Math.acos(clamp((dx * fx + dz * fz) / d, -1, 1)); if (ang > 0.3) continue;
-      const score = ang * 3 + d * 0.04; if (score < bs) { bs = score; best = { kind: 'car', v, x: v.x, y: v.y + 0.85, z: v.z }; }
-    }
-    if (s.hover && !s.hover.dead) best = { kind: 'ped', p: s.hover, x: s.hover.x, y: s.hover.y + 1.25, z: s.hover.z };
-    s.target = best;
-    const o = s.posed ? s.muzzle : _a.set(me.x, me.y + 1.4, me.z);
-    if (best) { s.aimDir.set(best.x - o.x, best.y - o.y, best.z - o.z).normalize(); s.aimYaw = Math.atan2(best.z - me.z, best.x - me.x); }
-    else { const pitch = clamp(-(B.cam.pitch - 0.28) * 0.9, -0.5, 0.6); s.aimDir.set(fx * Math.cos(pitch), Math.sin(pitch), fz * Math.cos(pitch)); s.aimYaw = yaw; }
+    // otherwise whatever is under the crosshair: the camera's line through the middle of the view, from just past
+    // the brother, to the first thing it meets; the gun fires from its muzzle at that point, so the round lands
+    // where the crosshair is (within the weapon's spread)
+    if (fresh || !s.cross || G.time - s.crossT > 0.066) { s.cross = this.crossPoint(i, w); s.crossT = G.time; }
+    const P = s.cross.p;
+    s.target = s.cross.hit?.kind === 'ped' ? { kind: 'ped', p: s.cross.hit.ped, x: P.x, y: P.y, z: P.z } : s.cross.hit?.kind === 'car' ? { kind: 'car', v: s.cross.hit.v, x: P.x, y: P.y, z: P.z } : null;
+    s.aimDir.set(P.x - o.x, P.y - o.y, P.z - o.z).normalize();
+    s.aimYaw = Math.atan2(P.z - me.z, P.x - me.x);
+  }
+  // the point under the crosshair: { p, hit }
+  crossPoint(i, w) {
+    const G = this.G, cam = G.camera, me = G.brothers.b[i];
+    const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize(), c = cam.position;
+    const t0 = Math.max(0.5, (me.x - c.x) * d.x + (me.y + 1.4 - c.y) * d.y + (me.z - c.z) * d.z) + 0.7;
+    const hit = this.trace(c.clone().addScaledVector(d, t0), d, Math.max(30, w.range), i);
+    return { p: hit.p.clone(), hit };
   }
   shoot(i, w) {
     const G = this.G, B = G.brothers, b = B.b[i], s = this.s[i];

@@ -216,8 +216,10 @@ export class VehicleRenderer {
     this.beams.frustumCulled = false; this.beams.count = 0; this.beams.renderOrder = 2;
     scene.add(this.beams);
     // One player spotlight lights road geometry, signs and walls as the road changes grade.
-    this.drivingLamp = new THREE.SpotLight(0xffedd5,0,100,.44,.56,2);
-    scene.add(this.drivingLamp,this.drivingLamp.target);
+    // (High only: a light in the scene is paid for by every pixel of every lit surface, on or off, so on Low and
+    // Medium the headlights are the light pools drawn on the road (beams) and this is a stand-in that lights nothing)
+    if (shadows) { this.drivingLamp = new THREE.SpotLight(0xffedd5,0,100,.44,.56,2); scene.add(this.drivingLamp,this.drivingLamp.target); }
+    else this.drivingLamp = { position: new THREE.Vector3(), target: { position: new THREE.Vector3() }, intensity: 0, distance: 0, angle: 0 };
     this.t0 = performance.now();
   }
   // sprung body: pitch under braking and acceleration, roll in corners, with a little overshoot

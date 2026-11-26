@@ -66,6 +66,7 @@ export class Tiles {
   // look: optional { x, z } camera forward (unit) and { vx, vz } travel velocity (m/s) for look-ahead priority
   update(fx, fz, look = null) {
     this.fx = fx; this.fz = fz;
+    this.drain(this.drainMs ?? 4);
     const want = new Map();
     const r = Math.ceil(this.R1 / TILE) + 1, cx = Math.floor(fx / TILE), cz = Math.floor(fz / TILE);
     for (let ix = cx - r; ix <= cx + r; ix++) for (let iz = cz - r; iz <= cz + r; iz++) {
@@ -96,10 +97,28 @@ export class Tiles {
     this.want = want;
   }
   get busy() { return this.inflight > 0; }
+  // A finished tile from a worker. Building it into meshes takes the main thread a few milliseconds, and several can
+  // arrive within one frame when moving fast (the stutter when driving), so they wait in a queue and the frame
+  // loop adds them a few milliseconds' worth at a time, nearest first (drain()). While no frames are running (the
+  // start menu) they go straight in, as before.
   onResult(d) {
     this.inflight--;
+    if (d.error) { if (this.pending.get(d.key) === d.lod) this.pending.delete(d.key); this.errors++; console.error('tile', d.key, d.error); return; }
+    if (performance.now() - (this.lastDrain || 0) > 150) { this.apply(d); return; }
+    (this.ready ||= []).push(d);
+  }
+  drain(budgetMs = 4) {
+    this.lastDrain = performance.now();
+    const q = this.ready; if (!q || !q.length) return;
+    const t0 = performance.now(), fx = this.fx, fz = this.fz, dist = d => Math.hypot(d.ox + 128 - fx, d.oz + 128 - fz);
+    q.sort((a, b) => (a.lod - b.lod) || dist(a) - dist(b));
+    // (all at once while the ground under you is still missing)
+    const budget = this.tiles.size < 6 ? 60 : budgetMs;
+    let n = 0;
+    while (q.length && (n === 0 || performance.now() - t0 < budget)) { this.apply(q.shift()); n++; }
+  }
+  apply(d) {
     if (this.pending.get(d.key) === d.lod) this.pending.delete(d.key);
-    if (d.error) { this.errors++; console.error('tile', d.key, d.error); return; }
     const w = this.want && this.want.get(d.key);
     if (!w || w[0] !== d.lod) return; // stale
     const old = this.tiles.get(d.key);
