@@ -1142,6 +1142,13 @@ export class WildSim {
   }
 
   // ---------------------------------------------------------------- dogs out for a walk with their people
+  attachDog(p, offLead, r) {
+    const a = this.make('dog', p.x - Math.cos(p.heading || 0), p.y || 0, p.z - Math.sin(p.heading || 0), { habit: 1, life: 1e9 });
+    a.owner = p; a.state = 'heel'; a.offLead = offLead; a.t = 2;
+    a.breed = hash3(r * 1e6 | 0, 5, 5); a.side = 1;
+    this.roam++; this.dogs.set(p.id, a);
+    return a;
+  }
   dogWalkers(f) {
     const W = this.W, peds = W.peds();
     const live = new Set();
@@ -1163,10 +1170,7 @@ export class WildSim {
       const r = hash3(String(p.id).split('').reduce((h, c) => h * 31 + c.charCodeAt(0), 7) | 0, 3, 1);
       if (this.roam >= this.max) continue;
       if (r >= prob) { this.dogs.set(p.id, null); continue; }
-      const a = this.make('dog', p.x - Math.cos(p.heading || 0), p.y || 0, p.z - Math.sin(p.heading || 0), { habit: 1, life: 1e9 });
-      a.owner = p; a.state = 'heel'; a.offLead = (key === 'park' || key === 'meadow') && r < prob * 0.45; a.t = 2; a.breed = hash3(r * 1e6 | 0, 5, 5);
-      this.roam++; a.side = 1;
-      this.dogs.set(p.id, a);
+      const a = this.attachDog(p, (key === 'park' || key === 'meadow') && r < prob * 0.45, r);
       if (d < 75) localWalk = true;
       // a second dog now and then
       if (this.roam < this.max && r < prob * 0.12) { this.roam++; const b = this.make('dog', a.x, a.y, a.z, { habit: 1, life: 1e9 }); b.owner = p; b.state = 'heel'; b.offLead = a.offLead; b.t = 3; b.breed = hash3(r * 1e6 | 0, 6, 6); b.side = -1; }
