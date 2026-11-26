@@ -33,6 +33,12 @@ function layout(type){
       for(const [a,b] of spans)box((a+b)/2,base+.37,z,b-a,.74,.09,0xffffff,paint);
       box(0,top-.18,z,L,.25,.09,0xe8e4d4);
       for(const [a,b] of spans)box((a+b)/2,(top+base+.50)/2,z,b-a-.06,top-base-.94,.025,0xffffff,panes);
+      // Window sills stop at the doorway. The contrasting threshold meets the saloon floor.
+      for(const [a,b] of spans)box((a+b)/2,base+.745,z-side*.06,b-a,.04,.085,0x67767b);
+      if(hasDoor){
+        box(doorX,base+.022,z-side*.14,1.22,.022,.24,0xdfbe63);
+        for(const edge of [-1,1])box(doorX+edge*.63,base+1,z-side*.12,.036,1.85,.036,rail?0xb1c2c4:0xe4bf55);
+      }
       const bays=rail?9:6;
       for(let i=0;i<=bays;i++)box(-L/2+i*L/bays,(base+top)/2,z,.09,top-base,.12,0x49585a);
       box(0,top-.28,side*.62,L-.55,.045,.045,rail?0xacb6b5:0xe7b746);
@@ -77,6 +83,19 @@ function layout(type){
       }
     }
     for(const side of [-1,1])box(0,H-.52,side*1.02,L-1,.055,.42,0x8b989c);
+  }
+  if(rail){
+    for(const side of [-1,1]){
+      box(0,H-.42,side*.86,L-1,.08,.05,0xabb9b9);
+      for(let x=-L/2+1.4;x<L/2-1;x+=2.3)box(x,H-.47,side*1.02,.045,.11,.36,0x667879);
+    }
+  }else{
+    box(L/2-.98,floor+.91,.23,.19,.07,.21,0x27343c);
+    box(L/2-.99,floor+.955,.23,.15,.016,.16,0x6caaa6);
+    for(const side of [-1,1]){
+      box(L/2-.65,2.18,side*1.29,.12,.05,.29,0x29373c);
+      box(L/2-.65,2.04,side*1.43,.13,.29,.09,0x374a53);
+    }
   }
   if(!rail)box(L/2-.65,floor+.7,.57,.65,.4,.72,0x42494d);
   function merge(batch){const result=mergeGeometries(batch);batch.forEach(g=>g.dispose());return result;}

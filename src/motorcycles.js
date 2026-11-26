@@ -74,6 +74,14 @@ export function motorcycleMesh(dirt, rider=false) {
       oval(-.10,.46,sign*.182,.145,.14,.018,0x474b4c);
       tube([axle,radius+.025,sign*.112],[.60,.59,sign*.112],.043,dirt?0xd5cbb0:metal);
     }
+    if(dirt){
+      // The two-stroke expansion chamber swells at the cylinder, before the narrow tailpipe.
+      tube([.18,.53,.16],[.30,.46,.195],.032,0x847c70,.085);
+      tube([.30,.46,.195],[.08,.39,.20],.085,0x918275,.057);
+      tube([.08,.39,.20],[-.18,.57,.19],.057,0x847b70,.029);
+    }else{
+      part(new T.BoxGeometry(.075,.085,.19).rotateZ(-.24).translate(.38,seat+.25,0),0x405c62);
+    }
     tube([-.45,.58,.01],[-.19,.83,.01],.039,0xb4ada2);
     tube([-axle,radius,-.115],[-.13,.48,-.115],.014,0x393a32);
     tube([-axle,radius-.06,-.115],[-.13,.41,-.115],.011,0x393a32);

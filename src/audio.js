@@ -1,3 +1,4 @@
+import fleet from './fleetCues.json';
 import cues from './soundCues.json';
 import world from './worldCues.json';
 import dirtBank from './dirtbikeCues.json';
@@ -19,6 +20,7 @@ const groundSounds = ['grass','boots','boots','tile','water','grass','grass','gr
 const ENGINES = { dirtbike:{url:"sfx/dirtbike.ogg",bank:dirtBank}, motorcycle:{url:"sfx/motorcycle.ogg",bank:roadBikeBank}, v8: { url: 'sfx/rangerover.ogg', bank: v8Bank }, i4: { url: 'sfx/inline4.ogg', bank: i4Bank } };
 const ALIAS = { Car_Door_Open: ['doorOpen', 1.3], Car_Door_Close: ['doorClose', 1.3], Car_Engine_Start_Up: ['start', 1.4], Car_Engine_Turning_Off: ['stop', 1.3], Car_Parking_Brake: ['handbrake', 1] };
 const isMotorbike = model => model === 'motorcycle' || model === 'dirtbike';
+const heavyDiesel = model => model === 'bus' || model === 'busS' || model === 'fire';
 const engineOf = model => isMotorbike(model) ? model : model === 'rangerover' || model === 'sports' || model === 'coupe' ? 'v8' : 'i4';
 
 export class Audio {
@@ -39,6 +41,8 @@ export class Audio {
     // positioned loops: the nearest siren and the nearest crossing that is bleeping
     const spot = (ref = 10, roll = 1.2) => { const g = A.createGain(); g.gain.value = 0; const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = ref; p.rolloffFactor = roll; g.connect(p); p.connect(this.master); return { g, p }; };
     this.siren = spot(25, 1); this.crossing = spot(6, 1.4);
+    this.railRoll = spot(13, 1.2); this.carCabin = bed(2100); this.diesel = bed(5300);
+    this.railPosition = new Float64Array(6);
     // per-vehicle voices for nearby traffic: a recorded engine plus recorded tyre roar on the road
     this.voices = [];
     for (let i = 0; i < 6; i++) {
@@ -55,6 +59,7 @@ export class Audio {
     this.pedSteps = new WeakMap();
     this.engines = {};
     this.ready = Promise.all([
+      this.loadFleet().catch(error => console.warn('Fleet audio unavailable', error)),
       this.loadRecordings().catch(error => console.warn('Sound recordings unavailable', error)),
       this.loadWorld().catch(error => console.warn('World sound bank unavailable', error)),
     ]);
@@ -67,6 +72,40 @@ export class Audio {
     this.bank = await this.ctx.decodeAudioData(await response.arrayBuffer());
     this.loop('pedestrians', this.murmur.g);
 
+  }
+  async loadFleet() {
+    const r = await fetch('sfx/fleet.ogg');
+    if (!r.ok) throw Error('Fleet audio HTTP ' + r.status);
+    this.fleetBank = await this.ctx.decodeAudioData(await r.arrayBuffer());
+    this.railRoll.src = this.slice(this.fleetBank, fleet.railRoll, this.railRoll.g);
+    this.diesel.src = this.slice(this.fleetBank,fleet.dieselIdle,this.diesel.f);
+    this.carCabin.src = this.slice(this.fleetBank, fleet.carCabin, this.carCabin.f);
+  }
+  departure(name,x,y,z) {
+    if (!this.fleetBank) return;
+    const cam = this.G.camera.position;
+    if (Math.hypot(cam.x-x,cam.z-z) > (name==='railHorn' ? 200 : 70)) return;
+    this.shotFrom(this.fleetBank,[fleet[name]],name,x,y+1,z,.65,name==='railHorn' ? 20 : 9);
+  }
+  updateRail(G,cam,t) {
+    if (!this.railRoll.src || t < (this.nextRailCheck || 0)) return;
+    this.nextRailCheck = t + .12;
+    let nearest = 120, speed = 0;
+    if (G.transit.ride === G.transit) {
+      this.setPos(this.railRoll.p,cam.x,cam.y,cam.z);
+      speed = G.transit.train.v;
+    } else for (const tr of G.trains.trains) {
+      if (tr.v < .15) continue;
+      for (let i=0; i<tr.line.cars; i++) {
+        const p = G.trains.track(tr.line,G.trains.carCentre(tr,i),tr.dir,this.railPosition);
+        const distance = Math.hypot(p[0]-cam.x,p[1]-cam.y,p[2]-cam.z);
+        if (distance >= nearest) continue;
+        nearest = distance; speed = tr.v;
+        this.setPos(this.railRoll.p,p[0],p[1]+1,p[2]);
+      }
+    }
+    this.railRoll.g.gain.setTargetAtTime(.55*Math.min(1,speed/13),t,.18);
+    this.railRoll.src.playbackRate.setTargetAtTime(.7+Math.min(.65,speed/50),t,.16);
   }
   async loadWorld() {
     const r = await fetch('sfx/world.ogg');
@@ -113,6 +152,7 @@ export class Audio {
   // engine start for the car you get into
   engineStart(v) {
     if (!this.on) return;
+    if (v.model === 'escooter' || heavyDiesel(v.model)) return;
     const kind = engineOf(v.model);
     if(isMotorbike(kind)){
       this.loadEngine(kind).then(()=>this.engineShot(kind,'start',.7)).catch(e=>console.warn(e));
@@ -187,6 +227,7 @@ export class Audio {
     const L = this.listener, f = G.camera.getWorldDirection(this._d || (this._d = new G.THREE.Vector3()));
     if (L.positionX) { L.positionX.value = cam.x; L.positionY.value = cam.y; L.positionZ.value = cam.z; L.forwardX.value = f.x; L.forwardY.value = f.y; L.forwardZ.value = f.z; L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0; }
     else { L.setPosition(cam.x, cam.y, cam.z); L.setOrientation(f.x, f.y, f.z, 0, 1, 0); }
+    this.updateRail(G,cam,t);
     const w = G.world.cur, rain = w.rain;
     const inCar = !!me.vehicle;
     const sheltered = !inCar && G.shelteredAt(me.x, me.y + 1.2, me.z);
@@ -215,30 +256,41 @@ export class Audio {
       if (!it) { vo.g.gain.setTargetAtTime(0, t, 0.2); vo.tg.gain.setTargetAtTime(0, t, 0.2); return; }
       const v = it[0], sp = v.v || Math.abs(v.sp || 0), big = v.model.startsWith('bus') || v.model === 'van';
       this.setPos(vo.p, v.x, v.y + 0.6, v.z);
-      const sound=isMotorbike(v.model) ? v.model : 'traffic';
-      if(vo.sound!==sound){
-        const bank=sound==='traffic' ? this.bank : this.engines[sound]?.buf;
-        if(!bank && sound!=='traffic' && !this.engines[sound]) this.loadEngine(sound).catch(e=>console.warn(e));
+      const sound = heavyDiesel(v.model) ? 'diesel' : isMotorbike(v.model) ? v.model : 'traffic';
+      // Select a recorded load band with hysteresis for the two-stroke passing the listener.
+      let band = ENGINES[sound]?.bank.rpm[0];
+      if (sound === 'dirtbike') {
+        band = sp > (vo.band === 5700 ? 10 : 13) ? 5700 : sp > (vo.band === 3600 ? 3 : 5) ? 3600 : 1500;
+      }
+      if(vo.sound!==sound || vo.band!==band){
+        const bank = sound === 'diesel' ? this.fleetBank : sound === 'traffic' ? this.bank : this.engines[sound]?.buf;
+        if(!bank && isMotorbike(sound) && !this.engines[sound]) this.loadEngine(sound).catch(e=>console.warn(e));
         if(vo.engine){ vo.engine.stop(); vo.engine.disconnect(); vo.engine=null; }
         if(bank){
-          const cue=sound==='traffic' ? cues.engine[0] : ENGINES[sound].bank.cues['r'+ENGINES[sound].bank.rpm[0]];
-          vo.engine=this.slice(bank,cue,vo.f);vo.sound=sound;
+          const cue=sound==='diesel' ? fleet.dieselIdle : sound==='traffic' ? cues.engine[0] : ENGINES[sound].bank.cues['r'+band];
+          vo.engine=this.slice(bank,cue,vo.f);vo.sound=sound;vo.band=band;
         } else vo.sound=null;
       }
-      vo.engine?.playbackRate.setTargetAtTime((big ? .72 : .9) + Math.min(1.5, Math.abs(sp) * .048), t, .15);
+      vo.engine?.playbackRate.setTargetAtTime(sound==='dirtbike' ? .9 + Math.min(.38,sp*.012) : (big ? .72 : .9) + Math.min(1.5, Math.abs(sp) * .048), t, .15);
       vo.f.frequency.setTargetAtTime(1000 + Math.abs(sp) * 85, t, 0.1);
-      vo.g.gain.setTargetAtTime(.32 * (0.4 + Math.min(1, sp / 12)), t, 0.1);
+      vo.g.gain.setTargetAtTime(v.model==='escooter' ? 0 : .32 * (0.4 + Math.min(1, sp / 12)), t, 0.1);
       vo.tyre?.playbackRate.setTargetAtTime(0.8 + Math.min(0.5, sp / 60), t, 0.2);
       vo.tg.gain.setTargetAtTime(Math.min(0.35, sp / 50) * (wet ? 1.6 : 1), t, 0.1);   // louder and hissier when wet
       vo.tf.frequency.setTargetAtTime(wet ? 6000 : 1800, t, 0.2);
     });
     // the player's own car
     const pv = inCar ? G.traffic.byId.get(me.vehicle) : null;
-    const kind = pv ? engineOf(pv.model) : null;
+    const diesel = pv && heavyDiesel(pv.model);
+    this.diesel.g.gain.setTargetAtTime(diesel ? .38+.40*(pv.ph?.thr||0) : 0,t,.12);
+    if (diesel) this.diesel.src?.playbackRate.setTargetAtTime(.85+Math.min(1,(pv.rpm||900)/4500),t,.09);
+    const kind = pv && !diesel && pv.model !== 'escooter' ? engineOf(pv.model) : null;
+    const cockpit = kind === 'i4' && !pv.def?.wheels && G.brothers.cam.car === 3;
+    this.carCabin.g.gain.setTargetAtTime(cockpit ? .42 : 0,t,.13);
+    if (cockpit) this.carCabin.src?.playbackRate.setTargetAtTime(Math.min(1.6,.82+(pv.rpm||900)/6200),t,.12);
     for (const [k, E] of Object.entries(this.engines)) if (E.ready && k !== kind) E.out.gain.setTargetAtTime(0, t, 0.2);
     if (pv && pv.ph) {
-      const ph = pv.ph, rpm = Math.max(700, pv.rpm || 900), thr = ph.thr || 0, sp = Math.abs(pv.sp || 0);
-      const E = this.engines[kind] || (this.loadEngine(kind).catch(e => console.warn(e)), null);
+      const ph = pv.ph, rpm = Math.max(kind==='dirtbike' ? 1500 : 700, pv.rpm || 900), thr = ph.thr || 0, sp = Math.abs(pv.sp || 0);
+      const E = kind && (this.engines[kind] || (this.loadEngine(kind).catch(e => console.warn(e)), null));
       if (E?.ready) {
         // the two nearest rpm loops, equal-power crossfade, each re-pitched to the exact rpm
         const Lp = E.loops; let i = 0; while (i < Lp.length - 2 && rpm > Lp[i + 1].rpm) i++;
@@ -251,7 +303,7 @@ export class Audio {
         // on throttle the engine is louder and brighter; lifting off (and braking) it drops to a quiet burble
         const v8 = kind === 'v8';
         E.out.gain.setTargetAtTime((v8 ? 0.32 : 0.26) + thr * (v8 ? 0.5 : 0.42) + Math.min(0.15, rpm / 40000), t, 0.06);
-        E.filt.frequency.setTargetAtTime(900 + thr * 5200 + rpm * 0.5, t, 0.06);
+        E.filt.frequency.setTargetAtTime(kind === 'dirtbike' ? 2900 + thr*6200 + rpm*.4 : (900 + thr * 5200 + rpm * 0.5)*(cockpit ? .48 : 1), t, 0.06);
         if (thr > 0.85 && E.lastThr < 0.3 && sp < 2 && performance.now() - (E.blipT || 0) > 2500) { E.blipT = performance.now(); this.engineShot(kind, 'blip', v8 ? 0.45 : 0.35); }
         E.lastThr = thr;
       }
