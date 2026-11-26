@@ -518,7 +518,7 @@ export class Traffic {
     // remove far ordinary traffic that nobody can see
     for (let i = this.list.length - 1; i >= 0; i--) {
       const v = this.list[i];
-      if (v.kind !== 'traffic' || v.parked || v.player || v.crashed || v.brokenDown || v.frozen || v.towing) continue;
+      if ((v.kind !== 'traffic' && !v.retiredCrew) || v.parked || v.player || v.crashed || v.brokenDown || v.frozen || v.towing) continue;
       const d = Math.hypot(v.x - focus.x, v.z - focus.z);
       if ((d > KILL_R || v.deadEnd) && !info.visible(v.x, v.y, v.z, 0.6)) this.remove(v);
     }

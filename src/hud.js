@@ -129,11 +129,11 @@ export class Hud {
     const door=!inCar&&!G.transit.ride?G.interiors?.prompt:null;   // a building's front door (interiors.js)
     const boardable=!door&&!me.inside&&G.transit.nearby(me);
     const waiting=!inCar && !near && !boardable && !door && !me.inside && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
-    const useText=G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
+    const useText=G.police?.player.state==='footchase'&&!inCar?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
     const use=this.el('bUse');
     if(use.lastChild.textContent!==useText){use.lastChild.textContent=useText;use.firstChild.innerHTML=inCar||G.transit.ride&&G.transit.currentStop()?ICON.exit:boardable||G.transit.ride?ICON.bus:ICON.door;}
     use.disabled=!!waiting;
-    const ready=inCar||near||G.transit.ride||boardable||door;
+    const ready=G.police?.player.state==='footchase'||inCar||near||G.transit.ride||boardable||door;
     use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable||door)&&!inCar);
     // on foot: stick and actions; driving: wheel (or arrows) and pedals; riding a bus or train: just the stop button
     const ride=!!G.transit.ride, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Steering wheel';
@@ -410,7 +410,7 @@ export class Hud {
       v.fuel = amount; G.save.markVehicle(v); this.toast((isElectric(v.model)?'Charge':'Fuel')+' set to '+Math.round(amount*100)+'%');
     };
     row('Money & fuel', [btn('Add £500', () => { const b = G.brothers.me; b.cash = (b.cash ?? 1500) + 500; this.toast(`${b.short} has £${b.cash.toFixed(2)}`); }), btn('Fill this car', () => fuel(1)), btn('Empty this car', () => fuel(.02))]);
-    const vehicles = {bicycle:'Push bike',ebike:'Electric bike',evsaloon:'Electric fastback',evsuv:'Electric crossover',dirtbike:'Dirt bike', motorcycle:'Motorcycle', moped:'Moped', escooter:'E-scooter', rangerover:'Range Rover', sports:'Sports car', hatch:'Hatchback', saloon:'Saloon', estate:'Estate', suv:'SUV', coupe:'Coupé', hothatch:'Hot hatch', van:'Van'};
+    const vehicles = {bicycle:'Push bike',ebike:'Electric bike',evsaloon:'Electric fastback',evsuv:'Electric crossover',dirtbike:'Dirt bike', motorcycle:'Motorcycle', moped:'Moped', escooter:'E-scooter', rangerover:'Range Rover', sports:'Sports car', hatch:'Hatchback', saloon:'Saloon', estate:'Estate', suv:'SUV', coupe:'Coupé', hothatch:'Hot hatch', van:'Van', ambulance:'Ambulance', police:'Police car', fire:'Fire engine'};
     row('Spawn nearby', Object.entries(vehicles).map(([model,label]) => btn(label, () => {
       const me = G.brothers.me, h = me.heading || 0;
       if (me.inside || G.transit.ride) return this.toast('Go outside and leave public transport first');
@@ -418,7 +418,7 @@ export class Hud {
         const x = me.x + Math.cos(h)*offset, z = me.z + Math.sin(h)*offset;
         const y = G.tiles.ground(x,z,me.y+1);
         if (y == null || G.tiles.insideBuilding(x,z,y) || G.traffic.list.some(v => Math.hypot(v.x-x,v.z-z) < (v.len+5)/2)) continue;
-        G.traffic.add({id:'dev-'+model+'-'+Date.now(),kind:'parked',model,paint:model==='rangerover'?0x23382c:0xb5121b,x,y,z,heading:h,parked:true,free:true});
+        G.traffic.add({id:'dev-'+model+'-'+Date.now(),kind:'parked',model,paint:({rangerover:0x23382c,ambulance:0xe9ee77,police:0xe8e8e4})[model]??0xb5121b,x,y,z,heading:h,parked:true,free:true});
         return this.toast(label+' delivered');
       }
       this.toast('No clear space nearby. Move to an open road.');
@@ -429,8 +429,11 @@ export class Hud {
     row('Speed', [1, 30, 120, 600].map(s => btn(() => s + '×' + (w.s.scale === s ? ' ✓' : ''), () => w.s.scale = s, 'speed-' + s)));
     row('Weather', Object.keys(STATES).map(k => btn(() => k + (w.stateName() === k ? ' ✓' : ''), () => w.force(k), 'weather-' + k)));
     row('Surfaces', [btn('Dry', () => { w.s.wet = 0; w.s.puddle = 0; }), btn('Soak', () => { w.s.wet = 1; w.s.puddle = 0.9; })]);
+    row('Home',[btn('Woodley front door',()=>{const home=G.interiors.sites.find(s=>s.brothersHome);if(home){this.close?.();G.teleport(home.dx,home.dz);}})]);
     section('Emergency response');
     row('Incidents', [btn('Stage collision nearby', () => { const i = G.police.stageCollision(); this.toast(i ? 'Collision staged · watch for the response' : 'No suitable traffic nearby'); }),
+      ...[['injury','Injury crash'],['rescue','Trapped occupant']].map(([severity,label])=>btn(label,()=>this.toast(G.police.stageCollision(severity)?label+' staged':'No suitable traffic nearby'))),
+      btn('Vehicle fire',()=>this.toast(G.neighbourhood.startFire()?'Vehicle fire reported':'No available crew or suitable location')),
       btn('Stage breakdown nearby', () => { const i = G.police.stageBreakdown(); this.toast(i ? 'A car has broken down · watch for the patrol and recovery truck' : 'No suitable traffic nearby'); }),
     ]);
     section('Performance & simulation');

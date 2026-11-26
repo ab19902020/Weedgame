@@ -49,6 +49,7 @@ export const CAR_SPECS = {
     wing: 1, exhaust: 4, caliper: 1, intake: 2, lightBar: 1, sideIntake: 1 },
   evsaloon: { inherit:'saloon', ws0:.98, ws1:.13, rr0:-1.22, gl:[.88,-1.37], doors:[.93,-.24,-1.33], lightBar:1, wheel:3, exhaust:0, top:[[-1,.49],[-.97,.91],[-.76,1.07],[-.48,1.4],[-.21,1.49],[.02,1.46],[.43,.92],[.75,.78],[1,.66]] },
   evsuv: { inherit:'suv', ws0:.91, ws1:.32, rr0:-1.76, gl:[.87,-1.85], doors:[.91,-.21,-1.52], lightBar:1, wheel:2, exhaust:0, top:[[-1,.54],[-.98,1.43],[-.81,1.74],[-.59,1.77],[.12,1.77],[.4,1.23],[.87,1.15],[1,.92]] },
+  ambulance: { inherit: 'van' },
   police: { inherit: 'estate', rails: 0 },
 };
 for (const k in CAR_SPECS) if (CAR_SPECS[k].inherit) CAR_SPECS[k] = { ...CAR_SPECS[CAR_SPECS[k].inherit], ...CAR_SPECS[k] };
@@ -108,7 +109,7 @@ export function carLayout(def, key) {
     l, hw, hy, hlH, hlZ0: hw - (thin ? 0.4 : 0.42), ty, tlH, tlZ0: S.lightBar ? 0 : hw - (tall ? 0.2 : 0.36), Htop, boot,
     grY0, grY1, grW: S.exhaust===0 ? 0 : hw - 0.47, gstyle: S.wing ? 2 : key === 'suv' || key === 'hothatch' || key === 'coupe' ? 1 : 0,
     pfy: S.wing ? S.hs + 0.24 : Math.max(S.hs + 0.17, grY0 - 0.08), pry: Math.max(S.hs + 0.22, Math.min(ty - tlH - 0.12, 0.66)),
-    roofBlack: S.wing || key === 'hothatch' ? 1 : 0, livery: def.livery ? 1 : 0,
+    roofBlack: S.wing || key === 'hothatch' ? 1 : 0, livery: def.livery || 0,
   };
   layoutCache.set(key, Lo);
   return Lo;
@@ -265,6 +266,16 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     const deck = topF(-l + 0.3);
     const g = new THREE.BoxGeometry(0.26, 0.02, W * 0.84); g.rotateZ(-0.06); g.translate(-l + 0.22, deck + 0.17, 0); parts.add(g, 16, 0, [0.02, 0.02, 0.02]);
     for (const sd of [-1, 1]) { const p = new THREE.BoxGeometry(0.1, 0.18, 0.02); p.translate(-l + 0.28, deck + 0.075, sd * W * 0.28); parts.add(p, 16, 0, [0.02, 0.02, 0.02]); }
+  }
+  if(key==='ambulance'){
+    const cabinet=new THREE.BoxGeometry(.84,.14,.74).translate(-.73,H+.066,0);
+    parts.add(cabinet,0,0,[.63,.66,.64]);
+    for(const side of [-1,1]){
+      const beacon=new THREE.BoxGeometry(.21,.095,.12).translate(-l+.17,H+.04,side*.73);
+      parts.add(beacon,3,0,[.025,.10,.45]);
+      const rearGlass=new THREE.BoxGeometry(.028,.44,.48).translate(xTail(side*.44)-.005,1.69,side*.44);
+      parts.add(rearGlass,14,0,[.06,.09,.11]);
+    }
   }
   // exhausts
   const nEx = S.exhaust ?? 1;
@@ -449,7 +460,7 @@ export function vehicleMaterial(models) {
   const archLip = loft.mul(BL.w).mul(step(A.z.sub(0.3), az)).mul(smoothstep(A.y.add(0.14), A.y.add(0.12), archD)).mul(float(1).sub(archM));
   // Battenburg livery
   const checker = step(0.5, fract(x.div(0.62).add(step(0.72, y).mul(0.5))));
-  const batten = mix(vec3(0.85, 0.82, 0.05), vec3(0.04, 0.1, 0.55), checker);
+  const batten = mix(vec3(0.85, 0.82, 0.05), mix(vec3(0.04, 0.1, 0.55), vec3(0.025, 0.32, 0.12), eqf(TL.w,3)), checker);
   // number plates: 3x5 pixel glyphs from a per-car hash (UK layout AB12 CDE); vc.x carries the plate centre height
   const plate = eqf(part, 10).add(eqf(part, 11));
   const pu = z.add(0.26).div(0.52), pvv = y.sub(vc.x.sub(0.0555)).div(0.111);

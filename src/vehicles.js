@@ -19,6 +19,7 @@ export const MODELS = {
   estate: { L: 4.75, W: 1.8, H: 1.5, wb: 2.8, wr: 0.32, prof: 'estate', max: 120, mass: 1500 },
   suv: { L: 4.45, W: 1.85, H: 1.66, wb: 2.65, wr: 0.36, prof: 'suv', max: 100, mass: 1700 },
   van: { L: 5.3, W: 2.02, H: 2.35, wb: 3.3, wr: 0.34, prof: 'van', max: 60, mass: 2200 },
+  ambulance: { L:5.3,W:2.02,H:2.55,wb:3.3,wr:.35,prof:"van",max:5,mass:3600,livery:3 },
   fire: { L:7.3,W:2.38,H:3.15,wb:4.1,wr:.44,prof:"van",max:3,mass:8000,livery:2 },
   police: { L: 4.75, W: 1.8, H: 1.5, wb: 2.8, wr: 0.32, prof: 'estate', max: 16, mass: 1550, livery: 1 },
   hothatch: { L: 4.28, W: 1.79, H: 1.45, wb: 2.63, wr: 0.33, prof: 'hatch', max: 40, mass: 1350 },
@@ -318,7 +319,7 @@ export class VehicleRenderer {
       if (dmg) { dga[i * 4] = dmg[0]; dga[i * 4 + 1] = dmg[1]; dga[i * 4 + 2] = dmg[2]; dga[i * 4 + 3] = dmg[3]; } else dga.fill(0, i * 4, i * 4 + 4);
       const st = mesh.geometry.attributes.iState;
       const flags = (v.brake ? 1 : 0) | (v.reversing ? 2 : 0) | (v.ind === 1 ? 4 : 0) | (v.ind === 2 ? 8 : 0) | (v.hazard ? 16 : 0);
-      st.array[i * 4] = flags; st.array[i * 4 + 1] = v.fullBeam && v.lights ? 1.35 : v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
+      st.array[i * 4] = flags; st.array[i * 4 + 1] = v.fullBeam && v.lights ? 1.35 : v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren || v.lightsOnly ? 1 : 0; st.array[i * 4 + 3] = v.heading;
       if (d2 < 90 * 90 && sn < 400) {
         this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g);
         this._sm.elements[13] += 0.035;
