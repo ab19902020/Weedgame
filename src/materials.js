@@ -43,7 +43,9 @@ export const skyReflection = Fn(([p, n, amount]) => {
   const v = viewDir();
   const r = reflect(v.negate(), n);
   const fres = pow(float(1).sub(max(dot(n, v), 0)), 4).mul(0.85).add(0.05);
-  return skyColor(r).mul(fres).mul(amount).mul(float(1).sub(U.night.mul(0.75))).mul(float(1).sub(U.ibl.mul(0.8)));
+  // what a window sees near the horizon is the buildings and trees across the street, not open sky
+  const horizon = smoothstep(-0.05, 0.4, r.y).mul(0.62).add(0.38);
+  return skyColor(r).mul(fres).mul(horizon).mul(amount).mul(float(1).sub(U.night.mul(0.75))).mul(float(1).sub(U.ibl.mul(0.8)));
 });
 export const wetReflection = Fn(([p, n, amount, sharp]) => {
   const v = viewDir();
@@ -524,16 +526,19 @@ export function buildingMaterial() {
   // (the room's fine detail fades to its average once a pixel covers more than a few centimetres of wall)
   const detail = float(1).sub(smoothstep(0.03, 0.1, max(fU, fV)));
   const furniture = hitBack.mul(step(hy, mix(float(0.7), float(1.1), roomSeed))).mul(step(abs(hx.sub(roomSeed.sub(0.5).mul(sp))), sp.mul(0.25))).mul(mix(float(0.15), float(0.6), detail));
-  const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.1)).mul(detail);
+  const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.45)).mul(detail);
   const along = sel(hitBack.greaterThan(0.5), hx, hz);
   const cell = h3(vec3(floor(along.div(0.28)), floor(hy.div(0.42)), roomSeed.mul(53)));
   const hue = fract(cell.mul(7.13));
   const stockHue = sel(hue.lessThan(0.2), vec3(0.72, 0.16, 0.12), sel(hue.lessThan(0.4), vec3(0.15, 0.32, 0.66), sel(hue.lessThan(0.55), vec3(0.85, 0.68, 0.12), sel(hue.lessThan(0.7), vec3(0.18, 0.5, 0.22), sel(hue.lessThan(0.85), vec3(0.9, 0.88, 0.84), vec3(0.45, 0.2, 0.5))))));
-  const stock = mix(vec3(0.3), stockHue, 0.8).mul(cell.mul(0.45).add(0.45));
+  const stock = mix(vec3(0.22), stockHue, 0.9).mul(cell.mul(0.45).add(0.45));
   const shelfEdge = step(fract(hy.div(0.42)), 0.09);
   let roomCol = room.mul(float(1).sub(furniture));
   // a shop's walls a mid grey (not the homes' wallpaper), its shelves full of coloured stock
-  roomCol = mix(roomCol, room.mul(vec3(0.62, 0.62, 0.64)), shopFront);
+  roomCol = mix(roomCol, room.mul(vec3(0.4, 0.4, 0.42)), shopFront);
+  // above the shelves a shop is a dark bulkhead (and a dimmer ceiling between its lights), not more lit wall
+  roomCol = mix(roomCol, vec3(0.05, 0.05, 0.055), shopFront.mul(step(2.75, hy)).mul(hitBack.add(hitSide).min(1)));
+  roomCol = mix(roomCol, roomCol.mul(0.5), shopFront.mul(float(1).sub(hitBack)).mul(float(1).sub(hitSide)).mul(float(1).sub(hitFloor)));
   roomCol = mix(roomCol, mix(stock, vec3(0.75), shelfEdge), shelfZone.mul(step(0.18, fract(along.div(0.28)))));
   // strip lights across a shop's ceiling, and now and then someone browsing against the shelves
   const hitCeil = float(1).sub(hitBack).mul(float(1).sub(hitSide)).mul(float(1).sub(hitFloor));
@@ -571,8 +576,10 @@ export function buildingMaterial() {
   const sill = insideU(cu, ww.mul(0.5).add(0.06), fcu).mul(between(fv, winBot.sub(0.05), winBot, ffv)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(doorZone)).mul(step(0, u.y))
     .mul(float(1).sub(rearShop.max(blankSide))).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5)))).mul(float(1).sub(curtainW)).mul(float(1).sub(balCol)).mul(float(1).sub(stairCol));   // (only under a window that's there)
   albedo = mix(albedo, vec3(0.7, 0.68, 0.62), sill);
-  const panelCol = sel(r1.lessThan(0.25), vec3(0.62, 0.3, 0.2), sel(r1.lessThan(0.5), vec3(0.3, 0.32, 0.34), sel(r1.lessThan(0.7), vec3(0.2, 0.42, 0.44), sel(r1.lessThan(0.85), vec3(0.8, 0.8, 0.78), vec3(0.14, 0.14, 0.15)))));
-  const flatPanel = isFlats.mul(float(1).sub(stairCol)).mul(insideU(cu, ww.mul(0.5), fcu)).mul(between(fv, float(0.06), winBot.sub(0.04), ffv)).mul(isWall).mul(step(0, u.y)).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5))));
+  // the panels under flats' windows: muted (weathered render, faded GRP, dark spandrel glass), and on about a
+  // third of blocks none at all, just brick
+  const panelCol = sel(r1.lessThan(0.25), vec3(0.38, 0.2, 0.15), sel(r1.lessThan(0.5), vec3(0.24, 0.25, 0.27), sel(r1.lessThan(0.7), vec3(0.16, 0.24, 0.25), sel(r1.lessThan(0.85), vec3(0.62, 0.61, 0.58), vec3(0.1, 0.1, 0.11)))));
+  const flatPanel = isFlats.mul(step(0.34, h1(seed.add(79.3)))).mul(float(1).sub(stairCol)).mul(insideU(cu, ww.mul(0.5), fcu)).mul(between(fv, float(0.06), winBot.sub(0.04), ffv)).mul(isWall).mul(step(0, u.y)).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5))));
   albedo = mix(albedo, panelCol, flatPanel);
   // spandrels between a curtain wall's floors: a dark band at each slab
   const spandrel = curtainW.mul(isWall).mul(float(1).sub(between(fv, winBot, winTop, ffv))).mul(step(0, u.y)).mul(float(1).sub(shopG));
@@ -647,16 +654,23 @@ export function buildingMaterial() {
   // (shop glass a touch less mirror-like than house windows, and the frames satin, not glossy)
   m.roughnessNode = mix(mix(mix(mix(d.b.mul(0.3).add(0.62), float(0.35), wet.mul(isRoof.add(isFlat).add(isWall.mul(0.4)))), float(0.42), trimAll), float(0.62), shopFrame.add(sFrame).min(1)), mix(float(0.04), float(0.16), shopFront), glass.add(isDoor.mul(0.6)).min(1));
   m.metalnessNode = float(0);
+  // glass mirrors the sky map, which has no street in it: towards the horizon (a shop window seen along the
+  // parade, a block's windows from below) occlude that reflection, as the buildings and trees opposite would
+  const rW = reflect(viewDir().negate(), nW);
+  m.aoNode = mix(float(1), smoothstep(-0.05, 0.4, rW.y).mul(0.62).add(0.3), glass.add(doorGlass).min(1));
   const plain = glass.add(frame).add(isDoor).add(sill).add(trimAll).add(balRail).add(slabs).min(1);
   m.normalNode = perturb(nW, d, mix(float(1.0), float(0.7), isRender).mul(float(1).sub(plain)));
-  const refl = skyReflection(p, nW, glass.mul(float(1).sub(balOcc)).mul(mix(mix(float(0.6), float(1.0), curtainW.add(ribbon.mul(0.5))), float(0.18), shopFront)).add(wet.mul(isRoof).mul(0.25)));
+  const refl = skyReflection(p, nW, glass.mul(float(1).sub(balOcc)).mul(mix(float(0.55), float(1), h1(roomSeed.mul(17.3)).max(shopFront))).mul(mix(mix(float(0.6), float(1.0), curtainW.add(ribbon.mul(0.5))), float(0.18), shopFront)).add(wet.mul(isRoof).mul(0.25)));
   const daylight = float(1).sub(U.night).mul(mix(float(0.07), float(0.04), U.cover));
   // ceiling light: brighter towards the top of the room and the back wall
   const pool = hy.div(fh).mul(0.6).add(0.55).mul(mix(float(0.8), float(1.15), hitBack));
   const lamp = lit.mul(mix(float(0.55), mix(float(0.3), float(0.85), U.night), shopFront)).mul(pool);
-  const shopDay = shopFront.add(sDoor).min(1).mul(float(1).sub(U.night)).mul(0.42);
+  const shopDay = shopFront.add(sDoor).min(1).mul(float(1).sub(U.night)).mul(0.34);
   const seeIn = max(glass, sDoor).mul(float(1).sub(balOcc));
-  const interior = roomCol.mul(seeIn).mul(warm.mul(lamp).add(daylight).add(shopDay));
+  // glass passes less of the room behind it the more obliquely it's seen (and reflects more): a shop window
+  // seen along the street is mostly reflection, not a pale wash of lit shelves
+  const transm = float(1).sub(pow(float(1).sub(max(dot(nW, viewDir()), 0)), 2).mul(0.85));
+  const interior = roomCol.mul(seeIn).mul(warm.mul(lamp).add(daylight).add(shopDay)).mul(transm);
   m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo)).add(fascia.mul(fasciaCol).mul(U.night).mul(0.55));
   return m;
 }
