@@ -28,6 +28,7 @@ import { Save } from './save.js';
 import { deviceProfile, frameTarget, preferenceKey, presets, qualityFor, tuneGraphics } from './graphics.js';
 import { Perf } from './perf.js';
 import { Trains } from './trains.js';
+import { LampGlow } from './lampGlow.js';
 import { Stations } from './stations.js';
 import { Wildlife } from './wildlife.js';
 
@@ -63,7 +64,7 @@ G.setQuality = choice => {
   url.searchParams.set('graphicsMenu','1');
   location.replace(url.href);
 };
-const target = () => frameTarget(G.device,G.Q.get('fps'));
+const target = () => frameTarget(G.device,G.Q.get('fps'),G.budget?.targetFps);
 const tuning = {fps:target(),quiet:0};
 G._fps = tuning.fps;
 addEventListener('gcdevicechange', () => {
@@ -87,8 +88,9 @@ G.signals = new Signals(G.net);
 G.traffic = new Traffic(G.net, G.signals, { seed: (Math.random() * 1e9) | 0 });
 G.carDyn = new CarDynamics(G);   // player driving, collisions, struck cars sliding (carPhysics.js)
 G.tyreFx = new TyreFx(G.scene);   // skid marks and tyre smoke
+G.lampGlow = new LampGlow(G);       // far street lights at night (lampGlow.js)
 G.breakables = new Breakables(G);   // street furniture, trees, hedges and walls that give way; crash debris
-G.traffic.maxVehicles = G.budget.vehicles;
+G.traffic.maxVehicles = G.budget.vehicles; G.traffic.setRadius?.(G.budget.bubble);
 G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled);
 G.vehicleRenderer.heroCars = G.heroCars = new HeroCars(G.scene);   // the brothers' Range Rovers (heroCars.js)
 G.people = new People(G.scene, G.renderer.shadowMap.enabled);
@@ -293,6 +295,7 @@ function step(dt, render) {
   G.peds.draw(G.people, actors, cam, dt);
   G.wildlife.draw(cam);
   G.signalRenderer.draw(cam, (x, z) => G.tiles.ground(x, z), G.time);
+  G.lampGlow.update();
   G.hud.update(dt);
   G.audio.update(dt, G);
   G.updateLighting(); G.placeSun(me.x, me.y, me.z);

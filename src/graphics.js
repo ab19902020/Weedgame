@@ -10,9 +10,11 @@ export function qualityFor(choice, device, touch) {
   if (!touch || device.mode === 'performance' || /SM(?:8750|8850)|Snapdragon.*8.*Elite/i.test(device.chip)) return 'high';
   return 'medium';
 }
-export function frameTarget(device, requested) {
+// preset: the quality preset's own target (high is a 30 fps preset: the richest image, held steady)
+export function frameTarget(device, requested, preset = 60) {
   if (device.mode === 'battery') return 30;
   if (Number(requested)>0) return Math.max(15,Math.min(144,Number(requested)));
+  if (preset < 60) return preset;
   if (device.mode === 'performance' && device.hz >= 89) return device.hz >= 119 ? 120 : 90;
   return 60;
 }

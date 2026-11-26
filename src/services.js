@@ -16,11 +16,16 @@ export class Parking {
     if (t.lod !== 0 || !t.data.slots) return;
     const G = this.G, S = t.data.slots, K = t.data.slotKind;
     t.parked = []; this.byKey.set(t.key, t.parked);
+    // the cars already parked round here, on a 3 m grid (it used to scan every vehicle for every slot)
+    const near = this.near = new Map(), cell = (x, z) => Math.floor(x / 3) * 100003 + Math.floor(z / 3);
+    const put = (x, z) => { const k = cell(x, z); let l = near.get(k); if (!l) near.set(k, l = []); l.push(x, z); };
+    for (const v of G.traffic.list) if (v.parked) put(v.x, v.z);
+    this.cell = cell;
     for (let i = 0; i < S.length / 4; i++) {
       const id = `p:${t.key}:${i}`;
       if (G.save.taken.has(id) || G.traffic.byId.has(id)) continue;
       const r = mulberry(hashStr(id))();
-      const occ = K[i] ? 0.14 : 0.21;     // half the old car parks / kerbside fill
+      const occ = (K[i] ? 0.14 : 0.21) * (G.budget?.parkFill ?? 1);     // half the old car parks / kerbside fill, less on lower presets
       if (r > occ) continue;
       const r2 = mulberry(hashStr(id) ^ 0x5bd1e995);
       const roll = r2();
@@ -29,10 +34,17 @@ export class Parking {
       if (this.blocked(x, z)) continue;
       const v = G.traffic.add({ id, kind: 'parked', model, paint: paintFor(model, r2()), x, y: S[i * 4 + 1], z, heading: S[i * 4 + 3], parked: true, v: 0 });
       v.y = G.tiles.ground(x, z) ?? v.y;
-      t.parked.push(v);
+      t.parked.push(v); put(x, z);
     }
   }
   blocked(x, z) {
+    if (this.near) {
+      for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
+        const l = this.near.get(this.cell(x + dx * 3, z + dz * 3)); if (!l) continue;
+        for (let k = 0; k < l.length; k += 2) if (Math.abs(l[k] - x) < 3 && Math.abs(l[k + 1] - z) < 3) return true;
+      }
+      return false;
+    }
     for (const v of this.G.traffic.list) if (v.parked && Math.abs(v.x - x) < 3 && Math.abs(v.z - z) < 3) return true;
     return false;
   }

@@ -36,3 +36,18 @@ test('saved state restores continuously (no jump in time, weather or wetness)', 
   assert.ok(Math.abs(b.s.wet - a.s.wet) < 1e-9);
   for (const k of Object.keys(a.cur)) assert.ok(Math.abs(a.cur[k] - b.cur[k]) < 1e-6, k);
 });
+
+test('Dev → Weather holds: a forced clear sky stops the rain within seconds and never rains again until Auto', () => {
+  const w = mk(); w.force('rain'); step(w, 3600);
+  assert.ok(w.cur.rain > 0.9, 'raining first');
+  w.force('clear');
+  for (let i = 0; i < 4; i++) w.update(1);          // four real seconds
+  assert.ok(w.cur.rain < 0.01, 'the rain stops at once: ' + w.cur.rain.toFixed(3));
+  for (let h = 0; h < 48; h++) { step(w, 1800); assert.equal(w.stateName(), 'clear'); assert.ok(w.cur.rain < 1e-6); }
+  // held across a save and reload
+  const b = new World(JSON.parse(JSON.stringify(w.s))); step(b, 7200); assert.equal(b.stateName(), 'clear');
+  // Auto: the timeline takes over again
+  b.force('auto'); assert.equal(b.s.forced, null);
+  const seen = new Set(); for (let i = 0; i < 96; i++) { step(b, 1800); seen.add(b.stateName()); }
+  assert.ok(seen.size >= 3, 'weather changes again under Auto: ' + [...seen].join(','));
+});

@@ -139,7 +139,15 @@ export class Peds {
       p.t += dt;
       if (p.alpha < 1) p.alpha = Math.min(1, p.alpha + dt);
       if (p.impact) { this.updateImpact(p, dt); continue; }
-      if (p.reactT > 0) { p.reactT -= dt; p.heading = lerpAngle(p.heading, p.reactHeading, dt * 6); p.pose = p.reactPose; p.speedNow = p.reactPose === 'flee' ? 3.5 : 0; if (p.reactPose === 'flee') { p.phase = (p.phase + dt * 10) % 6.283; p.x += Math.cos(p.reactHeading + Math.PI) * 3.5 * dt; p.z += Math.sin(p.reactHeading + Math.PI) * 3.5 * dt; } this.ground(p); continue; }
+      if (p.wound) { p.wound.t += dt; if (p.wound.t > p.wound.life) p.wound = null; }
+      if (p.reactT > 0) {
+        // running off (a wound to the leg makes it a limp, one to the body a hunched jog)
+        const sp = p.wound?.zone === 'leg' ? 1.5 : p.wound ? 2.6 : 3.5;
+        p.reactT -= dt; p.heading = lerpAngle(p.heading, p.reactHeading, dt * 6); p.pose = p.reactPose; p.speedNow = p.reactPose === 'flee' ? sp : 0;
+        if (p.reactT <= 0 && p.thenFlee) { p.thenFlee = false; p.reactPose = 'flee'; p.reactT = 5 + this.rand() * 3; }
+        if (p.reactPose === 'flee') { p.phase = (p.phase + dt * sp * 2.85) % 6.283; p.x += Math.cos(p.reactHeading + Math.PI) * sp * dt; p.z += Math.sin(p.reactHeading + Math.PI) * sp * dt; }
+        this.ground(p); continue;
+      }
       if (p.phoneT > 0) { p.phoneT -= dt; p.pose = 'phone'; p.speedNow = 0; continue; }
       if(p.mode==='greeting'){
         p.timer-=dt;p.speedNow=0;p.pose='talk';
@@ -481,6 +489,8 @@ export class Peds {
       // gunfire: everyone in earshot runs, for longer; anything else, only those close by
       const gun = kind === 'gun';
       p.reactT = gun ? 5 + this.rand() * 4 : 2 + this.rand() * 2; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = d < 8 || gun ? 'flee' : this.rand() < 0.3 ? 'phone' : 'point';
+      // right next to the gun some freeze with their hands up rather than run (then run once it's quiet)
+      if (gun && d < 7 && !p.officer && this.rand() < 0.35) { p.reactPose = 'hands'; p.reactT = 2.5 + this.rand() * 2; p.thenFlee = true; }
     }
   }
   // a blow or a round (combat.js): kind 'jab' | 'body' | 'stagger' | 'down' | 'shot'; dir the heading of the force,
@@ -491,6 +501,7 @@ export class Peds {
     if (p.dead) { if (p.react) p.react.jolt = 0.2; return; }
     p.hp = (p.hp ?? 100) - dmg;
     const lethal = p.hp <= 0 && (kind === 'shot' || o.lethal);
+    if (kind === 'shot' && !lethal) return this.shotWound(p, dir, o);
     const type = lethal ? 'shot' : p.hp <= 0 || kind === 'down' ? 'down' : kind;
     const lie = p.hp <= 0 ? 5 + this.rand() * 4 : 2.2 + this.rand();
     const dur = { jab: 0.55, body: 1.0, stagger: 0.95, down: lie + 1.3, shot: lethal ? 1e9 : 0.6 }[type] ?? 0.6;
@@ -498,11 +509,30 @@ export class Peds {
     this.queueRemove(p);
     p.stopIdx = null; p.goal = null; p.corner = null; p.dayPath = null; p.leader = null; p.mode = 'walk'; p.reactT = 0;
     if (p.react && !p.react.dead && p.react.type === 'down' && type !== 'shot') { p.react.t = Math.min(p.react.t, 0.6); p.hp = Math.min(p.hp, 0); }   // a kick while they're down keeps them there
-    else p.react = { type, t: 0, dir, s: o.s ?? 1, side: o.side ?? (this.rand() < 0.5 ? -1 : 1), dead: lethal, lie, back: 1 };
-    p.impact = { elapsed: 0, duration: dur, knockdown: type === 'down' || lethal, vx: Math.cos(dir) * push, vz: Math.sin(dir) * push, react: true, from: dir + Math.PI };
+    else p.react = { type, t: 0, dir, s: o.s ?? 1, side: o.side ?? (this.rand() < 0.5 ? -1 : 1), dead: lethal, lie, back: 1, zone: o.zone, stumble: lethal && o.zone !== 'head' && this.rand() < 0.35 };
+    const pushK = p.react.stumble ? 2.4 : 1;
+    p.impact = { elapsed: 0, duration: dur, knockdown: type === 'down' || lethal, vx: Math.cos(dir) * push * pushK, vz: Math.sin(dir) * push * pushK, react: true, from: dir + Math.PI };
     if (!lethal && type !== 'shot') p.heading = dir + Math.PI;
     p.fallT = dur;
     if (lethal) { p.dead = true; p.deadT = 0; }
+  }
+  // a round that doesn't kill: how they take it depends on where it hit (o.zone head/torso/arm/leg, o.fromBack,
+  // o.sideHit +1 their right) and then they run, limp or hunch off, or go down and lie there hurt for a while
+  shotWound(p, dir, o) {
+    const r = this.rand(), side = o.sideHit || (r < 0.5 ? -1 : 1), zone = o.zone === 'head' ? 'torso' : o.zone || 'torso';
+    let type, dur, push, then, lie;
+    if (zone === 'leg') { type = 'shotKnee'; lie = 0.8 + this.rand() * 0.9; dur = lie + 0.7; push = 0.25; then = r < 0.3 ? 'drop' : 'flee'; }
+    else if (zone === 'arm') { type = 'shotSpin'; dur = 0.8; push = 0.5; then = r < 0.12 ? 'drop' : 'flee'; }
+    else if (o.fromBack) { type = 'shotArch'; dur = 0.85; push = 1.9; then = r < 0.4 ? 'drop' : 'flee'; }
+    else { type = 'shotClutch'; dur = 1.1; push = 0.55; then = r < 0.35 ? 'drop' : 'flee'; }
+    if (p.hp < 35 && then === 'flee' && this.rand() < 0.6) then = 'drop';
+    this.queueRemove(p);
+    p.stopIdx = null; p.goal = null; p.corner = null; p.dayPath = null; p.leader = null; p.mode = 'walk'; p.reactT = 0;
+    // shot again while still reacting: the new one takes over
+    p.react = { type, t: 0, dir, s: o.s ?? 1, side, dead: false, lie, back: 1, dur, then, zone, fromBack: !!o.fromBack };
+    p.impact = { elapsed: 0, duration: dur, knockdown: false, vx: Math.cos(dir) * push, vz: Math.sin(dir) * push, react: true, from: dir + Math.PI };
+    p.wound = { zone, side, t: 0, life: 40 + this.rand() * 30 };
+    p.fallT = dur;
   }
   strike(p, heading, speed = 0) {
     if (p.impact) return;
@@ -536,7 +566,19 @@ export class Peds {
       p.fall = down ? Math.min(1, Math.max(0, (R.t - (R.dead ? 0.35 : 0.1)) / 0.5)) * fallUp : 0;
       p.brace = down ? Math.min(1, R.t / 0.14) : Math.sin(Math.PI * Math.min(1, R.t / Math.max(0.3, k.duration)));
       p.pose = 'brace'; p.speedNow = 0;
-      if (R.dead) { p.deadT += dt; if (p.deadT > 70 && !(this.info?.visible?.(p.x, p.y + 0.5, p.z, 1))) p.gone = true; return; }
+      if (R.dead) {
+        // a pool of blood spreads out from under the body once it's down
+        if (!R.pooled && R.t > 1.1) { R.pooled = true; const fd = R.dir + (R.back >= 0 ? 0 : Math.PI); this.G.combat?.fx?.stain?.(p.x + Math.cos(fd) * 0.55, (this.G.tiles.ground(p.x, p.z, p.y + 0.5) ?? p.y) + 0.02, p.z + Math.sin(fd) * 0.55, 1.1 + this.rand() * 0.5); }
+        p.deadT += dt; if (p.deadT > 70 && !(this.info?.visible?.(p.x, p.y + 0.5, p.z, 1))) p.gone = true; return;
+      }
+      if (p.fallT <= 0 && R.then === 'drop') {
+        // the wound takes them down: they lie there hurt, writhing, then get up and limp or hunch away
+        const lie = 5 + this.rand() * 7, back = R.type === 'shotArch' ? 1 : -1;
+        p.react = { type: 'down', t: 0.05, dir: R.dir, s: 1, side: R.side, dead: false, lie, back, writhe: 1, zone: R.zone };
+        p.impact = { elapsed: 0, duration: lie + 1.3, knockdown: true, vx: 0, vz: 0, react: true, from: k.from };
+        p.fallT = lie + 1.3; if (p.wound) p.wound.life += lie;
+        return;
+      }
       if (p.fallT <= 0) {
         // up again: off, away from whoever did it
         p.impact = null; p.react = null; p.brace = 0; p.fall = 0;

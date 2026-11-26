@@ -120,12 +120,78 @@ export class Breakables {
     this.debris.burst('twig', Math.round(closing / 3), e.x, e.y + e.h * 0.6, e.z, 0, 0, 0, 1.5);
     this.sound('leaves', e.x, e.z, 0.7);
   }
+  // ------------------------------------------------------------------ gunfire (combat.js)
+  // the first unbroken thing along a shot from o in direction d (unit) within `range`: { t, e } or null. Posts are
+  // upright cylinders, fences, hedges and walls thick vertical strips
+  rayHit(o, d, range) {
+    const c = this._ray || (this._ray = []); let best = null;
+    for (let s0 = 0; s0 < range; s0 += 12) {
+      c.length = 0; const m = Math.min(range, s0 + 6);
+      this.gather(o.x + d.x * m, o.z + d.z * m, o.y + d.y * m, 8, c);
+      for (const k of c) {
+        const e = k.b; if (e.broken) continue;
+        let t = null;
+        if (k.k === 'post') {
+          const ox = o.x - e.x, oz = o.z - e.z, a = d.x * d.x + d.z * d.z, b = ox * d.x + oz * d.z, cc = ox * ox + oz * oz - (e.r + 0.03) ** 2, disc = b * b - a * cc;
+          if (a < 1e-9 || disc < 0) continue; t = (-b - Math.sqrt(disc)) / a;
+        } else {
+          const ex = e.bx - e.ax, ez = e.bz - e.az, L = Math.hypot(ex, ez) || 1, nx = -ez / L, nz = ex / L;
+          const dn = d.x * nx + d.z * nz; if (Math.abs(dn) < 1e-6) continue;
+          const off = (o.x - e.ax) * nx + (o.z - e.az) * nz; t = (-(off - Math.sign(off) * (e.T || 0.1))) / dn;
+          const hx = o.x + d.x * t - e.ax, hz = o.z + d.z * t - e.az, f = (hx * ex + hz * ez) / (L * L); if (f < 0 || f > 1) continue;
+        }
+        if (t == null || t < 0.3 || t > range || (best && t > best.t)) continue;
+        const y = o.y + d.y * t, base = e.kind === 22 || e.kind === 10 ? (this.G.tiles.ground(e.x ?? e.ax, e.z ?? e.az) ?? e.y) : e.y;
+        if (y < base - 0.1 || y > base + (e.h || 1)) continue;
+        best = { t, e };
+      }
+      if (best && best.t < s0 + 12) break;
+    }
+    return best;
+  }
+  // a round hits e at p travelling along d: what it does to it
+  shoot(e, p, d) {
+    const D = this.debris, dx = d.x, dz = d.z, hard = Math.hypot(dx, dz) || 1;
+    switch (e.kind) {
+      case 20: {   // lamp post: the lantern up top shatters and goes dark, the column just rings
+        if (p.y > e.y + e.h - 1.6 && !(e.t.lamps?.[e.i]?.dead)) {
+          if (e.t.lamps?.[e.i]) e.t.lamps[e.i].dead = true; if (this.G.atmos) this.G.atmos.lightsDirty = true; if (this.G.lampGlow) this.G.lampGlow.dirty = true;
+          D.burst('glass', 10, p.x, p.y, p.z, dx * 1.5, 0.2, dz * 1.5, 1.4); D.spark(8, p.x, p.y, p.z, dx, 0.5, dz, 2.5);
+          this.sound('glass', p.x, p.z, 0.8);
+        } else { D.spark(5, p.x, p.y, p.z, -dx * 2, 1, -dz * 2, 3); this.sound('clang', p.x, p.z, 0.5); }
+        break;
+      }
+      case 2: case 3: case 5: {   // bins are knocked flying after a hit or two; the pillar box only rings
+        D.spark(4, p.x, p.y, p.z, -dx * 2, 1, -dz * 2, 3); this.sound(e.kind === 5 ? 'iron' : e.kind === 2 ? 'bin' : 'can', p.x, p.z, 0.6);
+        e.shots = (e.shots || 0) + 1;
+        if (e.kind !== 5 && e.shots >= (e.kind === 3 ? 1 : 2)) { e.broken = true; this.prop(e, dx / hard, dz / hard, 4.5, 1.5, p.x, p.z); }
+        break;
+      }
+      case 4: case 8: case 1: case 21: case 23: {   // wood: splinters and bark; a fence panel gives way after a few
+        D.burst('grit', 5, p.x, p.y, p.z, -dx * 2, 1, -dz * 2, 1, [0.36, 0.25, 0.14]);
+        if (e.kind === 21 || e.kind === 23) D.burst('leaf', 5, p.x, Math.max(p.y, e.y + e.h * 0.6), p.z, 0, 0, 0, 1.2);
+        this.sound('wood', p.x, p.z, 0.45);
+        e.shots = (e.shots || 0) + 1;
+        if ((e.kind === 8 && e.shots >= 4) || (e.kind === 4 && e.shots >= 6)) { e.broken = true; this.prop(e, dx / hard, dz / hard, 3, 1, p.x, p.z); }
+        break;
+      }
+      case 7: case 10: case 22: {   // hedges and shrubs: leaves and twigs fly
+        D.burst('leaf', 9, p.x, p.y, p.z, dx * 1.5, 0.8, dz * 1.5, 1.4); D.burst('twig', 2, p.x, p.y, p.z, dx, 0.5, dz, 1);
+        this.sound('leaves', p.x, p.z, 0.5);
+        break;
+      }
+      case 9: {   // a low wall: brick chips
+        D.burst('grit', 5, p.x, p.y, p.z, -dx * 2.2, 1, -dz * 2.2, 0.9, [0.5, 0.3, 0.24]); this.sound('brick', p.x, p.z, 0.4);
+        break;
+      }
+    }
+  }
   // ------------------------------------------------------------------ each kind
   lamp(e, dx, dz, closing) {
     const t = e.t;
     if (t.lampMesh) { t.lampMesh.setMatrixAt(e.i, this._zero); t.lampMesh.instanceMatrix.needsUpdate = true; }
     if (t.lamps && t.lamps[e.i]) t.lamps[e.i].dead = true;
-    if (this.G.atmos) this.G.atmos.lightsDirty = true;
+    if (this.G.atmos) this.G.atmos.lightsDirty = true; if (this.G.lampGlow) this.G.lampGlow.dirty = true;
     const mesh = new THREE.Mesh(this.G.tiles.lampGeo, this.deadLamp);
     mesh.castShadow = true;
     const q0 = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -e.ang + Math.PI);

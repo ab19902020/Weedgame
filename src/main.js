@@ -17,7 +17,7 @@ import { createGrass } from './grass.js';
 import { createSkyBake } from './skybake.js';
 import { loadSurfaces } from './surfaces.js';
 import { deviceProfile, presets, preferenceKey, qualityFor } from './graphics.js';
-import { budgetFor } from './perf.js';
+import { budgetFor, outputRatio } from './perf.js';
 import { treeFar } from './vegetation.js';
 
 const Q = new URLSearchParams(location.search);
@@ -51,7 +51,11 @@ export async function boot(extra = {}) {
   const backend = renderer.backend.isWebGPUBackend ? 'WebGPU' : 'WebGL2';
   // with FSR the canvas runs at device resolution (capped) and only the 3D scene is rendered smaller
   const fsrOn = budget.fsr && budget.post && Q.get('post') !== '0' && Q.get('fsr') !== '0';
-  renderer.setPixelRatio(fsrOn ? Math.min(devicePixelRatio, budget.outPr) : Math.min(devicePixelRatio, budget.pixelRatio[1]));
+  // the output resolution of the preset (720p / 1080p / 1440p on the screen's short side): with FSR the canvas runs at
+  // it and the scene below it; without, the canvas pixel ratio moves between three quarters of it and it
+  const outPr = outputRatio(budget);
+  budget.outPr = outPr; budget.pixelRatio = [Math.max(0.5, outPr * 0.75), outPr, outPr];
+  renderer.setPixelRatio(fsrOn ? outPr : budget.pixelRatio[1]);
   renderer.setSize(innerWidth, innerHeight);
   // AgX: filmic highlight roll-off without ACES's hue shifts and over-saturation (?tm=aces to compare)
   renderer.toneMapping = Q.get('tm') === 'aces' ? THREE.ACESFilmicToneMapping : THREE.AgXToneMapping;

@@ -85,7 +85,11 @@ export class Brothers {
     const mv = Math.hypot(nx - me.x, nz - me.z);
     me.x = nx; me.z = nz;
     const sp = mv / Math.max(dt, 1e-3);
-    if (sp > 0.2) me.heading = lerpAngle(me.heading, Math.atan2(this.vel.z, this.vel.x), Math.min(1, dt * 10));
+    // with a gun up the body faces the aim when standing, or when the aim is far off the way you're going (the
+    // upper body twists the rest of the way, combat.js pose); otherwise it faces where you're going
+    const aimH = G.combat?.aimHeading?.(this.active, sp > 0.6 ? Math.atan2(this.vel.z, this.vel.x) : null);
+    if (aimH != null) me.heading = lerpAngle(me.heading, aimH, Math.min(1, dt * 14));
+    else if (sp > 0.2) me.heading = lerpAngle(me.heading, Math.atan2(this.vel.z, this.vel.x), Math.min(1, dt * 10));
     a.x = me.x; a.y = me.y; a.z = me.z; a.heading = me.heading; a.speed = sp; a.running = run && sp > 3;
     a.phase = (a.phase + sp * dt * (a.running ? 2.6 : 3.6)) % (Math.PI * 2);
     a.t += dt;

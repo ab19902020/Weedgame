@@ -23,11 +23,14 @@ const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
 const lerpAngle = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+const TWIST = 1.2;   // how far (radians) the shoulders turn from the hips towards the aim before the body turns
 // the punches of a combo, then a kick: [name, which hand, reach, swing in from the side, reaction, damage]
 const COMBO = [['jab', 'L', 0.62, 0, 'jab', 9], ['cross', 'R', 0.66, 0.1, 'jab', 13], ['hook', 'L', 0.5, 0.55, 'stagger', 18], ['kick', null, 0, 0, 'down', 26]];
 
 export class Combat {
   constructor(G) {
+    this.alarms = new Set();
     this.G = G;
     this.fx = new GunFx(G);
     this.loader = new GLTFLoader();
@@ -100,12 +103,26 @@ export class Combat {
       if (!w) { if (hitPressed) this.punch(i); }
       else if (w.melee) { if (hitPressed) this.slash(i); }
       else this.trigger(i, w, hitPressed, hitHeld, dt);
-      // aiming: the body turns to the aim, the arms come up
-      if (s.aim > 0.15 && !me.swimming) { me.heading = lerpAngle(me.heading, s.aimYaw, Math.min(1, dt * 16)); a.heading = me.heading; }
     }
     // the shot and the blows shake the camera a little
     if (s.shake > 0.002) { const k = s.shake * 0.05, t = G.time * 41; G.camera.position.x += Math.sin(t * 1.3) * k; G.camera.position.y += Math.sin(t * 1.9 + 1) * k * 0.7; G.camera.position.z += Math.sin(t * 1.1 + 2) * k; s.shake *= Math.exp(-dt * 9); }
+    // car alarms: the horn in bursts, the indicators flashing (vehicles.js reads v.alarmFlash)
+    for (const v of this.alarms) {
+      v.alarmT -= dt; const ph = (14 - v.alarmT) % 0.9;
+      v.alarmFlash = ph < 0.45;
+      if (ph < (v._aph ?? 1)) G.audio?.play?.('Car_Horn', v.x, v.y + 1, v.z, 0.45);
+      v._aph = ph;
+      if (v.alarmT <= 0 || v.hidden) { this.alarms.delete(v); v.alarmFlash = false; }
+    }
     this.fx.update(dt, G.camera);
+  }
+  // the way the body should face for the aim (player.js), or null to face the way it's going: standing, it turns
+  // to the aim; moving, the upper body twists up to TWIST towards it (pose) and only past that does the body turn
+  aimHeading(i, moveYaw) {
+    const s = this.s[i], b = this.G.brothers.b[i];
+    if (s.aim <= 0.15 || b.swimming || b.vehicle || !this.weapon(i) && s.guard <= 0) return null;
+    if (moveYaw == null) return s.aimYaw;
+    return Math.abs(angDiff(s.aimYaw, moveYaw)) > TWIST ? s.aimYaw : null;
   }
   tick(i, dt) {
     const s = this.s[i], w = this.weapon(i), b = this.G.brothers.b[i];
@@ -216,8 +233,10 @@ export class Combat {
       const t = rayBox(o, d, v);
       if (t != null && t < best.t) best = { kind: 'car', t, v };
     }
-    // inside: the walls, floor and ceiling of the place
+    // street furniture: lamp posts, bins, fences, hedges, young trees (breakables.js)
     const IN = G.interiors?.at?.(G.brothers.b[shooter]);
+    if (!IN && G.breakables?.rayHit) { const h = G.breakables.rayHit(o, d, best.t); if (h && h.t < best.t) best = { kind: 'prop', t: h.t, e: h.e }; }
+    // inside: the walls, floor and ceiling of the place
     if (IN) {
       const S = IN.site, P = IN.plan, [lx, ly] = G.interiors.toLocal(S, o.x, o.z), [tx, ty] = G.interiors.toLocal(S, o.x + d.x * best.t, o.z + d.z * best.t);
       const hRel = o.y - IN.floor0, f = P.ray(lx, ly, tx, ty, hRel);
@@ -295,17 +314,40 @@ export class Combat {
         const zone = Math.abs(lx) / v.def.L > Math.abs(lz) / v.def.W ? (lx > 0 ? 0 : 1) : (lz > 0 ? 3 : 2);
         v.dmg[zone] = Math.min(1, v.dmg[zone] + 0.012 * w.damage / 30);
         if (!v.player && !v.parked && v.kind === 'traffic') v.panic = 6;
+        // a tyre: low down by a wheel it goes flat and that corner of the car sinks (vehicles.js)
+        const L = v.def.L, Wd = v.def.W;
+        if (rel < 0.62 && Math.abs(lx) > L * 0.22 && Math.abs(lz) > Wd * 0.28) {
+          const k = (lx > 0 ? 0 : 2) + (lz > 0 ? 1 : 0); v.flat ??= [0, 0, 0, 0];
+          if (!v.flat[k]) { v.flat[k] = 1; G.audio?.shot?.('thud', p.x, p.z, 0.5, p.y); fx.puff(p, _b.set(0, 0.6, 0), [0.6, 0.6, 0.6], 0.5, 0.08, 0.6, 0.9); }
+        }
+        // a parked car's alarm goes off
+        if ((v.parked || v.kind === 'parked') && !v.player && !(v.alarmT > 0)) { v.alarmT = 14; this.alarms.add(v); }
+        // a car that's taken a lot smokes from under the bonnet
+        if (v.dmg[0] > 0.55 || v.dmg[1] > 0.55) v.smoking = true;
         break;
       }
       case 'ped': {
-        const ped = hit.ped, head = p.y > ped.y + 1.5 && !ped.dead;
-        fx.puff(p, _b.copy(d).multiplyScalar(1.2), [0.32, 0.02, 0.02], 0.85, 0.06, 0.32, 0.5);
-        D?.burst('drop', 3, p.x, p.y, p.z, d.x * 2, 0.6, d.z * 2, 0.8, [0.3, 0.01, 0.01]);
+        // where it hit them: the head, the body, an arm (out to the side at chest height) or the legs; and
+        // whether it came from behind (the round travelling the way they face)
+        const ped = hit.ped, rel = p.y - ped.y, hf = (ped.heading || 0) + (ped.pose === 'flee' ? Math.PI : 0);
+        const fxh = Math.cos(hf), fzh = Math.sin(hf), along = d.x * fxh + d.z * fzh, lat = (p.x - ped.x) * -fzh + (p.z - ped.z) * fxh;
+        const zone = ped.dead ? 'torso' : rel > 1.5 ? 'head' : rel < 0.95 ? 'leg' : Math.abs(lat) > 0.17 && rel > 1.05 ? 'arm' : 'torso';
+        const mul = { head: 2.6, torso: 1, arm: 0.5, leg: 0.6 }[zone];
+        fx.puff(p, _b.copy(d).multiplyScalar(1.2), [0.32, 0.02, 0.02], 0.85, 0.06, zone === 'head' ? 0.45 : 0.32, 0.5);
+        D?.burst('drop', zone === 'head' ? 6 : 3, p.x, p.y, p.z, d.x * 2, 0.6, d.z * 2, 0.8, [0.3, 0.01, 0.01]);
         G.audio?.play?.('punch', p.x, p.y, p.z, 0.22);
-        G.peds.hurt?.(ped, Math.atan2(d.z, d.x), 'shot', w.damage * (head ? 2.6 : 1), { s: Math.min(1.4, w.damage / 30), head });
+        G.peds.hurt?.(ped, Math.atan2(d.z, d.x), 'shot', w.damage * mul, { s: Math.min(1.4, w.damage / 30), head: zone === 'head', zone, fromBack: along > 0.3, sideHit: lat > 0 ? 1 : -1 });
         break;
       }
+      case 'prop': this.shootProp(hit, d, w); break;
     }
+  }
+  shootProp(hit, d, w) {
+    const p = hit.p, D = this.G.breakables;
+    D.shoot(hit.e, p, d);
+    // a mark where it went in (not on the leaves)
+    if (![7, 10, 22].includes(hit.e.kind)) this.fx.hole(p, _b.set(-d.x, 0, -d.z).normalize(), 0.06, hit.e.kind === 20 || hit.e.kind === 2 || hit.e.kind === 3 || hit.e.kind === 5 ? [0.3, 0.3, 0.3] : [0.35, 0.25, 0.15]);
+    this.fx.puff(p, _b.set(-d.x, 0.4, -d.z), [0.55, 0.52, 0.48], 0.4, 0.06, 0.3, 0.6);
   }
   // ---------------------------------------------------------------- fists and feet
   punch(i) {
@@ -380,6 +422,15 @@ export class Combat {
     if (!w && !s.move && s.guard <= 0) { s.posed = false; return; }
     slot.body.updateMatrixWorld(true);
     const g = n => slot.body.getObjectByName(n);
+    // the upper body turns to the aim from the hips (the legs keep walking the way they're going), and the head
+    // looks along it
+    const wantTwist = s.aim > 0.02 ? clamp(angDiff(s.aimYaw, a.heading), -TWIST, TWIST) * s.aim : 0;
+    s.twist = (s.twist || 0) + (wantTwist - (s.twist || 0)) * Math.min(1, (dt || 0.016) * 14);
+    if (Math.abs(s.twist) > 0.005) {
+      for (const [n, k] of [['Spine01', 0.4], ['Spine02', 0.6]]) { const bone = g(n); if (bone) turnWorld(bone, UP, -s.twist * k); }
+    }
+    // each shot rocks the shoulders back a little (more for the heavy ones), and they settle forward again
+    if (w && !w.melee && s.recoil > 0.01) { const sp = g('Spine02'), hd = a.heading + s.twist; if (sp) turnWorld(sp, _e.set(-Math.sin(hd), 0, Math.cos(hd)), s.recoil * (0.05 + (w.recoil || 0.2) * 0.12)); }
     const shR = g('R_Upperarm').getWorldPosition(new THREE.Vector3()), shL = g('L_Upperarm').getWorldPosition(new THREE.Vector3());
     const head = g('Head').getWorldPosition(new THREE.Vector3()), chest = g('Spine02').getWorldPosition(new THREE.Vector3());
     const r = new THREE.Vector3().subVectors(shR, shL).setY(0).normalize(), f = new THREE.Vector3().crossVectors(UP, r).normalize();
@@ -394,12 +445,13 @@ export class Combat {
     let grip = new THREE.Vector3();
     const reloading = s.reloadT > 0 ? Math.sin(clamp(1 - s.reloadT / w.reload, 0, 1) * Math.PI) : 0;
     if (w.hold === 'rifle') {
-      // aimed: butt in the shoulder pocket, along the aim. Low ready: muzzle down and in. Running: across the chest
-      const lowDir = _a.copy(f).multiplyScalar(0.78).addScaledVector(UP, -0.5).addScaledVector(r, -0.32).normalize();
-      const runDir = _b.copy(f).multiplyScalar(0.35).addScaledVector(r, -0.72).addScaledVector(UP, 0.42).normalize();
+      // aimed: butt in the shoulder pocket, along the aim. Low ready: muzzle down and in. Running: still low ready,
+      // a little tighter to the body (not slung across the chest, where the arms crossed over)
+      const lowDir = _a.copy(f).multiplyScalar(0.78).addScaledVector(UP, -0.5).addScaledVector(r, -0.22).normalize();
+      const runDir = _b.copy(f).multiplyScalar(0.72).addScaledVector(UP, -0.62).addScaledVector(r, -0.18).normalize();
       gF.copy(lowDir).lerp(runDir, run).lerp(aimD, raise).normalize();
       const pocket = new THREE.Vector3().copy(shR).addScaledVector(r, -0.055).addScaledVector(f, 0.04).addScaledVector(UP, -0.035);
-      pocket.lerp(_c.copy(shR).addScaledVector(UP, -0.12).addScaledVector(f, 0.08).addScaledVector(r, -0.02), low * (1 - run)).lerp(_d.copy(shR).addScaledVector(UP, -0.38).addScaledVector(f, 0.14).addScaledVector(r, 0.06), run * low);
+      pocket.lerp(_c.copy(shR).addScaledVector(UP, -0.12).addScaledVector(f, 0.08).addScaledVector(r, -0.02), low * (1 - run)).lerp(_d.copy(shR).addScaledVector(UP, -0.16).addScaledVector(f, 0.1).addScaledVector(r, -0.03), run * low);
       this.frame(gF, gU, gL, reloading * 0.5);
       const origin = pocket.clone().sub(this.local(w.butt, w.scale, gF, gU, gL));
       grip.copy(origin).add(this.local(w.grip, w.scale, gF, gU, gL));
@@ -424,7 +476,9 @@ export class Combat {
     const poleR = new THREE.Vector3().copy(UP).multiplyScalar(-0.75).addScaledVector(r, 0.6).addScaledVector(f, -0.25);
     const oneHanded = w.hold === 'pistol' && raise < 0.35;
     arms.reach('R', arms.wristFor('R', grip, Fr, Nr), Fr, Nr, poleR, 1);
-    arms.curl('R', [0.35, 0.55, 0.35], [1.25, 1.35, 0.85], [0.35, 0.45, 0.4], 1);
+    // trigger discipline: the index finger lies straight along the frame until the gun comes up to fire
+    const onTrig = clamp(raise * 1.4 - 0.3, 0, 1);
+    arms.curl('R', [0.08 + 0.27 * onTrig, 0.06 + 0.49 * onTrig, 0.04 + 0.31 * onTrig], [1.25, 1.35, 0.85], [0.35, 0.45, 0.4], 1);
     // the gun goes where the hand actually got to (if the arm came up short the gun stays in the hand)
     const palm = arms.palm('R');
     const qg = new THREE.Quaternion().setFromRotationMatrix(_m.makeBasis(gL, gU, gF));
@@ -518,6 +572,12 @@ export class Combat {
   }
 }
 
+// turn a bone about a world axis on top of its pose
+function turnWorld(bone, axis, ang) {
+  const w = bone.getWorldQuaternion(new THREE.Quaternion()), p = bone.parent.getWorldQuaternion(new THREE.Quaternion());
+  bone.quaternion.copy(p.invert().multiply(_q.setFromAxisAngle(axis, ang).multiply(w)));
+  bone.updateMatrixWorld(true);
+}
 // ray o + t*d against a capsule round segment A-B of radius r: the entry distance or null
 function raySegment(o, d, A, B, r) {
   const u = _c.subVectors(B, A), w0 = _d.subVectors(o, A);

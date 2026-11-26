@@ -265,12 +265,14 @@ export class VehicleRenderer {
       const S = v._sus;
       // ground pose (wheels), then the sprung body on top of it
       const bank=def.wheels===2 ? (S?.bank || 0) : 0;
-      this._e.set((v.roll || 0)+bank, -v.heading, v.pitch || 0, 'YXZ');
+      // shot-out tyres (combat.js): that corner sits down on its rim (0 front-left, 1 front-right, 2 rear-left, 3 rear-right)
+      const F = v.flat, fr = F ? (F[1] + F[3] - F[0] - F[2]) * 0.045 : 0, fp = F ? (F[2] + F[3] - F[0] - F[1]) * 0.03 : 0, fy = F ? (F[0] + F[1] + F[2] + F[3]) * 0.035 : 0;
+      this._e.set((v.roll || 0)+bank+fr, -v.heading, (v.pitch || 0)+fp, 'YXZ');
       this._q.setFromEuler(this._e);
-      this._g.compose(this._v.set(v.x, v.y, v.z), this._q, this._s.set(1, 1, 1));
+      this._g.compose(this._v.set(v.x, v.y - fy, v.z), this._q, this._s.set(1, 1, 1));
       if (S && d2 < 160 * 160) {
-        this._e.set((v.roll || 0) + bank + S.r, -v.heading, (v.pitch || 0) + S.p, 'YXZ'); this._q.setFromEuler(this._e);
-        this._m.compose(this._v.set(v.x, v.y - Math.abs(S.r) * 0.25 - Math.abs(S.p) * 0.4, v.z), this._q, this._s.set(1, 1, 1));
+        this._e.set((v.roll || 0) + bank + S.r + fr, -v.heading, (v.pitch || 0) + S.p + fp, 'YXZ'); this._q.setFromEuler(this._e);
+        this._m.compose(this._v.set(v.x, v.y - fy - Math.abs(S.r) * 0.25 - Math.abs(S.p) * 0.4, v.z), this._q, this._s.set(1, 1, 1));
       } else this._m.copy(this._g);
       if(v.player && v.lights && !(v.dmg?.[0]>.6)){
         const lamp=this.drivingLamp, bike=def.wheels===2, high=!!v.fullBeam;
@@ -317,7 +319,7 @@ export class VehicleRenderer {
       const dmg = v.dmg, dga = mesh.geometry.attributes.iDmg.array;
       if (dmg) { dga[i * 4] = dmg[0]; dga[i * 4 + 1] = dmg[1]; dga[i * 4 + 2] = dmg[2]; dga[i * 4 + 3] = dmg[3]; } else dga.fill(0, i * 4, i * 4 + 4);
       const st = mesh.geometry.attributes.iState;
-      const flags = (v.brake ? 1 : 0) | (v.reversing ? 2 : 0) | (v.ind === 1 ? 4 : 0) | (v.ind === 2 ? 8 : 0) | (v.hazard ? 16 : 0);
+      const flags = (v.brake ? 1 : 0) | (v.reversing ? 2 : 0) | (v.ind === 1 ? 4 : 0) | (v.ind === 2 ? 8 : 0) | (v.hazard || v.alarmT > 0 ? 16 : 0);
       st.array[i * 4] = flags; st.array[i * 4 + 1] = v.fullBeam && v.lights ? 1.35 : v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
       if (d2 < 90 * 90 && sn < 400) {
         this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g);

@@ -6,7 +6,7 @@
 //  - holes: a dark pock with a chipped rim, pressed onto the wall or ground where a round hit
 //  - casings: brass thrown out of the ejection port, bouncing and rolling to a stop
 import * as THREE from 'three/webgpu';
-import { attribute, uv, vec3, vec4, float, smoothstep, length, mix, sin, positionLocal } from 'three/tsl';
+import { attribute, uv, vec3, vec4, float, smoothstep, length, mix, sin, atan, step, positionLocal } from 'three/tsl';
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _v = new THREE.Vector3(), _u = new THREE.Vector3();
 const Z0 = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -57,8 +57,13 @@ export class GunFx {
     const hm = new THREE.MeshStandardNodeMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, roughness: 0.95 });
     const hc = attribute('hcol', 'vec4'), hr = length(uv().sub(0.5)).mul(2);
     const pit = float(1).sub(smoothstep(0.14, 0.26, hr)), rim = smoothstep(0.2, 0.32, hr).mul(float(1).sub(smoothstep(0.5, 0.95, hr)));
-    hm.colorNode = mix(mix(hc.rgb.mul(1.35), hc.rgb.mul(0.55), rim.mul(0.5)), vec3(0.015, 0.014, 0.013), pit);
-    hm.opacityNode = pit.add(rim.mul(hc.a)).min(1);
+    // a stain (alpha above 1: a pool of blood): a soft-edged irregular pool of its colour, darker where it's deep
+    const stain = step(1.5, hc.a), au = uv().sub(0.5), ang = atan(au.y, au.x);
+    const edge = float(0.78).add(sin(ang.mul(3).add(hc.a.mul(7))).mul(0.08)).add(sin(ang.mul(7).add(hc.a.mul(13))).mul(0.05));
+    const puddle = float(1).sub(smoothstep(edge.sub(0.12), edge, hr));
+    hm.colorNode = mix(mix(mix(hc.rgb.mul(1.35), hc.rgb.mul(0.55), rim.mul(0.5)), vec3(0.015, 0.014, 0.013), pit), mix(hc.rgb, hc.rgb.mul(0.55), float(1).sub(hr)), stain);
+    hm.roughnessNode = mix(float(0.95), float(0.18), stain);
+    hm.opacityNode = mix(pit.add(rim.mul(hc.a)).min(1), puddle.mul(0.92), stain);
     this.holes = pool(hg, hm, NH, scene, { renderOrder: 2, receiveShadow: true });
     this.hi = 0;
     // ---- casings
@@ -100,6 +105,18 @@ export class GunFx {
     _m.compose(_p, _q, _s); this.holes.setMatrixAt(i, _m); this.holes.instanceMatrix.needsUpdate = true;
     this.hCol.setXYZW(i, rgb[0], rgb[1], rgb[2], 0.85); this.hCol.needsUpdate = true;
   }
+  // a pool of blood on the ground at (x, y, z), `size` metres across (it spreads out over a couple of seconds)
+  stain(x, y, z, size) {
+    const i = this.hi; this.hi = (i + 1) % this.NH;
+    this.grow = this.grow || []; this.grow.push({ i, x, y, z, size, t: 0, rot: Math.random() * 6.28 });
+    this.hCol.setXYZW(i, 0.2, 0.012, 0.01, 2 + Math.random()); this.hCol.needsUpdate = true;
+    this.growStain(this.grow.at(-1), 0.05);
+  }
+  growStain(g, k) {
+    _q.setFromUnitVectors(FWD, UP); _q.multiply(new THREE.Quaternion().setFromAxisAngle(FWD, g.rot));
+    _p.set(g.x, g.y + 0.004, g.z); _s.setScalar(g.size * k);
+    _m.compose(_p, _q, _s); this.holes.setMatrixAt(g.i, _m); this.holes.instanceMatrix.needsUpdate = true;
+  }
   casing(p, v) {
     const i = this.ci; this.ci = (i + 1) % this.NC;
     this.cP.set([p.x, p.y, p.z], i * 3); this.cV.set([v.x, v.y, v.z], i * 3);
@@ -107,6 +124,7 @@ export class GunFx {
     this.cA[i] = 0; this.cRest[i] = 0;
   }
   update(dt, cam) {
+    if (this.grow?.length) { for (const g of this.grow) { g.t += dt; this.growStain(g, Math.min(1, 0.05 + Math.sqrt(g.t / 3.5) * 0.95)); } this.grow = this.grow.filter(g => g.t < 3.5); }
     const G = this.G;
     // puffs: billboards to the camera, drifting up and slowing
     const cq = cam.quaternion; let any = false;

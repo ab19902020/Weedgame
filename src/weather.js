@@ -56,17 +56,28 @@ export class World {
   get time() { return this.s.t; }
   hours() { const d = new Date(this.s.t * 1000); return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600; }
   stateName() { return this.s.seg.state; }
+  // Dev → Weather (and ?weather=): the chosen weather comes in over a few seconds and then stays, however long
+  // you play, until Auto hands it back to the timeline. (It used to blend in over 25 game minutes and give way
+  // to the timeline after 90, so a clear sky could cloud over and rain again within a few real minutes.)
   force(state) {
     const seg = this.s.seg;
-    const blendNow = this.mix();
-    seg.prev = 'custom'; seg.prevMix = blendNow;
+    if (state === 'auto' || !STATES[state]) {
+      if (!this.s.forced) return;
+      this.s.forced = null; seg.prev = 'custom'; seg.prevMix = this.mix(); seg.start = this.s.t; seg.len = 60 * 60; seg.blend = BLEND / 3; seg.i++;
+      return;
+    }
+    seg.prev = 'custom'; seg.prevMix = this.mix();
     seg.state = state; seg.start = this.s.t; seg.len = 90 * 60; seg.i++;
+    seg.blend = 8 * Math.max(1, this.s.scale);
+    this.s.forced = state;
+    // a dry sky: the falling rain stops at once (the streets still dry off by themselves)
+    if (!STATES[state].rain) seg.prevMix.rain = 0;
   }
   setHour(h) { const d = new Date(this.s.t * 1000); d.setHours(Math.floor(h), Math.round((h % 1) * 60), 0, 0); this.s.t = d.getTime() / 1000; this.s.seg.start = Math.min(this.s.seg.start, this.s.t); }
   mix() {
     const seg = this.s.seg;
     const a = seg.prev === 'custom' ? seg.prevMix || STATES.broken : STATES[seg.prev], b = STATES[seg.state];
-    const k = Math.max(0, Math.min(1, (this.s.t - seg.start) / BLEND));
+    const k = Math.max(0, Math.min(1, (this.s.t - seg.start) / (seg.blend || BLEND)));
     const e = k * k * (3 - 2 * k);
     const out = {};
     for (const key of Object.keys(b)) { const av = a[key] ?? b[key]; out[key] = av + (b[key] - av) * e; }
@@ -74,13 +85,15 @@ export class World {
   }
   advanceSegments() {
     const seg = this.s.seg;
+    // held by Dev → Weather: the segment just goes on
+    if (this.s.forced && STATES[this.s.forced]) { seg.state = this.s.forced; if (this.s.t > seg.start + seg.len) seg.len = this.s.t - seg.start + 3600; return; }
     let guard = 0;
     while (this.s.t > seg.start + seg.len && guard++ < 200) {
       const r = rnd(this.s.seed + seg.i * 7919);
       let acc = 0, next = seg.state;
       for (const [n, p] of NEXT[seg.state]) { acc += p; if (r <= acc) { next = n; break; } }
       // morning mist / afternoon showers bias
-      seg.prev = seg.state; seg.state = next; seg.start = seg.start + seg.len; seg.i++;
+      seg.prev = seg.state; seg.state = next; seg.start = seg.start + seg.len; seg.i++; seg.blend = 0;
       seg.len = (35 + rnd(this.s.seed + seg.i * 104729) * 90) * 60;
       if (next === 'rain') seg.len *= 0.6;
     }

@@ -6,12 +6,15 @@ import {isCycle} from './propulsion.js';
 import { MODELS, PAINTS, randomModel, paintFor } from './vehicles.js';
 import { F_ONEWAY, F_ROUNDABOUT, F_BRIDGE, F_DRIVE } from './network.js';
 
-const FULL_R = 480, BUBBLE_R = 650, KILL_R = 820;
+// the simulation bubble round the player: full simulation inside FULL_R, cars kept up to BUBBLE_R (frozen beyond it
+// near an anchor), removed past KILL_R. Set per quality preset (perf.js `bubble`, setRadius).
+let FULL_R = 480, BUBBLE_R = 650, KILL_R = 820;
 export const KEEP_R = 250;        // the fleet within this radius of either brother is kept (frozen while he is inactive) and saved
 const RANK = { motorway: 10, trunk: 9, primary: 8, secondary: 7, tertiary: 6, motorway_link: 8, trunk_link: 7, primary_link: 7, secondary_link: 6, tertiary_link: 5, unclassified: 4, residential: 3, living_street: 2, service: 1, busway: 3 };
 const DENS = { motorway: 1 / 120, trunk: 1 / 140, primary: 1 / 110, secondary: 1 / 160, tertiary: 1 / 220, motorway_link: 1 / 300, trunk_link: 1 / 300, primary_link: 1 / 240, secondary_link: 1 / 300, tertiary_link: 1 / 400, unclassified: 1 / 520, residential: 1 / 1040, living_street: 1 / 1800 };
 
 export class Traffic {
+  setRadius(bubble) { if (bubble > 0) setTrafficRadius(bubble); }
   constructor(net, signals, opts = {}) {
     this.net = net; this.sig = signals;
     this.list = []; this.byId = new Map(); this.nextId = 1;
@@ -566,5 +569,6 @@ export class Traffic {
   }
 }
 
+export function setTrafficRadius(bubble) { BUBBLE_R = bubble; FULL_R = Math.max(250, bubble - 170); KILL_R = bubble + 170; }
 export function lerpAngle(a, b, t) { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return a + d * t; }
 export function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }

@@ -13,26 +13,36 @@ import * as THREE from 'three/webgpu';
 // Look (post.js, grass.js): post = scene pass + FXAA; ao = GTAO resolution scale and samples (0 = off);
 // bloom = strength (0 = off); ibl = sky PMREM cube size (0 = off); grass = blades near the camera;
 // ssr = screen-space reflections {scale, quality} (null = off).
+// v0.33 targets: low 720p at 60 fps, medium 1080p at 60 fps, high 1440p ('2K') at 30 fps with the richest image.
+// outH: the output (canvas) height in pixels (the phone's short side, so a 2400x1080 screen shows medium at its own
+// resolution); with FSR the 3D scene renders at `scale` of that and is upscaled, moved by the frame-time controller.
+// vehicles: moving traffic within `bubble` m of the player (parked cars are on top, at `parkFill` of the slots);
+// people: pedestrians. Medium has no GTAO (a full-screen pass a phone GPU can't afford at 60) and a tighter shadow box.
 export const BUDGETS = {
   low: {
-    r0: 300, r1: 750, tiles: 45, drawCalls: 120, tris: 300e3, people: 60, vehicles: 60, cloudSteps: 8,
-    pixelRatio: [0.8, 1.0, 1.25], shadow: { size: 0, extent: 0, far: 0 }, antialias: false,
-    treeDist: 200, lampDist: 160, signDist: 120, markDist: 260, vehicleDist: 420, peopleDist: 120,
+    r0: 300, r1: 750, tiles: 45, drawCalls: 120, tris: 300e3, people: 40, vehicles: 28, bubble: 420, parkFill: 0.45, cloudSteps: 8,
+    outH: 720, pixelRatio: [0.8, 1.0, 1.25], shadow: { size: 0, extent: 0, far: 0 }, antialias: false,
+    treeDist: 200, lampDist: 160, signDist: 120, markDist: 260, vehicleDist: 380, peopleDist: 110,
     post: false, ao: { scale: 0, samples: 0 }, bloom: 0, ibl: 0, grass: false, ssr: null, targetFps: 60, bushes: 0.35,
   },
   medium: {
-    r0: 360, r1: 1150, tiles: 75, drawCalls: 220, tris: 600e3, people: 120, vehicles: 110, cloudSteps: 12,
-    pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 70, far: 450 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.42, 0.74, 1.0],
-    treeDist: 320, lampDist: 260, signDist: 180, markDist: 380, vehicleDist: 650, peopleDist: 160,
-    post: true, ao: { scale: 0.4, samples: 6 }, bloom: 0.22, ibl: 64, grass: false, ssr: null, targetFps: 60, bushes: 0.7,
+    r0: 340, r1: 1100, tiles: 70, drawCalls: 200, tris: 550e3, people: 70, vehicles: 48, bubble: 480, parkFill: 0.65, cloudSteps: 10,
+    outH: 1080, pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 60, far: 380 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.5, 0.72, 1.0],
+    treeDist: 300, lampDist: 240, signDist: 170, markDist: 360, vehicleDist: 520, peopleDist: 140,
+    post: true, ao: { scale: 0, samples: 0 }, bloom: 0.22, ibl: 64, grass: false, ssr: null, targetFps: 60, bushes: 0.7,
   },
   high: {
-    r0: 420, r1: 1150, tiles: 85, drawCalls: 320, tris: 900e3, people: 170, vehicles: 130, cloudSteps: 16,
-    pixelRatio: [0.8, 1.5, 1.5], shadow: { size: 2048, extent: 100, far: 600 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.5, 0.78, 1.0],
-    treeDist: 480, lampDist: 360, signDist: 260, markDist: 480, vehicleDist: 700, peopleDist: 170,
-    post: true, ao: { scale: 0.5, samples: 12 }, bloom: 0.3, ibl: 128, grass: true, ssr: { scale: 0.5, quality: 0.45 }, targetFps: 60, bushes: 1,
+    r0: 420, r1: 1150, tiles: 85, drawCalls: 320, tris: 900e3, people: 110, vehicles: 70, bubble: 580, parkFill: 0.9, cloudSteps: 16,
+    outH: 1440, pixelRatio: [0.8, 1.5, 1.5], shadow: { size: 2048, extent: 100, far: 600 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.55, 0.8, 1.0],
+    treeDist: 480, lampDist: 360, signDist: 260, markDist: 480, vehicleDist: 650, peopleDist: 170,
+    post: true, ao: { scale: 0.5, samples: 10 }, bloom: 0.3, ibl: 128, grass: true, ssr: { scale: 0.5, quality: 0.45 }, targetFps: 30, bushes: 1,
   },
 };
+// the canvas pixel ratio for a budget's output height on this screen (never above the device's own)
+export function outputRatio(budget, w = innerWidth, h = innerHeight, dpr = devicePixelRatio) {
+  const short = Math.max(1, Math.min(w, h));
+  return Math.min(dpr || 1, Math.max(0.5, (budget.outH || 1080) / short));
+}
 export function budgetFor(q) { return BUDGETS[q] || BUDGETS.medium; }
 
 // ------------------------------------------------------------------ geometry merging

@@ -1,11 +1,11 @@
 // Close-range characters share geometry and materials, but each owns its skeleton and mixer.
 // Roles: 'officer' and 'civilian' (19-joint rigs, six clips, near the camera) and the heroes 'cal' and 'leon'
 // (the playable Ward brothers: Tripo rigs with 21 and 20 clips, prepared by tools/characters/prepare-hero.mjs).
-import { AnimationMixer, Group, Mesh, BoxGeometry, MeshStandardMaterial, LoopOnce, Color, MeshStandardNodeMaterial, DataTexture, RepeatWrapping, LinearMipmapLinearFilter, LinearFilter } from 'three/webgpu';
+import { AnimationMixer, AnimationClip, Group, Mesh, BoxGeometry, MeshStandardMaterial, LoopOnce, Color, MeshStandardNodeMaterial, DataTexture, RepeatWrapping, LinearMipmapLinearFilter, LinearFilter } from 'three/webgpu';
 import { texture, uniform, positionGeometry, smoothstep, mix, dot, vec3, abs, float } from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
-import { applyReaction } from './hitReactions.js';
+import { applyReaction, applyWound } from './hitReactions.js';
 
 const propSlide = new BoxGeometry(.033, .17, .042);
 const propGrip = new BoxGeometry(.034, .05, .083);
@@ -50,7 +50,9 @@ export const ROLES = {
     scale: 1.78 / 0.959, walkSpeed: 1.16, runSpeed: 4.18, jumpScale: 1.2, hitScale: 1.8, swimTilt: false, prop: null, range: 160, hero: true, shadow: true,
   },
   leon: {
-    idle: 'idle', walk: 'walk', run: 'run', jump: 'jump', swim: 'swim', hit: 'front_kick_02', phone: 'make_a_call_01',
+    // his own 'idle' sags into a half-seated crouch, so he stands with Cal's 'standing_relax', retargeted onto his
+    // skeleton (tools/characters/retarget_idle.py → characters/leon_idle.json, loaded with his model)
+    idle: 'standing_relax', extraClips: ['characters/leon_idle.json'], walk: 'walk', run: 'run', jump: 'jump', swim: 'swim', hit: 'front_kick_02', phone: 'make_a_call_01',
     // one-shot clips (the rest loop); fidgets play now and then while he stands still
     once: ['jump', 'front_kick_01', 'front_kick_02', 'jump_down', 'climb', 'greet_01', 'flip', 'pitch_baseball', 'turn', 'agree', 'laugh_01', 'afraid', 'run_upstairs'],
     fidgets: ['agree', 'laugh_01', 'turn', 'make_a_call_01'],
@@ -107,7 +109,7 @@ function roleOf(a) {
   if (a.officer) return 'officer';
   const look = a.look;
   // someone taking a punch or a round is always drawn with a skeleton, so the reaction can be seen
-  if (a.react && /^p\d+$/.test(a.id)) return look?.female ? 'civilian' : (look?.outfit ?? 0) % 2 ? 'tracksuit' : 'jacket';
+  if ((a.react || a.wound) && /^p\d+$/.test(a.id)) return look?.female ? 'civilian' : (look?.outfit ?? 0) % 2 ? 'tracksuit' : 'jacket';
   if (!/^p\d+$/.test(a.id) || !look || look.hood || look.bag || look.cap ||
       ['umbrella','phone','point','wave','talk','hands'].includes(a.pose)) return null;
   if (look.female) return look.style === 2 ? 'civilian' : null;
@@ -125,8 +127,11 @@ export class RiggedPeople {
   load(role) {
     if (!this.templates.has(role)) {
       this.templates.set(role, null);
-      new GLTFLoader().load('characters/' + role + '.glb', asset => this.templates.set(role, asset),
-        undefined, e => console.warn('Character load failed', role, e));
+      const extra = Promise.all((ROLES[role]?.extraClips || []).map(url => fetch(url).then(r => r.ok ? r.json() : Promise.reject(Error(url + ' HTTP ' + r.status))).then(j => AnimationClip.parse(j)).catch(e => { console.warn('Clip load failed', url, e); return null; })));
+      new GLTFLoader().load('characters/' + role + '.glb', asset => extra.then(clips => {
+        for (const c of clips) if (c && !asset.animations.some(a => a.name === c.name)) asset.animations.push(c);
+        this.templates.set(role, asset);
+      }), undefined, e => console.warn('Character load failed', role, e));
     }
     return this.templates.get(role);
   }
@@ -212,7 +217,7 @@ export class RiggedPeople {
       const role = roleOf(a);
       if (!role || !ROLES[role]) continue;
       const distance = (a.x-cam.x)**2 + (a.z-cam.z)**2;
-      if (distance < ROLES[role].range ** 2 || (a.react && distance < 60 ** 2)) candidates.push({a,role,distance: ROLES[role].hero ? -1 : a.react ? distance * 0.02 : distance});
+      if (distance < ROLES[role].range ** 2 || ((a.react || a.wound) && distance < 60 ** 2)) candidates.push({a,role,distance: ROLES[role].hero ? -1 : a.react || a.wound ? distance * 0.02 : distance});
     }
     candidates.sort((a,b) => a.distance-b.distance);
     const visible = new Set();
@@ -257,10 +262,11 @@ export class RiggedPeople {
       if (slot.braced) for (const j of slot.reactionJoints) j.bone.quaternion.copy(j.rest);
       if (slot.extra) { for (const [bone, q] of slot.base) bone.quaternion.copy(q); slot.extra = false; }
       slot.mixer.update(dt);
-      if (R.hero || a.react || slot.reacting) for (const e of slot.base) e[1].copy(e[0].quaternion);
+      if (R.hero || a.react || slot.reacting || a.wound) for (const e of slot.base) e[1].copy(e[0].quaternion);
       // the brothers' arms (weapons, fists: combat.js); everyone else's reaction to a blow
       if (R.hero) { if (this.onHero?.(slot, a, dt) !== false) slot.extra = true; }
       else if (a.react || slot.reacting) { applyReaction(slot, a); slot.extra = true; }
+      else if (a.wound) { applyWound(slot, a); slot.extra = true; }
       slot.braced = a.brace > 0 && !a.react;
       if (slot.braced) {
         const angles = [-.28,-.85,-1.05,-.48,.68,.46];

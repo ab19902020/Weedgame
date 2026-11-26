@@ -481,7 +481,7 @@ export class Hud {
     section('Weather & time');
     row('Time', [6, 8, 12, 16, 18.5, 21, 0].map(h => btn(String(h).replace('.5', ':30'), () => w.setHour(h), 'time-' + h)));
     row('Speed', [1, 30, 120, 600].map(s => btn(() => s + '×' + (w.s.scale === s ? ' ✓' : ''), () => w.s.scale = s, 'speed-' + s)));
-    row('Weather', Object.keys(STATES).map(k => btn(() => k + (w.stateName() === k ? ' ✓' : ''), () => w.force(k), 'weather-' + k)));
+    row('Weather', [btn(() => 'auto' + (!w.s.forced ? ' ✓' : ''), () => w.force('auto'), 'weather-auto'), ...Object.keys(STATES).map(k => btn(() => k + (w.s.forced === k ? ' 🔒' : w.stateName() === k ? ' ✓' : ''), () => w.force(k), 'weather-' + k))]);
     row('Surfaces', [btn('Dry', () => { w.s.wet = 0; w.s.puddle = 0; }), btn('Soak', () => { w.s.wet = 1; w.s.puddle = 0.9; })]);
     section('Emergency response');
     row('Incidents', [btn('Stage collision nearby', () => { const i = G.police.stageCollision(); this.toast(i ? 'Collision staged · watch for the response' : 'No suitable traffic nearby'); }),

@@ -56,6 +56,11 @@ No official Land Rover audio is used: none is available under a licence the game
 
 Details in `www/weapons/SOURCES.txt`. The pub games' ball and cue clicks are the footstep bank's heel-on-tile recordings pitched up, and the dart's thud is the world bank's wood impact; nothing is synthesised.
 
+## Ideas taken from other projects (v0.33)
+
+* **GTW — Go To Wherever** (github.com/galatolofederico/gtw, MIT, © 2026 Rolandjg - fableflight and Federico Galatolo): the night city of street lights seen from afar (`src/lampGlow.js` is our own code after that look). Its building facades and filmic AgX grading were compared with ours, which already have both.
+* **Leon's standing idle** (`www/characters/leon_idle.json`): Cal's own `standing_relax` clip retargeted onto Leon's skeleton by `tools/characters/retarget_idle.py`.
+
 ## Surface textures (photographic, CC0)
 
 Downloaded from Poly Haven (polyhaven.com) on 2026-11-23 by `tools/assets/fetch_textures.py`. All Poly Haven textures are **CC0 1.0** (public domain, no attribution required; credited here anyway). Each is reduced to 512 px: the albedo has its AO map multiplied in at 35%, and the second image packs the OpenGL normal map (RG) with roughness (B). The files are `www/assets/tex/<layer>_a.jpg` and `<layer>_n.jpg`, about 3.4 MB in total. Colours are re-tinted in the shaders per building, landcover class and weather.
