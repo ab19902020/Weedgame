@@ -129,14 +129,15 @@ G.controller=new Controller(G);
 // the brothers' own cars are Range Rovers (older saves had a hatch and an estate under these ids)
 const OWN = { 'cal-car': 'rangerover', 'leon-car': 'rangerover' };
 for (const sv of G.save.vehicles) {
-  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: OWN[sv.id] || sv.model, paint: sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined, fuel: typeof sv.fuel === 'number' ? sv.fuel : undefined });
+  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: OWN[sv.id] || sv.model, paint: sv.id === 'cal-car' ? 0x1e4d38 : sv.id === 'leon-car' ? 0xffffff : sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined, fuel: typeof sv.fuel === 'number' ? sv.fuel : undefined });
   if (sv.id.startsWith('p:')) G.save.taken.add(sv.id);
 }
 if (!G.traffic.byId.has('cal-car')) {
   // both cars on the service road at the north end of the precinct, in view from the start
   const a = kerbPlace(START.x, START.z - 33), b = kerbPlace(START.x - 6, START.z - 33);
-  G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'rangerover', paint: 0x23382c, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
-  G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'rangerover', paint: 0x23382c, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
+  // Cal's is British racing green, Leon's is the white one. Same cabin, wheel and seats in both.
+  G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'rangerover', paint: 0x1e4d38, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
+  G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'rangerover', paint: 0xffffff, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
 }
 // the simulated fleet that was around both brothers comes back with the same ids
 G.traffic.anchors = G.brothers.b;
@@ -304,3 +305,27 @@ async function warmup() {
   try { await G.renderer.compileAsync(G.scene, G.camera); } catch (e) { console.warn('precompile', e); }
 }
 G.renderer.setAnimationLoop(frame);
+
+// headless checks: ?fp=leon or ?fp=cal closes the menu and sits that brother in the driver's seat
+if (G.Q.get('fp') || G.Q.get('qa')) {
+  globalThis.GC = G;
+  G.sitIn = (id) => {
+    const v = G.traffic.byId.get(id); if (!v) return false;
+    const B = G.brothers, me = B.me;
+    const other = B.vehicleOf(me);
+    if (other && other !== v) { other.player = false; other.parked = true; other.camInside = false; }
+    me.x = v.x; me.z = v.z; me.y = v.y; me.vehicle = v.id;
+    v.parked = false; v.player = true; v.free = true; v.hidden = false; v.occupied = null; v.sp = 0;
+    B.cam.car = 3; B.cam.lastUser = -10; B.cam.yaw = v.heading + Math.PI;
+    return true;
+  };
+}
+if (G.Q.get('fp')) {
+  const id = G.Q.get('fp') === 'cal' ? 'cal-car' : 'leon-car';
+  const tick = () => {
+    if (!G.hud.menu.el.hidden) G.hud.menu.close();
+    if (!G._needGround && G.sitIn(id)) return;
+    setTimeout(tick, 250);
+  };
+  setTimeout(tick, 300);
+}
