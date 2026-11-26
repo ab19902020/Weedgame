@@ -6,6 +6,7 @@
 import * as THREE from 'three/webgpu';
 import { makePlan } from './interiorPlan.js';
 import { buildInterior, setDaylight } from './interiorMesh.js';
+import { HomeTV } from './homeTV.js';
 import { Restaurants } from './restaurants.js';
 import { PubGames } from './pubGames.js';
 import { Robbery } from './robbery.js';
@@ -17,7 +18,7 @@ const HOME = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage']);
 
 export class Interiors {
   constructor(G) {
-    this.G = G; this.sites = []; this.byId = new Map(); this.built = new Map();
+    this.G = G; this.homeTV=new HomeTV(this); this.sites = []; this.byId = new Map(); this.built = new Map();
     this.prompt = null; this.ready = false;
     this.group = new THREE.Group(); this.group.name = 'interiors'; G.scene.add(this.group);
     this.outside = new THREE.Group(); this.outside.name = 'interior doors'; G.scene.add(this.outside);
@@ -38,6 +39,7 @@ export class Interiors {
     for (const s of sites) {
       // the plan is cheap (no meshes): it fixes the front door's place along the wall
       if (s.kind === 'pub') s.food = 'pub';   // the bar's menu
+      s.brothersHome=s.id===2 && s.district==='Woodley';
       s.plan = makePlan(s);
       const dx = s.plan.site.doorX, out = (s.door.wall || 0) + 0.75;
       [s.dx, s.dz] = this.toWorld(s, dx, -out);           // where you stand to go in
@@ -49,6 +51,7 @@ export class Interiors {
     this.G.events?.emit?.('interiors', { n: sites.length });
   }
   title(s) {
+    if(s.brothersHome)return "Brothers’ home, "+s.street;
     if (s.kind === 'trap') return `Trap house, ${s.street}`;
     if (s.kind === 'nice') return `The nicer house, ${s.street}`;
     if (s.kind === 'mall') return 'The Oracle';
@@ -111,6 +114,7 @@ export class Interiors {
       if (IN) {
         const [lx, ly] = this.toLocal(IN.site, me.x, me.z), P = IN.plan;
         if (Math.hypot(lx - P.exit.x, ly - P.exit.y) < 1.3 && me.y - IN.floor0 < 0.8) this.prompt = { text: 'Leave', act: 'leave', site: IN.site };
+        else if(IN.site.brothersHome && !this.homeTV.seated && me.y-IN.floor0<.9 && (()=>{const sofa=P.items.find(it=>it.type.startsWith('sofa'));return sofa && Math.hypot(lx-sofa.x,ly-sofa.y)<2.2;})())this.prompt={text:'Sit on sofa',act:'sit',site:IN.site};
         else if (IN.site.kind === 'food' || IN.site.kind === 'pub') {
           const till = this.food.tillAt(IN, me);
           if (till != null) this.prompt = { text: IN.site.kind === 'pub' ? 'Buy a drink' : 'Order', act: 'order', site: IN.site, till };
@@ -189,7 +193,7 @@ export class Interiors {
     const p = this.prompt; if (!p || this.fade.dir) return false;
     if (p.act === 'none') return false;
     if (p.act === 'rob') { this.rob.start(this.at(this.G.brothers.me)); return true; }
-    if (p.act === 'enter') this.enter(p.site); else if (p.act === 'order') this.food.open(p.site, p.till); else if (p.act === 'game') this.games.start(p.game.type, p.site); else this.leave(p.site);
+    if (p.act === 'sit') this.homeTV.sit(this.ensure(p.site)); else if (p.act === 'enter') this.enter(p.site); else if (p.act === 'order') this.food.open(p.site, p.till); else if (p.act === 'game') this.games.start(p.game.type, p.site); else this.leave(p.site);
     return true;
   }
   // trees and shrubs whose leaves reach into the building (the shell hides them from outside; inside it doesn't)

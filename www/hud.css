@@ -208,3 +208,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #reticle.lock{animation:lockin .18s ease-out}
 #reticle.lock.head{width:30px;height:30px;margin:-15px 0 0 -15px}
 @keyframes lockin{from{width:80px;height:80px;margin:-40px 0 0 -40px;opacity:.4}}
+#homeTV { position:fixed; z-index:80; bottom:max(12px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); display:flex; flex-wrap:wrap; justify-content:center; gap:6px; width:max-content; max-width:92vw; max-height:46vh; overflow:auto; padding:9px; border-radius:12px; background:#12191ef2; color:white; pointer-events:auto; }
+#homeTV button { font:600 14px system-ui; color:#f4f6f4; background:#30434b; border:1px solid #567079; border-radius:7px; min-height:40px; padding:6px 14px; }
+#homeTV.playing { inset:0; transform:none; max-width:none; max-height:none; width:auto; border-radius:0; flex-flow:column; align-items:flex-start; padding:4px; }
+#homeTV iframe { width:100%; flex:1; background:#101419; border:0; }
+body:has(#homeTV) #hud {pointer-events:none;}

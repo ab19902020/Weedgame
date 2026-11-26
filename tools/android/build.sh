@@ -14,7 +14,7 @@ cp -r www/index.html www/app.js www/worker.js www/hud.css www/county-menu.webp w
 cp tools/android/assets-extra/migrate.html $W/assets/
 $BT/aapt2 compile --dir $W/res -o $W/res.zip
 $BT/aapt2 link -o $W/base.apk -I $JAR --manifest tools/android/AndroidManifest.xml $W/res.zip -A $W/assets \
-  --min-sdk-version 26 --target-sdk-version 35 --version-code $CODE --version-name $VERSION -0 bin -0 png
+  --min-sdk-version 26 --target-sdk-version 35 --version-code $CODE --version-name $VERSION -0 bin -0 png -0 mp4
 javac -nowarn --release 11 -classpath $JAR -d $W/classes tools/android/src/uk/greencounty/game/Main.java
 $BT/d8 --release --min-api 26 --lib $JAR --output $W $(find $W/classes -name '*.class')
 if command -v zip >/dev/null; then (cd $W && zip -q base.apk classes.dex); else python3 -c "import zipfile; z=zipfile.ZipFile('$W/base.apk','a'); z.write('$W/classes.dex','classes.dex'); z.close()"; fi

@@ -7,6 +7,8 @@ function actor(id,top,x,y,z){
 export class Neighbourhood {
   constructor(G){
     this.G=G;this.cooldown=65+Math.random()*90;this.social=4;this.check=0;this.actors=[];this.elapsed=0;
+    this.calls=[];
+    this.nextFire=1200+Math.random()*1200;
     const mesh=(geometry,colour)=>new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({color:colour}));
     this.ball=mesh(new THREE.SphereGeometry(.13,10,8),0xf3ead3);
     this.fire=new THREE.Group();
@@ -79,44 +81,96 @@ export class Neighbourhood {
     }
     return false;
   }
-  startFire(){
-    const G=this.G, net=G.net;
-    const targets=G.traffic.list.filter(v=>v.kind==='parked' && !v.owner && !v.free && Math.hypot(v.x-G.focus.x,v.z-G.focus.z)<160);
-    for(const target of targets){
-    const snap=net.nearest(target.x,target.z,20,e=>net.flags[e]&16);
-    if(!snap)continue;
-    const dest=snap.e*2,route=[dest],seen=new Set([snap.e]);let length=0;
-    while(length<230){
-      const h=net.inD[net.startNode(route[0])].find(h=>!seen.has(h>>1));if(h==null)break;
-      seen.add(h>>1);route.unshift(h);length+=net.len[h>>1];
-    }
-    if(length<65)continue;
-    const engine=G.traffic.spawnAt(route[0],0,{kind:'fire',model:'fire',paint:0xa51e1b,route,v:0});
-    Object.assign(engine,{siren:true,status:'responding',target:{x:target.x,z:target.z}});
-    this.incident={engine,x:target.x,z:target.z,y:target.y,time:0,worked:0};this.fire.visible=true;this.fire.position.set(target.x,target.y+.65,target.z);
-    G.hud.feed('Fire brigade called · '+(G.roadName(target.x,target.z)||'vehicle fire'));return true;
+  sendCrew(service,x,z,reason,incident){
+    const G=this.G,net=G.net;
+    const snap=net.nearest(x,z,45,e=>net.flags[e]&16);
+    if(!snap)return false;
+    for(const last of [snap.e*2,snap.e*2+1]){
+      if(!net.outD[net.startNode(last)].includes(last))continue;
+      const route=[last],seen=new Set([snap.e]);let length=0;
+      while(length<230){
+        const h=net.inD[net.startNode(route[0])].find(edge=>!seen.has(edge>>1));
+        if(h==null)break;
+        seen.add(h>>1);route.unshift(h);length+=net.len[h>>1];
+      }
+      if(length<65)continue;
+      const medic=service==='ambulance';
+      const unit=G.traffic.spawnAt(route[0],0,{kind:service,model:service,paint:medic?0xe9ee77:0xac221e,route,v:0});
+      Object.assign(unit,{siren:true,status:'responding',target:{x,z}});
+      this.calls.push({unit,service,reason,incident,x,z,time:0,worked:0});
+      G.hud.feed((medic?'Ambulance':'Fire crew')+' responding · '+reason);return true;
     }
     return false;
   }
-  response(dt){
-    const s=this.incident;if(!s)return;
-    const G=this.G,v=s.engine;s.time+=dt;
-    if(!s.crew && Math.hypot(v.x-s.x,v.z-s.z)<32){
-      v.occupied=true;v.parked=true;v.v=0;v.siren=false;v.target=null;
-      s.crew=[0,1].map(k=>actor('firefighter-'+k,0xc79845,v.x,v.y,v.z+k));G.hud.feed('Fire crew on scene');
+  startFire(){
+    if(this.calls.some(c=>c.service==='fire'))return false;
+    const G=this.G;
+    for(const car of G.traffic.list){
+      if(car.kind!=='parked'||car.owner||car.free||car.player||Math.hypot(car.x-G.focus.x,car.z-G.focus.z)>160)continue;
+      if(!this.sendCrew('fire',car.x,car.z,'vehicle fire',null))continue;
+      this.fire.position.set(car.x,car.y+.65,car.z);this.fire.scale.setScalar(1);this.fire.visible=true;
+      return true;
     }
-    if(s.crew){
-      for(const [k,p] of s.crew.entries()){
-        const dx=s.x+3-p.x,dz=s.z+2*k-p.z,d=Math.hypot(dx,dz);
-        p.heading=Math.atan2(dz,dx);p.speed=d>.6?1.8:0;p.phase+=dt*p.speed*3;p.x+=dx/(d||1)*Math.min(d,p.speed*dt);p.z+=dz/(d||1)*Math.min(d,p.speed*dt);
-        p.y=G.tiles.ground(p.x,p.z)??p.y;p.pose=p.speed?'walk':'point';
+    return false;
+  }
+  dispatchInjuries(dt){
+    for(const inc of this.G.police.incidents){
+      if(!inc.injury || inc.status==='new' || inc.medicalClosed)continue;
+      inc.responseAge=(inc.responseAge||0)+dt;
+      if(inc.responseAge>=240 || inc.status==='cleared'){
+        if(!inc.medicalSent && inc.patient)inc.patient.awaitingMedic=false;
+        inc.medicalClosed=true;continue;
       }
-      if(s.crew.every(p=>!p.speed))s.worked+=dt;
+      if(inc.retryAfter>inc.responseAge)continue;
+      inc.retryAfter=inc.responseAge+8;
+      if(!inc.medicalSent && this.calls.filter(c=>c.service==='ambulance').length<2){
+        inc.medicalSent=this.sendCrew('ambulance',inc.x,inc.z,'reported injury',inc);
+      }
+      if(inc.trapped && !inc.rescueSent && !this.calls.some(c=>c.service==='fire')){
+        inc.rescueSent=this.sendCrew('fire',inc.x,inc.z,'trapped occupant',inc);
+      }
     }
-    for(let k=0;k<10;k++){const p=this.fire.children[k];if(k<5)p.scale.y=1+.3*Math.sin(s.time*8+k);else{const u=(s.time*.25+k*.21)%1;p.position.set(u*.9,1+u*4,Math.sin(k)*.3);p.scale.setScalar(.4+u);}}
-    this.fire.scale.setScalar(Math.max(.01,1-s.worked/22));
-    if(s.worked>=22 || (s.time>150 && Math.hypot(G.focus.x-s.x,G.focus.z-s.z)>220)){
-      this.fire.visible=false;this.incident=null;v.parked=false;v.target=null;v.siren=false;v.occupied=false;v.status='returning';this.retiring=v;
+  }
+  response(dt){
+    const G=this.G;
+    for(let i=this.calls.length-1;i>=0;i--){
+      const s=this.calls[i],v=s.unit,medic=s.service==='ambulance',fire=s.reason==='vehicle fire';
+      const patient=medic?s.incident?.patient:null;
+      const x=patient?.x??s.x,z=patient?.z??s.z;
+      s.time+=dt;
+      const distance=Math.hypot(v.x-x,v.z-z);
+      if(!s.crew && !v.player && (distance<30 || (distance<85 && v.wait>6))){
+        Object.assign(v,{occupied:true,parked:true,v:0,siren:false,lightsOnly:true,target:null,status:'onscene'});
+        s.crew=[-1,1].map((side,k)=>actor(v.id+'-crew-'+k,medic?0x22674e:0xc79845,
+          v.x-Math.sin(v.heading)*side*(v.def.W/2+.35),v.y,v.z+Math.cos(v.heading)*side*(v.def.W/2+.35)));
+        G.hud.feed(medic?'Paramedics on scene':'Fire crew on scene');
+      }
+      if(s.crew){
+        for(const [k,p] of s.crew.entries()){
+          const dx=(s.returning?v.x:x)+(s.returning?0:medic?.8:2.5)-p.x;
+          const dz=(s.returning?v.z:z)+(k?1:-1)*.75-p.z,d=Math.hypot(dx,dz);
+          p.heading=Math.atan2(dz,dx);p.speed=d>.65?1.8:0;p.phase+=dt*p.speed*3;
+          p.x+=dx/(d||1)*Math.min(d,p.speed*dt);p.z+=dz/(d||1)*Math.min(d,p.speed*dt);
+          p.y=G.tiles.ground(p.x,p.z)??p.y;p.pose=p.speed?'walk':medic?'brace':'point';
+        }
+        if(s.crew.every(p=>!p.speed)){
+          if(s.returning)s.finished=true;
+          else if((s.worked+=dt)>=(medic?30:22)){
+            if(patient)patient.awaitingMedic=false;
+            s.returning=true;
+          }
+        }
+      }
+      if(fire){
+        for(let k=0;k<10;k++){const p=this.fire.children[k];if(k<5)p.scale.y=1+.3*Math.sin(s.time*8+k);else{const u=(s.time*.25+k*.21)%1;p.position.set(u*.9,1+u*4,Math.sin(k)*.3);p.scale.setScalar(.4+u);}}
+        this.fire.scale.setScalar(Math.max(.01,1-s.worked/22));
+      }
+      if(s.finished||v.player||v.dead||s.time>420){
+        if(patient)patient.awaitingMedic=false;
+        if(fire)this.fire.visible=false;
+        Object.assign(v,{parked:false,target:null,siren:false,lightsOnly:false,occupied:false,status:'returning',retiredCrew:true});
+        this.calls.splice(i,1);
+      }
     }
   }
   commuter(){
@@ -171,14 +225,15 @@ export class Neighbourhood {
         break;
       }
     }
-    if(this.cooldown<=0&&!this.incident){
-      const theftChance=this.G.world.hours()>17?.72:.52;
-      const ok=Math.random()<theftChance?this.robbery():!this.retiring&&this.startFire();
-      this.cooldown=ok?180+Math.random()*360:18+Math.random()*42;
+    if(this.cooldown<=0){
+      this.robbery();this.cooldown=240+Math.random()*480;
     }
-    this.response(dt);
+    if(this.elapsed>=this.nextFire){
+      this.nextFire=this.elapsed+1200+Math.random()*1200;
+      if(!this.G.police.incidents.some(i=>i.status!=='cleared'))this.startFire();
+    }
+    this.dispatchInjuries(dt);this.response(dt);
     this.commuter();
-    if(this.retiring && Math.hypot(this.retiring.x-this.G.focus.x,this.retiring.z-this.G.focus.z)>260){this.G.traffic.remove(this.retiring);this.retiring=null;}
-    this.actors=[...(this.team||[]),...(this.incident?.crew||[])];
+    this.actors=[...(this.team||[]),...this.calls.flatMap(c=>c.crew||[])];
   }
 }

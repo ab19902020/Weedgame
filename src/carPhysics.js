@@ -64,7 +64,7 @@ export const HANDLING = {
 const derived = new Map();
 export function params(model) {
   let p = derived.get(model); if (p) return p;
-  const d = MODELS[model], h = HANDLING[model] || HANDLING.hatch, m = d.mass || 1300;
+  const d = MODELS[model], h = HANDLING[model] || (d.prof==='van' ? HANDLING.van : HANDLING.hatch), m = d.mass || 1300;
   const a = d.wb * (1 - h.fw), b = d.wb * h.fw;                 // CG to front / rear axle
   const cgx = (d.wx || 0) + d.wb / 2 - a;                       // CG ahead of the body centre
   const top = h.redline * 0.94 * 2 * Math.PI / 60 * d.wr / h.vmax;  // overall ratio in top gear

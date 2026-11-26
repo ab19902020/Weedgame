@@ -139,6 +139,7 @@ export class Peds {
       p.t += dt;
       if (p.alpha < 1) p.alpha = Math.min(1, p.alpha + dt);
       if (p.impact) { this.updateImpact(p, dt); continue; }
+      if (p.awaitingMedic) { p.pose="brace"; p.speedNow=0; continue; }
       if (p.wound) { p.wound.t += dt; if (p.wound.t > p.wound.life) p.wound = null; }
       if (p.reactT > 0) {
         // running off (a wound to the leg makes it a limp, one to the body a hunched jog)

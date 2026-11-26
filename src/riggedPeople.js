@@ -177,6 +177,7 @@ export class RiggedPeople {
     }
     const names = R.source ? ['Spine2','L_Upperarm','R_Upperarm','L_Thigh','L_Calf','R_Calf'] :
       R === NPC ? ['Chest','ArmL','ArmR','ThighL','ShinL','ShinR'] : [];
+    const seatJoints=role==='leon'?['L_Thigh','R_Thigh','L_Calf','R_Calf'].map(name=>body.getObjectByName(name)).filter(Boolean).map(bone=>({bone,rest:bone.quaternion.clone()})):[];
     const reactionJoints = names.map((name,index) => {
       const bone = body.getObjectByName(name);
       return {bone,index, rest: bone?.quaternion.clone()};
@@ -184,11 +185,12 @@ export class RiggedPeople {
     // the clip's own pose, saved after each update and put back before the next whenever IK or a reaction has moved
     // bones on top of it (the mixer only writes a value when it changes, so a still clip wouldn't undo them)
     const base = []; body.traverse(n => { if (n.isBone) base.push([n, n.quaternion.clone()]); });
-    return {role, root, body, prop, actions, mixer, reactionJoints, streetMaterials, head:body.getObjectByName('Head'), lock: 0, still: 0, base, extra: false};
+    return {role, root, body, prop, actions, mixer, seatJoints, reactionJoints, streetMaterials, head:body.getObjectByName('Head'), lock: 0, still: 0, base, extra: false};
   }
   // pick the clip for an actor's state; one-shots (jump, kick, fidgets) hold until they finish
   choose(slot, a, R, dt) {
     const speed = a.gaitSpeed ?? a.speedNow ?? a.speed ?? 0;
+    if(a.pose==='seated' && slot.actions.sit)return {clip:'sit',scale:1};
     if (a.previewClip) return { clip: R === NPC ? a.previewClip : (slot.actions[a.previewClip] ? a.previewClip : R.idle), scale: 1 };
     slot.lock = Math.max(0, slot.lock - dt);
     if (a.react) return { clip: R.idle, scale: 1 };
@@ -261,8 +263,14 @@ export class RiggedPeople {
       // Restore the sampled pose before the mixer evaluates the next frame.
       if (slot.braced) for (const j of slot.reactionJoints) j.bone.quaternion.copy(j.rest);
       if (slot.extra) { for (const [bone, q] of slot.base) bone.quaternion.copy(q); slot.extra = false; }
+      if(slot.wasSeated)for(const j of slot.seatJoints)j.bone.quaternion.copy(j.rest);
       slot.mixer.update(dt);
       if (R.hero || a.react || slot.reacting || a.wound) for (const e of slot.base) e[1].copy(e[0].quaternion);
+      slot.wasSeated=a.pose==='seated' && slot.seatJoints.length>0;
+      if(slot.wasSeated){
+        slot.body.position.y=-.43;
+        slot.seatJoints.forEach(({bone,rest},i)=>{rest.copy(bone.quaternion);bone.rotateX(i<2?-1.46:1.48);});
+      }
       // the brothers' arms (weapons, fists: combat.js); everyone else's reaction to a blow
       if (R.hero) { if (this.onHero?.(slot, a, dt) !== false) slot.extra = true; }
       else if (a.react || slot.reacting) { applyReaction(slot, a); slot.extra = true; }
