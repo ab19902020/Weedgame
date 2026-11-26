@@ -32,6 +32,8 @@ const ICON = {
   shotgun: svg('<path d="M1 10h5l1-1h15v2.5H8l-1 1.5H4l-1 3H1zM9 11.5v2.5h6"/>'),
   sniper: svg('<path d="M1 11h4l1-2h12v2h5v1.5H17l-2 1v3h-2l-1-3H8l-2 3H3l1-3H1zM8 5h8v3H8z"/>'),
   knife: svg('<path d="M3 15l12-9c2-1.3 4.5-.5 5.5.5L8 16zM8 16l-3 3-2-2 2-2"/>'),
+  target: svg('<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="1.6"/>'),
+  next: svg('<path d="M4 8h12l-3-3M20 16H8l3 3" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>'),
   fist: svg('<path d="M6 10V7.5a1.5 1.5 0 013 0V10M9 9.5V6.5a1.5 1.5 0 013 0V10M12 9.5V7a1.5 1.5 0 013 0v3M15 10V8.5a1.5 1.5 0 013 0V14c0 3.5-2.5 6-6 6H11c-3 0-5-2-5-5v-5z"/>'),
   run: svg('<circle cx="14" cy="4.5" r="2"/><path d="M5 12l3-4h5l2 4 3 1M11 8l-2 6 4 3-1 5M9 14l-3 6"/>'),
   jump: svg('<circle cx="12" cy="4" r="2"/><path d="M12 7v7M8 10l4-2 4 2M9 21l3-7 3 7M4 17h3M17 17h3"/>'),
@@ -59,6 +61,8 @@ export class Hud {
           <button id="bUse" class="ctx"><i>${ICON.door}</i><span>Enter</span></button>
           <button id="bPickup" class="mid" aria-label="Pick up">${ICON.hand}<b>Pick up</b></button>
           <button id="bHit" class="mid" aria-label="Hit">${ICON.fist}<b>Hit</b></button>
+          <button id="bAim" class="mid" aria-label="Aim" hidden>${ICON.target}<b>Aim</b></button>
+          <button id="bNext" class="mid" aria-label="Next target" hidden>${ICON.next}<b>Next</b></button>
           <button id="bWeapon" class="mid" aria-label="Weapons">${ICON.gun}<b>Weapons</b></button>
           <div id="ammo" hidden></div>
           <button id="bRun" class="big" aria-label="Run">${ICON.run}<b>Run</b></button>
@@ -84,6 +88,12 @@ export class Hud {
     const I = G.input;
     for(const [id,action] of [['bJump','jump'],['bPickup','pickup']])I.bindButton(this.el(id),action);
     I.bindButton(this.el('bHit'), 'hit', true);     // held: an automatic keeps firing
+    I.bindButton(this.el('bAim'), 'aim', true);     // held: locked on (combat.js targeting)
+    I.bindButton(this.el('bNext'), 'nextTarget');
+    // the reticle: free-aim crosshair, red on someone, brackets when locked on
+    this.reticleEl = document.createElement('div'); this.reticleEl.id = 'reticle'; this.reticleEl.hidden = true;
+    this.reticleEl.innerHTML = '<i class="c"></i><i class="t n"></i><i class="t s"></i><i class="t e"></i><i class="t w"></i><i class="b tl"></i><i class="b tr"></i><i class="b bl"></i><i class="b br"></i>';
+    document.body.appendChild(this.reticleEl);
     this.el('bWeapon').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); this.toggleWheel(); });
     this.buildWheel();
     I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn', true);
@@ -160,6 +170,7 @@ export class Hud {
     const st = this.G.combat?.status(), hit = this.el('bHit');
     hit.innerHTML = st && !st.melee ? `${ICON.gun}<b>Fire</b>` : st ? `${ICON.knife}<b>Slash</b>` : `${ICON.fist}<b>Hit</b>`;
     hit.classList.toggle('fire', !!st && !st.melee);
+    this.el('bAim').hidden = !(st && !st.melee) || this.G.brothers.me.vehicle;
     this.el('bWeapon').innerHTML = `${st ? ICON[BY_KEY[st.key].icon] || ICON.gun : ICON.gun}<b>${st ? st.name.split(' ').pop() : 'Weapons'}</b>`;
     this._ammo = null; this.updateAmmo();
     if (st) this.toast(st.name + (st.melee ? '' : ' · unlimited ammo'), 1.5);
@@ -170,7 +181,28 @@ export class Hud {
     if (t === this._ammo) return; this._ammo = t;
     el.hidden = !t; el.textContent = t; el.classList.toggle('empty', !!st && !st.melee && st.mag === 0);
   }
+  // where the reticle goes this frame: on the locked person (brackets), on whoever's under the crosshair (red), or
+  // in the middle of the view (white) while a gun is up
+  updateReticle() {
+    const G = this.G, C = G.combat, el = this.reticleEl; if (!C || !el) return;
+    const i = G.brothers.active, s = C.s[i], w = C.weapon(i), me = G.brothers.me;
+    const gun = !!w && !w.melee && !me.vehicle && !this.wheelOpen, aiming = gun && C.aiming(i);
+    const R = gun && C.reticle(i);
+    // the crosshair while Aim is held; otherwise the auto-aim's mark on whoever the shots are going to
+    const show = aiming || (gun && s.aim > 0.2 && !!R);
+    let x = innerWidth / 2, y = innerHeight / 2, cls = 'free';
+    if (R) {
+      const v = (this._rv ||= new G.THREE.Vector3()).set(R.x, R.y, R.z).project(G.camera);
+      if (v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2) { x = (v.x + 1) / 2 * innerWidth; y = (1 - v.y) / 2 * innerHeight; cls = R.lock ? 'lock' + (R.head ? ' head' : '') : 'on'; }
+    }
+    el.hidden = !show;
+    if (!show) { this.el('bNext').hidden = true; return; }
+    if (el.className !== cls) el.className = cls;
+    el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
+    this.el('bNext').hidden = !s.lock;
+  }
   update(dt) {
+    this.updateReticle();
     if (!this.el('btns').querySelector('.foot').hidden) this.updateAmmo();
     const G = this.G, me = G.brothers.me, I = G.input;
     if (I.consume('map')) this.toggleMap();
@@ -198,6 +230,7 @@ export class Hud {
     I.wheelEl.hidden=!(drive&&steer==='Steering wheel');
     I.rest.hidden=drive||ride;
     for(const id of ['bJump','bHit','bPickup','bRun','bWeapon'])this.el(id).hidden=drive||ride;
+    { const st = this.G.combat?.status(); this.el('bAim').hidden = drive || ride || !(st && !st.melee); }
     if(drive||ride)this.el('ammo').hidden=true; else this.updateAmmo();
     this.el('bSwap').hidden=ride;
     if(drive!==this._wasDriving){this._wasDriving=drive;if(drive&&steer==='Tilt')I.calibrateTilt();}
@@ -438,8 +471,9 @@ export class Hud {
       for (const update of dynamic) update();
     };
     section('Graphics');
+    const TARGET = { low: ' · 720p 60', medium: ' · 1080p 60', high: ' · 1440p 30' };
     row('Preset · saves and restarts the renderer',presets.map(q => btn(
-      () => q[0].toUpperCase()+q.slice(1)+(G.choice===q ? ' ✓' : ''),
+      () => q[0].toUpperCase()+q.slice(1)+(TARGET[q] || '')+(G.choice===q ? ' ✓' : ''),
       () => { if (G.choice!==q) G.setQuality(q); },'quality-'+q)));
     const metrics = document.createElement('p'); group.append(metrics);
     dynamic.push(() => {

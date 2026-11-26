@@ -126,10 +126,10 @@ export class Tiles {
     tg.setAttribute('aslot', new THREE.BufferAttribute(sl, 2));
     tg.setIndex(new THREE.BufferAttribute(d.terrain.index, 1));
     tg.computeBoundingSphere();
-    this.addMesh(t, tg, this.mats.terrain, { receive: true });
+    this.addMesh(t, tg, this.mats.terrain, { receive: true }).name = 'terrain';
     // buildings
     const bg = geoFrom(d.buildings, 'bA', 4);
-    if (bg) this.addMesh(t, bg, this.mats.building, { cast: d.lod === 0, receive: true });
+    if (bg) this.addMesh(t, bg, this.mats.building, { cast: d.lod === 0, receive: true }).name = 'buildings';
     // open water: a surface over the carved bed (lakes, rivers, brooks), drawn after the opaque world
     if (d.water) {
       const wg = new THREE.BufferGeometry();
@@ -142,8 +142,8 @@ export class Tiles {
       wm.renderOrder = 1;
     }
     if (d.lod === 0) {
-      const gg = geoFrom(d.ground, 'surf', 1); if (gg) this.addMesh(t, gg, this.mats.ground, { receive: true });
-      const mg = geoFrom(d.markings, 'surf', 1); if (mg) this.addMesh(t, mg, this.mats.mark, { receive: true });
+      const gg = geoFrom(d.ground, 'surf', 1); if (gg) this.addMesh(t, gg, this.mats.ground, { receive: true }).name = 'ground';
+      const mg = geoFrom(d.markings, 'surf', 1); if (mg) this.addMesh(t, mg, this.mats.mark, { receive: true }).name = 'markings';
       const sg = geoFrom(d.struct, 'surf', 1); if (sg) t.structMesh = this.addMesh(t, sg, this.mats.struct, { cast: true, receive: true });
       this.addTrees(t, d.trees);
 

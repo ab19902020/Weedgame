@@ -97,6 +97,7 @@ export class Combat {
     for (let i = 0; i < 2; i++) this.tick(i, dt);
     const me = B.me, i = B.active, s = this.s[i], a = B.actor[i];
     const busy = !!me.vehicle || G.transit?.ride || G.interiors?.games?.open || G.hud?.wheelOpen;
+    this.targeting(i, dt, busy);
     if (!busy) {
       if (I.consume('reload')) this.reload(i);
       const w = this.weapon(i);
@@ -115,6 +116,94 @@ export class Combat {
       if (v.alarmT <= 0 || v.hidden) { this.alarms.delete(v); v.alarmFlash = false; }
     }
     this.fx.update(dt, G.camera);
+  }
+  // ---------------------------------------------------------------- targeting (GTA-style)
+  // Aim held (the Aim button, Q or the right mouse button, the pad's left trigger): lock on to the best person in
+  // front (nearest the middle of the view, then the nearest, those already hurt or running at you first), the gun
+  // comes up, the camera goes over the shoulder and follows them. A sideways swipe (or Next, T) moves the lock to the
+  // next person that side; up aims at the head, down back at the body. When they drop, the lock moves on to the
+  // next. Without Aim, firing still pulls on to whoever is near the line of the camera (aim()).
+  aiming(i = this.G.brothers.active) { const s = this.s[i]; return !!s.aimHeld; }
+  candidates(i, range) {
+    const G = this.G, B = G.brothers, me = B.b[i], yaw = B.cam.yaw + Math.PI, fx = Math.cos(yaw), fz = Math.sin(yaw), out = [];
+    for (const p of G.peds.list) {
+      if (p.dead || p.gone || p.alpha < 0.5) continue;
+      const dx = p.x - me.x, dz = p.z - me.z, d = Math.hypot(dx, dz); if (d < 0.8 || d > range || Math.abs(p.y - me.y) > 8) continue;
+      const ang = Math.acos(clamp((dx * fx + dz * fz) / d, -1, 1)); if (ang > 1.1) continue;
+      const side = Math.sign(dx * -fz + dz * fx) * ang;            // + right of the camera's line, - left
+      const score = ang * 2.2 + d * 0.035 - (p.officer ? 0.15 : 0) - (p.wound ? 0.1 : 0);
+      out.push({ p, d, ang, side, score });
+    }
+    return out;
+  }
+  // a clear line from the gun to them (outside: buildings and the lie of the land)
+  clearTo(o, p) {
+    const G = this.G; if (G.interiors?.at?.(G.brothers.me)) return true;
+    const dx = p.x - o.x, dy = p.y + 1.2 - o.y, dz = p.z - o.z, L = Math.hypot(dx, dy, dz);
+    for (let t = 1.2; t < L - 0.6; t += 1.5) {
+      const x = o.x + dx / L * t, y = o.y + dy / L * t, z = o.z + dz / L * t;
+      if (G.tiles.insideBuilding(x, z, y)) return false;
+      const g = G.tiles.ground(x, z, y + 1); if (g != null && y < g - 0.2) return false;
+    }
+    return true;
+  }
+  acquire(i, w, dir = 0) {
+    const G = this.G, s = this.s[i], me = G.brothers.b[i], o = _b.set(me.x, me.y + 1.45, me.z);
+    let list = this.candidates(i, Math.min(w.range, w.zoom ? 140 : 60)).filter(c => this.clearTo(o, c.p));
+    if (dir && s.lock) {
+      // the next one over on that side of the one locked on
+      const cur = list.find(c => c.p === s.lock)?.side ?? 0;
+      list = list.filter(c => c.p !== s.lock && Math.sign(c.side - cur) === dir).sort((a, b) => Math.abs(a.side - cur) - Math.abs(b.side - cur));
+      if (list[0]) { s.lock = list[0].p; s.lockHead = false; s.lockT = 0; s.lostT = 0; G.audio?.tap?.('tile', 0.12, 2.2); }
+      return;
+    }
+    list.sort((a, b) => a.score - b.score);
+    const prev = s.lock; s.lock = list[0]?.p || null; s.lockHead = false; s.lockT = 0; s.lostT = 0;
+    if (s.lock && s.lock !== prev) G.audio?.tap?.('tile', 0.12, 2.2);
+  }
+  targeting(i, dt, busy) {
+    const G = this.G, I = G.input, s = this.s[i], w = this.weapon(i), B = G.brothers, me = B.b[i];
+    const held = !busy && !!w && !w.melee && (I.held.has('aim') || !!G.controller?.padAim);
+    const was = s.aimHeld; s.aimHeld = held;
+    if (!held) { s.lock = null; s.hover = this.hoverTarget(i, w, dt); return; }
+    s.hover = null;
+    s.aimT = Math.max(s.aimT, 0.35);                 // the gun stays up while Aim is held
+    if (!was) this.acquire(i, w);
+    if (I.consume('nextTarget')) this.acquire(i, w, 1);
+    // swipes while locked: sideways to switch, up for the head, down for the body (player.js passes them here
+    // instead of turning the camera)
+    const sw = this.swipe; if (sw) {
+      if (Math.abs(sw.dx) > 55 && Math.abs(sw.dx) > Math.abs(sw.dy)) { this.acquire(i, w, sw.dx > 0 ? 1 : -1); this.swipe = null; }
+      else if (sw.dy < -35) { s.lockHead = true; this.swipe = null; }
+      else if (sw.dy > 35) { s.lockHead = false; this.swipe = null; }
+      else if (G.time - sw.t > 0.35) this.swipe = null;
+    }
+    const L = s.lock;
+    if (L) {
+      s.lockT += dt;
+      const range = Math.min(w.range, w.zoom ? 160 : 70), d = Math.hypot(L.x - me.x, L.z - me.z);
+      // gone, out of range, or out of sight for a second: on to the next. Down and dead: a moment, then the next
+      if (L.gone || !G.peds.list.includes(L) || d > range) this.acquire(i, w);
+      else if (L.dead) { s.deadT = (s.deadT || 0) + dt; if (s.deadT > 0.45) { s.deadT = 0; this.acquire(i, w); } }
+      else { if ((s.losT = (s.losT || 0) - dt) <= 0) { s.losT = 0.25; s.lostT = this.clearTo(_b.set(me.x, me.y + 1.45, me.z), L) ? 0 : (s.lostT || 0) + 0.25; } if (s.lostT > 1) this.acquire(i, w); }
+    } else if ((s.reacq = (s.reacq || 0) - dt) <= 0) { s.reacq = 0.3; this.acquire(i, w); }
+  }
+  // not locked, weapon out: whoever is close to the crosshair (the crosshair snaps to them and goes red; firing
+  // pulls on to them)
+  hoverTarget(i, w, dt) {
+    const s = this.s[i]; if (!w || w.melee || this.G.brothers.me.vehicle) return null;
+    if ((s.hoverT = (s.hoverT || 0) - dt) > 0) return s.hover;
+    s.hoverT = 0.12;
+    const c = this.candidates(i, Math.min(w.range, w.zoom ? 140 : 45)).filter(c => c.ang < (c.d < 6 ? 0.35 : 0.16)).sort((a, b) => a.score - b.score)[0];
+    return c?.p || null;
+  }
+  // the point the HUD's reticle sits on (world), and whether it's a lock: the locked person, the one under the
+  // crosshair, or where the camera's line meets the world 30 m out
+  reticle(i = this.G.brothers.active) {
+    const s = this.s[i], w = this.weapon(i); if (!w || w.melee) return null;
+    const P = s.lock || s.hover;
+    if (P) return { x: P.x, y: P.y + (P.dead ? 0.3 : s.lock && s.lockHead ? 1.62 : 1.25), z: P.z, lock: !!s.lock, on: true, head: !!s.lockHead };
+    return null;
   }
   // the way the body should face for the aim (player.js), or null to face the way it's going: standing, it turns
   // to the aim; moving, the upper body twists up to TWIST towards it (pose) and only past that does the body turn
@@ -159,6 +248,14 @@ export class Combat {
   // what the active brother is aiming at: the nearest person (then vehicle) near the line of the camera
   aim(i, w) {
     const G = this.G, B = G.brothers, me = B.b[i], s = this.s[i];
+    // locked on (the Aim button): straight at them, the chest or (swiped up) the head
+    if (s.lock) {
+      const L = s.lock, ty = L.y + (L.dead ? 0.3 : s.lockHead ? 1.62 : 1.25);
+      const o = s.posed ? s.muzzle : _a.set(me.x, me.y + 1.4, me.z);
+      s.target = { kind: 'ped', p: L, x: L.x, y: ty, z: L.z };
+      s.aimDir.set(L.x - o.x, ty - o.y, L.z - o.z).normalize(); s.aimYaw = Math.atan2(L.z - me.z, L.x - me.x);
+      return;
+    }
     const yaw = B.cam.yaw + Math.PI, fx = Math.cos(yaw), fz = Math.sin(yaw);
     let best = null, bs = 1e9;
     const range = Math.min(w.range, w.zoom ? 90 : 45);
@@ -173,6 +270,7 @@ export class Combat {
       const ang = Math.acos(clamp((dx * fx + dz * fz) / d, -1, 1)); if (ang > 0.3) continue;
       const score = ang * 3 + d * 0.04; if (score < bs) { bs = score; best = { kind: 'car', v, x: v.x, y: v.y + 0.85, z: v.z }; }
     }
+    if (s.hover && !s.hover.dead) best = { kind: 'ped', p: s.hover, x: s.hover.x, y: s.hover.y + 1.25, z: s.hover.z };
     s.target = best;
     const o = s.posed ? s.muzzle : _a.set(me.x, me.y + 1.4, me.z);
     if (best) { s.aimDir.set(best.x - o.x, best.y - o.y, best.z - o.z).normalize(); s.aimYaw = Math.atan2(best.z - me.z, best.x - me.x); }
@@ -332,7 +430,8 @@ export class Combat {
         const ped = hit.ped, rel = p.y - ped.y, hf = (ped.heading || 0) + (ped.pose === 'flee' ? Math.PI : 0);
         const fxh = Math.cos(hf), fzh = Math.sin(hf), along = d.x * fxh + d.z * fzh, lat = (p.x - ped.x) * -fzh + (p.z - ped.z) * fxh;
         const zone = ped.dead ? 'torso' : rel > 1.5 ? 'head' : rel < 0.95 ? 'leg' : Math.abs(lat) > 0.17 && rel > 1.05 ? 'arm' : 'torso';
-        const mul = { head: 2.6, torso: 1, arm: 0.5, leg: 0.6 }[zone];
+        // a round to the head kills, whatever the gun (as in GTA)
+        const mul = { head: 99, torso: 1, arm: 0.5, leg: 0.6 }[zone];
         fx.puff(p, _b.copy(d).multiplyScalar(1.2), [0.32, 0.02, 0.02], 0.85, 0.06, zone === 'head' ? 0.45 : 0.32, 0.5);
         D?.burst('drop', zone === 'head' ? 6 : 3, p.x, p.y, p.z, d.x * 2, 0.6, d.z * 2, 0.8, [0.3, 0.01, 0.01]);
         G.audio?.play?.('punch', p.x, p.y, p.z, 0.22);

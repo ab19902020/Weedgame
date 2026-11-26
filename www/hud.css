@@ -188,3 +188,23 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #wheel .ring button em{position:absolute;top:4px;right:9px;font:700 8px system-ui;opacity:.6;font-style:normal}
 #wheel .ring button.on{background:#2f7a5aee;border-color:#9de8b5;box-shadow:0 0 0 3px #9de8b544}
 #wheel .wName{position:absolute;color:#fcf5db;font:700 16px system-ui;text-shadow:0 1px 4px #000;pointer-events:none}
+
+/* aiming (v0.33): the Aim button left of Fire, Next while locked on, and the reticle */
+#bAim{right:calc(max(14px,env(safe-area-inset-right)) + var(--u)*168px);bottom:calc(var(--u)*156px)}
+#bNext{right:calc(max(14px,env(safe-area-inset-right)) + var(--u)*238px);bottom:calc(var(--u)*170px);opacity:.9}
+#btns #bAim.on{background:radial-gradient(circle at 50% 30%,#7a2a22e6,#3a120ee6 75%);border-color:#ff9a7a}
+#reticle{position:fixed;left:0;top:0;width:46px;height:46px;margin:-23px 0 0 -23px;pointer-events:none;z-index:6;transition:transform .06s linear}
+#reticle[hidden]{display:none}
+#reticle .c{position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;border-radius:50%;background:#fff;box-shadow:0 0 0 1px #0009}
+#reticle .t{position:absolute;background:#fff;box-shadow:0 0 0 1px #0008}
+#reticle .n,#reticle .s{left:22px;width:2px;height:8px}#reticle .n{top:7px}#reticle .s{top:31px}
+#reticle .e,#reticle .w{top:22px;height:2px;width:8px}#reticle .w{left:7px}#reticle .e{left:31px}
+#reticle .b{position:absolute;width:12px;height:12px;border:3px solid #ff3b30;display:none;filter:drop-shadow(0 0 2px #000a)}
+#reticle .tl{left:0;top:0;border-right:0;border-bottom:0}#reticle .tr{right:0;top:0;border-left:0;border-bottom:0}
+#reticle .bl{left:0;bottom:0;border-right:0;border-top:0}#reticle .br{right:0;bottom:0;border-left:0;border-top:0}
+#reticle.on .c,#reticle.on .t{background:#ff3b30}
+#reticle.lock .b{display:block}
+#reticle.lock .c{background:#ff3b30}#reticle.lock .t{display:none}
+#reticle.lock{animation:lockin .18s ease-out}
+#reticle.lock.head{width:30px;height:30px;margin:-15px 0 0 -15px}
+@keyframes lockin{from{width:80px;height:80px;margin:-40px 0 0 -40px;opacity:.4}}

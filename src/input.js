@@ -7,7 +7,7 @@
 // reverse. Drag the free screen to look around. Handling assists (Easy or Realistic) are in carPhysics.js.
 const STICK_R = 58, WHEEL_R = 96;
 const KEYMAP = { ShiftLeft: 'run', ShiftRight: 'run', KeyF: 'use', Enter: 'use', KeyL: 'beam', KeyH: 'horn', Space: 'brake', Tab: 'swap', KeyM: 'map', KeyP: 'dev', Backquote: 'dev', KeyC: 'camera', KeyV: 'camera',
-  KeyJ: 'hit', KeyR: 'reload', KeyX: 'wheel', Digit0: 'weapon0', Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3', Digit4: 'weapon4', Digit5: 'weapon5', Digit6: 'weapon6', Digit7: 'weapon7', Digit8: 'weapon8', Digit9: 'weapon9', Minus: 'weapon10' };
+  KeyJ: 'hit', KeyK: 'aim', KeyT: 'nextTarget', KeyR: 'reload', KeyX: 'wheel', Digit0: 'weapon0', Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3', Digit4: 'weapon4', Digit5: 'weapon5', Digit6: 'weapon6', Digit7: 'weapon7', Digit8: 'weapon8', Digit9: 'weapon9', Minus: 'weapon10' };
 export class Input {
   constructor(root) {
     this.move = { x: 0, y: 0 }; this.look = { dx: 0, dy: 0 };
@@ -37,6 +37,10 @@ export class Input {
     addEventListener('keydown', e => { if (e.repeat) return; this.keys.add(e.code); const b = KEYMAP[e.code]; if (b) { this.pressed.add(b); this.held.add(b); } });
     addEventListener('keyup', e => { this.keys.delete(e.code); const b = KEYMAP[e.code]; if (b) this.held.delete(b); });
     addEventListener('blur', () => { this.keys.clear(); this.held.clear(); this.release(); });
+    // the right mouse button aims (locks on), as in GTA on a PC
+    addEventListener('mousedown', e => { if (e.button === 2) { this.pressed.add('aim'); this.held.add('aim'); } });
+    addEventListener('mouseup', e => { if (e.button === 2) this.held.delete('aim'); });
+    addEventListener('contextmenu', e => { if (!e.target.closest?.('input,textarea')) e.preventDefault(); });
     addEventListener('deviceorientation', e => this.orient(e));
   }
   // ------------------------------------------------------------------ pointers

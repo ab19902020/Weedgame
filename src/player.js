@@ -36,7 +36,17 @@ export class Brothers {
   update(dt, input) {
     const G = this.G, me = this.me;
     const look = input.takeLook();
-    if (look.dx || look.dy) { this.cam.yaw += look.dx * 0.0062; this.cam.pitch = Math.max(-0.25, Math.min(1.1, this.cam.pitch + look.dy * 0.0045)); this.cam.lastUser = G.time; }
+    // locked on to someone (combat.js targeting): the camera follows them, and a drag is a swipe to switch target
+    // or move the aim to the head
+    const lock = !me.vehicle && G.combat?.s?.[this.active]?.lock;
+    if (lock && (look.dx || look.dy)) {
+      const sw = G.combat.swipe && G.time - G.combat.swipe.t < 0.35 ? G.combat.swipe : (G.combat.swipe = { dx: 0, dy: 0, t: G.time });
+      sw.dx += look.dx; sw.dy += look.dy;
+    } else if (look.dx || look.dy) {
+      // aiming (not locked): finer, so the crosshair can be put on someone
+      const k = G.combat?.aiming?.(this.active) ? (G.combat.weapon(this.active)?.zoom ? 0.3 : 0.6) : 1;
+      this.cam.yaw += look.dx * 0.0062 * k; this.cam.pitch = Math.max(-0.25, Math.min(1.1, this.cam.pitch + look.dy * 0.0045 * k)); this.cam.lastUser = G.time;
+    }
     const veh = this.vehicleOf(me);
     if (veh) this.drive(dt, input, veh); else this.walk(dt, input);
     if (input.consume('camera')) this.cycleCamera(!!veh);
@@ -113,8 +123,17 @@ export class Brothers {
     // on foot, only re-centre behind the brother while the stick is pushed mostly forward
     const forward = ax.y < -0.55 && Math.abs(ax.x) < 0.35;
     const fm = this.cam.foot;
-    if (this.cam.baseFov && Math.abs(G.camera.fov - this.cam.baseFov) > 0.05) { G.camera.fov += (this.cam.baseFov - G.camera.fov) * Math.min(1, dt * 3); G.camera.updateProjectionMatrix(); }
-    this.followCam(dt, me.x, me.y + 1.55 + (fm === 2 ? 0.6 : 0), me.z, [4.3, 7.4, 13][fm], sp > 0.5 && forward ? me.heading : null, 0.7, fm === 0 ? null : [0.28, 0.36, 0.85][fm]);
+    // aiming: over the right shoulder, closer in and a little zoomed (the sniper's scope much more); locked on, the
+    // camera swings round behind you to keep them in view
+    const C = G.combat, aimK = C?.s?.[this.active]?.aim || 0, aiming = !!C?.aiming?.(this.active), w = aiming ? C.weapon(this.active) : null, L = C?.s?.[this.active]?.lock;
+    this.cam.aimBlend = (this.cam.aimBlend || 0) + ((aiming ? 1 : 0) - (this.cam.aimBlend || 0)) * Math.min(1, dt * 8);
+    const ab = this.cam.aimBlend;
+    const fov0 = this.cam.baseFov || (this.cam.baseFov = G.camera.fov), fovWant = ab > 0.002 || Math.abs(G.camera.fov - fov0) > 0.05 ? fov0 + ((w?.zoom ? 20 : 46) - fov0) * ab : null;
+    if (fovWant && Math.abs(G.camera.fov - fovWant) > 0.05) { G.camera.fov += (fovWant - G.camera.fov) * Math.min(1, dt * 6); G.camera.updateProjectionMatrix(); }
+    if (L) { const want = Math.atan2(me.z - L.z, me.x - L.x); this.cam.yaw = lerpAngle(this.cam.yaw, want, Math.min(1, dt * 7)); const dd = Math.hypot(L.x - me.x, L.z - me.z) || 1; this.cam.pitch += (Math.atan2(me.y + 1.6 - (L.y + 1.2), dd) * 0.6 + 0.12 - this.cam.pitch) * Math.min(1, dt * 5); this.cam.lastUser = G.time; }
+    const dist = [4.3, 7.4, 13][fm] * (1 - ab) + 2.5 * ab;
+    this.followCam(dt, me.x, me.y + 1.55 + (fm === 2 ? 0.6 : 0) * (1 - ab), me.z, dist, sp > 0.5 && forward && !aiming ? me.heading : null, 0.7, fm === 0 || aiming ? null : [0.28, 0.36, 0.85][fm], 0.62 * ab);
+    void aimK;
   }
   collideCircle(x, z, r, y) {
     const G = this.G;
@@ -241,14 +260,16 @@ export class Brothers {
     c.x = c.cine.x; c.y = c.cine.y; c.z = c.cine.z;
     this.setNear(0.4);
   }
-  followCam(dt, tx, ty, tz, dist, moveHeading, rate = 1.6, pitchTarget = null) {
+  followCam(dt, tx, ty, tz, dist, moveHeading, rate = 1.6, pitchTarget = null, shoulder = 0) {
     const c = this.cam, G = this.G;
     const IN = !this.me.vehicle && G.interiors?.at(this.me);
     // indoors the near plane comes in to 10 cm: at 40 cm it reached through ceilings and walls the camera was close to
     if (IN) { if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate)); this.setNear(0.1); IN.camera(c, dt, tx, ty, tz); return; }
     if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate));
     if (pitchTarget != null && G.time - c.lastUser > 1.4) c.pitch += (pitchTarget - c.pitch) * Math.min(1, dt * 2);
-    c.dist += (dist - c.dist) * Math.min(1, dt * 3);
+    c.dist += (dist - c.dist) * Math.min(1, dt * (shoulder > 0.05 ? 8 : 3));
+    // over the shoulder: the whole view slides to the right of the brother (the camera's right)
+    if (shoulder) { const rx = Math.sin(c.yaw), rz = -Math.cos(c.yaw); tx += rx * shoulder; tz += rz * shoulder; }
     const cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
     let d = c.dist;
     // pull in when a building is between the target and the camera

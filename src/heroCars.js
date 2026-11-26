@@ -105,12 +105,19 @@ export class HeroCars {
     return { model, body, ground, wheels, column, cabin, state, mesh };
   }
   // called by VehicleRenderer for each visible hero car with its ground and sprung body matrices
-  place(v, groundM, bodyM) {
+  place(v, groundM, bodyM, d2 = 0) {
     const parts = this.load(v.model); if (!parts) return;
     const id = v.id || v.model + ':' + this.seen.size;
     let c = this.active.get(id);
     if (!c) { c = this.create(v.model, parts); this.active.set(id, c); }
     this.seen.add(id);
+    // the cabin (seats, dash, wheel) only close to or inside it, and never in the shadow pass (the body casts it);
+    // the body's own shadow only inside the sun's shadow box
+    const near = d2 < 12 * 12 || !!v.camInside;
+    for (const m of c.cabin) { m.visible = near; m.castShadow = false; }
+    if (c.column) c.column.visible = near;
+    c.mesh.castShadow = d2 < 110 * 110;
+    for (const w of Object.values(c.wheels)) w.mesh.castShadow = d2 < 60 * 60;
     c.body.matrix.copy(bodyM); c.ground.matrix.copy(groundM);
     c.body.matrixWorldNeedsUpdate = c.ground.matrixWorldNeedsUpdate = true;
     const spin = v.spin || 0, steer = v.player ? (v.steer || 0) : (v.steerVis || 0);

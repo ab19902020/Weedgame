@@ -44,7 +44,9 @@ export class Controller {
         if(tap(4))I.pressed.add('wheel');
         if(tap(5))I.pressed.add('pickup');
         if(tap(10))I.pressed.add('reload');
-        if(tap(6))H.toast('Carrying '+this.bags[G.brothers.active]+' parcels');
+        // left trigger: aim (lock on); right stick click: next target
+        this.padAim=!!buttons[6];
+        if(tap(11))I.pressed.add('nextTarget');
       }
     }
     this.previous=buttons;

@@ -309,7 +309,7 @@ export class VehicleRenderer {
         // hand-made models: contact shadow and headlight pool here, the car itself in heroCars.js
         if (d2 < 90 * 90 && sn < 400) { this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g); this._sm.elements[13] += 0.035; this.shadows.setMatrixAt(sn++, this._sm); }
         if (v.lights && d2 < 140 * 140 && bn < 300 && !(v.dmg && v.dmg[0] > 0.6)) { this._sm.makeScale(v.fullBeam ? 74 : 38, 1, v.fullBeam ? 15 : 11).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g); this.beams.setMatrixAt(bn++, this._sm); }
-        this.heroCars?.place(v, this._g, this._m);
+        this.heroCars?.place(v, this._g, this._m, d2);
         continue;
       }
       if (!v.hasCabin) {

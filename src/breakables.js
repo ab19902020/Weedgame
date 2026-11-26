@@ -156,6 +156,12 @@ export class Breakables {
       case 20: {   // lamp post: the lantern up top shatters and goes dark, the column just rings
         if (p.y > e.y + e.h - 1.6 && !(e.t.lamps?.[e.i]?.dead)) {
           if (e.t.lamps?.[e.i]) e.t.lamps[e.i].dead = true; if (this.G.atmos) this.G.atmos.lightsDirty = true; if (this.G.lampGlow) this.G.lampGlow.dirty = true;
+          // the post stays up, drawn with the dark lantern instead of the lit one
+          const t = e.t;
+          if (t.lampMesh) { t.lampMesh.setMatrixAt(e.i, this._zero); t.lampMesh.instanceMatrix.needsUpdate = true; }
+          const mesh = e.deadMesh = new THREE.Mesh(this.G.tiles.lampGeo, this.deadLamp); mesh.castShadow = true;
+          mesh.position.set(e.x - t.data.ox, e.y, e.z - t.data.oz); mesh.quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -e.ang + Math.PI);
+          t.group.add(mesh);
           D.burst('glass', 10, p.x, p.y, p.z, dx * 1.5, 0.2, dz * 1.5, 1.4); D.spark(8, p.x, p.y, p.z, dx, 0.5, dz, 2.5);
           this.sound('glass', p.x, p.z, 0.8);
         } else { D.spark(5, p.x, p.y, p.z, -dx * 2, 1, -dz * 2, 3); this.sound('clang', p.x, p.z, 0.5); }
@@ -189,6 +195,7 @@ export class Breakables {
   // ------------------------------------------------------------------ each kind
   lamp(e, dx, dz, closing) {
     const t = e.t;
+    if (e.deadMesh) { e.deadMesh.removeFromParent(); e.deadMesh = null; }   // (its lantern was shot out earlier)
     if (t.lampMesh) { t.lampMesh.setMatrixAt(e.i, this._zero); t.lampMesh.instanceMatrix.needsUpdate = true; }
     if (t.lamps && t.lamps[e.i]) t.lamps[e.i].dead = true;
     if (this.G.atmos) this.G.atmos.lightsDirty = true; if (this.G.lampGlow) this.G.lampGlow.dirty = true;

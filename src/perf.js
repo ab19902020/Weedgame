@@ -29,7 +29,7 @@ export const BUDGETS = {
     r0: 340, r1: 1100, tiles: 70, drawCalls: 200, tris: 550e3, people: 70, vehicles: 48, bubble: 480, parkFill: 0.65, cloudSteps: 10,
     outH: 1080, pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 60, far: 380 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.5, 0.72, 1.0],
     treeDist: 300, lampDist: 240, signDist: 170, markDist: 360, vehicleDist: 520, peopleDist: 140,
-    post: true, ao: { scale: 0, samples: 0 }, bloom: 0.22, ibl: 64, grass: false, ssr: null, targetFps: 60, bushes: 0.7,
+    post: true, ao: { scale: 0, samples: 0 }, bloom: 0.22, ibl: 64, grass: false, ssr: null, targetFps: 60, bushes: 0.55,
   },
   high: {
     r0: 420, r1: 1150, tiles: 85, drawCalls: 320, tris: 900e3, people: 110, vehicles: 70, bubble: 580, parkFill: 0.9, cloudSteps: 16,
@@ -158,7 +158,10 @@ export class RenderBudget {
       if (!o.isGroup || keep.has(o) || o.userData.baked) continue;
       if (!o.children.every(m => m.isMesh && !m.isInstancedMesh && m.children.length === 0)) continue;
       o.updateMatrixWorld(true);
-      const cell = Math.floor(o.position.x / 512) + '_' + Math.floor(o.position.z / 512);
+      // (a merged cell is drawn whole in the shadow pass as soon as the shadow box touches it: on high, where the
+      // canopies cast shadows, the cells are a quarter the size; elsewhere they cast none)
+      const CELL = this.G.quality === 'high' ? 256 : 512;
+      const cell = Math.floor(o.position.x / CELL) + '_' + Math.floor(o.position.z / CELL);
       for (const m of o.children) {
         const k = cell + '|' + m.material.uuid;
         let b = this.canopyBuckets.get(k); if (!b) this.canopyBuckets.set(k, b = { items: [], mesh: null, material: m.material, cast: false });
@@ -171,7 +174,7 @@ export class RenderBudget {
       const b = this.canopyBuckets.get(k);
       if (b.mesh) { grp.remove(b.mesh); b.mesh.geometry.dispose(); }
       const geo = mergeGeometries(b.items); if (!geo) continue;
-      b.mesh = new THREE.Mesh(geo, b.material); b.mesh.castShadow = b.cast; b.mesh.receiveShadow = true; b.mesh.userData.k = 'canopyBatch';
+      b.mesh = new THREE.Mesh(geo, b.material); b.mesh.castShadow = b.cast && this.G.quality === 'high'; b.mesh.receiveShadow = true; b.mesh.userData.k = 'canopyBatch';
       b.mesh.matrixAutoUpdate = false; grp.add(b.mesh);
     }
     this.stats.canopyBatches = this.canopyBuckets.size;
@@ -201,6 +204,7 @@ export class RenderBudget {
       for (const m of t.group.children) {
         let lim = 0;
         if (m.geometry === T.crownGeo || m.geometry === T.trunkGeo) lim = B.treeDist;
+        else if (m === t.bushMesh) lim = B.treeDist * (B.bushes >= 1 ? 1 : 0.6);
         else if (m.material === mats.mark) lim = B.markDist;
         else if (T.signAtlas && m.material === T.signAtlas.material) lim = B.signDist;
         if (lim) m.visible = d - 181 < lim;
