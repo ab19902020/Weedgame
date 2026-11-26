@@ -145,3 +145,16 @@ test('both motorcycles accelerate, steer and slow down through the player dynami
     assert.ok(Number.isFinite(v.sp) && Math.abs(v.sp)<initial);
   }
 });
+
+test('pedal and electric vehicles accelerate, brake and retain unassisted pedalling', () => {
+  for(const [model,min] of [['bicycle',3],['ebike',4],['escooter',3],['evsaloon',15],['evsuv',15]]){
+    const {dyn}=world(),v=car(model);
+    run(dyn,v,12,{throttle:1,steer:0});
+    assert.ok(v.sp>min,model+' speed '+v.sp);
+    run(dyn,v,7,{throttle:0,brake:1,steer:0});
+    assert.ok(Math.abs(v.sp)<.5,model+' stopped');
+  }
+  const {dyn}=world(),v=car('ebike',0,0,0,{fuel:0});
+  run(dyn,v,15,{throttle:1,steer:0});
+  assert.ok(v.sp>3 && v.sp<8);
+});

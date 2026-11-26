@@ -194,6 +194,7 @@ function frame() {
   if (!G.hud.menu.el.hidden || document.hidden) { G._ema = 0; G._resT = 0; tuning.quiet = 0; return; }
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
   if (G.slowmo > 0) { G.slowmo -= dt; dt *= G.slowmo > 0.35 ? 0.3 : 1 - 0.7 * Math.max(0, G.slowmo) / 0.35; }
+  G.driveSeconds = Math.min(.5,elapsed/1000)/Math.max(1,Math.ceil(G.simSteps));
   for (let k = 1; k < G.simSteps; k++) step(dt, false);
   step(dt, true);
 }

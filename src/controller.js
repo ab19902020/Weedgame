@@ -33,7 +33,8 @@ export class Controller {
       if(tap(3))I.pressed.add('use');
       if(tap(8)||tap(17)||tap(12))H.toggleMap(true);
       if(tap(13))I.pressed.add('swap');
-      if(tap(11))G.brothers.cam.yaw=G.brothers.me.heading+Math.PI;
+      if(car && tap(11))I.pressed.add('beam');
+      if(!car && tap(11))G.brothers.cam.yaw=G.brothers.me.heading+Math.PI;
       if(tap(14)||tap(15))G.brothers.cam.yaw+=(tap(14)?-1:1)*Math.PI/2;
       if(car){if(tap(10)||tap(1))I.pressed.add('horn');if(tap(5))I.pressed.add('camera');}
       else{

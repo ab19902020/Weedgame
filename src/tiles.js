@@ -60,6 +60,7 @@ export class Tiles {
       const gg = g.toNonIndexed(); gg.setAttribute('lampHead', new THREE.Float32BufferAttribute(new Float32Array(gg.attributes.position.count).fill(v), 1)); parts.push(gg);
     }
     this.lampGeo = mergeGeos(parts);
+    this.lampHeadGeo = parts[2];
   }
   key(ix, iz) { return ix + '_' + iz; }
   // look: optional { x, z } camera forward (unit) and { vx, vz } travel velocity (m/s) for look-ahead priority
@@ -145,13 +146,14 @@ export class Tiles {
       const mg = geoFrom(d.markings, 'surf', 1); if (mg) this.addMesh(t, mg, this.mats.mark, { receive: true });
       const sg = geoFrom(d.struct, 'surf', 1); if (sg) t.structMesh = this.addMesh(t, sg, this.mats.struct, { cast: true, receive: true });
       this.addTrees(t, d.trees);
-      this.addLamps(t, d.lamps);
+
       if (d.bushes && d.bushes.length) this.addBushes(t, d.bushes);
       this.addSigns(t, d.signs);
       this.registerCollision(t);
       // road segments this tile carries on a deck over sagging ground (tileWorker.js): ground() rides on them
       if (d.decks && d.decks.length && this.net) { const m = this.net.sagDeck || (this.net.sagDeck = new Map()); for (const j of d.decks) m.set(j, (m.get(j) || 0) + 1); }
     }
+    this.addLamps(t,d.lamps || []);
     this.scene.add(t.group);
     this.tiles.set(d.key, t);
     this.loaded++;
@@ -228,7 +230,7 @@ export class Tiles {
   }
   addLamps(t, lp) {
     const n = lp.length / 4; if (!n) return;
-    const im = new THREE.InstancedMesh(this.lampGeo, this.mats.lamp, n);
+    const im = new THREE.InstancedMesh(t.lod ? this.lampHeadGeo : this.lampGeo, this.mats.lamp, n);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3();
     t.lamps = [];
     for (let i = 0; i < n; i++) {
@@ -385,7 +387,7 @@ export class Tiles {
   }
   disposeTile(t, keepSlot) {
     this.scene.remove(t.group);
-    t.group.traverse(o => { if (o.isMesh && o.geometry !== this.crownGeo && o.geometry !== this.trunkGeo && o.geometry !== this.lampGeo && o.geometry !== this.bushGeo) o.geometry.dispose(); if (o.isInstancedMesh) o.dispose(); });
+    t.group.traverse(o => { if (o.isMesh && o.geometry !== this.crownGeo && o.geometry !== this.trunkGeo && o.geometry !== this.lampGeo && o.geometry !== this.lampHeadGeo && o.geometry !== this.bushGeo) o.geometry.dispose(); if (o.isInstancedMesh) o.dispose(); });
     if (t.signs && this.signAtlas) for (const s of t.signs) this.signAtlas.free(s);
     this.unregisterCollision(t);
     if (t.lod === 0 && t.data.decks && this.net && this.net.sagDeck) for (const j of t.data.decks) { const n = (this.net.sagDeck.get(j) || 0) - 1; if (n > 0) this.net.sagDeck.set(j, n); else this.net.sagDeck.delete(j); }

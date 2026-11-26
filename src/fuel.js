@@ -1,13 +1,11 @@
-// Fuel: every car has a tank that empties as you drive (a full tank lasts about RANGE_KM: shorter than a real
-// one, so you do call in for fuel), a gauge beside the speedometer, and the engine cuts out when it's dry. The
-// petrol stations (www/world/interiors.json 'fuel', the forecourt canopies by the map's fuel-station shops) get
-// pump islands, and a canopy where the world doesn't already draw one: pull up beside a pump, stop and Fill up.
-// Paid from the brother's cash (restaurants.js). Stranded, you can ring a mate to bring a can.
+import {batteryCapacity,isElectric,energyUsed} from './propulsion.js';
 import * as THREE from 'three/webgpu';
 import { cash, spend } from './restaurants.js';
 
-const TANK = { rangerover: 90, sports: 65, coupe: 60, hothatch: 50, hatch: 45, saloon: 60, estate: 60, suv: 70, van: 75, police: 60, moped: 7, dirtbike: 9, motorcycle: 15, bus: 0, busS: 0, escooter: 0 };
-const RANGE_KM = 60, PRICE = 1.45, FILL_RATE = 0.14;   // tank fractions a second at the pump
+const TANK = { rangerover: 90, sports: 65, coupe: 60, hothatch: 50, hatch: 45, saloon: 60, estate: 60, suv: 70, van: 75, police: 60, moped: 7, dirtbike: 9, motorcycle: 15, bicycle: 0, bus: 0, busS: 0, ...batteryCapacity };
+const price = v => isElectric(v.model) ? .55 : 1.45;
+const unit = v => isElectric(v.model) ? 'kWh' : 'L';
+const FILL_RATE = 0.14;   // tank fractions a second at the pump
 export const tankOf = v => TANK[v.model] ?? 55;
 const hash = s => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return ((h >>> 0) % 1000) / 1000; };
 
@@ -16,7 +14,7 @@ export class Fuel {
     this.G = G; this.stations = []; this.near = new Map(); this.filling = null; this.rescue = null; this.ready = false;
     this.group = new THREE.Group(); this.group.name = 'fuel stations'; G.scene.add(this.group);
     const M = (c, o = {}) => new THREE.MeshStandardNodeMaterial({ color: c, roughness: 0.55, ...o });
-    this.mats = { plinth: M(0xb9b6ae, { roughness: 0.9 }), pump: M(0xf2f1ec), band: M(0x2f6f4a), dark: M(0x2a2c30), screen: new THREE.MeshBasicNodeMaterial({ color: 0x9fe0b0 }),
+    this.mats = { plinth: M(0xb9b6ae, { roughness: 0.9 }), pump: M(0xf2f1ec), band: M(0x2f6f4a), charger: M(0x197381), dark: M(0x2a2c30), screen: new THREE.MeshBasicNodeMaterial({ color: 0x9fe0b0 }),
       roof: M(0xf4f4f2, { roughness: 0.4 }), fascia: M(0x2f6f4a, { roughness: 0.4 }), column: M(0xd8d8d4), hose: M(0x1a1a1a) };
     this.geo = { box: new THREE.BoxGeometry(1, 1, 1) };
   }
@@ -35,21 +33,22 @@ export class Fuel {
   }
   // ---------------------------------------------------------------- the tank
   level(v) {
-    if (v.fuel == null) v.fuel = v.owner ? 0.8 : 0.25 + 0.6 * hash(v.id);
+    if (v.fuel == null) v.fuel = v.owner ? 1 : .85 + .15 * hash(v.id);
     return v.fuel;
   }
   hasTank(v) { return tankOf(v) > 0; }
   // called while you drive: burns fuel with distance and throttle; returns the throttle allowed (0 when dry)
   drive(v, dt, throttle) {
     if (!this.hasTank(v)) return throttle;
-    const lv = this.level(v), dist = Math.abs(v.sp || 0) * dt;
-    v.fuel = Math.max(0, lv - dist / (RANGE_KM * 1000) * (0.55 + 0.9 * Math.abs(throttle)) - dt / 14400);
+    const electric = isElectric(v.model);
+    v.fuel = Math.max(0,this.level(v)-energyUsed(v.model,dt,v.sp||0,throttle));
     if (v.fuel <= 0) {
-      if (!this._dryWarn) { this._dryWarn = true; this.G.hud?.toast?.('Out of petrol! The engine\'s died.', 4); }
-      return 0;
+      if (!v.dryWarn) this.G.hud?.toast?.(v.model==='ebike' ? 'Battery empty · pedal power only' : electric ? 'Battery empty · request a charge' : 'Out of petrol · request fuel',4);
+      v.dryWarn = true;
+      return v.model==='ebike' ? throttle : 0;
     }
-    if (v.fuel < 0.1 && !this._lowWarn) { this._lowWarn = true; this.G.hud?.toast?.('Fuel light\'s on: find a petrol station (on the map).', 4); }
-    if (v.fuel > 0.12) this._lowWarn = this._dryWarn = false;
+    if (v.fuel < .1 && !v.lowWarn) { v.lowWarn=true; this.G.hud?.toast?.(electric?'Low battery · find a charging forecourt':'Low fuel · find a petrol station',4); }
+    if (v.fuel > .12) v.lowWarn=v.dryWarn=false;
     return throttle;
   }
   // ---------------------------------------------------------------- per frame
@@ -75,27 +74,29 @@ export class Fuel {
     if (f) {
       if (!v || v !== f.v || Math.abs(v.sp || 0) > 0.8 || !this.at) this.stopFill('stopped');
       else {
-        const T = tankOf(v), add = Math.min(1 - v.fuel, FILL_RATE * dt), cost = add * T * PRICE;
-        if (cash(me) < cost + 0.01) this.stopFill('cash');
-        else { spend(me, cost); v.fuel += add; f.litres += add * T; f.cost += cost; if (v.fuel >= 0.999) { v.fuel = 1; this.stopFill('full'); } }
+        const T = tankOf(v), add = Math.min(1 - v.fuel, FILL_RATE * dt), cost = add * T * price(v);
+        const total=f.cost+cost;
+        const charge=(Math.round(total*100)-Math.round(f.cost*100))/100;
+        if (!spend(me,charge)) this.stopFill('cash');
+        else { v.fuel += add; f.litres += add * T; f.cost += cost; if (v.fuel >= 1-1e-9) { v.fuel = 1; this.stopFill('full'); } }
       }
     }
     // a mate on his way with a can
-    if (this.rescue && G.time >= this.rescue.at) { const rv = this.rescue.v; rv.fuel = Math.max(rv.fuel || 0, 0.12); this.rescue = null; G.hud?.toast?.('Your mate turns up with a can: about 10 litres in the tank. Get to a station.', 5); }
+    if (this.rescue && G.time >= this.rescue.at) { const rv = this.rescue.v; rv.fuel = Math.max(rv.fuel || 0, 0.12); this.rescue = null; G.hud?.toast?.(isElectric(rv.model)?'Mobile charge delivered · 12% battery':'Fuel delivered · 12% tank', 5); }
   }
   stopFill(why) {
     const f = this.filling; if (!f) return; this.filling = null;
     const me = this.G.brothers.me;
-    if (f.litres > 0.05) this.G.hud?.toast?.(`${why === 'full' ? 'Full tank' : why === 'cash' ? 'Out of cash' : 'Stopped'}: ${f.litres.toFixed(1)} litres, £${f.cost.toFixed(2)}. ${me.short} has £${cash(me).toFixed(2)}.`, 4);
+    if (f.litres > 0.05) this.G.hud?.toast?.(`${why === 'full' ? 'Full' : why === 'cash' ? 'Out of cash' : 'Stopped'}: ${f.litres.toFixed(1)} ${unit(f.v)}, £${f.cost.toFixed(2)}. ${me.short} has £${cash(me).toFixed(2)}.`, 4);
   }
   press() {
     const G = this.G, me = G.brothers.me, v = G.brothers.vehicleOf(me); if (!v) return;
     if (this.filling) { this.stopFill('stopped'); return; }
-    if (this.at) { if (v.fuel >= 0.995) { G.hud?.toast?.('The tank\'s already full.'); return; } this.filling = { v, litres: 0, cost: 0 }; return; }
+    if (this.at) { if (this.level(v) >= 0.995) { G.hud?.toast?.('Already full.'); return; } this.filling = { v, litres: 0, cost: 0 }; return; }
     if (v.fuel <= 0 && !this.rescue) {
-      if (!spend(me, 20)) { G.hud?.toast?.('You need £20 for a mate to bring a can.'); return; }
+      if (!spend(me, 20)) { G.hud?.toast?.('Roadside assistance costs £20.'); return; }
       this.rescue = { v, at: G.time + 25 };
-      G.hud?.toast?.('You ring a mate: he\'s bringing a can of petrol (£20). About half a minute.', 5);
+      G.hud?.toast?.('Roadside assistance requested · £20', 5);
     }
   }
   // the fuel gauge by the speedometer and the Fill up button
@@ -110,11 +111,11 @@ export class Fuel {
     if (!this.gaugeEl) return;
     const tank = v && this.hasTank(v);
     this.gaugeEl.hidden = !tank;
-    if (tank) { const lv = this.level(v); this.gaugeEl.lastChild.firstChild.style.width = Math.round(lv * 100) + '%'; this.gaugeEl.classList.toggle('low', lv < 0.12); }
+    if (tank) { const lv = this.level(v); this.gaugeEl.dataset.power = isElectric(v.model) ? 'EV' : 'Fuel'; this.gaugeEl.title = this.gaugeEl.dataset.power+' '+Math.round(lv*100)+'%'; this.gaugeEl.lastChild.firstChild.style.width = Math.round(lv * 100) + '%'; this.gaugeEl.classList.toggle('low', lv < 0.12); }
     let text = '';
-    if (tank && this.filling) text = `Filling · ${this.filling.litres.toFixed(1)} L · £${this.filling.cost.toFixed(2)} · Stop`;
-    else if (tank && this.at) { const need = (1 - v.fuel) * tankOf(v); text = need < 0.2 ? `${this.at.title} · Full tank` : `Fill up · ${need.toFixed(0)} L · £${(need * PRICE).toFixed(2)}`; }
-    else if (tank && v.fuel <= 0) text = this.rescue ? 'A mate\'s bringing a can…' : 'Out of petrol · Ring a mate (£20)';
+    if (tank && this.filling) text = `${isElectric(v.model)?'Charging':'Filling'} · ${this.filling.litres.toFixed(1)} ${unit(v)} · £${this.filling.cost.toFixed(2)} · Stop`;
+    else if (tank && this.at) { const need = (1 - v.fuel) * tankOf(v); text = v.fuel >= .995 ? `${this.at.title} · Full` : `${isElectric(v.model)?'Charge':'Fill up'} · ${need.toFixed(1)} ${unit(v)} · £${(need * price(v)).toFixed(2)}`; }
+    else if (tank && v.fuel <= 0) text = this.rescue ? 'Assistance on its way…' : 'Request roadside top-up (£20)';
     if (this.btn.dataset.t !== text) { this.btn.dataset.t = text; this.btn.textContent = text; this.btn.hidden = !text; this.btn.classList.toggle('on', !!this.filling); }
   }
   // ---------------------------------------------------------------- the stations near you
@@ -135,7 +136,7 @@ export class Fuel {
       for (const k of [-0.28, 0.28]) {
         const px = isl.x + s.v[0] * isl.len * k, pz = isl.z + s.v[1] * isl.len * k;
         box(0.75, 1.85, 0.5, px, g + 0.16 + 0.925, pz, rot, this.mats.pump);
-        box(0.77, 0.22, 0.52, px, g + 0.16 + 1.72, pz, rot, this.mats.band);
+        box(0.77, 0.22, 0.52, px, g + 0.16 + 1.72, pz, rot, k>0?this.mats.charger:this.mats.band);
         for (const side of [-1, 1]) {
           box(0.42, 0.26, 0.02, px + s.u[0] * side * 0.26, g + 1.35, pz + s.u[1] * side * 0.26, rot, this.mats.screen);
           box(0.06, 0.35, 0.08, px + s.u[0] * side * 0.27 + s.v[0] * 0.25, g + 1.0, pz + s.u[1] * side * 0.27 + s.v[1] * 0.25, rot, this.mats.hose);

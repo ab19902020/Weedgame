@@ -2,7 +2,7 @@
 import * as T from 'three/webgpu';
 import {mergeGeos} from './tiles.js';
 
-export function motorcycleMesh(dirt, rider=false) {
+export function motorcycleMesh(dirt, rider=false, model='motorcycle') {
   const parts=[];
   const metal=0x91969b, rubber=0x26282b, frame=dirt?0xb95624:0x41464c;
   function part(g,colour,paint=0,lamp=0) {
@@ -29,16 +29,33 @@ export function motorcycleMesh(dirt, rider=false) {
       bevelSize:.009,bevelThickness:.009,steps:1});
     part(geometry.translate(0,0,z),colour,paint);
   }
-  const axle=dirt?.735:.765,radius=dirt?.335:.315,seat=dirt?.94:.76;
+  const cycle = model==='bicycle' || model==='ebike', stand = model==='escooter';
+  if(cycle && !rider){
+    const axle=model==='ebike'?.57:.54, rear=[-axle,.35,0], crank=[-.055,.30,0], saddle=[-.20,.84,0], head=[.33,.86,0];
+    tube(crank,saddle,.024,frame); tube(crank,head,model==='ebike'?.052:.026,frame);
+    tube(saddle,head,.022,model==='ebike'?0x41645a:0xa64d31); tube([-.20,.82,0],[-.23,.92,0],.017,metal);
+    for(const side of [-1,1]){
+      const z=side*.066;
+      tube([rear[0],rear[1],z],crank,.015,frame); tube([rear[0],rear[1],z],saddle,.014,frame);
+      tube([axle,.35,z],head,.02,metal); tube(head,[.34,1.02,side*.23],.012,metal);
+      tube([.34,1.02,side*.20],[.31,1.01,side*.30],.019,rubber);
+    }
+    tube([-.52,.35,-.077],[-.055,.365,-.077],.009,0x494a41);
+    oval(-.23,.93,0,.26,.075,.16,rubber); oval(.34,.94,0,.076,.06,.077,0xf4f3dd,0,1);
+    oval(-.35,.84,0,.05,.044,.07,0xcb2822,0,2);
+    if(model==='ebike')oval(-.06,.30,0,.17,.15,.145,0x34393a);
+    return mergeGeos(parts);
+  }
+  const axle=dirt?.735:.765,radius=dirt?.335:.315,seat=cycle?.93:stand?.99:dirt?.94:.76;
   if(rider){
-    const hip=[-.19,seat+.06,0], shoulder=[dirt?-.12:.01,seat+.48,0];
+    const hip=[-.19,seat+.06,0], shoulder=[stand?-.09:dirt?-.12:.01,seat+.48,0];
     oval(hip[0],hip[1],0,.30,.21,.30,0x29323d);
     oval((hip[0]+shoulder[0])/2,seat+.30,0,.29,.54,.39,0x364450,0,0,dirt?-.13:-.30);
     for(const sign of [-1,1]){
-      const knee=[.14,seat-.19,sign*.20], boot=[-.03,.40,sign*.22];
-      tube([hip[0],hip[1],sign*.11],knee,.092,0x29323d,.073);
-      tube(knee,boot,.07,0x35404b,.052);oval(.01,.39,boot[2],.23,.10,.12,rubber);
-      const elbow=[.13,seat+.25,sign*.27], hand=[.40,seat+.25,sign*.31];
+      const knee=[stand?-.12:.14,seat-(stand?.34:.19),sign*(stand?.10:.20)], boot=[stand?sign*.11:-.03,stand?.29:.40,sign*(stand?.075:.22)];
+      if (!cycle) { tube([hip[0],hip[1],sign*.11],knee,.092,0x29323d,.073);
+      tube(knee,boot,.07,0x35404b,.052);oval(boot[0]+.04,boot[1],boot[2],.23,.10,.12,rubber); }
+      const elbow=[.13,seat+.25,sign*.27], hand=[stand?.30:cycle?.32:.40,stand?.95:cycle?1.02:seat+.25,sign*.28];
       tube([shoulder[0],shoulder[1],sign*.15],elbow,.075,0x364450,.055);
       tube(elbow,hand,.054,0x303b46,.042);oval(...hand,.12,.085,.085,rubber);
     }
@@ -49,6 +66,10 @@ export function motorcycleMesh(dirt, rider=false) {
   } else {
     for(const sign of [-1,1]){
       const z=sign*.105;
+      tube([.40,seat+.25,sign*.31],[.41,seat+.25,sign*.385],.019,rubber);
+      tube([.42,seat+.24,sign*.25],[.46,seat+.225,sign*.34],.009,metal);
+      if(dirt)oval(.455,seat+.25,sign*.315,.064,.074,.13,0xdbd8c8);
+      else oval(.38,seat+.285,sign*.14,.084,.055,.086,0x36434b);
       tube([-.39,.78,z],[.1,.34,z],.031,frame);
       tube([.1,.34,z],[.46,seat+.1,z],.032,frame);
       tube([-.39,.78,z],[.46,seat+.1,z],.028,frame);

@@ -112,7 +112,7 @@ export class HeroCars {
     if (c.steering) c.steering.rotation.z = -steer * STEER_RATIO;
     const s = c.state, blink = (performance.now() / 666) % 1 < 0.5 ? 1 : 0;
     s.camIn.value = v.camInside ? 1 : 0;
-    s.brake.value = v.brake ? 1 : 0; s.lights.value = v.lights ? 1 : 0; s.reverse.value = v.reversing ? 1 : 0;
+    s.brake.value = v.brake ? 1 : 0; s.lights.value = v.lights ? (v.fullBeam ? 1.45 : 1) : 0; s.reverse.value = v.reversing ? 1 : 0;
     s.indL.value = (v.ind === 1 || v.hazard) && blink ? 1 : 0; s.indR.value = (v.ind === 2 || v.hazard) && blink ? 1 : 0;
     const d = v.dmg || [0, 0, 0, 0]; s.dmg.value.set(d[0], d[1], d[2], d[3]);
   }
