@@ -237,25 +237,38 @@ export class Interiors {
     const big = !HOME.has(s.kind) && !['trap', 'nice', 'food', 'shop', 'pub'].includes(s.kind);
     const want = big ? [4.2, 6.5, 9][c.foot] ?? 4.2 : [2.3, 3.0, 3.6][c.foot] ?? 2.3;
     c.dist += (want - c.dist) * Math.min(1, dt * 3);
-    c.pitch = Math.max(-0.15, Math.min(big ? 0.9 : 0.6, c.pitch));
+    c.pitch = Math.max(-0.15, Math.min(big ? 0.9 : 0.5, c.pitch));
     const cp = Math.cos(c.pitch), sp = Math.sin(c.pitch);
     const [lx, ly] = this.toLocal(s, tx, tz);
-    const hx = tx + Math.cos(c.yaw) * cp * c.dist, hz = tz + Math.sin(c.yaw) * cp * c.dist;
-    const [cx, cy] = this.toLocal(s, hx, hz);
     const hRel = ty - b.floor0;
-    let f = P.ray(lx, ly, cx, cy, hRel);
-    const d = Math.max(0.35, c.dist * f - (f < 1 ? 0.22 : 0));
-    let x = tx + Math.cos(c.yaw) * cp * d, z = tz + Math.sin(c.yaw) * cp * d, y = ty + sp * d;
-    // under the ceiling of the floor you're on, above its floor
+    // between the floor and well clear of the ceiling (and of a pub's beams) of the floor you're on: right up
+    // under it the near plane cut through it and you saw the roof, or a beam filled the screen
     const li = P.levelAt(hRel - 1.3), lv = P.levels[li];
-    const ceil = b.floor0 + lv.h + lv.ceil - 0.18, flo = b.floor0 + lv.h + 0.35;
-    y = Math.max(flo, Math.min(ceil, y));
-    // and inside the shell
-    const [qx, qy] = this.toLocal(s, x, z), m = 0.18;
-    const kx = Math.max(m, Math.min(P.W - m, qx)), ky = Math.max(m, Math.min(P.D - m, qy));
-    if (kx !== qx || ky !== qy) [x, z] = this.toWorld(s, kx, ky);
+    const top = b.floor0 + lv.h + (lv.camTop ?? lv.ceil - 0.35), flo = b.floor0 + lv.h + 0.4;
+    const place = (yaw) => {
+      const ex = Math.cos(yaw) * cp, ez = Math.sin(yaw) * cp;
+      const [cx, cy] = this.toLocal(s, tx + ex * c.dist, tz + ez * c.dist);
+      const yWant = Math.max(flo, Math.min(top, ty + sp * c.dist));
+      // walls, and anything tall between you and the camera (furniture, the bar, racking, a hanging lamp)
+      const f = Math.min(P.ray(lx, ly, cx, cy, hRel, yWant - b.floor0, li, sp * c.dist), P.rayItems(li, lx, ly, cx, cy, hRel, yWant - b.floor0));
+      const d = Math.max(0.3, c.dist * f - (f < 1 ? 0.3 : 0));
+      let x = tx + ex * d, z = tz + ez * d, y = Math.max(flo, Math.min(top, ty + sp * d));
+      // and inside the shell, far enough from its walls that the near plane doesn't reach through them
+      const [qx, qy] = this.toLocal(s, x, z), m = 0.3;
+      let [kx, ky] = P.camClear(li, qx, qy, 0.25, y - b.floor0);
+      kx = Math.max(m, Math.min(P.W - m, kx)); ky = Math.max(m, Math.min(P.D - m, ky));
+      if (kx !== qx || ky !== qy) [x, z] = this.toWorld(s, kx, ky);
+      // a lamp hanging right over you: duck under it
+      let hit = P.camInside(li, kx, ky, y - b.floor0);
+      if (hit && hit.b0 - lv.h > 0.9) { y = Math.max(flo, Math.min(y, b.floor0 + hit.b0 - 0.12)); hit = P.camInside(li, kx, ky, y - b.floor0); }
+      return { x, y, z, ok: !hit };
+    };
+    // backed up against something tall: swing round to the nearest clear side (and keep turning that way)
+    let q = place(c.yaw);
+    if (!q.ok) for (const o of [0.5, -0.5, 1, -1, 1.6, -1.6, 2.3, -2.3, Math.PI]) { const r = place(c.yaw + o); if (r.ok) { q = r; c.yaw += o * Math.min(1, dt * 2.5); break; } }
+    let { x, y, z } = q;
     c.x = x; c.y = y; c.z = z;
     G.camera.position.set(x, y, z);
-    G.camera.lookAt(tx, Math.min(ty, ceil - 0.05), tz);
+    G.camera.lookAt(tx, Math.min(ty, top - 0.05), tz);
   }
 }

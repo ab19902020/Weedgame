@@ -237,7 +237,8 @@ export class Brothers {
   followCam(dt, tx, ty, tz, dist, moveHeading, rate = 1.6, pitchTarget = null) {
     const c = this.cam, G = this.G;
     const IN = !this.me.vehicle && G.interiors?.at(this.me);
-    if (IN) { if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate)); IN.camera(c, dt, tx, ty, tz); return; }
+    // indoors the near plane comes in to 10 cm: at 40 cm it reached through ceilings and walls the camera was close to
+    if (IN) { if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate)); this.setNear(0.1); IN.camera(c, dt, tx, ty, tz); return; }
     if (moveHeading != null && G.time - c.lastUser > 1.4) c.yaw = lerpAngle(c.yaw, moveHeading + Math.PI, Math.min(1, dt * rate));
     if (pitchTarget != null && G.time - c.lastUser > 1.4) c.pitch += (pitchTarget - c.pitch) * Math.min(1, dt * 2);
     c.dist += (dist - c.dist) * Math.min(1, dt * 3);

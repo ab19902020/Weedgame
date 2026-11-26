@@ -305,6 +305,7 @@ export function buildInterior(P) {
   const gb = new GB(), M = materials();
   const style = P.style, trap = style.trap;
   const dim = trap ? 0.8 : 1;
+  for (const lv of P.levels) lv.hang = [];
   for (const lv of P.levels) {
     const H = lv.h, top = H + lv.ceil;
     const next = P.levels[lv.i + 1];
@@ -551,11 +552,12 @@ function lights(gb, r, lv, top, style) {
     return;
   }
   if (r.kind === 'mall') { if (r.name === 'concourse') for (let x = r.x0 + 4; x < r.x1 - 2; x += 8) gb.box('glow', { x, y: cy, rot: 0, h: 0 }, -3.4, 3.4, -2.2, 2.2, top - 0.05, top - 0.01, 0xf4fbff, { flat: 1.45, skip: 't' }); return; }
-  if (r.kind === 'church') { for (let y = r.y0 + 3; y < r.y1 - 2; y += 4.5) { gb.cyl('glow', { x: cx, y, rot: 0, h: 0 }, 0, 0, 0.35, top - 2.2, top - 1.9, 0xfff1cc, 8, { flat: 1.4 }); gb.box('plain', { x: cx, y, rot: 0, h: 0 }, -0.01, 0.01, -0.01, 0.01, top - 1.9, top, 0x3a3a3a); } return; }
+  if (r.kind === 'church') { for (let y = r.y0 + 3; y < r.y1 - 2; y += 4.5) { (lv.hang ??= []).push([cx, y, 0.45, top - 2.25, top]); gb.cyl('glow', { x: cx, y, rot: 0, h: 0 }, 0, 0, 0.35, top - 2.2, top - 1.9, 0xfff1cc, 8, { flat: 1.4 }); gb.box('plain', { x: cx, y, rot: 0, h: 0 }, -0.01, 0.01, -0.01, 0.01, top - 1.9, top, 0x3a3a3a); } return; }
   if (r.x1 - r.x0 < 0.9 || r.y1 - r.y0 < 0.9) return;
   if (style.trap) { gb.box('plain', f, -0.01, 0.01, -0.01, 0.01, top - 0.35, top, 0x3a3a3a); gb.cyl('glow', f, 0, 0, 0.05, top - 0.45, top - 0.35, 0xfff3d0, 6, { flat: 1.5 }); return; }
   if (r.name === 'bath' || /landing|hall|corridor/.test(r.name)) { gb.cyl('glow', f, 0, 0, 0.16, top - 0.06, top - 0.01, 0xfffbf0, 10, { flat: 1.35 }); return; }
-  // a pendant with a shade, hung from a ceiling rose
+  // a pendant with a shade, hung from a ceiling rose (the indoor camera keeps out of it: lv.hang)
+  (lv.hang ??= []).push([cx, cy, 0.26, top - 0.8, top]);
   gb.cyl('plain', f, 0, 0, 0.16, top - 0.035, top - 0.002, 0xfbfaf6, 12); gb.cyl('plain', f, 0, 0, 0.09, top - 0.05, top - 0.035, 0xfbfaf6, 10);
   gb.box('plain', f, -0.008, 0.008, -0.008, 0.008, top - 0.55, top, 0x3a3a3a);
   gb.cyl('plain', f, 0, 0, 0.22, top - 0.78, top - 0.55, style.nice ? 0x2b2b2b : 0xe9e1d0, 10, { open: true });

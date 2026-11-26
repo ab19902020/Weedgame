@@ -178,20 +178,89 @@ export class Plan {
     return [clamp(x, r, this.W - r), clamp(y, r, this.D - r)];
   }
   // the first wall a ray from (x, y) at height h towards (tx, ty) hits: fraction 0..1 (doorways let it through)
-  ray(x, y, tx, ty, h) {
-    const li = this.levelAt(h), lv = this.levels[li]; let best = 1;
+  // (h1, li: the camera's sight line rises from h to h1 on level li; it only goes through a doorway below its top)
+  ray(x, y, tx, ty, h, h1 = h, li = this.levelAt(h), rise = null) {
+    const lv = this.levels[li]; let best = 1;
     const dx = tx - x, dy = ty - y;
     for (const s of lv.walls) {
       const den = s.o === 'h' ? dy : dx; if (Math.abs(den) < 1e-6) continue;
       const t = ((s.o === 'h' ? s.c - y : s.c - x)) / den; if (t <= 0 || t >= best) continue;
       const u = s.o === 'h' ? x + dx * t : y + dy * t; if (u < s.a || u > s.b) continue;
-      const hh = h - lv.h;
+      const hh = (rise != null ? Math.min(h1, h + rise * t) : h + (h1 - h) * t) - lv.h;
       if (s.open.some(o => u > o.a + 0.08 && u < o.b - 0.08 && hh > o.bot + 0.1 && hh < o.top - 0.1 && o.kind !== 'window' && o.kind !== 'front')) continue;
       best = t;
     }
     return best;
   }
 }
+// the indoor camera's other check: how far along (x, y) -> (tx, ty) it can come before it would be inside
+// something tall on level li (furniture, the back bar, racking, a fruit machine, a hanging lamp) that spans
+// heights h0..h1 (relative to the building's floor). 1 = nothing in the way.
+const CAM_SKIP = new Set(['rug', 'doormat', 'floorlines', 'picture', 'clock', 'tv', 'dartboard', 'whiteboard', 'oche', 'clothes', 'post', 'cans', 'pizzaboxes', 'runner', 'beam', 'exitsign', 'towelrail', 'cuerack']);
+// the solid shapes the camera keeps out of on level li: [cx, cy, halfW, halfD, rot, b0, b1] (heights from the
+// building's floor). The mall's gallery is its two walkways, not one block over the whole hall.
+Plan.prototype.camBoxes = function (li) {
+  const lv = this.levels[li];
+  if (lv._camBoxes && lv._camBoxesN === this.items.length + (lv.hang || []).length) return lv._camBoxes;
+  const out = [];
+  for (const it of this.items) {
+    if (it.lv !== li || it.skip || CAM_SKIP.has(it.type) || it.w < 0.2 || it.d < 0.2) continue;
+    const b0 = lv.h + (it.base || 0), b1 = b0 + (it.h || 0);
+    if (it.type === 'gallery') { for (const [a, b] of [[it.y0, it.y0 + 3.5], [it.y1 - 3.5, it.y1]]) out.push([it.x, (a + b) / 2, it.w / 2, (b - a) / 2, 0, b1 - 0.3, b1 + 1.1]); continue; }
+    out.push([it.x, it.y, it.w / 2, it.d / 2, it.rot || 0, b0, b1]);
+  }
+  for (const [hx, hy, r, b0, b1] of lv.hang || []) out.push([hx, hy, r, r, 0, b0, b1]);
+  lv._camBoxes = out; lv._camBoxesN = this.items.length + (lv.hang || []).length;
+  return out;
+};
+Plan.prototype.rayItems = function (li, x, y, tx, ty, h0, h1) {
+  const lvH = this.levels[li].h;
+  let best = 1;
+  // where the segment first enters a box (centre, axes, half sizes, heights b0..b1): with a margin, or, when
+  // you're standing within the margin (right up against it), the box itself; 1 if it never does
+  const enter = (u0, v0, du, dv, hu, hv, b0, b1) => {
+    for (const m of [0.14, 0.02]) {
+      const ax = [[u0, du, -hu - m, hu + m], [v0, dv, -hv - m, hv + m], [h0, h1 - h0, b0 - m, b1 + m]];
+      if (ax.every(([p, , lo, hi]) => p > lo && p < hi)) continue;   // starting inside: try the tighter box
+      let t0 = 0, t1 = 1, hit = true;
+      for (const [p, d, lo, hi] of ax) {
+        if (Math.abs(d) < 1e-9) { if (p <= lo || p >= hi) { hit = false; break; } continue; }
+        let a = (lo - p) / d, b = (hi - p) / d; if (a > b) [a, b] = [b, a];
+        t0 = Math.max(t0, a); t1 = Math.min(t1, b); if (t0 > t1) { hit = false; break; }
+      }
+      return hit ? t0 : 1;
+    }
+    return 1;
+  };
+  const ex = tx - x, ey = ty - y;
+  for (const [bx, by, hw, hd, rot, b0, b1] of this.camBoxes(li)) {
+    const c = Math.cos(rot), s = Math.sin(rot), dx = x - bx, dy = y - by;
+    best = Math.min(best, enter(dx * c + dy * s, -dx * s + dy * c, ex * c + ey * s, -ex * s + ey * c, hw, hd, b0, b1));
+  }
+  return best;
+};
+// what (if anything tall) the point (x, y) at height h on level li is inside: { b0, b1 } heights, or null
+Plan.prototype.camInside = function (li, x, y, h) {
+  for (const [bx, by, hw, hd, rot, b0, b1] of this.camBoxes(li)) {
+    if (h < b0 - 0.06 || h > b1 + 0.06) continue;
+    const c = Math.cos(rot), s = Math.sin(rot), dx = x - bx, dy = y - by;
+    if (Math.abs(dx * c + dy * s) < hw + 0.06 && Math.abs(-dx * s + dy * c) < hd + 0.06) return { b0, b1 };
+  }
+  return null;
+};
+// push the camera (x, y) on level li at least r off every wall (doorways stay open), like the player
+Plan.prototype.camClear = function (li, x, y, r, h) {
+  const lv = this.levels[li], hh = h - lv.h;
+  for (let k = 0; k < 2; k++) for (const s of lv.walls) {
+    const [ax, ay, bx, by] = seg(s, s.a, s.b), vx = bx - ax, vy = by - ay, L2 = vx * vx + vy * vy || 1;
+    let t = ((x - ax) * vx + (y - ay) * vy) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const u = s.a + (s.b - s.a) * t;
+    if (s.open.some(o => o.bot < 0.3 && hh < o.top - 0.12 && u > o.a + 0.05 && u < o.b - 0.05)) continue;   // in a doorway (below its head)
+    const px = ax + vx * t, py = ay + vy * t, dx = x - px, dy = y - py, d = Math.hypot(dx, dy);
+    if (d < r && d > 1e-6) { const q = (r - d) / d; x += dx * q; y += dy * q; }
+  }
+  return [x, y];
+};
 const seg = (s, a, b) => s.o === 'h' ? [a, s.c, b, s.c] : [s.c, a, s.c, b];
 
 // ------------------------------------------------------------------ furniture against walls
@@ -649,6 +718,7 @@ function pub(P, s) {
   }
   // dark beams across the ceiling, pictures and brass on the walls
   for (let x = 1.2; x < W - 0.5; x += 1.7) P.add(g, 'beam', x, D / 2, 0.22, D, 0.2, { base: ceil - 0.2, solid: false, col: 0x3a2616 });
+  g.camTop = ceil - 0.2 - 0.3;   // the camera stays clear below the beams (it used to ride up among them)
   for (const side of ['y0', 'x0', 'x1']) for (let q = 0; q < 2; q++) wallItem(P, g, r, side, 'picture', 0.55 + R() * 0.3, 0.04, 0.45 + R() * 0.2, { base: 1.5, solid: false, tall: true, seed: Math.floor(R() * 16), at: 0.2 + q * 0.55, col: 0xc9b26a });
 }
 
