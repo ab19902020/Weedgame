@@ -10,6 +10,10 @@ import { positionWorld } from 'three/tsl';
 
 const FAR_LOD = 70;   // metres: beyond this cars use the light body
 export const MODELS = {
+  evsaloon:{ L:4.77,W:1.87,H:1.49,wb:2.88,wr:.34,prof:'saloon',max:60,mass:1850 },
+  evsuv:{ L:4.56,W:1.91,H:1.77,wb:2.75,wr:.36,prof:'suv',max:50,mass:2090 },
+  bicycle:{ L:1.79,W:.59,H:1.06,wb:1.08,wr:.35,prof:'cycle',max:45,mass:90,wheels:2,tyre:.035 },
+  ebike:{ L:1.85,W:.63,H:1.10,wb:1.14,wr:.355,prof:'cycle',max:36,mass:108,wheels:2,tyre:.053 },
   hatch: { L: 4.05, W: 1.74, H: 1.47, wb: 2.5, wr: 0.31, prof: 'hatch', max: 220, mass: 1150 },
   saloon: { L: 4.65, W: 1.8, H: 1.45, wb: 2.75, wr: 0.32, prof: 'saloon', max: 160, mass: 1400 },
   estate: { L: 4.75, W: 1.8, H: 1.5, wb: 2.8, wr: 0.32, prof: 'estate', max: 120, mass: 1500 },
@@ -49,54 +53,13 @@ for (const [k, d] of Object.entries(MODELS)) if (!d.glb) d.wx = CAR_SPECS[k] ? (
 const MODEL_LIST = Object.entries(MODELS);
 // traffic mix (UK-ish), and paints: sports models get brighter colours
 export function randomModel(r) {
-  return r < 0.31 ? 'hatch' : r < 0.52 ? 'saloon' : r < 0.65 ? 'estate' : r < 0.8 ? 'suv' : r < 0.9 ? 'van' : r < 0.95 ? 'hothatch' : r < 0.985 ? 'coupe' : 'sports';
+  return r < .065 ? 'evsaloon' : r < .115 ? 'evsuv' : r < 0.31 ? 'hatch' : r < 0.52 ? 'saloon' : r < 0.65 ? 'estate' : r < 0.8 ? 'suv' : r < 0.9 ? 'van' : r < 0.95 ? 'hothatch' : r < 0.985 ? 'coupe' : 'sports';
 }
 const SPORT_PAINTS = [0xb5121b, 0xe8e8e8, 0x111111, 0x1446a0, 0xf2b705, 0xe25a12, 0x2f6d3a, 0x7d8085];
 export function paintFor(model, r) { return (model === 'sports' || model === 'coupe' || model === 'hothatch') ? SPORT_PAINTS[Math.floor(r * SPORT_PAINTS.length)] : PAINTS[Math.floor(r * PAINTS.length)]; }
 
-function buildTwoWheeler(def) {
-  const parts = [];
-  const add = (g, rgb, p, l) => {
-    g = g.toNonIndexed();
-    const c = g.attributes.position.count;
-    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(c * 3).map((_, i) => rgb[i % 3]), 3));
-    g.setAttribute('vdat', new THREE.BufferAttribute(new Float32Array(c * 4).map((_, i) => [p, l, 0, 0][i % 4]), 4));
-    for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'color', 'vdat'].includes(k)) g.deleteAttribute(k);
-    parts.push(g);
-  };
-  const scooter = def.prof === 'scooter';
-  if (!scooter) {
-    add(new THREE.BoxGeometry(1.05, 0.07, 0.07).translate(-0.02, 0.42, 0), [0.12, 0.12, 0.13], 0, 0);
-    add(new THREE.BoxGeometry(0.7, 0.26, 0.34).translate(-0.02, 0.5, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.07, 0.38, 0.48).translate(0.38, 0.62, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.52, 0.07, 0.26).translate(-0.1, 0.76, 0), [0.07, 0.07, 0.08], 0, 0);
-    add(new THREE.BoxGeometry(0.05, 0.36, 0.05).translate(0.46, 0.82, 0), [0.1, 0.1, 0.11], 0, 0);
-    add(new THREE.BoxGeometry(0.05, 0.04, 0.58).translate(0.48, 1.0, 0), [0.08, 0.08, 0.09], 0, 0);
-    add(new THREE.BoxGeometry(0.34, 0.035, 0.14).translate(0.52, 0.5, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.3, 0.035, 0.14).translate(-0.52, 0.48, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.06, 0.1, 0.1).translate(0.58, 0.7, 0), [0.9, 0.9, 0.85], 0, 1);
-    add(new THREE.BoxGeometry(0.05, 0.07, 0.1).translate(-0.7, 0.7, 0), [0.55, 0.04, 0.03], 0, 2);
-    add(new THREE.BoxGeometry(0.02, 0.08, 0.12).translate(-0.74, 0.5, 0), [0.95, 0.8, 0.1], 0, 0);
-    add(new THREE.BoxGeometry(0.26, 0.4, 0.3).translate(-0.06, 1.02, 0), [0.16, 0.17, 0.19], 0, 0);
-    add(new THREE.BoxGeometry(0.18, 0.16, 0.18).translate(0.02, 1.3, 0), [0.1, 0.1, 0.12], 0, 0);
-  } else {
-    add(new THREE.BoxGeometry(0.7, 0.05, 0.26).translate(-0.02, 0.2, 0), [0.1, 0.1, 0.11], 0, 0);
-    add(new THREE.BoxGeometry(0.5, 0.03, 0.2).translate(-0.02, 0.25, 0), [0.16, 0.16, 0.17], 0, 0);
-    add(new THREE.BoxGeometry(0.2, 0.14, 0.1).translate(-0.18, 0.3, 0), [1, 1, 1], 1, 0);
-    add(new THREE.BoxGeometry(0.04, 0.7, 0.04).translate(0.3, 0.58, 0), [0.75, 0.77, 0.8], 0, 0);
-    add(new THREE.BoxGeometry(0.04, 0.035, 0.4).translate(0.3, 0.94, 0), [0.08, 0.08, 0.09], 0, 0);
-    add(new THREE.BoxGeometry(0.05, 0.06, 0.07).translate(0.38, 0.48, 0), [0.9, 0.9, 0.85], 0, 1);
-    add(new THREE.BoxGeometry(0.04, 0.05, 0.07).translate(-0.42, 0.3, 0), [0.6, 0.05, 0.04], 0, 2);
-    add(new THREE.BoxGeometry(0.22, 0.5, 0.24).translate(-0.02, 0.62, 0), [0.15, 0.16, 0.18], 0, 0);
-    add(new THREE.BoxGeometry(0.16, 0.16, 0.16).translate(0.02, 0.98, 0), [0.1, 0.1, 0.12], 0, 0);
-  }
-  const g = mergeGeos(parts);
-  if (g.attributes.uv) g.deleteAttribute('uv');
-  return g;
-}
 function buildModel(def, key, lod = 0) {
-  if (key === 'motorcycle' || key === 'dirtbike') return motorcycleMesh(key === 'dirtbike');
-  if (def.wheels === 2) return buildTwoWheeler(def);
+  if (def.wheels === 2) return motorcycleMesh(key === 'dirtbike', false, key);
   if (CAR_SPECS[key]) { const g = mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1, lod).parts); if (g.attributes.uv) g.deleteAttribute('uv'); return g; }
   const { L, W, H, prof } = def;
   const isBus = prof === 'decker' || prof === 'single';
@@ -166,6 +129,23 @@ function buildModel(def, key, lod = 0) {
     }
     for(let x=-2.9;x<1.8;x+=.48)add(new THREE.BoxGeometry(.07,.08,.82).translate(x,H+.12,0),[.55,.57,.59],0,0);
   }
+  if (isBus) for(const side of [-1,1]){
+    for(const y of (prof==='decker'?[1.64,3.16]:[1.90])){
+      for(let bay=0;bay<6;bay++){
+        const x=-l+.95+bay*(L-1.9)/5;
+        add(new THREE.BoxGeometry((L-1.9)/5-.10,.82,.034).translate(x,y,side*(W/2+.006)),[.075,.12,.15],0,14);
+      }
+    }
+    if(side<0)for(const offset of [-.59,0,.59]){
+      add(new THREE.BoxGeometry(.046,1.9,.06).translate(l-1.5+offset,1.37,side*(W/2+.03)),[.045,.056,.061],0,0);
+    }
+    add(new THREE.BoxGeometry(.14,.26,.11).translate(l-.67,2.15,side*(W/2+.13)),[.09,.11,.12],0,0);
+  }
+  if(def.livery===2) for(const side of [-1,1]){
+    for(let row=0;row<8;row++)add(new THREE.BoxGeometry(4.05,.019,.035).translate(-.65,1.12+row*.14,side*(W/2+.02)),[.29,.32,.34],0,0);
+    for(let i=0;i<4;i++)add(new THREE.BoxGeometry(.045,1.22,.054).translate(-2.63+i*1.31,1.62,side*(W/2+.018)),[.24,.28,.30],0,0);
+    add(new THREE.BoxGeometry(3.95,.08,.19).translate(-.68,.69,side*W/2),[.54,.57,.6],0,0);
+  }
   if (isBus) add(new THREE.BoxGeometry(0.06, 0.28, 1.6).translate(l + 0.01, H - 0.45, 0), [0.05, 0.05, 0.05], 0, 4); // destination blind
   const g = mergeGeos(parts);
   if (g.attributes.uv) g.deleteAttribute('uv');   // WebGPU: 8 vertex buffers per pipeline, instancing uses four
@@ -205,13 +185,23 @@ export class VehicleRenderer {
     }
     this.riders = {};
     const riderMaterial = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.83});
-    for(const name of ['dirtbike','motorcycle']){
-      const geometry=motorcycleMesh(name==='dirtbike',true);
+    for(const name of ['dirtbike','motorcycle','bicycle','ebike','escooter','moped']){
+      const geometry=motorcycleMesh(name==='dirtbike',true,name);
       const riders=new THREE.InstancedMesh(geometry,riderMaterial,MODELS[name].max);
       riders.count=0;riders.frustumCulled=false;riders.castShadow=shadows;
       riders.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(riders);this.riders[name]=riders;
     }
+    // Cycle legs follow opposite pedals. All riders share the same two limb meshes.
+    this.legs = [0x324151,0x40505e].map(colour => {
+      const mesh = new THREE.InstancedMesh(new THREE.CylinderGeometry(.059,.047,1,7),new THREE.MeshStandardMaterial({color:colour}),2*(MODELS.bicycle.max+MODELS.ebike.max));
+      mesh.count=0; mesh.frustumCulled=false; scene.add(mesh); return mesh;
+    });
+    const shoeGeometry=new THREE.BoxGeometry(.22,.085,.095).translate(.045,.025,0);
+    this.feet=new THREE.InstancedMesh(shoeGeometry,new THREE.MeshStandardMaterial({color:0x2c3033}),this.legs[0].instanceMatrix.count);
+    this.feet.count=0;this.feet.frustumCulled=false;scene.add(this.feet);
+    this.legMatrix=new THREE.Matrix4(); this.legQuat=new THREE.Quaternion();
+    this.legDir=new THREE.Vector3(); this.legMid=new THREE.Vector3(); this.legScale=new THREE.Vector3(); this.legUp=new THREE.Vector3(0,1,0);
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._v = new THREE.Vector3(); this._s = new THREE.Vector3(1, 1, 1); this._c = new THREE.Color(); this._w = new THREE.Matrix4();
     this._g = new THREE.Matrix4(); this._sm = new THREE.Matrix4(); this._steer = new THREE.Matrix4();
     // soft contact shadow under every nearby car (one draw call)
@@ -224,6 +214,9 @@ export class VehicleRenderer {
     this.beams.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.beams.frustumCulled = false; this.beams.count = 0; this.beams.renderOrder = 2;
     scene.add(this.beams);
+    // One player spotlight lights road geometry, signs and walls as the road changes grade.
+    this.drivingLamp = new THREE.SpotLight(0xffedd5,0,100,.44,.56,2);
+    scene.add(this.drivingLamp,this.drivingLamp.target);
     this.t0 = performance.now();
   }
   // sprung body: pitch under braking and acceleration, roll in corners, with a little overshoot
@@ -256,6 +249,8 @@ export class VehicleRenderer {
   draw(vehicles, cam, maxDist = 700) {
     const counts = {}, countsFar = {}; for (const k in MODELS) { counts[k] = 0; countsFar[k] = 0; }
     for(const riders of Object.values(this.riders)) riders.count=0;
+    this.feet.count=0;this.drivingLamp.intensity=0;
+    for(const mesh of this.legs) mesh.count=0;
     let wn = 0, sn = 0, bn = 0;
     const now = performance.now(), dt = Math.min(0.1, Math.max(0.001, (now - this.t0) / 1000)); this.t0 = now;
     const FAR2 = FAR_LOD * FAR_LOD;
@@ -277,12 +272,41 @@ export class VehicleRenderer {
         this._e.set((v.roll || 0) + bank + S.r, -v.heading, (v.pitch || 0) + S.p, 'YXZ'); this._q.setFromEuler(this._e);
         this._m.compose(this._v.set(v.x, v.y - Math.abs(S.r) * 0.25 - Math.abs(S.p) * 0.4, v.z), this._q, this._s.set(1, 1, 1));
       } else this._m.copy(this._g);
+      if(v.player && v.lights && !(v.dmg?.[0]>.6)){
+        const lamp=this.drivingLamp, bike=def.wheels===2, high=!!v.fullBeam;
+        const reach=high?(bike?68:115):(bike?32:58);
+        lamp.position.set(def.L*.48,bike?.85:.76,0).applyMatrix4(this._g);
+        lamp.target.position.set(reach,high?-.8:-2.0,high?0:-.65).applyMatrix4(this._g);
+        lamp.distance=reach; lamp.angle=high?.31:.48;
+        lamp.intensity=(bike?.55:1)*(high?14000:6200);
+      }
       const riders=this.riders[v.model];
-      if(riders && !v.camInside && (!v.parked || v.occupied)) riders.setMatrixAt(riders.count++,this._m);
+      if(riders && !v.camInside && (!v.parked || v.occupied)){
+        riders.setMatrixAt(riders.count++,this._m);
+        if(def.prof==='cycle'){
+          const moving=Math.abs(v.player?v.sp||0:v.v||0)>.35 && !v.brake;
+          v.pedalPhase=(v.pedalPhase||0)+(moving ? dt*Math.min(9,2+Math.abs(v.player?v.sp||0:v.v||0)) : 0);
+          for(const side of [-1,1]){
+            const phase=v.pedalPhase+(side===1?0:Math.PI);
+            const px=-.055+.15*Math.cos(phase), py=.36+.15*Math.sin(phase);
+            this.legMatrix.makeTranslation(px,py-.03,side*.11).premultiply(this._m);
+            this.feet.setMatrixAt(this.feet.count++,this.legMatrix);
+            const dx=px+.19, dy=py-.99, dist=Math.hypot(dx,dy), bend=Math.sqrt(Math.max(0,.43**2-dist**2/4));
+            const kx=-.19+dx/2-dy/dist*bend, ky=.99+dy/2+dx/dist*bend;
+            for(let j=0;j<2;j++){
+              const x=j?kx:-.19,y=j?ky:.99, ex=j?px:kx, ey=j?py:ky;
+              this.legDir.set(ex-x,ey-y,0);const len=this.legDir.length();
+              this.legQuat.setFromUnitVectors(this.legUp,this.legDir.normalize());
+              this.legMatrix.compose(this.legMid.set((x+ex)/2,(y+ey)/2,side*.11),this.legQuat,this.legScale.set(1,len,1)).premultiply(this._m);
+              const mesh=this.legs[j];mesh.setMatrixAt(mesh.count++,this.legMatrix);
+            }
+          }
+        }
+      }
       if (def.glb) {
         // hand-made models: contact shadow and headlight pool here, the car itself in heroCars.js
         if (d2 < 90 * 90 && sn < 400) { this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g); this._sm.elements[13] += 0.035; this.shadows.setMatrixAt(sn++, this._sm); }
-        if (v.lights && d2 < 140 * 140 && bn < 300 && !(v.dmg && v.dmg[0] > 0.6)) { this._sm.makeScale(22, 1, 9).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g); this.beams.setMatrixAt(bn++, this._sm); }
+        if (v.lights && d2 < 140 * 140 && bn < 300 && !(v.dmg && v.dmg[0] > 0.6)) { this._sm.makeScale(v.fullBeam ? 74 : 38, 1, v.fullBeam ? 15 : 11).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g); this.beams.setMatrixAt(bn++, this._sm); }
         this.heroCars?.place(v, this._g, this._m);
         continue;
       }
@@ -294,7 +318,7 @@ export class VehicleRenderer {
       if (dmg) { dga[i * 4] = dmg[0]; dga[i * 4 + 1] = dmg[1]; dga[i * 4 + 2] = dmg[2]; dga[i * 4 + 3] = dmg[3]; } else dga.fill(0, i * 4, i * 4 + 4);
       const st = mesh.geometry.attributes.iState;
       const flags = (v.brake ? 1 : 0) | (v.reversing ? 2 : 0) | (v.ind === 1 ? 4 : 0) | (v.ind === 2 ? 8 : 0) | (v.hazard ? 16 : 0);
-      st.array[i * 4] = flags; st.array[i * 4 + 1] = v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
+      st.array[i * 4] = flags; st.array[i * 4 + 1] = v.fullBeam && v.lights ? 1.35 : v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren ? 1 : 0; st.array[i * 4 + 3] = v.heading;
       if (d2 < 90 * 90 && sn < 400) {
         this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g);
         this._sm.elements[13] += 0.035;
@@ -303,13 +327,13 @@ export class VehicleRenderer {
       }
       if (v.lights && d2 < 140 * 140 && bn < 300 && !(v.dmg && v.dmg[0] > 0.6)) {
         const bike = def.wheels === 2;
-        this._sm.makeScale(bike ? 8 : 22, 1, bike ? 3.2 : 9).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g);
+        this._sm.makeScale((bike ? 18 : 38)*(v.fullBeam?1.9:1), 1, bike ? 5 : 11).premultiply(this._steer.makeTranslation(def.L / 2 - 0.1, 0.06, 0)).premultiply(this._g);
         this.beams.setMatrixAt(bn++, this._sm);
       }
       // wheels: two, on the centreline, for a moped or scooter
       if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
         const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
-        const wsty = v.model==='dirtbike' ? [.77,4,v.spin||0,0] : v.model==='motorcycle' ? [.72,1,v.spin||0,1] : sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
+        const wsty = def.prof==='cycle' ? [.91,4,v.spin||0,0] : v.model==='dirtbike' ? [.77,4,v.spin||0,0] : v.model==='motorcycle' ? [.72,1,v.spin||0,1] : sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
         const posts = def.wheels === 2 ? [[a + o, 0, 1], [-a + o, 0, 0]] : [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]];
         const tyre = def.tyre || 0.22;
         for (const [wx, wz, steer] of posts) {
@@ -328,7 +352,7 @@ export class VehicleRenderer {
           attr.clearUpdateRanges(); attr.addUpdateRange(0,n*attr.itemSize); attr.needsUpdate=true;
         } }
     };
-    for(const riders of Object.values(this.riders)){
+    for(const riders of [...Object.values(this.riders),...this.legs,this.feet]){
       riders.visible=riders.count>0;
       if(riders.visible)riders.instanceMatrix.needsUpdate=true;
     }
@@ -365,7 +389,7 @@ function beamMaterial() {
   const fan = (c) => smoothstep(1, 0.35, abs(p.z.sub(c)).div(ax.mul(0.42).add(0.035)));
   const f = fan(0.042).add(fan(-0.042)).min(1.3);
   const along = smoothstep(0.0, 0.12, ax).mul(smoothstep(1, 0.25, ax));
-  const I = f.mul(along).mul(U.night.mul(0.9).add(U.wet.mul(0.15))).mul(0.32).mul(float(1).sub(smoothstep(0.42, 0.5, az)));
+  const I = f.mul(along).mul(U.night.mul(0.9).add(U.wet.mul(0.15))).mul(0.48).mul(float(1).sub(smoothstep(0.42, 0.5, az)));
   m.colorNode = vec3(1, 0.9, 0.74).mul(I);
   m.opacityNode = I;
   return m;

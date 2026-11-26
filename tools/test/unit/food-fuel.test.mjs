@@ -43,11 +43,12 @@ test('cash: spending, and never more than you have', () => {
 test('fuel: the tank empties with distance and throttle, the engine cuts when dry', () => {
   const F = new Fuel({ scene: { add() {} }, hud: { toast() {} } });
   const v = { id: 'x', model: 'rangerover', owner: 'Cal', sp: 20 };
-  assert.equal(F.level(v), 0.8);
-  // 10 km at a steady 20 m/s on light throttle
+  assert.equal(F.level(v), 1, 'the brothers\' own cars start full');
+  // 10 km at a steady 20 m/s on light throttle (a full tank lasts hours of driving: propulsion.js)
   for (let t = 0; t < 500; t += 0.1) F.drive(v, 0.1, 0.3);
-  const used = 0.8 - v.fuel;
-  assert.ok(used > 0.12 && used < 0.2, `10 km used ${(used * 100).toFixed(1)}% of the tank`);
+  const used = 1 - v.fuel;
+  assert.ok(used > 0.03 && used < 0.1, `10 km used ${(used * 100).toFixed(1)}% of the tank`);
+  assert.ok(tankOf({ model: 'evsaloon' }) > 0 && tankOf({ model: 'bicycle' }) === 0, 'electric cars have a battery, bicycles nothing');
   v.fuel = 0.0001; for (let i = 0; i < 20; i++) F.drive(v, 0.1, 1);
   assert.equal(F.drive(v, 0.1, 1), 0, 'no throttle when dry');
   assert.equal(tankOf({ model: 'bus' }), 0);

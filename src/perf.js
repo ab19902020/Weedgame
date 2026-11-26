@@ -22,7 +22,7 @@ export const BUDGETS = {
   },
   medium: {
     r0: 360, r1: 1150, tiles: 75, drawCalls: 220, tris: 600e3, people: 120, vehicles: 110, cloudSteps: 12,
-    pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 70, far: 450 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.42, 0.62, 0.9],
+    pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 70, far: 450 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.42, 0.74, 1.0],
     treeDist: 320, lampDist: 260, signDist: 180, markDist: 380, vehicleDist: 650, peopleDist: 160,
     post: true, ao: { scale: 0.4, samples: 6 }, bloom: 0.22, ibl: 64, grass: false, ssr: null, targetFps: 60, bushes: 0.7,
   },
@@ -191,7 +191,6 @@ export class RenderBudget {
       for (const m of t.group.children) {
         let lim = 0;
         if (m.geometry === T.crownGeo || m.geometry === T.trunkGeo) lim = B.treeDist;
-        else if (m.geometry === T.lampGeo) lim = B.lampDist;
         else if (m.material === mats.mark) lim = B.markDist;
         else if (T.signAtlas && m.material === T.signAtlas.material) lim = B.signDist;
         if (lim) m.visible = d - 181 < lim;
@@ -251,7 +250,7 @@ export class Perf {
     const fly = this.fly.active ? ` · flythrough ${(this.fly.progress() * 100).toFixed(0)}%` : '';
     return `${G.backend} · ${G.quality} · ${s.fps ?? '–'} fps · p95 ${s.p95 ?? '–'} ms · stalls ${this.stalls} · draws ${s.calls ?? '–'}/${b.drawCalls} · tris ${s.tris != null ? Math.round(s.tris / 1000) + 'k' : '–'}/${Math.round(b.tris / 1000)}k · heap ${s.heapMB ?? 'n/a'} MB · px ${s.pr ?? '–'} · tiles ${s.tiles ?? '–'} · cars ${s.vehicles ?? '–'} · people ${s.peds ?? '–'}${fly}`;
   }
-  device() { const G = this.G; return { userAgent: navigator.userAgent, backend: G.backend, gpu: gpuName(G), quality: G.quality, budget: this.budget, devicePixelRatio: devicePixelRatio, screen: [screen.width, screen.height], viewport: [innerWidth, innerHeight], cores: navigator.hardwareConcurrency, memoryGB: navigator.deviceMemory ?? null, version: G.version }; }
+  device() { const G = this.G; return { userAgent: navigator.userAgent, backend: G.backend, gpu: gpuName(G), quality: G.quality, graphicsPreference: G.choice, gameMode: G.device?.mode, chipset: G.device?.chip, budget: this.budget, devicePixelRatio: devicePixelRatio, screen: [screen.width, screen.height], viewport: [innerWidth, innerHeight], cores: navigator.hardwareConcurrency, memoryGB: navigator.deviceMemory ?? null, version: G.version }; }
   report() { return { kind: 'session', ...this.device(), samples: this.samples, stalls: this.stalls }; }
   save(obj, prefix = 'green-county-perf') {
     const json = JSON.stringify(obj, null, 1);

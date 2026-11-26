@@ -24,7 +24,7 @@ export class Parking {
       if (r > occ) continue;
       const r2 = mulberry(hashStr(id) ^ 0x5bd1e995);
       const roll = r2();
-      const model = (!K[i] && roll < 0.12) ? (roll < .035 ? 'dirtbike' : roll < .07 ? 'motorcycle' : roll < .095 ? 'moped' : 'escooter') : randomModel(r2());
+      const model = (!K[i] && roll < 0.12) ? (roll < .035 ? 'dirtbike' : roll < .07 ? 'motorcycle' : roll < .085 ? 'moped' : roll < .099 ? 'bicycle' : roll < .110 ? 'ebike' : 'escooter') : randomModel(r2());
       const x = S[i * 4] + t.data.ox, z = S[i * 4 + 2] + t.data.oz;
       if (this.blocked(x, z)) continue;
       const v = G.traffic.add({ id, kind: 'parked', model, paint: paintFor(model, r2()), x, y: S[i * 4 + 1], z, heading: S[i * 4 + 3], parked: true, v: 0 });
@@ -135,7 +135,7 @@ export class Buses {
     if (d < (v.s0 || 2) + 1.2 && v.v < 0.3) {
       v.dwell = (v.dwell || 0) + this.G.dt;
       if (!v.served) { v.served = true; const n = this.G.peds.board(st.si, v); v.dwellFor = 8 + n * 2.5; }
-      if (v.dwell > (v.dwellFor || 10)) { v.nextStop++; v.dwell = 0; v.served = false; return 1e9; }
+      if (v.dwell > (v.dwellFor || 10)) { this.G.audio?.departure?.('busDepart',v.x,v.y,v.z); v.nextStop++; v.dwell = 0; v.served = false; return 1e9; }
       return 0.01;
     }
     return d < 60 ? d : 1e9;

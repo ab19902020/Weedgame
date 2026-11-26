@@ -16,7 +16,7 @@ export class Atmos {
     // the sky light by day and the street lights at night. Hidden under roofs, canopies and shelters.
     const g = new THREE.PlaneGeometry(1, 1);
     const seeds = new Float32Array(DROPS * 4);
-    for (let i = 0; i < DROPS; i++) { seeds[i * 4] = Math.random(); seeds[i * 4 + 1] = Math.random(); seeds[i * 4 + 2] = Math.random(); seeds[i * 4 + 3] = Math.random(); }
+    for (let i = 0; i < DROPS; i++) { seeds[i * 4] = Math.random(); seeds[i * 4 + 1] = Math.random(); seeds[i * 4 + 2] = Math.random(); seeds[i * 4 + 3] = (i + Math.random()) / DROPS; }
     const ig = new THREE.InstancedBufferGeometry().copy(g);
     ig.setAttribute('seed', new THREE.InstancedBufferAttribute(seeds, 4));
     ig.instanceCount = DROPS;
@@ -63,6 +63,7 @@ export class Atmos {
       const sg = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
       const ss = new Float32Array(SPLASHES * 4);
       for (let i = 0; i < SPLASHES; i++) for (let k = 0; k < 4; k++) ss[i * 4 + k] = Math.random();
+      for (let i = 0; i < SPLASHES; i++) ss[i*4+1] = (i+Math.random())/SPLASHES;
       sg.setAttribute('seed', new THREE.InstancedBufferAttribute(ss, 4)); sg.instanceCount = SPLASHES;
       const sm = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false });
       const se = attribute('seed', 'vec4');
@@ -98,6 +99,10 @@ export class Atmos {
     const me = this.G.brothers?.me, inCar = me?.vehicle;
     splashAt.value.set(x, inCar ? -1000 : (me?.y ?? 0), z);
     this.rain.visible = U.rain.value > 0.005; this.splash.visible = this.rain.visible && !inCar;
+    // Visibility thresholds are ordered, so only submit instances the rain shader can show.
+    const rain = Math.min(1,Math.max(0,U.rain.value));
+    this.rain.geometry.instanceCount = Math.ceil(rain*DROPS);
+    this.splash.geometry.instanceCount = Math.ceil(rain*SPLASHES);
     const ox = Math.floor(x / 32) * 32 - COVER_N / 2, oz = Math.floor(z / 32) * 32 - COVER_N / 2;
     const moved = ox !== this.coverAt.x || oz !== this.coverAt.z;
     if ((moved && (!this._cov || this._cov.ox !== ox || this._cov.oz !== oz)) || (this._coverDirty && !this._cov)) {
@@ -172,6 +177,7 @@ export class Atmos {
         }
     };
     for (const t of this.G.tiles.tiles.values()) {
+      if(t.data.ox+256<ox-16 || t.data.ox>ox+LIGHT_N*LIGHT_RES+16 || t.data.oz+256<oz-16 || t.data.oz>oz+LIGHT_N*LIGHT_RES+16) continue;
       if (t.lamps) for (const L of t.lamps) if (!L.dead) paint(L[0], L[2], 13, 150, 115, 70);   // (knocked-down lamps are dark)
       if (t.data && t.data.signs && t.data.signs.data) {
         const S = t.data.signs.data;
@@ -186,7 +192,7 @@ export class Atmos {
     const G = this.G, list = [];
     const night = U.night.value;
     if (night > 0.2) {
-      for (const t of G.tiles.tiles.values()) if (t.lamps) for (const L of t.lamps) {
+      for (const t of G.tiles.tiles.values()) if (t.lamps && Math.abs(t.data.ox+128-cam.x)<249 && Math.abs(t.data.oz+128-cam.z)<249) for (const L of t.lamps) {
         if (L.dead) continue;
         const [x, y, z] = L;
         const d2 = (x - cam.x) ** 2 + (z - cam.z) ** 2; if (d2 < 120 * 120) list.push([x, y, z, 1.4 * night, 1, 0.75, 0.45, d2]);

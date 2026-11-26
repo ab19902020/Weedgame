@@ -51,10 +51,14 @@ export const HANDLING = {
   bus: { kw: 190, vmax: 24, drive: 'R', mu: 0.82, fw: 0.36, cg: 1.35, gears: 4, redline: 2400, assist: 1.4 },
   busS: { kw: 180, vmax: 25, drive: 'R', mu: 0.82, fw: 0.36, cg: 1.1, gears: 4, redline: 2400, assist: 1.4 },
   // light town bikes: short gearing, plenty of assist so a stolen one does not spin like a car
+  bicycle:{ kw:.42,vmax:9,drive:'R',mu:.9,fw:.44,cg:.81,gears:1,redline:3000,assist:1.4 },
+  ebike:{ kw:.85,vmax:11,drive:'R',mu:.94,fw:.46,cg:.77,gears:1,redline:4200,assist:1.45 },
+  evsaloon:{ kw:235,vmax:56,drive:'R',mu:1.06,fw:.48,cg:.45,gears:1,redline:14000,assist:1.1 },
+  evsuv:{ kw:205,vmax:49,drive:'A',mu:1,fw:.51,cg:.57,gears:1,redline:13000,assist:1.15 },
   dirtbike: { kw:29,vmax:35,drive:'R',mu:1.1,fw:.47,cg:.61,gears:6,redline:9400,assist:1.15 },
   motorcycle: { kw:49,vmax:51,drive:'R',mu:1.15,fw:.47,cg:.51,gears:5,redline:6800,assist:1.1 },
   moped: { kw: 7, vmax: 20, drive: 'R', mu: 1.05, fw: 0.46, cg: 0.55, gears: 4, redline: 8500, assist: 1.35 },
-  escooter: { kw: 0.8, vmax: 7, drive: 'R', mu: 0.9, fw: 0.48, cg: 0.7, gears: 3, redline: 4200, assist: 1.5 },
+  escooter: { kw: 0.8, vmax: 7, drive: 'R', mu: 0.9, fw: 0.48, cg: 0.7, gears: 1, redline: 4200, assist: 1.5 },
 };
 
 const derived = new Map();
@@ -65,7 +69,7 @@ export function params(model) {
   const cgx = (d.wx || 0) + d.wb / 2 - a;                       // CG ahead of the body centre
   const top = h.redline * 0.94 * 2 * Math.PI / 60 * d.wr / h.vmax;  // overall ratio in top gear
   const spread = h.gears >= 7 ? 4.6 : h.gears === 6 ? 4.0 : h.gears === 5 ? 3.5 : 3.0;
-  const ratios = Array.from({ length: h.gears }, (_, i) => top * Math.pow(spread, 1 - i / (h.gears - 1)));
+  const ratios = Array.from({ length: h.gears }, (_, i) => h.gears===1 ? top : top * Math.pow(spread, 1 - i / (h.gears - 1)));
   const P = h.kw * 1000;
   p = { ...h, d, m, a, b, cgx, Iz: m * (d.L * d.L + d.W * d.W) / 12 * 0.9, ratios, P, kd: P * 0.85 / Math.pow(h.vmax, 3), L: d.L, W: d.W, wr: d.wr, wb: d.wb };
   derived.set(model, p);
@@ -235,7 +239,13 @@ export class CarDynamics {
     let drive = 0;
     const wheelRpm = Math.abs(u) / P.wr * 60 / (2 * Math.PI);
     ph.shiftT = Math.max(0, ph.shiftT - h);
-    if (ph.gear >= 1) {
+    if (P.gears===1 && ph.gear>=1) {
+      const pedalOnly = v.model==='ebike' && v.fuel===0;
+      const power = pedalOnly ? 350 : P.P;
+      const maxSpeed = pedalOnly ? 8 : P.vmax;
+      ph.rpm = wheelRpm*P.ratios[0];
+      drive = thr * Math.min(P.m*3.8,power*.9/Math.max(1.1,u)) * Math.max(0,Math.min(1,(maxSpeed-u)/2));
+    } else if (ph.gear >= 1) {
       const g = ph.gear, ratio = P.ratios[g - 1];
       let rpm = wheelRpm * ratio;
       if (thr > 0.05 && rpm > P.redline * (thr > 0.6 ? 0.93 : 0.72) && g < P.gears && ph.shiftT <= 0) { ph.gear++; ph.shiftT = 0.18; }

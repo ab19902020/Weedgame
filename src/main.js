@@ -16,6 +16,7 @@ import { createPost, createIBL } from './post.js';
 import { createGrass } from './grass.js';
 import { createSkyBake } from './skybake.js';
 import { loadSurfaces } from './surfaces.js';
+import { deviceProfile, presets, preferenceKey, qualityFor } from './graphics.js';
 import { budgetFor } from './perf.js';
 import { treeFar } from './vegetation.js';
 
@@ -37,7 +38,11 @@ export async function boot(extra = {}) {
   motorwayLayout(net); kerbBusStops(net); applyStops(net, stops); barriers(net);
   // ---------------------------------------------------------------- renderer
   const forceWebGL = Q.get('backend') === 'webgl' || !navigator.gpu;
-  const quality = Q.get('quality') || (matchMedia('(pointer:coarse)').matches ? 'medium' : 'high');
+  let saved;
+  try { saved = localStorage.getItem(preferenceKey); } catch {}
+  const requested = Q.get('quality'), choice = presets.includes(requested) ? requested : presets.includes(saved) ? saved : 'auto';
+  const device = deviceProfile(), touch = matchMedia('(pointer:coarse)').matches;
+  const quality = qualityFor(choice,device,touch);
   const budget = budgetFor(quality);   // explicit low / medium / high budgets (perf.js)
   // with post-processing on, the scene renders into an offscreen pass and FXAA smooths edges, so canvas MSAA is wasted
   const msaa = budget.antialias && (!budget.post || Q.get('post') === '0');
@@ -93,7 +98,7 @@ export async function boot(extra = {}) {
   tiles.budget = budget;   // bush density per quality (tiles.addBushes)
   treeFar.value = budget.treeDist;   // trees fade out short of where perf.js stops drawing them (vegetation.js)
   const world = new World(extra.weather);
-  const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, budget, Q, U, lightPos, lightCol, NL, rail, frame: 0 };
+  const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, choice, device, touch, budget, Q, U, lightPos, lightCol, NL, rail, frame: 0 };
   window.GC = G;
   if (Q.has('dbg')) { G.TSL = await import('three/tsl'); G.SURF = await import('./surfaces.js'); }
   await surfaces;

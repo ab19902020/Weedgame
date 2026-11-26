@@ -47,6 +47,8 @@ export const CAR_SPECS = {
   sports: { hs: 0.13, belt: [0.84, 0.92], tumble: 1.3, flare: 0.07, endF: 0.55, endR: 0.4, ws0: 0.42, ws1: -0.28, rr0: -0.62, gl: [0.38, -0.66], doors: [0.4, null, -0.4],
     top: [[-1, 0.4], [-0.985, 0.82], [-0.88, 0.92], [-0.5, 0.98], [-0.3, 1.16], [-0.1, 1.19], [0.2, 0.85], [0.6, 0.7], [0.94, 0.6], [1, 0.44]], wheelX: 0.0, rim: 0.78, wheel: 3,
     wing: 1, exhaust: 4, caliper: 1, intake: 2, lightBar: 1, sideIntake: 1 },
+  evsaloon: { inherit:'saloon', ws0:.98, ws1:.13, rr0:-1.22, gl:[.88,-1.37], doors:[.93,-.24,-1.33], lightBar:1, wheel:3, exhaust:0, top:[[-1,.49],[-.97,.91],[-.76,1.07],[-.48,1.4],[-.21,1.49],[.02,1.46],[.43,.92],[.75,.78],[1,.66]] },
+  evsuv: { inherit:'suv', ws0:.91, ws1:.32, rr0:-1.76, gl:[.87,-1.85], doors:[.91,-.21,-1.52], lightBar:1, wheel:2, exhaust:0, top:[[-1,.54],[-.98,1.43],[-.81,1.74],[-.59,1.77],[.12,1.77],[.4,1.23],[.87,1.15],[1,.92]] },
   police: { inherit: 'estate', rails: 0 },
 };
 for (const k in CAR_SPECS) if (CAR_SPECS[k].inherit) CAR_SPECS[k] = { ...CAR_SPECS[CAR_SPECS[k].inherit], ...CAR_SPECS[k] };
@@ -104,7 +106,7 @@ export function carLayout(def, key) {
   const grY1 = hy - 0.012, grY0 = Math.max(S.hs + 0.22, hy - (key === 'suv' || key === 'van' ? 0.2 : 0.13));
   const Lo = {
     l, hw, hy, hlH, hlZ0: hw - (thin ? 0.4 : 0.42), ty, tlH, tlZ0: S.lightBar ? 0 : hw - (tall ? 0.2 : 0.36), Htop, boot,
-    grY0, grY1, grW: hw - 0.47, gstyle: S.wing ? 2 : key === 'suv' || key === 'hothatch' || key === 'coupe' ? 1 : 0,
+    grY0, grY1, grW: S.exhaust===0 ? 0 : hw - 0.47, gstyle: S.wing ? 2 : key === 'suv' || key === 'hothatch' || key === 'coupe' ? 1 : 0,
     pfy: S.wing ? S.hs + 0.24 : Math.max(S.hs + 0.17, grY0 - 0.08), pry: Math.max(S.hs + 0.22, Math.min(ty - tlH - 0.12, 0.66)),
     roofBlack: S.wing || key === 'hothatch' ? 1 : 0, livery: def.livery ? 1 : 0,
   };
@@ -222,7 +224,31 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     const mg = new THREE.BoxGeometry(0.005, 0.085, 0.15); mg.translate(mx - 0.068, my, mz); parts.add(mg, 15, 0, [0.4, 0.42, 0.45]);
     // door handles (near the rear edge of each door)
     const handles = S.doors[1] != null ? [S.doors[1] + 0.13, S.doors[2] + 0.13] : [S.doors[2] + 0.16];
-    for (const x of handles) { const g = new THREE.BoxGeometry(0.14, 0.022, 0.02); g.translate(x, beltAt(x) - 0.075, sd * (widthAt(x) + 0.002)); parts.add(g, S.wheel === 3 ? 13 : 0, S.wheel === 3 ? 0 : 1, [0.6, 0.6, 0.62]); }
+    for (const x of handles) { const g = new THREE.BoxGeometry(S.exhaust===0?.17:.14, S.exhaust===0?.014:.022, S.exhaust===0?.012:.02); g.translate(x, beltAt(x) - 0.075, sd * (widthAt(x) + 0.002)); parts.add(g, S.wheel === 3 ? 13 : 0, S.wheel === 3 ? 0 : 1, [0.6, 0.6, 0.62]); }
+    const sillLength = Math.min(L*.48,S.doors[0]-S.gl[1]);
+    const sillX = S.doors[0]-sillLength*.5;
+    const moulding = new THREE.BoxGeometry(sillLength,.036,.027);
+    moulding.translate(sillX,S.hs+.15,sd*(widthAt(sillX)-.012));
+    parts.add(moulding,16,0,[.078,.082,.084]);
+    // Recess around the door mirror, with a separate indicator visible from the side.
+    const signal = new THREE.BoxGeometry(.074,.012,.012);
+    signal.translate(mx+.014,my-.012,mz+sd*.093); parts.add(signal,5,0,[.72,.53,.21]);
+    if (S.exhaust===0) {
+      const lip = new THREE.BoxGeometry(.45,.026,.055);
+      lip.translate(l-.38,S.hs+.035,sd*hw0*.68); parts.add(lip,16,0,[.06,.065,.07]);
+    }
+    // Recessed rear bumper reflectors follow the curvature of each model.
+    const rz=sd*hw0*.73, rx=xTail(rz), ry=S.hs+.20;
+    const bezel=new THREE.BoxGeometry(.034,.064,.20).translate(rx-.004,ry,rz);
+    parts.add(bezel,16,0,[.035,.037,.041]);
+    const reflector=new THREE.BoxGeometry(.012,.032,.15).translate(rx-.024,ry,rz);
+    parts.add(reflector,0,0,[.42,.018,.014]);
+    if(S.panelVan){
+      for(const height of [.58,1.32]){
+        const hinge=new THREE.BoxGeometry(.07,.083,.13).translate(rx-.02,height,rz);
+        parts.add(hinge,0,0,[.22,.23,.24]);
+      }
+    }
     // roof rails
     if (S.rails) { const len = S.ws1 - S.rr0 - 0.2, g = new THREE.BoxGeometry(len, 0.03, 0.03); g.translate((S.ws1 + S.rr0) / 2, topF((S.ws1 + S.rr0) / 2) + 0.03, sd * hw0 * 0.62); parts.add(g, 16, 0, [0.05, 0.05, 0.05]); }
   }
@@ -241,7 +267,7 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     for (const sd of [-1, 1]) { const p = new THREE.BoxGeometry(0.1, 0.18, 0.02); p.translate(-l + 0.28, deck + 0.075, sd * W * 0.28); parts.add(p, 16, 0, [0.02, 0.02, 0.02]); }
   }
   // exhausts
-  const nEx = S.exhaust || 1;
+  const nEx = S.exhaust ?? 1;
   for (let e = 0; e < nEx; e++) {
     const z = nEx === 1 ? -hw0 * 0.55 : (e - (nEx - 1) / 2) * (nEx > 2 ? 0.13 : hw0 * 1.1);
     const g = new THREE.CylinderGeometry(nEx > 1 ? 0.04 : 0.028, nEx > 1 ? 0.04 : 0.028, 0.12, 10); g.rotateZ(Math.PI / 2); g.translate(xTail(z) + 0.02, S.hs + 0.05, z); parts.add(g, 17, 0, [0.5, 0.5, 0.52]);
@@ -254,12 +280,39 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     const dash = new THREE.BoxGeometry(0.6, sc - fl, iw * 2); dash.translate(S.ws0 - 0.32, (sc + fl) / 2, 0); parts.add(dash, 16, 0, [0.035, 0.035, 0.038]);
     const top = new THREE.BoxGeometry(0.3, 0.025, iw * 2); top.translate(S.ws0 - 0.5, sc - 0.01, 0); parts.add(top, 16, 0, [0.05, 0.05, 0.052]);
     const bin = new THREE.BoxGeometry(0.16, 0.07, 0.34); bin.translate(S.ws0 - 0.62, sc + 0.02, 0.37); parts.add(bin, 16, 0, [0.02, 0.02, 0.022]);
+    // RHD instruments sit just behind the binnacle face, towards the driver.
+    for (const z of [.29,.45]) {
+      const dial = new THREE.CylinderGeometry(.054,.054,.016,16).rotateZ(Math.PI/2);
+      parts.add(dial.translate(S.ws0-.714,sc+.018,z),0,0,[.12,.15,.17]);
+      const pointer = new THREE.BoxGeometry(.01,.043,.008).rotateX(z>.4?.52:-.64);
+      parts.add(pointer.translate(S.ws0-.726,sc+.03,z),0,0,[.93,.49,.22]);
+    }
+    const centre = new THREE.BoxGeometry(.04,.13,.26);
+    parts.add(centre.translate(S.ws0-.642,sc-.095,0),0,0,[.065,.13,.16]);
+    for (const z of [-iw*.76,iw*.76]) {
+      const vent = new THREE.BoxGeometry(.025,.065,.14);
+      parts.add(vent.translate(S.ws0-.635,sc-.11,z),0,0,[.012,.019,.023]);
+    }
+    const tunnel = new THREE.BoxGeometry(.57,.20,.18);
+    parts.add(tunnel.translate(S.ws0-.88,fl+.12,0),0,0,[.052,.055,.059]);
     const sw = new THREE.TorusGeometry(0.18, 0.02, 6, 20); sw.rotateY(Math.PI / 2); sw.rotateZ(0.42); sw.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(sw, 16, 0, [0.02, 0.02, 0.02]);
     const hub = new THREE.CylinderGeometry(0.06, 0.06, 0.04, 10); hub.rotateZ(Math.PI / 2 - 0.42); hub.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(hub, 16, 0, [0.03, 0.03, 0.03]);
+    for(const angle of [-Math.PI/2, Math.PI/2, Math.PI]){
+      const spoke=new THREE.BoxGeometry(.022,.14,.032).translate(0,.10,0);
+      spoke.rotateX(angle).rotateZ(.42).translate(S.ws0-.78,sc-.06,.37);
+      parts.add(spoke,0,0,[.14,.155,.16]);
+    }
+    const selector=new THREE.CylinderGeometry(.035,.043,S.exhaust===0?.036:.11,10);
+    parts.add(selector.translate(S.ws0-.89,fl+(S.exhaust===0?.238:.271),0),0,0,[.23,.25,.26]);
     const seatX = Math.max(S.ws0 - 1.35, S.rr0 + 0.32), headTop = topF(seatX - 0.2) - 0.07;
     for (const z of [0.37, -0.37]) {
       const base = new THREE.BoxGeometry(0.5, 0.12, 0.46); base.translate(seatX + 0.1, fl + 0.2, z); parts.add(base, 16, 0, [0.05, 0.05, 0.055]);
       const back = new THREE.BoxGeometry(0.12, 0.62, 0.46); back.rotateZ(0.22); back.translate(seatX - 0.17, fl + 0.55, z); parts.add(back, 16, 0, [0.05, 0.05, 0.055]);
+      for(const side of [-1,1]){
+        const bolster=new THREE.SphereGeometry(1,8,5).scale(.084,.26,.045);
+        bolster.rotateZ(.22).translate(seatX-.10,fl+.53,z+side*.20);
+        parts.add(bolster,0,0,[.06,.067,.073]);
+      }
       const rest = new THREE.BoxGeometry(0.1, 0.16, 0.26); rest.rotateZ(0.22); rest.translate(seatX - 0.25, Math.min(fl + 0.95, headTop - 0.08), z); parts.add(rest, 16, 0, [0.06, 0.06, 0.065]);
     }
   }
@@ -496,11 +549,11 @@ export function vehicleMaterial(models) {
   const hlOK = float(1).sub(hlBroken), tlOK = float(1).sub(tlBroken);
   const beam = inHL.mul(bowls.mul(0.8).add(0.2)).mul(st.y).mul(5).mul(hlOK).mul(float(1).sub(indF));
   const drlE = inHL.mul(drl).mul(float(1).sub(indF)).mul(1.6).mul(hlOK);
-  const tailE = inTL.mul(float(1).sub(revL)).mul(float(1).sub(indR)).mul(st.y.mul(0.9).add(brake.mul(3.2)).add(0.06)).mul(ledBars.mul(0.5).add(0.5)).mul(tlOK);
+  const tailE = inTL.mul(float(1).sub(revL)).mul(float(1).sub(indR)).mul(st.y.mul(0.9).add(brake.mul(5.0)).add(0.06)).mul(ledBars.mul(0.5).add(0.5)).mul(tlOK);
   const revE = inTL.mul(revL).mul(reversing).mul(2.5).mul(tlOK);
   const indE = clamp01n(inHL.mul(indF).add(inTL.mul(indR)).add(repeater)).mul(indOn).mul(4);
   mat.emissiveNode = vec3(1, 0.95, 0.85).mul(head).mul(st.y).mul(4)
-    .add(vec3(1, 0.05, 0.02).mul(tail).mul(st.y.mul(0.8).add(brake.mul(3)).add(0.12)))
+    .add(vec3(1, 0.05, 0.02).mul(tail).mul(st.y.mul(0.8).add(brake.mul(4.8)).add(0.12)))
     .add(vec3(1, 0.96, 0.9).mul(beam)).add(vec3(0.85, 0.9, 1).mul(drlE))
     .add(vec3(1, 0.04, 0.02).mul(tailE)).add(vec3(1, 0.98, 0.95).mul(revE)).add(vec3(1, 0.5, 0.05).mul(indE))
     .add(vec3(0.05, 0.2, 1).mul(bar).mul(st.z).mul(flash).mul(8))
@@ -545,6 +598,9 @@ export function wheelMaterial() {
   const lip = step(rim.mul(0.93), r).mul(inRim);
   const tyre = vec3(0.022).mul(float(1).add(eqf(design,4).mul(step(.85,r)).mul(step(.52,fract(a.mul(42)))).mul(.40))).mul(float(1).add(step(0.86, r).mul(step(r, 0.9)).mul(step(0.5, fract(a.mul(36)))).mul(0.6)));
   m.colorNode = mix(tyre, mix(mix(alloy, gapCol, gap), vec3(0.7), lip), inRim);
+  // Open spoke gaps on cycles and dirt bikes, retaining the brake rotor near the axle.
+  m.opacityNode = float(1).sub(step(3.5,design).mul(gap).mul(step(.31,r)));
+  m.alphaTest=.45;
   m.metalnessNode = inRim.mul(float(1).sub(gap.mul(0.6))).mul(0.85);
   m.roughnessNode = mix(float(0.92), mix(float(0.28), float(0.5), gap), inRim);
   return m;

@@ -552,6 +552,21 @@ function build(header, A, lod) {
   out.buildings = buildBuildings(header, A, lod, hAt, ox, oz, lcAt);
   // ---------------- open water (both LODs): surfaces over the carved beds, and the level grid for swimming
   if (A.wl && A.wtP && A.wtP.length) { out.water = buildWater(A, hAt); out.wl = new Int16Array(A.wl); }
+  // street lamps: one standing in a carriageway (an OSM position a little off, or an inferred one at a junction
+  // mouth or on the far carriageway) is moved just behind the nearest kerb, or dropped if there's no room there
+  const lp = A.lp, lampL = [];
+  for (let k = 0; k < lp.length; k += 4) {
+    let x = lp[k], z = lp[k + 1], a = lp[k + 2];
+    if (inRoad(x, z, 0.35)) {
+      const q = inRoad.outside(x, z, 0.75);
+      if (!q || inRoad(q[0], q[1], 0.35) || lcAt(q[0], q[1]) === 3 || lcAt(q[0], q[1]) === 9) continue;
+      a = Math.atan2(z - q[1], x - q[0]);          // the arm still reaches out over the road
+      x = q[0]; z = q[1];
+    }
+    lampL.push(x, hAt(x, z) + 0.17, z, a);
+  }
+  const lamps = new Float32Array(lampL);
+  out.lamps = lamps;
   if (lod) return out;
 
   // ---------------- surfaces
@@ -1015,21 +1030,6 @@ function build(header, A, lod) {
     out.bushes = P.bushes;
     if (P.trees.length) { const t2 = new Float32Array(trees.length + P.trees.length); t2.set(trees); t2.set(P.trees, trees.length); out.trees = t2; }
   }
-  // street lamps: one standing in a carriageway (an OSM position a little off, or an inferred one at a junction
-  // mouth or on the far carriageway) is moved just behind the nearest kerb, or dropped if there's no room there
-  const lp = A.lp, lampL = [];
-  for (let k = 0; k < lp.length; k += 4) {
-    let x = lp[k], z = lp[k + 1], a = lp[k + 2];
-    if (!lod && inRoad(x, z, 0.35)) {
-      const q = inRoad.outside(x, z, 0.75);
-      if (!q || inRoad(q[0], q[1], 0.35) || lcAt(q[0], q[1]) === 3 || lcAt(q[0], q[1]) === 9) continue;
-      a = Math.atan2(z - q[1], x - q[0]);          // the arm still reaches out over the road
-      x = q[0]; z = q[1];
-    }
-    lampL.push(x, hAt(x, z) + 0.17, z, a);
-  }
-  const lamps = new Float32Array(lampL);
-  out.lamps = lamps;
   const pk = A.pk, slots = new Float32Array(pk.length);
   for (let k = 0; k < pk.length; k += 4) { slots[k] = pk[k]; slots[k + 1] = hAt(pk[k], pk[k + 1]) + 0.05; slots[k + 2] = pk[k + 1]; slots[k + 3] = pk[k + 2]; }
   out.slots = slots; out.slotKind = new Float32Array(Array.from({ length: pk.length / 4 }, (_, i) => pk[i * 4 + 3]));

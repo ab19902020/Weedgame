@@ -1,6 +1,8 @@
 package uk.greencounty.game;
 
 import android.app.Activity;
+import android.app.GameManager;
+import android.os.Build;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
@@ -81,11 +83,29 @@ public class Main extends Activity {
     web.setSystemUiVisibility(View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
         | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
   }
-  @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) immersive(); }
+  @Override public void onWindowFocusChanged(boolean f) { super.onWindowFocusChanged(f); if (f) {
+    immersive();
+    web.evaluateJavascript("window.dispatchEvent(new Event('gcdevicechange'))", null);
+  } }
   @Override protected void onPause() { super.onPause(); web.evaluateJavascript("window.GC&&GC.save&&GC.save.now()", null); web.onPause(); }
   @Override protected void onResume() { super.onResume(); web.onResume(); }
 
   class Bridge {
+    @JavascriptInterface public String gameMode() {
+      if (Build.VERSION.SDK_INT >= 31) {
+        GameManager manager = getSystemService(GameManager.class);
+        if (manager != null) switch (manager.getGameMode()) {
+          case GameManager.GAME_MODE_PERFORMANCE: return "performance";
+          case GameManager.GAME_MODE_BATTERY: return "battery";
+          case GameManager.GAME_MODE_STANDARD: return "standard";
+          case 4: return "custom";
+          default: break;
+        }
+      }
+      return "unavailable";
+    }
+    @JavascriptInterface public String chipset() { return Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : ""; }
+    @JavascriptInterface public float refreshRate() { return getWindowManager().getDefaultDisplay().getRefreshRate(); }
     @JavascriptInterface public String legacySave() { return prefs.getString("legacySave", null); }
     @JavascriptInterface public void storeLegacy(String json) {
       SharedPreferences.Editor e = prefs.edit();

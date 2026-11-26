@@ -112,10 +112,24 @@ export class Trains {
   build() {
     const box = (w, h, l, y, col) => { const g = new THREE.BoxGeometry(l, h, w).toNonIndexed(); g.translate(0, y + h / 2, 0); const c = new Float32Array(g.attributes.position.count * 3); for (let i = 0; i < c.length; i += 3) { c[i] = col[0]; c[i + 1] = col[1]; c[i + 2] = col[2]; } g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g; };
     const geo = mergeGeos([
+      ...Array.from({length:9},(_,i) => box(CAR_W+.055,.96,.085,2.095,[.58,.62,.65]).translate((i-4)*1.65,0,0)),
+      ...[-1,1].flatMap(end => [
+        box(CAR_W+.065,1.94,1.08,1.02,[.70,.72,.73]).translate(end*5.7,0,0),
+        box(CAR_W+.08,.68,.86,2.14,[.09,.13,.16]).translate(end*5.7,0,0),
+        box(CAR_W+.09,1.89,.035,1.05,[.15,.16,.16]).translate(end*5.7,0,0),
+        box(1.12,.18,2.05,CAR_H+.09,[.50,.53,.55]).translate(end*3.4,0,0),
+        box(1.52,.18,.34,.42,[.24,.25,.25]).translate(end*8.86,0,0),
+      ]),
       box(CAR_W, CAR_H - 0.9, CAR_L, 0.9, [1, 1, 1]),                         // body (tinted per line)
       box(CAR_W + 0.04, 0.95, CAR_L - 2.6, 2.1, [0.05, 0.06, 0.08]),            // window band
       box(CAR_W - 0.3, 0.12, CAR_L - 0.4, CAR_H, [0.55, 0.56, 0.58]),            // roof
-      box(CAR_W - 0.5, 0.75, CAR_L - 3, 0.15, [0.08, 0.08, 0.08]),              // underframe and bogies
+      box(CAR_W - .66, .48, CAR_L - 1.8, .42, [.10,.105,.11]),
+      ...[-1,1].flatMap(end=>[-.76,.76].map(offset=>{
+        const wheel=new THREE.CylinderGeometry(.36,.36,2.04,12).rotateX(Math.PI/2).toNonIndexed();
+        wheel.translate(end*(CAR_L/2-2.1)+offset,.34,0);
+        wheel.setAttribute('color',new THREE.BufferAttribute(new Float32Array(wheel.attributes.position.count*3).fill(.065),3));
+        return wheel;
+      })),              // underframe and bogies
       box(1.3, 2.1, 0.06, 0.9, [0.12, 0.12, 0.13]).translate(-CAR_L / 2 + 0.02, 0, 0),  // gangway ends
       box(1.3, 2.1, 0.06, 0.9, [0.12, 0.12, 0.13]).translate(CAR_L / 2 - 0.02, 0, 0),
     ]);
@@ -129,7 +143,11 @@ export class Trains {
   update(dt) {
     if (!this.ready) return;
     this.t += dt;
-    for (const tr of this.trains) { const [s, dir, v, st] = this.state(tr, this.t); tr.s = s; tr.dir = dir; tr.v = Math.abs(v); tr.status = st; tr.station = this.stationOf(tr); }
+    for (const tr of this.trains) { const [s, dir, v, st] = this.state(tr, this.t); if (tr.status === 'at station' && st === 'running' && this.G?.audio?.fleetBank) {
+        const p = this.track(tr.line,s,dir,this.tmp);
+        this.G.audio.departure('railHorn',p[0],p[1],p[2]);
+      }
+      tr.s = s; tr.dir = dir; tr.v = Math.abs(v); tr.status = st; tr.station = this.stationOf(tr); }
   }
   // cars within maxD of the camera, on loaded tiles only
   draw(cam, maxD = 900) {

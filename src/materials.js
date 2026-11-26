@@ -36,7 +36,9 @@ export const shelter = Fn(([p]) => {
 export const lightPool = Fn(([p]) => {
   const q = p.xz.sub(U.lightOrigin).div(LIGHT_N * LIGHT_RES);
   const inside = step(0.0, q.x).mul(step(q.x, 1.0)).mul(step(0.0, q.y)).mul(step(q.y, 1.0));
-  return texture(lightTex, q).rgb.mul(U.night).mul(inside).mul(2.2);
+  // Keep the lit area anchored in world space; the raster can move in 48 m steps.
+  const fade = float(1).sub(smoothstep(98,140,length(p.xz.sub(cameraPosition.xz))));
+  return texture(lightTex, q).rgb.mul(U.night).mul(inside).mul(fade).mul(2.2);
 });
 // wet reflection: fresnel-weighted sky + vertical light streaks from nearby lamps/vehicles
 export const skyReflection = Fn(([p, n, amount]) => {
@@ -683,6 +685,6 @@ export function lampMaterial() {
   const m = std({ roughness: 0.6, metalness: 0.4 });
   const head = attribute('lampHead', 'float');
   m.colorNode = mix(vec3(0.3, 0.31, 0.32), vec3(0.9, 0.85, 0.7), head);
-  m.emissiveNode = vec3(1.0, 0.78, 0.5).mul(head).mul(U.night).mul(6);
+  m.emissiveNode = vec3(1.0, 0.78, 0.5).mul(head).mul(U.night).mul(6).mul(float(1).sub(smoothstep(425,555,length(positionWorld.xz.sub(cameraPosition.xz)))));
   return m;
 }
