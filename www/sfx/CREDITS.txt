@@ -252,3 +252,19 @@ https://freesound.org/people/bone666138/sounds/202809/
 Harley Davidson Sportster idle and revs — demodave
 https://freesound.org/people/demodave/sounds/502690/
 https://creativecommons.org/publicdomain/zero/1.0/
+
+Updated dirtbike.ogg — martian's CRM 250 cc field recordings:
+“motorbike crm 250cc kick start rev engine.wav”, CC BY 4.0, https://freesound.org/people/martian/sounds/148855/
+“motorbike crm 250 cc onboard ride pullaway.wav”, CC0, https://freesound.org/people/martian/sounds/148868/
+Game edits: selected kick, idle and loaded engine segments, mixed to mono, level matched, crossfaded loops and encoded as Vorbis. These replace the earlier dirt-bike cues credited above.
+https://creativecommons.org/licenses/by/4.0/
+
+fleet.ogg — recordings edited to mono, trimmed, level matched and encoded as Vorbis:
+“Vehicle_Car_Peugeot_308_Idle_Interior_Loop_Mono_.wav”, Nox_Sound, CC0, https://freesound.org/people/Nox_Sound/sounds/522223/
+“bus coach ext diesel truck engine idle throaty.flac”, kyles, CC0, https://freesound.org/people/kyles/sounds/453415/
+“G49-09-Train Interior.wav”, craigsmith, CC0, https://freesound.org/people/craigsmith/sounds/438798/
+“london bus approaches & leaves.wav”, icmusic, edited by Janis Lukss (OpenSFX osfx_27), CC BY 3.0, https://freesound.org/people/icmusic/sounds/36897/
+“Locomotive 1 Distant horn.wav”, patchen, edited by Janis Lukss (OpenSFX osfx_10), CC BY 3.0, https://freesound.org/people/patchen/sounds/17851/
+https://github.com/OpenTTD/OpenSFX/blob/master/src/opensfx.psfo
+https://creativecommons.org/licenses/by/3.0/
+https://creativecommons.org/publicdomain/zero/1.0/

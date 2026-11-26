@@ -223,6 +223,11 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     // door handles (near the rear edge of each door)
     const handles = S.doors[1] != null ? [S.doors[1] + 0.13, S.doors[2] + 0.13] : [S.doors[2] + 0.16];
     for (const x of handles) { const g = new THREE.BoxGeometry(0.14, 0.022, 0.02); g.translate(x, beltAt(x) - 0.075, sd * (widthAt(x) + 0.002)); parts.add(g, S.wheel === 3 ? 13 : 0, S.wheel === 3 ? 0 : 1, [0.6, 0.6, 0.62]); }
+    const sillLength = Math.min(L*.48,S.doors[0]-S.gl[1]);
+    const sillX = S.doors[0]-sillLength*.5;
+    const moulding = new THREE.BoxGeometry(sillLength,.036,.027);
+    moulding.translate(sillX,S.hs+.15,sd*(widthAt(sillX)-.012));
+    parts.add(moulding,16,0,[.078,.082,.084]);
     // roof rails
     if (S.rails) { const len = S.ws1 - S.rr0 - 0.2, g = new THREE.BoxGeometry(len, 0.03, 0.03); g.translate((S.ws1 + S.rr0) / 2, topF((S.ws1 + S.rr0) / 2) + 0.03, sd * hw0 * 0.62); parts.add(g, 16, 0, [0.05, 0.05, 0.05]); }
   }
@@ -254,6 +259,21 @@ export function buildCar(def, key, modelIndex, lod = 0) {
     const dash = new THREE.BoxGeometry(0.6, sc - fl, iw * 2); dash.translate(S.ws0 - 0.32, (sc + fl) / 2, 0); parts.add(dash, 16, 0, [0.035, 0.035, 0.038]);
     const top = new THREE.BoxGeometry(0.3, 0.025, iw * 2); top.translate(S.ws0 - 0.5, sc - 0.01, 0); parts.add(top, 16, 0, [0.05, 0.05, 0.052]);
     const bin = new THREE.BoxGeometry(0.16, 0.07, 0.34); bin.translate(S.ws0 - 0.62, sc + 0.02, 0.37); parts.add(bin, 16, 0, [0.02, 0.02, 0.022]);
+    // RHD instruments sit just behind the binnacle face, towards the driver.
+    for (const z of [.29,.45]) {
+      const dial = new THREE.CylinderGeometry(.054,.054,.016,16).rotateZ(Math.PI/2);
+      parts.add(dial.translate(S.ws0-.714,sc+.018,z),0,0,[.12,.15,.17]);
+      const pointer = new THREE.BoxGeometry(.01,.043,.008).rotateX(z>.4?.52:-.64);
+      parts.add(pointer.translate(S.ws0-.726,sc+.03,z),0,0,[.93,.49,.22]);
+    }
+    const centre = new THREE.BoxGeometry(.04,.13,.26);
+    parts.add(centre.translate(S.ws0-.642,sc-.095,0),0,0,[.065,.13,.16]);
+    for (const z of [-iw*.76,iw*.76]) {
+      const vent = new THREE.BoxGeometry(.025,.065,.14);
+      parts.add(vent.translate(S.ws0-.635,sc-.11,z),0,0,[.012,.019,.023]);
+    }
+    const tunnel = new THREE.BoxGeometry(.57,.20,.18);
+    parts.add(tunnel.translate(S.ws0-.88,fl+.12,0),0,0,[.052,.055,.059]);
     const sw = new THREE.TorusGeometry(0.18, 0.02, 6, 20); sw.rotateY(Math.PI / 2); sw.rotateZ(0.42); sw.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(sw, 16, 0, [0.02, 0.02, 0.02]);
     const hub = new THREE.CylinderGeometry(0.06, 0.06, 0.04, 10); hub.rotateZ(Math.PI / 2 - 0.42); hub.translate(S.ws0 - 0.78, sc - 0.06, 0.37); parts.add(hub, 16, 0, [0.03, 0.03, 0.03]);
     const seatX = Math.max(S.ws0 - 1.35, S.rr0 + 0.32), headTop = topF(seatX - 0.2) - 0.07;

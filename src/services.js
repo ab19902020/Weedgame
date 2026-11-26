@@ -135,7 +135,7 @@ export class Buses {
     if (d < (v.s0 || 2) + 1.2 && v.v < 0.3) {
       v.dwell = (v.dwell || 0) + this.G.dt;
       if (!v.served) { v.served = true; const n = this.G.peds.board(st.si, v); v.dwellFor = 8 + n * 2.5; }
-      if (v.dwell > (v.dwellFor || 10)) { v.nextStop++; v.dwell = 0; v.served = false; return 1e9; }
+      if (v.dwell > (v.dwellFor || 10)) { this.G.audio?.departure?.('busDepart',v.x,v.y,v.z); v.nextStop++; v.dwell = 0; v.served = false; return 1e9; }
       return 0.01;
     }
     return d < 60 ? d : 1e9;
