@@ -86,7 +86,8 @@ export class Hud {
       const sites=G.interiors.sites;
       group('Takeaways',sites.filter(s=>s.kind==='food').sort((a,b)=>a.title.localeCompare(b.title)),s=>s.title);
       if(G.fuel?.ready) group('Petrol stations',[...G.fuel.stations].sort((a,b)=>a.title.localeCompare(b.title)),s=>s.title);
-      group('Buildings you can go into',sites.filter(s=>s.kind!=='food').sort((a,b)=>(a.kind==='trap'?-2:a.kind==='nice'?-1:0)-(b.kind==='trap'?-2:b.kind==='nice'?-1:0)||a.title.localeCompare(b.title)),s=>s.title); };
+      group('Pubs (darts, pool, fruit machine)',sites.filter(s=>s.kind==='pub').sort((a,b)=>(b.district==='Woodley')-(a.district==='Woodley')||a.title.localeCompare(b.title)),s=>s.title);
+      group('Buildings you can go into',sites.filter(s=>s.kind!=='food'&&s.kind!=='pub'&&!s.kiosk).sort((a,b)=>(a.kind==='trap'?-2:a.kind==='nice'?-1:0)-(b.kind==='trap'?-2:b.kind==='nice'?-1:0)||a.title.localeCompare(b.title)),s=>s.title); };
     addSites();
     select.onchange = () => {
       if (!select.value) return;
