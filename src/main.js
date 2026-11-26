@@ -1,6 +1,6 @@
 // Green County · Berkshire sandbox bootstrap.
 import * as THREE from 'three/webgpu';
-import { fog, vec3, float, positionWorld, cameraPosition, length, exp, max, dot, pow, mix, normalize } from 'three/tsl';
+import { fog, vec3, float, positionWorld, cameraPosition, length, exp, max, dot, pow, mix, normalize, smoothstep } from 'three/tsl';
 import { fetchContainer } from './data.js';
 import { Network } from './network.js';
 import { repairGaps, alignRoads } from './roadProfile.js';
@@ -70,7 +70,10 @@ export async function boot(extra = {}) {
     const rel = positionWorld.sub(cameraPosition), d = length(rel), v = rel.div(d.max(0.01));
     const hAtt = exp(max(positionWorld.y.sub(cameraPosition.y).add(3), 0).mul(-0.006));
     const dd = U.fogDensity.mul(d);
-    const f = float(1).sub(exp(dd.mul(dd).mul(hAtt).negate()));
+    // and the edge of the streamed world (budget.r1) fades into the haze over its last third, as in GTA: what's
+    // further out isn't loaded at all
+    const R1 = Number(Q.get('r1')) || budget.r1, edge = smoothstep(R1 * 0.6, R1 * 0.97, d).mul(0.92).mul(hAtt.mul(0.5).add(0.5));
+    const f = max(float(1).sub(exp(dd.mul(dd).mul(hAtt).negate())), edge);
     const scatter = pow(max(dot(v, normalize(U.sunDir)), 0), 6).mul(float(1).sub(U.cover.mul(0.7))).mul(float(1).sub(U.night));
     const col = mix(vec3(U.fogCol), vec3(U.sunCol).mul(0.9).add(vec3(U.fogCol).mul(0.4)), scatter.mul(0.6));
     scene.fogNode = fog(col, f);

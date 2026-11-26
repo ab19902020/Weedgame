@@ -26,10 +26,14 @@ export function createPost(G) {
   let s = useFSR ? (Number(G.Q.get('scale')) || B.scale[1]) : 1;
   scenePass.setResolutionScale(s);
   const useSSR = !!B.ssr && G.Q.get('ssr') !== '0';
-  scenePass.setMRT(useSSR ? mrt({ output, normal: normalView, metalrough: vec2(metalness, roughness) }) : mrt({ output, normal: normalView }));
+  // the normals target is only for GTAO and SSR: without them (medium) the scene pass writes colour alone (a whole
+  // screen-sized buffer less to write every frame, which a phone's tiled GPU pays for in bandwidth)
+  const wantAO = B.ao.scale > 0 && G.Q.get('ao') !== '0';
+  if (useSSR) scenePass.setMRT(mrt({ output, normal: normalView, metalrough: vec2(metalness, roughness) }));
+  else if (wantAO) scenePass.setMRT(mrt({ output, normal: normalView }));
   const colour = scenePass.getTextureNode('output');
   const depth = scenePass.getTextureNode('depth');
-  const normal = scenePass.getTextureNode('normal');
+  const normal = useSSR || wantAO ? scenePass.getTextureNode('normal') : null;
   const useAO = B.ao.scale > 0 && G.Q.get('ao') !== '0';
   const aoPass = useAO ? ao(depth, normal, camera) : null;
   if (aoPass) {

@@ -76,7 +76,11 @@ export class HeroCars {
     body.add(mBody); ground.add(mGround);
     const state = { brake: uniform(0), lights: uniform(0), reverse: uniform(0), indL: uniform(0), indR: uniform(0), camIn: uniform(0), dmg: uniform(new THREE.Vector4()), paint: uniform(new THREE.Vector3(1, 1, 1)) };
     const mesh = new THREE.Mesh(parts.body.geo, bodyMaterial(parts.body.mat, C, state));
-    mesh.castShadow = true; mesh.receiveShadow = true; mesh.frustumCulled = false;
+    // (85,000 triangles: culled to the view like anything else, and kept out of the shadow pass, where a plain
+    // box the car's size casts its shadow instead)
+    if (!parts.body.geo.boundingSphere) parts.body.geo.computeBoundingSphere();
+    parts.body.geo.boundingSphere.radius *= 1.15;   // (the damage shader moves panels a little)
+    mesh.castShadow = false; mesh.receiveShadow = true; mesh.frustumCulled = true;
     mBody.add(mesh);
     const cabin = [];
     for (const c of parts.cabin) {
@@ -101,23 +105,35 @@ export class HeroCars {
       const wm = new THREE.Mesh(w.geo, parts.wheelMat); wm.castShadow = true;
       piv.add(wm); mGround.add(piv); wheels[k] = { piv, mesh: wm };
     }
+    // the shadow caster: an invisible box the size of the body (on the ground group, so it doesn't sway)
+    const shadowBox = new THREE.Mesh(this.shadowGeo ||= new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), this.shadowMat ||= Object.assign(new THREE.MeshBasicNodeMaterial({ colorWrite: false, depthWrite: false }), { name: 'heroCarShadow' }));
+    shadowBox.castShadow = true; shadowBox.receiveShadow = false; shadowBox.frustumCulled = false; shadowBox.renderOrder = -1;
+    ground.add(shadowBox);
     this.scene.add(body, ground);
-    return { model, body, ground, wheels, column, cabin, state, mesh };
+    return { model, body, ground, wheels, column, cabin, state, mesh, shadowBox };
   }
   // called by VehicleRenderer for each visible hero car with its ground and sprung body matrices
+  // far off (the instanced SUV stands in, vehicles.js): keep this car's meshes and materials, just hidden
+  hide(v) {
+    const id = v.id || v.model, c = this.active.get(id); if (!c) return;
+    this.seen.add(id); c.body.visible = c.ground.visible = false;
+  }
   place(v, groundM, bodyM, d2 = 0) {
     const parts = this.load(v.model); if (!parts) return;
     const id = v.id || v.model + ':' + this.seen.size;
     let c = this.active.get(id);
     if (!c) { c = this.create(v.model, parts); this.active.set(id, c); }
     this.seen.add(id);
+    c.body.visible = c.ground.visible = true;
     // the cabin (seats, dash, wheel) only close to or inside it, and never in the shadow pass (the body casts it);
     // the body's own shadow only inside the sun's shadow box
     const near = d2 < 12 * 12 || !!v.camInside;
     for (const m of c.cabin) { m.visible = near; m.castShadow = false; }
     if (c.column) c.column.visible = near;
-    c.mesh.castShadow = d2 < 110 * 110;
-    for (const w of Object.values(c.wheels)) w.mesh.castShadow = d2 < 60 * 60;
+    // the box casts the shadow (inside the sun's shadow box only); sized to the car once
+    if (!c.shadowSized && v.def) { c.shadowBox.scale.set(v.def.L * 0.95, (v.def.H || 1.8) * 0.82, v.def.W * 0.92); c.shadowBox.position.y = (v.def.H || 1.8) * 0.12; c.shadowSized = true; }
+    c.shadowBox.visible = d2 < 110 * 110;
+    for (const w of Object.values(c.wheels)) { w.mesh.castShadow = false; w.mesh.frustumCulled = true; }
     c.body.matrix.copy(bodyM); c.ground.matrix.copy(groundM);
     c.body.matrixWorldNeedsUpdate = c.ground.matrixWorldNeedsUpdate = true;
     const spin = v.spin || 0, steer = v.player ? (v.steer || 0) : (v.steerVis || 0);

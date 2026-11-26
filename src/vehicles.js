@@ -259,8 +259,12 @@ export class VehicleRenderer {
     for (const v of vehicles) {
       if (v.hidden) continue;
       const dx = v.x - cam.x, dz = v.z - cam.z; if (dx * dx + dz * dz > md2) continue;
-      const def = MODELS[v.model], d2 = dx * dx + dz * dz, farM = this.far[v.model], isFar = d2 > FAR2 && farM !== this.meshes[v.model];
-      const mesh = isFar ? farM : this.meshes[v.model], C = isFar ? countsFar : counts, i = C[v.model];
+      // a hand-made model (the brothers' Range Rovers, 85,000 triangles) past 35 m: the instanced SUV stands in for it,
+      // as GTA swaps a car for its low-detail model at a distance
+      const d2 = dx * dx + dz * dz, mk = MODELS[v.model].glb && d2 > 35 * 35 && !v.camInside && this.meshes.suv ? 'suv' : v.model;
+      if (mk !== v.model) this.heroCars?.hide(v);   // (kept, hidden: rebuilding it on the way back would stall a frame)
+      const def = MODELS[mk], farM = this.far[mk], isFar = d2 > FAR2 && farM !== this.meshes[mk];
+      const mesh = isFar ? farM : this.meshes[mk], C = isFar ? countsFar : counts, i = C[mk];
       if (i >= def.max) continue;
       if (d2 < 160 * 160) this.suspension(v, dt);
       const S = v._sus;
@@ -283,7 +287,7 @@ export class VehicleRenderer {
         lamp.distance=reach; lamp.angle=high?.31:.48;
         lamp.intensity=(bike?.55:1)*(high?14000:6200);
       }
-      const riders=this.riders[v.model];
+      const riders=this.riders[mk];
       if(riders && !v.camInside && (!v.parked || v.occupied)){
         riders.setMatrixAt(riders.count++,this._m);
         if(def.prof==='cycle'){
@@ -314,7 +318,7 @@ export class VehicleRenderer {
         continue;
       }
       if (!v.hasCabin) {
-      C[v.model]++;
+      C[mk]++;
       mesh.setMatrixAt(i, this._m);
       this._c.setHex(v.paint).toArray(mesh.geometry.attributes.iPaint.array, i * 3);
       const dmg = v.dmg, dga = mesh.geometry.attributes.iDmg.array;
@@ -335,8 +339,8 @@ export class VehicleRenderer {
       }
       // wheels: two, on the centreline, for a moped or scooter
       if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
-        const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
-        const wsty = def.prof==='cycle' ? [.91,4,v.spin||0,0] : v.model==='dirtbike' ? [.77,4,v.spin||0,0] : v.model==='motorcycle' ? [.72,1,v.spin||0,1] : sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
+        const sp = CAR_SPECS[mk], r = def.wr, hw = def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
+        const wsty = def.prof==='cycle' ? [.91,4,v.spin||0,0] : mk==='dirtbike' ? [.77,4,v.spin||0,0] : mk==='motorcycle' ? [.72,1,v.spin||0,1] : sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
         const posts = def.wheels === 2 ? [[a + o, 0, 1], [-a + o, 0, 0]] : [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]];
         const tyre = def.tyre || 0.22;
         for (const [wx, wz, steer] of posts) {
