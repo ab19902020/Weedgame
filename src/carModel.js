@@ -466,6 +466,9 @@ export function vehicleMaterial(models) {
   const scratch = step(0.8, vnoise(vec3(x.mul(2.5), y.mul(70), z.mul(2.5)))).mul(step(0.45, dent)).mul(smoothstep(0.1, 0.4, dmg)).mul(paintArea);
   base = base.mul(float(1).sub(dmg.mul(smoothstep(0.45, 0.9, dent)).mul(0.35).mul(paintArea)));
   base = mix(base, mix(vec3(0.42, 0.42, 0.4), vec3(0.62), step(0.5, dn2)), scratch);
+  // Reflected sky on upward-facing clearcoat and a soft rocker-panel shadow anchor the body.
+  const rocker=smoothstep(.26,.88,y).mul(.12).add(.88);
+  base=base.mul(mix(float(1),rocker,paintArea));
   mat.colorNode = base;
   // ---------------- surface response
   const lens = clamp01n(inHL.add(inTL).add(glassPart));
@@ -526,8 +529,8 @@ export function wheelMaterial() {
   const a = atan(p.y, p.x).div(Math.PI * 2).add(0.5);
   const aw = fract(a.add(iw.z.div(Math.PI * 2)));                 // angle in the non-rotating hub frame
   const face = step(0.3, abs(p.z));
-  const nSp = sel(design.lessThan(0.5), float(5), sel(design.lessThan(1.5), float(10), sel(design.lessThan(2.5), float(8), float(5))));
-  const sw = sel(design.lessThan(0.5), float(0.36), sel(design.lessThan(1.5), float(0.5), sel(design.lessThan(2.5), float(0.75), float(0.55))));
+  const nSp = sel(design.greaterThan(3.5),float(28),sel(design.lessThan(0.5), float(5), sel(design.lessThan(1.5), float(10), sel(design.lessThan(2.5), float(8), float(5)))));
+  const sw = sel(design.greaterThan(3.5),float(.18),sel(design.lessThan(0.5), float(0.36), sel(design.lessThan(1.5), float(0.5), sel(design.lessThan(2.5), float(0.75), float(0.55)))));
   const sp = abs(fract(a.mul(nSp)).sub(0.5)).mul(2);              // 0 at spoke centre
   const ySplit = eqf(design, 3).mul(step(abs(sp.sub(0.0)), 0.12)).mul(step(r, rim.mul(0.7)));   // Y-spoke split near the hub
   const spoke = step(sp, sw).mul(float(1).sub(ySplit));
@@ -540,7 +543,7 @@ export function wheelMaterial() {
   const alloy = mix(vec3(0.6, 0.61, 0.63), vec3(0.42), steel).mul(float(1).sub(step(r, rim.mul(0.12)).mul(0.5)));
   const gapCol = mix(mix(vec3(0.015), vec3(0.18), disc), mix(vec3(0.03), vec3(0.45, 0.02, 0.02), step(0.5, iw.w)), cal);
   const lip = step(rim.mul(0.93), r).mul(inRim);
-  const tyre = vec3(0.022).mul(float(1).add(step(0.86, r).mul(step(r, 0.9)).mul(step(0.5, fract(a.mul(36)))).mul(0.6)));
+  const tyre = vec3(0.022).mul(float(1).add(eqf(design,4).mul(step(.85,r)).mul(step(.52,fract(a.mul(42)))).mul(.40))).mul(float(1).add(step(0.86, r).mul(step(r, 0.9)).mul(step(0.5, fract(a.mul(36)))).mul(0.6)));
   m.colorNode = mix(tyre, mix(mix(alloy, gapCol, gap), vec3(0.7), lip), inRim);
   m.metalnessNode = inRim.mul(float(1).sub(gap.mul(0.6))).mul(0.85);
   m.roughnessNode = mix(float(0.92), mix(float(0.28), float(0.5), gap), inRim);

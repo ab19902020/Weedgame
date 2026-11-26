@@ -1,5 +1,7 @@
 import cues from './soundCues.json';
 import world from './worldCues.json';
+import dirtBank from './dirtbikeCues.json';
+import roadBikeBank from './motorcycleCues.json';
 import v8Bank from './rangeroverCues.json';
 import i4Bank from './inline4Cues.json';
 
@@ -14,9 +16,10 @@ import i4Bank from './inline4Cues.json';
 
 // These indices follow the landcover palette in the world builder.
 const groundSounds = ['grass','boots','boots','tile','water','grass','grass','grass','boots','gravel','gravel','grass','boots','grass','grass','grass','grass','boots','gravel','gravel'];
-const ENGINES = { v8: { url: 'sfx/rangerover.ogg', bank: v8Bank }, i4: { url: 'sfx/inline4.ogg', bank: i4Bank } };
+const ENGINES = { dirtbike:{url:"sfx/dirtbike.ogg",bank:dirtBank}, motorcycle:{url:"sfx/motorcycle.ogg",bank:roadBikeBank}, v8: { url: 'sfx/rangerover.ogg', bank: v8Bank }, i4: { url: 'sfx/inline4.ogg', bank: i4Bank } };
 const ALIAS = { Car_Door_Open: ['doorOpen', 1.3], Car_Door_Close: ['doorClose', 1.3], Car_Engine_Start_Up: ['start', 1.4], Car_Engine_Turning_Off: ['stop', 1.3], Car_Parking_Brake: ['handbrake', 1] };
-const engineOf = model => model === 'rangerover' || model === 'sports' || model === 'coupe' ? 'v8' : 'i4';
+const isMotorbike = model => model === 'motorcycle' || model === 'dirtbike';
+const engineOf = model => isMotorbike(model) ? model : model === 'rangerover' || model === 'sports' || model === 'coupe' ? 'v8' : 'i4';
 
 export class Audio {
   constructor(G) {
@@ -63,7 +66,7 @@ export class Audio {
     if (!response.ok) throw Error('Sound bank HTTP ' + response.status);
     this.bank = await this.ctx.decodeAudioData(await response.arrayBuffer());
     this.loop('pedestrians', this.murmur.g);
-    for (const voice of this.voices) voice.engine = this.loop('engine', voice.f);
+
   }
   async loadWorld() {
     const r = await fetch('sfx/world.ogg');
@@ -88,8 +91,9 @@ export class Audio {
   // loops at fixed rpm points built from real idles (tools/vehicles/engine_bank*.py), crossfaded by rpm and
   // fine-tuned in rate, opened up by the throttle; plus a real throttle blip
   async loadEngine(kind) {
-    if (this.engines[kind] || !this.ctx) return this.engines[kind];
+    if (this.engines[kind] || !this.ctx) return this.engines[kind]?.loading;
     const E = this.engines[kind] = { ready: false }, { url, bank } = ENGINES[kind];
+    E.loading = (async () => {
     const r = await fetch(url); if (!r.ok) throw Error(url + ' HTTP ' + r.status);
     const buf = await this.ctx.decodeAudioData(await r.arrayBuffer()), A = this.ctx;
     const out = A.createGain(), filt = A.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 2500; filt.Q.value = 0.7;
@@ -97,6 +101,8 @@ export class Audio {
     const loops = bank.rpm.map(rpm => { const g = A.createGain(); g.gain.value = 0; g.connect(out); return { rpm, g, src: this.slice(buf, bank.cues['r' + rpm], g) }; });
     Object.assign(E, { ready: true, buf, out, filt, loops, lastThr: 0, cues: bank.cues });
     return E;
+    })();
+    return E.loading;
   }
   engineShot(kind, name, gain = 0.8) {
     const E = this.engines[kind]; if (!E?.ready || !E.cues[name]) return false;
@@ -108,6 +114,10 @@ export class Audio {
   engineStart(v) {
     if (!this.on) return;
     const kind = engineOf(v.model);
+    if(isMotorbike(kind)){
+      this.loadEngine(kind).then(()=>this.engineShot(kind,'start',.7)).catch(e=>console.warn(e));
+      return;
+    }
     this.loadEngine(kind).catch(e => console.warn(e));
     if (v.model === 'rangerover') { this.loadEngine('v8').then(() => this.engineShot('v8', 'start', 0.9)).catch(e => console.warn(e)); return; }
     this.play('Car_Engine_Start_Up', v.x, v.y + 0.5, v.z, 0.5);
@@ -205,6 +215,16 @@ export class Audio {
       if (!it) { vo.g.gain.setTargetAtTime(0, t, 0.2); vo.tg.gain.setTargetAtTime(0, t, 0.2); return; }
       const v = it[0], sp = v.v || Math.abs(v.sp || 0), big = v.model.startsWith('bus') || v.model === 'van';
       this.setPos(vo.p, v.x, v.y + 0.6, v.z);
+      const sound=isMotorbike(v.model) ? v.model : 'traffic';
+      if(vo.sound!==sound){
+        const bank=sound==='traffic' ? this.bank : this.engines[sound]?.buf;
+        if(!bank && sound!=='traffic' && !this.engines[sound]) this.loadEngine(sound).catch(e=>console.warn(e));
+        if(vo.engine){ vo.engine.stop(); vo.engine.disconnect(); vo.engine=null; }
+        if(bank){
+          const cue=sound==='traffic' ? cues.engine[0] : ENGINES[sound].bank.cues['r'+ENGINES[sound].bank.rpm[0]];
+          vo.engine=this.slice(bank,cue,vo.f);vo.sound=sound;
+        } else vo.sound=null;
+      }
       vo.engine?.playbackRate.setTargetAtTime((big ? .72 : .9) + Math.min(1.5, Math.abs(sp) * .048), t, .15);
       vo.f.frequency.setTargetAtTime(1000 + Math.abs(sp) * 85, t, 0.1);
       vo.g.gain.setTargetAtTime(.32 * (0.4 + Math.min(1, sp / 12)), t, 0.1);

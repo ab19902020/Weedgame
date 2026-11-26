@@ -51,6 +51,8 @@ export const HANDLING = {
   bus: { kw: 190, vmax: 24, drive: 'R', mu: 0.82, fw: 0.36, cg: 1.35, gears: 4, redline: 2400, assist: 1.4 },
   busS: { kw: 180, vmax: 25, drive: 'R', mu: 0.82, fw: 0.36, cg: 1.1, gears: 4, redline: 2400, assist: 1.4 },
   // light town bikes: short gearing, plenty of assist so a stolen one does not spin like a car
+  dirtbike: { kw:29,vmax:35,drive:'R',mu:1.1,fw:.47,cg:.61,gears:6,redline:9400,assist:1.15 },
+  motorcycle: { kw:49,vmax:51,drive:'R',mu:1.15,fw:.47,cg:.51,gears:5,redline:6800,assist:1.1 },
   moped: { kw: 7, vmax: 20, drive: 'R', mu: 1.05, fw: 0.46, cg: 0.55, gears: 4, redline: 8500, assist: 1.35 },
   escooter: { kw: 0.8, vmax: 7, drive: 'R', mu: 0.9, fw: 0.48, cg: 0.7, gears: 3, redline: 4200, assist: 1.5 },
 };
@@ -149,6 +151,10 @@ export class CarDynamics {
     const soft = base < 0.7;
     ph.surf = base * (1 - wet * (soft ? 0.35 : 0.27));
     ph.crr = soft ? 0.07 : base < 0.8 ? 0.035 : 0.013;
+    if(v.model==='dirtbike' && (soft || lc===10)){
+      ph.surf*=1.20;
+      ph.crr*=.75;
+    }
     ph.soft = soft;
     // driving into a lake or river: water drags at the car and floods the engine once it's over the sills
     const lv = G.tiles.waterLevel ? G.tiles.waterLevel(v.x, v.z) : null;

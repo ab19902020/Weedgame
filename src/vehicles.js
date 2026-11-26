@@ -1,6 +1,7 @@
 // Procedural, instanced vehicles. Simulation owns vehicle state; this module only draws.
 import * as THREE from 'three/webgpu';
 import { Fn, attribute, vec2, vec3, float, int, mix, step, sin, fract, floor, positionLocal, positionGeometry, instanceIndex, select, abs, length, smoothstep, uniformArray } from 'three/tsl';
+import { motorcycleMesh } from './motorcycles.js';
 import { U } from './env.js';
 import { mergeGeos } from './tiles.js';
 import { lightPool } from './materials.js';
@@ -24,6 +25,8 @@ export const MODELS = {
   bus: { L: 10.6, W: 2.55, H: 4.3, wb: 5.6, wr: 0.5, prof: 'decker', max: 30, mass: 12000 },
   busS: { L: 11.2, W: 2.5, H: 3.05, wb: 5.9, wr: 0.5, prof: 'single', max: 20, mass: 10000 },
   // town two-wheelers: drawn as a frame plus a rider, two wheels on the centreline
+  dirtbike: { L:2.15,W:.82,H:1.22,wb:1.47,wr:.335,prof:'enduro',max:28,mass:200,wheels:2,tyre:.105 },
+  motorcycle: { L:2.18,W:.84,H:1.1,wb:1.53,wr:.315,prof:'roadbike',max:40,mass:295,wheels:2,tyre:.145 },
   moped: { L: 1.85, W: 0.72, H: 1.15, wb: 1.25, wr: 0.28, prof: 'moped', max: 70, mass: 180, wheels: 2, tyre: 0.07 },
   escooter: { L: 1.15, W: 0.55, H: 1.2, wb: 0.85, wr: 0.15, prof: 'scooter', max: 50, mass: 30, wheels: 2, tyre: 0.045 },
 };
@@ -92,6 +95,7 @@ function buildTwoWheeler(def) {
   return g;
 }
 function buildModel(def, key, lod = 0) {
+  if (key === 'motorcycle' || key === 'dirtbike') return motorcycleMesh(key === 'dirtbike');
   if (def.wheels === 2) return buildTwoWheeler(def);
   if (CAR_SPECS[key]) { const g = mergeGeos(buildCar(def, key, MODEL_LIST.findIndex(([k]) => k === key) + 1, lod).parts); if (g.attributes.uv) g.deleteAttribute('uv'); return g; }
   const { L, W, H, prof } = def;
@@ -199,6 +203,15 @@ export class VehicleRenderer {
       this.meshes[name] = make(def, buildModel(def, name), shadows);
       this.far[name] = CAR_SPECS[name] ? make(def, buildModel(def, name, 1), false) : this.meshes[name];
     }
+    this.riders = {};
+    const riderMaterial = new THREE.MeshStandardMaterial({vertexColors:true,roughness:.83});
+    for(const name of ['dirtbike','motorcycle']){
+      const geometry=motorcycleMesh(name==='dirtbike',true);
+      const riders=new THREE.InstancedMesh(geometry,riderMaterial,MODELS[name].max);
+      riders.count=0;riders.frustumCulled=false;riders.castShadow=shadows;
+      riders.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(riders);this.riders[name]=riders;
+    }
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._e = new THREE.Euler(); this._v = new THREE.Vector3(); this._s = new THREE.Vector3(1, 1, 1); this._c = new THREE.Color(); this._w = new THREE.Matrix4();
     this._g = new THREE.Matrix4(); this._sm = new THREE.Matrix4(); this._steer = new THREE.Matrix4();
     // soft contact shadow under every nearby car (one draw call)
@@ -226,6 +239,11 @@ export class VehicleRenderer {
       if (!v.player && sp > 0.5) S.steer += (Math.max(-0.5, Math.min(0.5, Math.atan(dh / dt * MODELS[v.model].wb / sp))) - S.steer) * Math.min(1, dt * 6);
       if (!v.player) v.steerVis = S.steer;
     }
+    if(MODELS[v.model].wheels===2){
+      const lateral=v.player && v.ph ? sp*v.ph.w : lat;
+      const target=Math.max(-.58,Math.min(.58,Math.atan2(lateral,9.81)));
+      S.bank=(S.bank||0)+(target-(S.bank||0))*(1-Math.exp(-dt*7));
+    }
     S.s = sp; S.h = v.heading;
     const big = MODELS[v.model].mass > 5000 ? 0.6 : 1;
     const tp = Math.max(-0.05, Math.min(0.05, along * 0.0042 * big)), tr = Math.max(-0.065, Math.min(0.065, -lat * 0.0058 * big));
@@ -237,6 +255,7 @@ export class VehicleRenderer {
   }
   draw(vehicles, cam, maxDist = 700) {
     const counts = {}, countsFar = {}; for (const k in MODELS) { counts[k] = 0; countsFar[k] = 0; }
+    for(const riders of Object.values(this.riders)) riders.count=0;
     let wn = 0, sn = 0, bn = 0;
     const now = performance.now(), dt = Math.min(0.1, Math.max(0.001, (now - this.t0) / 1000)); this.t0 = now;
     const FAR2 = FAR_LOD * FAR_LOD;
@@ -250,13 +269,16 @@ export class VehicleRenderer {
       if (d2 < 160 * 160) this.suspension(v, dt);
       const S = v._sus;
       // ground pose (wheels), then the sprung body on top of it
-      this._e.set(v.roll || 0, -v.heading, v.pitch || 0, 'YXZ');
+      const bank=def.wheels===2 ? (S?.bank || 0) : 0;
+      this._e.set((v.roll || 0)+bank, -v.heading, v.pitch || 0, 'YXZ');
       this._q.setFromEuler(this._e);
       this._g.compose(this._v.set(v.x, v.y, v.z), this._q, this._s.set(1, 1, 1));
       if (S && d2 < 160 * 160) {
-        this._e.set((v.roll || 0) + S.r, -v.heading, (v.pitch || 0) + S.p, 'YXZ'); this._q.setFromEuler(this._e);
+        this._e.set((v.roll || 0) + bank + S.r, -v.heading, (v.pitch || 0) + S.p, 'YXZ'); this._q.setFromEuler(this._e);
         this._m.compose(this._v.set(v.x, v.y - Math.abs(S.r) * 0.25 - Math.abs(S.p) * 0.4, v.z), this._q, this._s.set(1, 1, 1));
       } else this._m.copy(this._g);
+      const riders=this.riders[v.model];
+      if(riders && !v.camInside && (!v.parked || v.occupied)) riders.setMatrixAt(riders.count++,this._m);
       if (def.glb) {
         // hand-made models: contact shadow and headlight pool here, the car itself in heroCars.js
         if (d2 < 90 * 90 && sn < 400) { this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g); this._sm.elements[13] += 0.035; this.shadows.setMatrixAt(sn++, this._sm); }
@@ -287,7 +309,7 @@ export class VehicleRenderer {
       // wheels: two, on the centreline, for a moped or scooter
       if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
         const sp = CAR_SPECS[v.model], r = def.wr, hw = def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
-        const wsty = sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
+        const wsty = v.model==='dirtbike' ? [.77,4,v.spin||0,0] : v.model==='motorcycle' ? [.72,1,v.spin||0,1] : sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
         const posts = def.wheels === 2 ? [[a + o, 0, 1], [-a + o, 0, 0]] : [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]];
         const tyre = def.tyre || 0.22;
         for (const [wx, wz, steer] of posts) {
@@ -302,8 +324,14 @@ export class VehicleRenderer {
     }
     const commit = (m, n) => {
       m.count = n; m.visible = n > 0;   // empty instanced meshes cost a draw call
-      if (n) { m.instanceMatrix.needsUpdate = true; m.geometry.attributes.iPaint.needsUpdate = true; m.geometry.attributes.iState.needsUpdate = true; m.geometry.attributes.iDmg.needsUpdate = true; }
+      if (n) { for(const attr of [m.instanceMatrix,m.geometry.attributes.iPaint,m.geometry.attributes.iState,m.geometry.attributes.iDmg]){
+          attr.clearUpdateRanges(); attr.addUpdateRange(0,n*attr.itemSize); attr.needsUpdate=true;
+        } }
     };
+    for(const riders of Object.values(this.riders)){
+      riders.visible=riders.count>0;
+      if(riders.visible)riders.instanceMatrix.needsUpdate=true;
+    }
     this.heroCars?.finish();
     for (const k in MODELS) {
       if (!this.meshes[k]) continue;

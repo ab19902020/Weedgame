@@ -6,7 +6,7 @@
 import * as THREE from 'three/webgpu';
 import { cash, spend } from './restaurants.js';
 
-const TANK = { rangerover: 90, sports: 65, coupe: 60, hothatch: 50, hatch: 45, saloon: 60, estate: 60, suv: 70, van: 75, police: 60, moped: 7, bus: 0, busS: 0, escooter: 0 };
+const TANK = { rangerover: 90, sports: 65, coupe: 60, hothatch: 50, hatch: 45, saloon: 60, estate: 60, suv: 70, van: 75, police: 60, moped: 7, dirtbike: 9, motorcycle: 15, bus: 0, busS: 0, escooter: 0 };
 const RANGE_KM = 60, PRICE = 1.45, FILL_RATE = 0.14;   // tank fractions a second at the pump
 export const tankOf = v => TANK[v.model] ?? 55;
 const hash = s => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return ((h >>> 0) % 1000) / 1000; };
