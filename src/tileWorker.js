@@ -1373,6 +1373,12 @@ function edgeFrame(ring, q) {
   if (insideRing(ring, mx + nx * 0.6, mz + nz * 0.6)) { nx = -nx; nz = -nz; }
   return { q, L, nx, nz, mx, mz, x0, z0, x1, z1 };
 }
+// what a shopfront the map leaves unnamed says over its window: the usual kinds of high-street unit, never a
+// chain's name (fasciaBrand gives them independents' colours)
+const UNNAMED_SHOPS = ['Convenience Store', 'Barbers', 'Nails & Beauty', 'Phone Repairs', 'Cafe', 'Off Licence', 'Dry Cleaners', 'Charity Shop',
+  'Hair Salon', 'Takeaway', 'Florist', 'Vape Shop', 'Estate Agents', 'Bakery', 'Mini Market', 'Newsagents', 'Tattoo Studio', 'Launderette',
+  'Bookmakers', 'Opticians', 'Kebab & Pizza', 'Hardware', 'Pet Shop', 'Cards & Gifts', 'Fish Bar', 'Chinese Takeaway', 'Beauty Salon',
+  'Turkish Barbers', 'Coffee House', 'Polish Deli', 'Sandwich Bar', 'Mobile Accessories', 'TO LET', 'TO LET'];
 // Name board on the street face, just proud of the fascia. No canopy — that was hiding the lettering.
 function placeFascia(fascias, ring, edge, baseRel, floorH, brand, bi) {
   const e = edgeFrame(ring, edge);
@@ -1441,9 +1447,11 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], seed = m[13];
     const bname = (header.bn && header.bn[bi]) || '';
     const retail = m[12] > 0 || cls === 6 || cls === 7;
-    const brand = (!lod && fasciaBrand(bname, retail)) || null;
+    let brand = (!lod && fasciaBrand(bname, retail)) || null;
     // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
     const shop = m[12] || ((cls === 6 || cls === 7) && bname) || brand || poiOn.has(bi) ? 1 : 0;
+    // a shop the map gives no name still has a board over the window: what kind of shop it is (or To Let)
+    if (!lod && !brand && shop && !bname && cls !== 13 && cls !== 8) brand = fasciaBrand(UNNAMED_SHOPS[Math.abs(Math.floor(seed * 7 + bi)) % UNNAMED_SHOPS.length], true);
 
     if (cls === 13) { for (let k = 0; k < P[bi]; k++) ci += R[ri++]; continue; } // canopies are drawn by landmarks.js
     // a supermarket is one tall retail front, not two floors of brick with a garage door
@@ -1829,6 +1837,25 @@ function buildMarkings(header, ox, oz, hAt0, deckOf = new Map()) {
       // dual carriageways and slip roads at speed: red studs on the nearside edge, amber offside, white between lanes
       if (oneway && fast && /motorway|trunk/.test(name)) { studs(w / 2 - 0.45, 4); studs(-(w / 2 - 0.45), 5); for (let k = 1; k < lf; k++) studs(w / 2 - k * lw, 6, 4.5); }
       if (header.core && /primary|secondary|tertiary/.test(name)) { for (const s of [1, -1]) { line(s * (w / 2 - 0.25), 0.08, s0, s1, 1e4, 0, 1); line(s * (w / 2 - 0.42), 0.08, s0, s1, 1e4, 0, 1); } }
+    }
+    // street ironwork: gully grates in the channel by each kerb every 20-30 m, and an inspection cover in a lane
+    // now and then (marking surf 8 cover, 9 gully; uv across the casting for its pattern)
+    if (!minor && !bridge && L > 8 && w >= 4.5 && !/^motorway/.test(name) && s1 - s0 > 6) {
+      const sd = (e * 2654435761) >>> 0, rr = k => ((Math.imul(sd ^ Math.imul(k + 1, 40503), 2246822519) >>> 0) % 10007) / 10007;
+      const casting = (sv, off, al, ac, id, lift) => {
+        const p = posAt(pts, sv); if (!inTile(p)) return;
+        const dx = -p[4], dz = p[3], cx = p[0] + p[3] * off, cz = p[2] + p[4] * off, y = hAt(cx, cz) + lift;
+        const q = [[-al, -ac], [al, -ac], [al, ac], [-al, ac]].map(([a, c]) => [cx + dx * a + p[3] * c, y, cz + dz * a + p[4] * c]);
+        quad(B, q[0], q[1], q[2], q[3], [0, 1, 0], null, [id]);
+      };
+      const gap = 20 + rr(1) * 10;
+      for (const side of [1, -1]) for (let sv = s0 + 3 + rr(side + 3) * gap; sv < s1 - 3; sv += gap) casting(sv, side * (w / 2 - 0.19), 0.24, 0.16, 9, 0.078);
+      const lanes = Math.max(1, lf + lb), lwc = w / lanes;
+      for (let k = 0, sv = s0 + 6 + rr(7) * 30; sv < s1 - 6 && k < 40; k++, sv += 35 + rr(k + 11) * 60) {
+        const lane = Math.floor(rr(k + 31) * lanes), off = w / 2 - (lane + 0.5) * lwc + (rr(k + 51) - 0.5) * Math.min(0.8, lwc * 0.3);
+        const big = rr(k + 71) < 0.5;
+        casting(sv, off, big ? 0.32 : 0.3, big ? 0.32 : 0.23, 8, 0.076);
+      }
     }
     // stop / give-way lines at ends
     const endLine = (atEnd, code, stopDist) => {

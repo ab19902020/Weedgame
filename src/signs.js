@@ -34,16 +34,28 @@ export class SignAtlas {
     m.emissiveNode = c.mul(U.night).mul(1.15);
     this.material = m;
     this.dirty = false;
+    this.byText = new Map(); this.slotText = new Map(); this.refs = new Map();
   }
+  // boards with the same name share one painted slot (counted, so it's freed when the last goes)
   alloc(text) {
-    const slot = this.free_.shift(); if (slot == null || !text) { if (slot != null) this.free_.unshift(slot); else this.misses = (this.misses || 0) + 1; return null; }
+    if (!text) return null;
+    const hit = this.byText.get(text);
+    if (hit) { this.refs.set(hit.slot, this.refs.get(hit.slot) + 1); return hit; }
+    const slot = this.free_.shift(); if (slot == null) { this.misses = (this.misses || 0) + 1; return null; }
     const b = fasciaBrand(text, true) || FALLBACK;
     const cx = (slot % COLS) * SW, cy = Math.floor(slot / COLS) * SH, p = this.ctx;
     p.save(); p.translate(cx, cy); p.scale(K, K); paintFascia(p, 0, 0, 256, 32, b.label || text, b); p.restore();
     this.dirty = true;
-    return { slot, uv: [cx / W, 1 - (cy + SH) / H, (cx + SW) / W, 1 - cy / H] };
+    const r = { slot, uv: [cx / W, 1 - (cy + SH) / H, (cx + SW) / W, 1 - cy / H] };
+    this.byText.set(text, r); this.slotText.set(slot, text); this.refs.set(slot, 1);
+    return r;
   }
-  free(slot) { this.free_.push(slot); }
+  free(slot) {
+    const n = (this.refs.get(slot) || 1) - 1;
+    if (n > 0) { this.refs.set(slot, n); return; }
+    this.refs.delete(slot); const t = this.slotText.get(slot); this.slotText.delete(slot); if (t != null) this.byText.delete(t);
+    this.free_.push(slot);
+  }
   flush() { if (this.dirty) { this.tex.needsUpdate = true; this.dirty = false; } }
 }
 

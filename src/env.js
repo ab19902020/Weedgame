@@ -21,6 +21,10 @@ export const U = {
   wind: uniform(new THREE.Vector2(3, 1)),
   wake: uniform(new THREE.Vector3(0, 0, 0)),   // ripples spreading from a swimmer or a car in water: x, z, strength
   t: uniform(0),               // seconds (animation)
+  // the building you're inside (interiors.js): its footprint (origin, axes, width x depth) and floor height. The
+  // world's terrain and the like are cut away within it, so a hillside or a garden wall can't show indoors
+  inO: uniform(new THREE.Vector2(0, 0)), inX: uniform(new THREE.Vector2(1, 0)), inY: uniform(new THREE.Vector2(0, 1)),
+  inWD: uniform(new THREE.Vector3(0, 0, 0)), inOn: uniform(0),
   moonDir: uniform(new THREE.Vector3(-0.3, 0.5, -0.2)),
   coverOrigin: uniform(new THREE.Vector2(0, 0)), // rain shelter raster origin (world xz of texel 0)
   lightOrigin: uniform(new THREE.Vector2(0, 0)),

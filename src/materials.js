@@ -97,8 +97,12 @@ const classLayer = (c) => {
 };
 const luma = (c) => dot(c, vec3(0.2126, 0.7152, 0.0722));
 
+// inside a building (U.in*): true where the world's own surfaces should go (within the footprint, above its floor)
+const indoorCut = p => { const d = p.xz.sub(U.inO), lx = dot(d, U.inX), ly = dot(d, U.inY);
+  return U.inOn.mul(step(0.08, lx)).mul(step(lx, U.inWD.x.sub(0.08))).mul(step(0.08, ly)).mul(step(ly, U.inWD.y.sub(0.08))).mul(step(U.inWD.z.sub(0.3), p.y)).lessThan(0.5); };
 export function terrainMaterial() {
   const m = std();
+  m.maskNode = indoorCut(positionWorld);
   const slot = attribute('aslot', 'vec2');
   const p = positionWorld;
   const cls = Fn(([off]) => {
@@ -214,6 +218,7 @@ export function waterMaterial() {
 // --- roads, pavements, kerbs, paths, plazas, decks, ballast -------------------------------
 export function groundMaterial() {
   const m = std();
+  m.maskNode = indoorCut(positionWorld);
   const s = attribute('surf', 'float');
   const p = positionWorld;
   const isRoad = step(s, 0.5).add(step(4.5, s).mul(step(s, 5.5)));        // 0, 5
@@ -268,6 +273,7 @@ export function groundMaterial() {
 
 export function markingMaterial() {
   const m = std({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6 });
+  m.maskNode = indoorCut(positionWorld);
   const s = attribute('surf', 'float');
   const p = positionWorld;
   // thermoplastic paint: worn by tyres, with the asphalt grain showing through
@@ -280,21 +286,35 @@ export function markingMaterial() {
   albedo = mix(albedo,tactile,step(1.5,s));
   // road studs (cat's eyes, surf 4-7: red nearside edge, amber offside edge, white lane line, green slip
   // road): a grey body that throws headlight back in its own colour after dark
-  const stud = step(3.5, s);
+  const stud = step(3.5, s).mul(step(s, 7.5));
   const studCol = sel(s.lessThan(4.5), vec3(1, 0.05, 0.03), sel(s.lessThan(5.5), vec3(1, 0.5, 0.04), sel(s.lessThan(6.5), vec3(1, 0.97, 0.88), vec3(0.08, 1, 0.3))));
   albedo = mix(albedo, vec3(0.5, 0.5, 0.48), stud);
+  // street ironwork (8 inspection cover, 9 gully grate): a worn frame, a cover's raised tread, a gully's slots;
+  // the pattern settles to its average once a pixel covers more than a couple of its studs
+  const iron = step(7.5, s), gully = step(8.5, s);
+  const cu = uv(), fwc = max(fwidth(cu.x), fwidth(cu.y)).max(1e-4), near = float(1).sub(smoothstep(0.03, 0.09, fwc));
+  const edgeD = min(min(cu.x, float(1).sub(cu.x)), min(cu.y, float(1).sub(cu.y)));
+  const rim = float(1).sub(smoothstep(float(0.07).sub(fwc), float(0.07).add(fwc), edgeD));
+  const tread = step(0.28, abs(fract(cu.x.mul(9)).sub(0.5))).max(step(0.28, abs(fract(cu.y.mul(9)).sub(0.5)))).oneMinus();
+  const slots = step(abs(fract(cu.x.mul(7)).sub(0.5)), 0.22).mul(step(0.16, edgeD));
+  const rust = nz(p.xz, 1 / 0.35).g;
+  const ironBase = mix(vec3(0.11, 0.105, 0.1), vec3(0.2, 0.12, 0.07), smoothstep(0.55, 0.85, rust).mul(0.6));
+  const coverCol = mix(ironBase, ironBase.mul(1.7), mix(float(0.35), tread, near).max(rim.mul(0.8)));
+  const gullyCol = mix(mix(ironBase.mul(1.25), vec3(0.012), mix(float(0.45), slots, near)), ironBase.mul(1.6), rim);
+  albedo = mix(albedo, mix(coverCol, gullyCol, gully), iron);
   const expo = float(1).sub(shelter(p));
   const wet = U.wet.mul(expo);
   albedo = albedo.mul(mix(float(1), float(0.8), wet));
   m.colorNode = albedo.mul(cloudShadow(p));
-  m.roughnessNode = mix(float(0.7), float(0.25), wet);
-  m.emissiveNode = lightPool(p).mul(albedo).add(skyReflection(p, vec3(0, 1, 0), wet.mul(0.4))).add(studCol.mul(stud).mul(U.night.mul(2.2).add(0.12)));
+  m.roughnessNode = mix(mix(float(0.7), float(0.5), iron), float(0.25), wet);
+  m.emissiveNode = lightPool(p).mul(albedo).add(skyReflection(p, vec3(0, 1, 0), wet.mul(mix(float(0.4), float(0.7), iron)))).add(studCol.mul(stud).mul(U.night.mul(2.2).add(0.12)));
   return m;
 }
 
 // --- structures (bridges, walls, fences, hedges, rails) ---------------------------------
 export function structMaterial() {
   const m = std();
+  m.maskNode = indoorCut(positionWorld);
   const s = attribute('surf', 'float');
   const p = positionWorld;
   const u = uv();
@@ -334,6 +354,7 @@ export function structMaterial() {
 // --- buildings --------------------------------------------------------------------------
 export function buildingMaterial() {
   const m = std();
+  m.maskNode = indoorCut(positionWorld);   // (a shell lower than the rooms inside it showed its roof upstairs)
   const A = attribute('bA', 'vec4');
   // the tile worker places front doors and passes their position along the wall in the seed: seed + 1000 * (u * 4)
   const seedRaw = floor(A.y.add(0.5)), doorU = floor(seedRaw.div(1000)).mul(0.25);
@@ -411,11 +432,19 @@ export function buildingMaterial() {
   const ww0 = sel(isOffice.greaterThan(0.5), mix(float(0.42), float(0.58), r1), sel(isInd.greaterThan(0.5), float(0.25), mix(float(0.42), float(0.56), isFlats)));
   const ww = mix(mix(ww0, float(0.965), ribbon), float(0.985), curtainW);
   const winTop = mix(mix(sel(isInd.greaterThan(0.5), float(0.9), float(0.78)), float(0.84), ribbon), float(0.975), curtainW);
-  const winBot = mix(mix(sel(isInd.greaterThan(0.5), float(0.72), float(0.38)), float(0.3), ribbon), float(0.03), curtainW);
+  // blocks of flats: on some, every 2nd or 3rd column of windows is a balcony (a slab edge, a balustrade, a
+  // glazed door behind); on some the concrete floor slabs show as bands; most have a stair core, a column of
+  // tall narrow landing windows
+  const flatBal = isFlats.mul(step(h1(seed.add(71.3)), 0.6));
+  const balN = floor(h1(seed.add(72.1)).mul(2)).add(2), balK = ci.add(floor(h1(seed.add(73.7)).mul(3)));
+  const balCol = flatBal.mul(step(balK.sub(floor(balK.div(balN)).mul(balN)), 0.5)).mul(step(0.5, fi));
+  const stairCi = floor(h1(seed.add(75.5)).mul(4)).add(1);
+  const stairCol = isFlats.mul(step(h1(seed.add(75.9)), 0.7)).mul(step(abs(ci.sub(stairCi)), 0.5)).mul(float(1).sub(balCol));
+  const winBot = mix(mix(mix(mix(sel(isInd.greaterThan(0.5), float(0.72), float(0.38)), float(0.3), ribbon), float(0.03), curtainW), float(0.035), balCol), float(0.12), stairCol);
   const shopUp = shop.mul(front).mul(step(0.5, fi));
-  const wwS = mix(ww, float(0.36), shopUp);
+  const wwS = mix(mix(ww, float(0.22), stairCol), float(0.36), shopUp);
   const botS = mix(winBot, float(0.46), shopUp);
-  const topS = mix(winTop, float(0.7), shopUp);
+  const topS = mix(mix(winTop, float(0.93), stairCol), float(0.7), shopUp);
   // view ray in façade space; u direction from screen derivatives so it always matches the uv
   const nW = normalWorld;
   const dp1 = dFdx(p), dp2 = dFdy(p), du1 = dFdx(u.x), du2 = dFdy(u.x);
@@ -534,10 +563,10 @@ export function buildingMaterial() {
   albedo = mix(albedo, frameCol, frame.mul(float(1).sub(doorZone)));
   albedo = mix(albedo, wallCol.mul(mix(float(0.55), float(0.8), step(0, ry))), reveal.mul(float(1).sub(shopFront)));
   const sill = insideU(cu, ww.mul(0.5).add(0.06), fcu).mul(between(fv, winBot.sub(0.05), winBot, ffv)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(doorZone)).mul(step(0, u.y))
-    .mul(float(1).sub(rearShop.max(blankSide))).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5)))).mul(float(1).sub(curtainW));   // (only under a window that's there)
+    .mul(float(1).sub(rearShop.max(blankSide))).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5)))).mul(float(1).sub(curtainW)).mul(float(1).sub(balCol)).mul(float(1).sub(stairCol));   // (only under a window that's there)
   albedo = mix(albedo, vec3(0.7, 0.68, 0.62), sill);
   const panelCol = sel(r1.lessThan(0.25), vec3(0.62, 0.3, 0.2), sel(r1.lessThan(0.5), vec3(0.3, 0.32, 0.34), sel(r1.lessThan(0.7), vec3(0.2, 0.42, 0.44), sel(r1.lessThan(0.85), vec3(0.8, 0.8, 0.78), vec3(0.14, 0.14, 0.15)))));
-  const flatPanel = isFlats.mul(insideU(cu, ww.mul(0.5), fcu)).mul(between(fv, float(0.06), winBot.sub(0.04), ffv)).mul(isWall).mul(step(0, u.y)).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5))));
+  const flatPanel = isFlats.mul(float(1).sub(stairCol)).mul(insideU(cu, ww.mul(0.5), fcu)).mul(between(fv, float(0.06), winBot.sub(0.04), ffv)).mul(isWall).mul(step(0, u.y)).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5))));
   albedo = mix(albedo, panelCol, flatPanel);
   // spandrels between a curtain wall's floors: a dark band at each slab
   const spandrel = curtainW.mul(isWall).mul(float(1).sub(between(fv, winBot, winTop, ffv))).mul(step(0, u.y)).mul(float(1).sub(shopG));
@@ -546,6 +575,21 @@ export function buildingMaterial() {
   albedo = mix(albedo, doorRGB, isDoor.mul(float(1).sub(doorGlass)));
   albedo = mix(albedo, frameCol, doorFrame);
   albedo = mix(albedo, vec3(0.012, 0.014, 0.016), doorGlass);
+  // the flats' floor slabs as pale concrete bands, then the balconies in front of everything
+  const flatWall = isFlats.mul(isWall).mul(step(0, u.y)).mul(float(1).sub(blankSide)).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5))));
+  const slabs = flatWall.mul(step(h1(seed.add(76.3)), 0.5)).mul(step(0.5, fi)).mul(below(fv, float(0.075), ffv));
+  albedo = mix(albedo, vec3(0.62, 0.61, 0.58), slabs);
+  const balU = insideU(cu, ww.mul(0.5).add(0.1), fcu);
+  const balRail = balCol.mul(flatWall).mul(balU).mul(below(fv, float(0.37), ffv));
+  const balSlab = balCol.mul(flatWall).mul(insideU(cu, ww.mul(0.5).add(0.12), fcu)).mul(below(fv, float(0.05), ffv));
+  const bStyle = h1(seed.add(77.7));
+  const railBars = lineAA(abs(fract(u.x.div(0.12)).sub(0.5)), float(0.09), fU.div(0.12)).mul(float(1).sub(smoothstep(0.03, 0.08, fU)));
+  const topRail = between(fv, float(0.34), float(0.37), ffv);
+  const balOcc = balRail.mul(sel(bStyle.lessThan(0.35), float(0.55), sel(bStyle.lessThan(0.7), railBars.mul(0.6).add(0.15), float(1))));
+  const balRGB = sel(bStyle.lessThan(0.35), vec3(0.08, 0.12, 0.13), sel(bStyle.lessThan(0.7), vec3(0.06, 0.065, 0.07), mix(vec3(0.82, 0.82, 0.8), panelCol, step(0.5, h1(seed.add(78.1))))));
+  albedo = mix(albedo, balRGB, balOcc);
+  albedo = mix(albedo, vec3(0.1, 0.1, 0.11), balRail.mul(topRail));
+  albedo = mix(albedo, vec3(0.7, 0.69, 0.66), balSlab);
   albedo = albedo.add(roofCol.mul(isRoof).mul(float(1).sub(pEq(9).mul(0.3)))).add(flatCol.mul(isFlat)).add(wallTex.mul(isChim));
   // trims (uPVC white mostly; black or stained timber on some), gutters, soffits, clay pots, bay windows
   const trimCol = sel(r3.lessThan(0.8), vec3(0.8, 0.8, 0.78), sel(r3.lessThan(0.93), vec3(0.035, 0.035, 0.04), vec3(0.17, 0.1, 0.055)));
@@ -597,15 +641,15 @@ export function buildingMaterial() {
   // (shop glass a touch less mirror-like than house windows, and the frames satin, not glossy)
   m.roughnessNode = mix(mix(mix(mix(d.b.mul(0.3).add(0.62), float(0.35), wet.mul(isRoof.add(isFlat).add(isWall.mul(0.4)))), float(0.42), trimAll), float(0.62), shopFrame.add(sFrame).min(1)), mix(float(0.04), float(0.16), shopFront), glass.add(isDoor.mul(0.6)).min(1));
   m.metalnessNode = float(0);
-  const plain = glass.add(frame).add(isDoor).add(sill).add(trimAll).min(1);
+  const plain = glass.add(frame).add(isDoor).add(sill).add(trimAll).add(balRail).add(slabs).min(1);
   m.normalNode = perturb(nW, d, mix(float(1.0), float(0.7), isRender).mul(float(1).sub(plain)));
-  const refl = skyReflection(p, nW, glass.mul(mix(mix(float(0.6), float(1.0), curtainW.add(ribbon.mul(0.5))), float(0.18), shopFront)).add(wet.mul(isRoof).mul(0.25)));
+  const refl = skyReflection(p, nW, glass.mul(float(1).sub(balOcc)).mul(mix(mix(float(0.6), float(1.0), curtainW.add(ribbon.mul(0.5))), float(0.18), shopFront)).add(wet.mul(isRoof).mul(0.25)));
   const daylight = float(1).sub(U.night).mul(mix(float(0.07), float(0.04), U.cover));
   // ceiling light: brighter towards the top of the room and the back wall
   const pool = hy.div(fh).mul(0.6).add(0.55).mul(mix(float(0.8), float(1.15), hitBack));
   const lamp = lit.mul(mix(float(0.55), mix(float(0.3), float(0.85), U.night), shopFront)).mul(pool);
   const shopDay = shopFront.add(sDoor).min(1).mul(float(1).sub(U.night)).mul(0.42);
-  const seeIn = max(glass, sDoor);
+  const seeIn = max(glass, sDoor).mul(float(1).sub(balOcc));
   const interior = roomCol.mul(seeIn).mul(warm.mul(lamp).add(daylight).add(shopDay));
   m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo)).add(fascia.mul(fasciaCol).mul(U.night).mul(0.55));
   return m;

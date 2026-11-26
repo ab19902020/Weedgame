@@ -340,6 +340,9 @@ function furnishHouse(P, s) {
     }
     wallItem(P, g, L, R() < 0.5 ? 'y0' : opp === 'y0' ? 'y1' : 'y0', 'armchair', 0.85, 0.85, 0.85, { col: trap ? 0x6d5a45 : pick(R, SOFA), at: 0.2 });
     if (!trap) { wallItem(P, g, L, pick(R, sides), 'plant', 0.45, 0.45, 1.1, { at: R(), solid: true }); wallItem(P, g, L, pick(R, sides), 'lamp', 0.35, 0.35, 1.55, { at: R() < 0.5 ? 0.05 : 0.95 }); }
+    // the chimney breast: a fireplace with a mirror over it on one of the side walls, a clock
+    if (!trap) { const fs = sides.filter(x => x !== tvSide && x !== opp && x !== 'y0'); wallItem(P, g, L, fs.length ? pick(R, fs) : pick(R, sides.filter(x => x !== tvSide && x !== opp)), 'homefire', 1.3, 0.38, 2.0, { tall: true, col: nice ? 0xf2f1ec : pick(R, [0xf2f1ec, 0x8a6a4a, 0x55585c, 0xd8c29a]), lit: R() < 0.5, at: 0.5 }); }
+    if (!trap) wallItem(P, g, L, pick(R, sides), 'clock', 0.32, 0.04, 0.32, { base: 2.0, solid: false, tall: true });
     if (!trap && R() < 0.7) wallItem(P, g, L, pick(R, sides), 'shelves', 0.9, 0.32, 1.8, { tall: true, col: pick(R, [0xe9e4da, 0x8a6a4a, 0x2c2a28]) });
     if (trap) { wallItem(P, g, L, pick(R, sides), 'binbags', 0.8, 0.6, 0.6, { at: 0.95 }); P.add(g, 'cans', (L.x0 + L.x1) / 2 + 0.6, L.y1 - 0.5, 0.5, 0.4, 0.12, { solid: false }); wallItem(P, g, L, pick(R, sides), 'cctv', 0.5, 0.35, 1.0, { col: 0x222222, at: 0.9 }); }
   }
@@ -365,7 +368,7 @@ function furnishHouse(P, s) {
   if (H) {
     P.add(g, 'doormat', P.site.doorX, 0.45, 0.8, 0.5, 0.01, { solid: false, col: 0x6b5236 });
     if (trap) P.add(g, 'post', P.site.doorX + 0.15, 0.7, 0.5, 0.4, 0.03, { solid: false });
-    else wallItem(P, g, H, H.x0 > 0.1 ? 'x0' : 'x1', 'console', 0.8, 0.3, 0.8, { at: 0.08 });
+    else { wallItem(P, g, H, H.x0 > 0.1 ? 'x0' : 'x1', 'console', 0.8, 0.3, 0.8, { at: 0.08 }); wallItem(P, g, H, H.x0 > 0.1 ? 'x1' : 'x0', 'coathooks', 0.9, 0.3, 1.7, { at: 0.06, solid: false }); }
   }
   // the nicer houses: a dado rail in the hall, the living and dining rooms
   if (!trap && (nice || P.R() < 0.4)) for (const r of [H, L, Dn]) if (r) r.dado = true;
@@ -388,6 +391,8 @@ function furnishHouse(P, s) {
       if (b && !trap) { for (const sgn of [-1, 1]) { const ox = Math.cos(b.rot) * sgn * (b.w / 2 + 0.3), oy = Math.sin(b.rot) * sgn * (b.w / 2 + 0.3); const bx = b.x + ox - Math.sin(b.rot) * -(b.d / 2 - 0.25), by = b.y + oy + Math.cos(b.rot) * -(b.d / 2 - 0.25); if (bx > r.x0 + 0.25 && bx < r.x1 - 0.25 && by > r.y0 + 0.25 && by < r.y1 - 0.25) P.add(f, 'bedside', bx, by, 0.45, 0.4, 0.5, { rot: b.rot, col: b.frame }); } }
       if (!trap) wallItem(P, f, r, pick(R, sides.filter(x => x !== bedSide)), 'wardrobe', big ? 1.5 : 1.0, 0.6, 2.0, { tall: true, col: pick(R, [0xe9e4da, 0x8a6a4a, 0xd8c29a, 0x55585c]), at: R() < 0.5 ? 0.05 : 0.95 });
       if (!trap && R() < 0.6) wallItem(P, f, r, pick(R, sides), 'drawers', 0.8, 0.45, 0.8, { col: pick(R, [0xe9e4da, 0x8a6a4a, 0xd8c29a]) });
+      if (!trap && big) wallItem(P, f, r, pick(R, sides.filter(x => x !== bedSide)), 'dressing', 1.0, 0.45, 1.5, { col: pick(R, [0xe9e4da, 0x8a6a4a, 0xd8c29a]), tall: true });
+      if (!trap && b) { const [cx, cy] = mid(r); P.add(f, 'rug', b.x + (cx - b.x) * 0.15 - Math.sin(b.rot) * 0, b.y + (cy - b.y) * 0.15, b.w + 0.8, 1.2, 0.01, { rot: b.rot, col: pick(R, [0xd8cfc0, 0x7d8c9c, 0xb8a68a, 0x9a5b4b]), solid: false }); }
       if (trap) { wallItem(P, f, r, pick(R, sides), 'clothes', 0.9, 0.6, 0.35, { solid: false }); wallItem(P, f, r, pick(R, sides), 'binbags', 0.7, 0.6, 0.6, {}); }
     }
     if (r.name === 'bath') {
@@ -397,6 +402,7 @@ function furnishHouse(P, s) {
       const other = along === 'y1' ? (r.x0 < 0.01 ? 'x0' : 'x1') : 'y1';
       wallItem(P, f, r, other, 'toilet', 0.4, 0.65, 0.75, { col: trap ? 0xe9e4d4 : 0xf7f7f4, at: 0.85 });
       wallItem(P, f, r, other === 'x0' ? 'x1' : other === 'x1' ? 'x0' : 'y0', 'basin', 0.55, 0.42, 0.85, { col: 0xf7f7f4, mirror: true, at: 0.5 });
+      if (!trap) { wallItem(P, f, r, pick(R, sides.filter(x => x !== along)), 'towelrail', 0.55, 0.1, 1.15, { col: pick(R, [0xf2f2ee, 0x9fb3c8, 0xd8c29a, 0x7f9c80]), at: R() < 0.5 ? 0.15 : 0.85, solid: false }); const [cx, cy] = mid(r); P.add(f, 'rug', cx, cy, 0.8, 0.5, 0.01, { col: pick(R, [0x9fb3c8, 0xf2f2ee, 0x7f9c80]), solid: false }); }
     }
   }
 }
@@ -428,7 +434,10 @@ function bungalow(P, s) {
   const tv = wallItem(P, g, L, 'x0', 'tvunit', 1.2, 0.42, 0.5, { col: pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58]) });
   if (tv) P.add(g, 'tv', tv.x, tv.y, 1.1, 0.08, 0.65, { rot: tv.rot, base: 0.5, solid: false });
   const so = wallItem(P, g, L, 'x1', 'sofa', clamp((L.y1 - L.y0) * 0.55, 1.5, 2.2), 0.9, 0.85, { col: sofaCol });
-  if (so && tv) P.add(g, 'coffeetable', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 0.9, 0.5, 0.42, { rot: so.rot, col: 0x6b5236, clutter: 'books' });
+  if (so && tv) { P.add(g, 'rug', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 1.8, 1.4, 0.01, { rot: so.rot, col: pick(R, [0xb8a68a, 0x7d8c9c, 0x9a5b4b, 0xd8cfc0]), solid: false }); P.add(g, 'coffeetable', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 0.9, 0.5, 0.42, { rot: so.rot, col: 0x6b5236, clutter: 'books' }); }
+  wallItem(P, g, L, 'y1', 'homefire', 1.3, 0.38, 2.0, { tall: true, col: pick(R, [0xf2f1ec, 0x8a6a4a, 0xd8c29a]), lit: R() < 0.5, at: 0.3 });
+  wallItem(P, g, L, 'x0', 'lamp', 0.35, 0.35, 1.55, { at: 0.05 });
+  wallItem(P, g, L, 'x1', 'picture', 0.7, 0.04, 0.5, { base: 1.35, solid: false, tall: true, seed: Math.floor(R() * 16), col: pick(R, [0x2a2a2a, 0xc9b26a, 0xf2f1ec]) });
   wallItem(P, g, L, 'y0', 'armchair', 0.85, 0.85, 0.85, { col: pick(R, SOFA), at: 0.15 });
   wallItem(P, g, L, 'y1', 'shelves', 0.9, 0.32, 1.8, { tall: true, col: pick(R, [0xe9e4da, 0x8a6a4a]) });
   wallItem(P, g, L, 'y0', 'plant', 0.45, 0.45, 1.0, { at: 0.9 });
@@ -439,13 +448,15 @@ function bungalow(P, s) {
   for (const r of g.rooms) if (/^bed/.test(r.name)) {
     const big = r.name === 'bed1';
     const b = wallItem(P, g, r, 'x1', big ? 'bed2' : 'bed1', big ? 1.5 : 0.95, 2.05, 0.55, { col: pick(R, DUVET), frame: pick(R, [0x8a6a4a, 0xe9e4da, 0x55585c]) });
-    void b;
+    if (b) { for (const sgn of [-1, 1]) { const by = b.y + sgn * (b.w / 2 + 0.3); if (by > r.y0 + 0.25 && by < r.y1 - 0.25) P.add(g, 'bedside', b.x + (b.d / 2 - 0.25), by, 0.45, 0.4, 0.5, { rot: b.rot, col: b.frame }); } P.add(g, 'rug', (r.x0 + r.x1) / 2 - 0.3, (r.y0 + r.y1) / 2, 1.2, b.w + 0.6, 0.01, { col: pick(R, [0xd8cfc0, 0x7d8c9c, 0xb8a68a]), solid: false }); }
     wallItem(P, g, r, r.name === 'bed1' ? 'y0' : 'y1', 'wardrobe', 1.0, 0.6, 2.0, { tall: true, col: pick(R, [0xe9e4da, 0x8a6a4a]), at: 0.9 });
   }
   const B = P.find(g, 'bath');
   wallItem(P, g, B, 'x1', 'bath', Math.min(1.7, B.y1 - B.y0 - 0.1), 0.72, 0.55, { col: 0xf7f7f4 });
   wallItem(P, g, B, 'y0', 'toilet', 0.4, 0.65, 0.75, { col: 0xf7f7f4, at: 0.2 });
   wallItem(P, g, B, 'y1', 'basin', 0.55, 0.42, 0.85, { col: 0xf7f7f4, mirror: true, at: 0.2 });
+  wallItem(P, g, B, 'y1', 'towelrail', 0.55, 0.1, 1.15, { col: pick(R, [0xf2f2ee, 0x9fb3c8, 0x7f9c80]), at: 0.85, solid: false });
+  wallItem(P, g, P.find(g, 'corridor'), 'x0', 'coathooks', 0.9, 0.3, 1.7, { at: 0.08, solid: false });
 }
 
 // ------------------------------------------------------------------ a warehouse
@@ -516,7 +527,7 @@ function office(P, s) {
     // a meeting room's table at the back, a kitchenette by the core
     P.add(lv, 'meeting', (r.x0 + r.x1) / 2, r.y1 - 1.3, Math.min(4, r.x1 - r.x0 - 2), 1.2, 0.74, { col: 0xd8c29a, chairs: 8, chairCol: brand });
     const c = P.find(lv, 'core' + i);
-    wallItem(P, lv, c, c.x0 < 0.1 ? 'x0' : 'x1', 'units', Math.min(2.6, D * 0.3), 0.62, 0.92, { col: 0xf2f2ee, top: 0x3b3b3b, sink: true, at: 0.35 });
+    wallItem(P, lv, c, c.x0 < 0.1 ? 'x0' : 'x1', 'units', Math.min(2.6, D * 0.3), 0.62, 0.92, { col: 0xf2f2ee, top: 0x3b3b3b, sink: true, at: 0.35, noHob: true });
     wallItem(P, lv, c, c.x0 < 0.1 ? 'x0' : 'x1', 'fridge', 0.62, 0.65, 1.8, { tall: true, col: 0xb9bcbf, at: 0.15 });
     wallItem(P, lv, r, 'y1', 'plant', 0.5, 0.5, 1.3, { at: 0.05 }); wallItem(P, lv, r, 'y1', 'printer', 0.9, 0.6, 1.0, { at: 0.95, col: 0xe9e9e6 });
   }
@@ -536,7 +547,14 @@ function shop(P, s) {
   const r = P.find(g, 'shop');
   // the counter by the door, chillers down one side, aisles of shelves
   const cs = P.site.doorX > W / 2 ? 'x0' : 'x1';
-  wallItem(P, g, r, cs === 'x0' ? 'x1' : 'x0', 'counter', 2.2, 0.7, 1.0, { col: 0x8a6a4a, at: 0.1, till: true });
+  wallItem(P, g, r, cs === 'x0' ? 'x1' : 'x0', 'counter', 2.2, 0.7, 1.0, { col: 0x8a6a4a, at: 0.1, till: true, sweets: true });
+  // by the door: a stack of baskets, the newspapers; an ice-cream freezer at the front of the chillers, a cash machine
+  const dsg = cs === 'x0' ? -1 : 1;
+  P.add(g, 'basketstack', clamp(P.site.doorX + dsg * 1.15, 0.5, W - 0.5), 0.7, 0.45, 0.33, 0.62, { col: pick(R, [0xc0392b, 0x2f6fb0, 0x27ae60]) });
+  if (W > 5.5) P.add(g, 'newsstand', clamp(P.site.doorX - dsg * 1.5, 1.0, W - 1.0), 1.25, 1.0, 0.45, 1.05, { rot: 0 });
+  wallItem(P, g, r, cs, 'freezer', 1.3, 0.72, 0.85, { at: 0.04, col: pick(R, [0x2f6fb0, 0xc0392b, 0xe67e22]) });
+  wallItem(P, g, r, cs === 'x0' ? 'x1' : 'x0', 'atm', 0.6, 0.45, 1.7, { tall: true, at: 0.9, col: pick(R, [0x2f6fb0, 0x27ae60, 0x8e44ad]) });
+  P.add(g, 'doormat', P.site.doorX, 0.45, 1.2, 0.6, 0.01, { solid: false, col: 0x2a2a2a });
   wallItem(P, g, r, cs, 'chiller', Math.min(5, D - sd - 1.5), 0.8, 2.0, { tall: true, at: 0.6 });
   wallItem(P, g, r, 'y1', 'gondola', Math.min(W - 2.5, 6), 0.45, 1.7, { at: 0.5, seed: 1 });
   const ax0 = cs === 'x0' ? 1.6 : 1.4, ax1 = W - (cs === 'x1' ? 1.6 : 1.4);

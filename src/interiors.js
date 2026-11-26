@@ -96,7 +96,12 @@ export class Interiors {
     this.fadeStep(dt);
     const IN = this.at(me);
     for (const b of this.built.values()) b.group.visible = b === IN;
-    if ((IN?.site.id ?? null) !== (this._vegFor ?? null)) { this._vegFor = IN?.site.id ?? null; if (IN) this.hideVeg(IN.site); else this.showVeg(); }
+    if ((IN?.site.id ?? null) !== (this._vegFor ?? null)) {
+      this._vegFor = IN?.site.id ?? null; if (IN) this.hideVeg(IN.site); else this.showVeg();
+      // and cut the terrain, paths and walls out of its footprint (a hillside ran through some upstairs rooms)
+      const U = G.U;
+      if (U?.inOn) { if (IN) { const s = IN.site; U.inO.value.set(s.o[0], s.o[1]); U.inX.value.set(s.ax[0], s.ax[1]); U.inY.value.set(s.ay[0], s.ay[1]); U.inWD.value.set(s.W, s.D, IN.floor0); U.inOn.value = 1; } else U.inOn.value = 0; }
+    }
     // brighter by day, warmer at night
     setDaylight(1 - (G.U?.night?.value ?? 0));
     this.prompt = null;
