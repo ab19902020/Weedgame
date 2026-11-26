@@ -1,0 +1,96 @@
+// +X is forward. Each chassis and each helmeted rider is batched across the fleet.
+import * as T from 'three/webgpu';
+import {mergeGeos} from './tiles.js';
+
+export function motorcycleMesh(dirt, rider=false) {
+  const parts=[];
+  const metal=0x91969b, rubber=0x26282b, frame=dirt?0xb95624:0x41464c;
+  function part(g,colour,paint=0,lamp=0) {
+    if(g.index)g=g.toNonIndexed();
+    g.deleteAttribute('uv');
+    const n=g.attributes.position.count, rgb=new T.Color(colour);
+    const colours=new Float32Array(n*3), data=new Float32Array(n*4);
+    for(let i=0;i<n;i++){rgb.toArray(colours,i*3);data[i*4]=paint;data[i*4+1]=lamp;}
+    g.setAttribute('color',new T.BufferAttribute(colours,3));
+    g.setAttribute('vdat',new T.BufferAttribute(data,4));parts.push(g);
+  }
+  function oval(x,y,z,l,h,w,colour,paint=0,lamp=0,tilt=0) {
+    part(new T.SphereGeometry(1,14,9).scale(l/2,h/2,w/2).rotateZ(tilt).translate(x,y,z),colour,paint,lamp);
+  }
+  function tube(a,b,r,colour,r2=r) {
+    const start=new T.Vector3(...a),end=new T.Vector3(...b),dir=end.clone().sub(start);
+    const g=new T.CylinderGeometry(r2,r,dir.length(),9);
+    g.applyQuaternion(new T.Quaternion().setFromUnitVectors(new T.Vector3(0,1,0),dir.normalize()));
+    const centre=start.lerp(end,.5);part(g.translate(centre.x,centre.y,centre.z),colour);
+  }
+  function panel(points,z,depth,colour,paint=0){
+    const outline=new T.Shape(points.map(([x,y])=>new T.Vector2(x,y)));
+    const geometry=new T.ExtrudeGeometry(outline,{depth,bevelEnabled:true,bevelSegments:1,
+      bevelSize:.009,bevelThickness:.009,steps:1});
+    part(geometry.translate(0,0,z),colour,paint);
+  }
+  const axle=dirt?.735:.765,radius=dirt?.335:.315,seat=dirt?.94:.76;
+  if(rider){
+    const hip=[-.19,seat+.06,0], shoulder=[dirt?-.12:.01,seat+.48,0];
+    oval(hip[0],hip[1],0,.30,.21,.30,0x29323d);
+    oval((hip[0]+shoulder[0])/2,seat+.30,0,.29,.54,.39,0x364450,0,0,dirt?-.13:-.30);
+    for(const sign of [-1,1]){
+      const knee=[.14,seat-.19,sign*.20], boot=[-.03,.40,sign*.22];
+      tube([hip[0],hip[1],sign*.11],knee,.092,0x29323d,.073);
+      tube(knee,boot,.07,0x35404b,.052);oval(.01,.39,boot[2],.23,.10,.12,rubber);
+      const elbow=[.13,seat+.25,sign*.27], hand=[.40,seat+.25,sign*.31];
+      tube([shoulder[0],shoulder[1],sign*.15],elbow,.075,0x364450,.055);
+      tube(elbow,hand,.054,0x303b46,.042);oval(...hand,.12,.085,.085,rubber);
+    }
+    oval(shoulder[0]+.06,seat+.68,0,.27,.31,.24,0xd9dbd6);
+    oval(shoulder[0]+.116,seat+.70,0,.176,.112,.238,0x253745);
+    oval(shoulder[0]+.14,seat+.637,0,.12,.067,.197,0xb6b8b3);
+    if(dirt)oval(shoulder[0]+.16,seat+.798,0,.21,.027,.25,0x495059);
+  } else {
+    for(const sign of [-1,1]){
+      const z=sign*.105;
+      tube([-.39,.78,z],[.1,.34,z],.031,frame);
+      tube([.1,.34,z],[.46,seat+.1,z],.032,frame);
+      tube([-.39,.78,z],[.46,seat+.1,z],.028,frame);
+      tube([-axle,radius,z],[-.02,.43,z],.035,metal);
+      tube([axle,radius,z],[.45,seat+.17,z],.033,metal);
+      tube([.45,seat+.17,z],[.40,seat+.25,sign*.31],.018,metal);
+      tube([-.05,.40,z],[-.05,.40,sign*.24],.019,rubber);
+    }
+    for(const sign of [-1,1]){
+      const z=sign*.157-.013;
+      if(dirt){
+        panel([[-.24,.86],[.04,.94],[.44,.91],[.37,.72],[.19,.59],[.07,.77]],z,.026,0xffffff,1);
+        panel([[-.67,.89],[-.32,.91],[-.12,.83],[-.32,.66],[-.54,.72]],z,.026,0xdfdfd8);
+        panel([[-.02,.82],[.25,.87],[.15,.78],[.04,.75]],z+sign*.021,.008,0x242b30);
+      }else{
+        panel([[-.41,.73],[-.17,.77],[.08,.73],[.03,.60],[-.24,.55]],z,.026,0xffffff,1);
+        for(let fin=0;fin<5;fin++)
+          part(new T.BoxGeometry(.25,.014,.035).rotateZ(.18).translate(.06,.50+fin*.035,sign*.17),0x9b9c99);
+        tube([.37,seat+.24,sign*.24],[.34,seat+.41,sign*.32],.009,metal);
+        oval(.34,seat+.42,sign*.32,.08,.065,.14,0x34393a);
+      }
+      oval(-.10,.46,sign*.156,.23,.22,.048,0x707477);
+      oval(-.10,.46,sign*.182,.145,.14,.018,0x474b4c);
+      tube([axle,radius+.025,sign*.112],[.60,.59,sign*.112],.043,dirt?0xd5cbb0:metal);
+    }
+    tube([-.45,.58,.01],[-.19,.83,.01],.039,0xb4ada2);
+    tube([-axle,radius,-.115],[-.13,.48,-.115],.014,0x393a32);
+    tube([-axle,radius-.06,-.115],[-.13,.41,-.115],.011,0x393a32);
+    oval(-.67,seat+.01,0,.38,.06,.23,0xffffff,1,0,-.16);
+    oval(-.03,.52,0,.44,.33,.3,0x575e61);
+    for(let i=0;i<6;i++)part(new T.BoxGeometry(.18,.016,.33).translate(.08,.56+i*.033,0),metal);
+    tube([.18,.55,.13],[.30,.34,.16],.034,metal);
+    tube([.30,.34,.16],[-.55,dirt?.77:.47,.17],.045,metal,.078);
+    oval(.19,seat-.055,0,.56,.30,dirt?.29:.44,0xffffff,1,0,-.13);
+    oval(-.26,seat,0,.64,.10,.28,rubber,0,0,.035);
+    oval(-.54,seat-.07,0,.51,.12,.25,0xffffff,1,0,-.14);
+    oval(axle,dirt?.84:.65,0,.52,.065,.17,0xffffff,1,0,-.09);
+    if(dirt) panel([[.47,1.01],[.53,1.20],[.59,1.17],[.56,1.01]],-.095,.19,0xffffff,1);
+    oval(.54,seat+.12,0,.14,.177,.185,rubber);
+    oval(.598,seat+.12,0,.043,.137,.145,0xf4f1dc,0,1);
+    oval(-.77,seat-.10,0,.07,.059,.135,0xc8382c,0,2);
+    part(new T.BoxGeometry(.023,.095,.18).rotateZ(-.23).translate(-.78,seat-.20,0),0xe6bd3a);
+  }
+  return mergeGeos(parts);
+}

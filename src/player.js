@@ -202,8 +202,9 @@ export class Brothers {
     const c = this.cam, G = this.G, h = v.heading, fx = Math.cos(h), fz = Math.sin(h), rx = -Math.sin(h), rz = Math.cos(h);
     const bus = v.model.startsWith('bus'), S = CAR_SPECS[v.model], Hd = HERO_CARS[v.model]?.driver;
     // seat position from the car's own windscreen and belt line (hand-made models give their own)
-    const eye = Hd ? Hd.eye : bus ? 2.3 : v.model === 'van' ? 1.8 : S ? (S.belt[0] + S.belt[1]) / 2 + 0.26 : 1.2;
-    const fwd = Hd ? Hd.fwd : bus ? v.def.L / 2 - 1.2 : S ? Math.max(S.ws0 - 1.4, S.rr0 + 0.3) : 0, side = Hd ? Hd.side : bus ? 0.6 : 0.37;
+    const bike = v.def.wheels === 2;
+    const eye = bike ? (v.model === "dirtbike" ? 1.64 : 1.46) : Hd ? Hd.eye : bus ? 2.3 : v.model === 'van' ? 1.8 : S ? (S.belt[0] + S.belt[1]) / 2 + 0.26 : 1.2;
+    const fwd = Hd ? Hd.fwd : bus ? v.def.L / 2 - 1.2 : S ? Math.max(S.ws0 - 1.4, S.rr0 + 0.3) : 0, side = bike ? 0 : Hd ? Hd.side : bus ? 0.6 : 0.37;
     c.x = v.x + fx * fwd + rx * side; c.y = v.y + eye; c.z = v.z + fz * fwd + rz * side;
     const look = (G.time - c.lastUser < 2.5) ? c.yaw + Math.PI - h : 0;     // drag to look around, eases back
     c.yaw = G.time - c.lastUser < 2.5 ? c.yaw : h + Math.PI;
@@ -275,8 +276,8 @@ export class Brothers {
       me.x = v.x + rx * (v.def.W / 2 + 0.7); me.z = v.z + rz * (v.def.W / 2 + 0.7);
       me.y = G.tiles.ground(me.x, me.z, v.y + 0.5) ?? v.y; me.heading = v.heading + Math.PI / 2;
       me.vehicle = null;
-      G.audio?.play('Car_Engine_Turning_Off', v.x, v.y, v.z);
-      G.audio?.play('Car_Door_Close', me.x, me.y, me.z);
+      if(v.def.wheels !== 2) G.audio?.play('Car_Engine_Turning_Off', v.x, v.y, v.z);
+      if(v.def.wheels !== 2) G.audio?.play('Car_Door_Close', me.x, me.y, me.z);
       G.events.emit('parked', { v, by: me });
       G.hud.toast(`${me.short} parked on ${G.roadName(v.x, v.z) || 'the street'}`);
       G.save.markVehicle(v);
@@ -284,7 +285,7 @@ export class Brothers {
       const n = this.nearestVehicle();
       if (!n) { G.hud.toast('No vehicle within reach'); return; }
       const wasNpc = !n.owner && !n.free;
-      G.audio?.play('Car_Door_Open', n.x, n.y, n.z);
+      if(n.def.wheels !== 2) G.audio?.play('Car_Door_Open', n.x, n.y, n.z);
       if (n.parked) { if (G.audio?.engineStart) G.audio.engineStart(n); else G.audio?.play('Car_Engine_Start_Up', n.x, n.y, n.z); }
       n.parked = false; n.player = true; n.free = true; n.hidden = false;
       me.vehicle = n.id; n.sp = 0;

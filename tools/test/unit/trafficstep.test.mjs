@@ -26,3 +26,18 @@ test('traffic drives through junctions and signals without errors', async () => 
   assert.ok(T.list.some(v => v.ind), 'someone is indicating');
   assert.ok(detected > 0, 'signal detectors triggered');
 });
+
+test('a right-angle junction joins both lane centres without a sideways jump', () => {
+  const net={nEdges:2,cls:[0,0],classes:['residential'],len:[60,60],width:[7,7],
+    flags:[0,0],lanesF:[1,1],lanesB:[1,1],laneCount:()=>1,
+    at:(h,s,out)=>Object.assign(out,h===0?[s-60,0,0,1,0]:[0,0,s,0,1])};
+  const traffic=new Traffic(net,{}), v={len:4.6,h:0,lane:0,lat:0,route:[0,2],ri:0};
+  const arc=traffic.junctionArc(v,0,2,0,0);
+  v.entryArc=arc;
+  v.s=59.99;traffic.place(v);
+  const previous={...v};
+  v.exitArc=arc;v.h=2;v.s=.01;v.ri=1;traffic.place(v);
+  assert.ok(Math.hypot(v.x-previous.x,v.z-previous.z)<.05);
+  assert.ok(Math.abs(v.heading-previous.heading)<.02);
+  assert.ok(v.heading>.3 && v.heading<1.3);
+});

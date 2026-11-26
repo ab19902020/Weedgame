@@ -43,7 +43,11 @@ export class Traffic {
     const name = this.net.clsName(h >> 1);
     const town = name === 'residential' || name === 'living_street' || name === 'service' || name === 'unclassified' || name === 'tertiary';
     const r = this.rand();
-    if ((town && r < 0.22) || (!town && r < 0.05)) return this.rand() < 0.55 ? 'moped' : 'escooter';
+    if (r < (town ? .22 : .055)) {
+      const type=this.rand();
+      if (!town && /motorway|trunk/.test(name)) return 'motorcycle';
+      return type<.25 ? 'dirtbike' : type<.55 ? 'motorcycle' : type<.81 ? 'moped' : 'escooter';
+    }
     return this.randomModel();
   }
   driver(v) {
@@ -76,11 +80,41 @@ export class Traffic {
     const i = Math.min(Math.max(0, lane | 0), n - 1);
     return w * 0.5 - lw * (i + 0.5);
   }
-  place(v) {
+  // A Hermite arc connects the two lane centres with tangents parallel to each road.
+  // Route distance still governs signals, stop lines, bus stops and right of way.
+  junctionArc(v,from,to,lane,nextLane) {
+    if(to==null || from===to || (from>>1)===(to>>1)) return null;
+    const L=this.net.len[from>>1];
+    const span=Math.min(8, Math.max(4,v.len*1.4), L*.42,this.net.len[to>>1]*.42);
+    if(span<.6)return null;
+    const point=(h,s,i)=>{
+      const t=this.net.at(h,s,[0,0,0,0,0]), off=this.laneOffset(h,i);
+      return {x:t[0]+t[4]*off,z:t[2]-t[3]*off,dx:t[3],dz:t[4]};
+    };
+    const a=point(from,L-span,lane), b=point(to,span,nextLane);
+    const angle=Math.acos(Math.max(-1,Math.min(1,a.dx*b.dx+a.dz*b.dz)));
+    return {from,to,lane,nextLane,span,a,b,angle};
+  }
+  place(v,dt=0) {
     const t = this.net.at(v.h, v.s, this.tmp);
     const dx = t[3], dz = t[4];
     const off = this.laneOffset(v.h, v.lane) + v.lat;
-    const tx = t[0] + dz * off, tz = t[2] - dx * off;
+    let tx=t[0]+dz*off, tz=t[2]-dx*off, hd=Math.atan2(dz,dx);
+    const remain=this.net.len[v.h>>1]-v.s;
+    let arc=v.exitArc, offset=v.s;
+    if(!arc || arc.to!==v.h || v.s>arc.span){
+      arc=v.entryArc; offset=-remain;
+      if(arc?.from!==v.h || arc.to!==v.route?.[v.ri+1] || arc.lane!==v.lane)arc=null;
+    }
+    if(arc && Math.abs(offset)<=arc.span){
+      const u=.5+.5*offset/arc.span, w=1-u, {a,b}=arc;
+      const tangent=2*arc.span;
+      const sample=(start,end,d0,d1)=> w*w*(1+2*u)*start+u*u*(3-2*u)*end+tangent*u*w*(w*d0-u*d1);
+      const deriv=(start,end,d0,d1)=>6*u*w*(end-start)+tangent*(w*(1-3*u)*d0+u*(3*u-2)*d1);
+      hd=Math.atan2(deriv(a.z,b.z,a.dz,b.dz),deriv(a.x,b.x,a.dx,b.dx));
+      tx=sample(a.x,b.x,a.dx,b.dx)+Math.sin(hd)*v.lat;
+      tz=sample(a.z,b.z,a.dz,b.dz)-Math.cos(hd)*v.lat;
+    }
     // a car knocked off its line (carPhysics.js) eases back into lane instead of snapping
     if (v._offLane && v.x != null) {
       const d = Math.hypot(tx - v.x, tz - v.z);
@@ -90,8 +124,7 @@ export class Traffic {
     if (!v._offLane) { v.x = tx; v.z = tz; }
     const ty = t[1] + 0.05;
     v.y = v.y && Math.abs(v.y - ty) < 3 ? v.y + (ty - v.y) * 0.35 : ty;
-    const hd = Math.atan2(dz, dx);
-    v.heading = v.heading == null ? hd : lerpAngle(v.heading, hd, 0.35);
+    v.heading = !dt || v.heading == null ? hd : lerpAngle(v.heading,hd,1-Math.exp(-dt*13));
     // pitch from grade
     const ahead = this.net.at(v.h, Math.min(this.net.len[v.h >> 1], v.s + 2), this.tmp)[1];
     v.pitch = Math.atan2(ahead + 0.05 - ty, 2) * 0.8;
@@ -231,8 +264,10 @@ export class Traffic {
       v.frozen = v.kind !== 'police' && d2 > BUBBLE_R * BUBBLE_R && this.nearAnchor(v);
       if (v.frozen || v.offroad) continue;     // off-road police are moved by police.js
       if (v.crashed || v.brokenDown) { v.v = 0; v.brake = true; v.hazard = true; continue; }
-      if (v.near || (v.tick = (v.tick || 0) + dt) > 0.4) { this.drive(v, v.near ? dt : v.tick, occ); v.tick = 0; }
-      else { v.s += v.v * dt; if (v.s < net.len[v.h >> 1]) this.place(v); }
+      v.tick=(v.tick||0)+dt;
+      if(v.near || v.tick>=.4 || v.s+v.v*dt>=net.len[v.h>>1]){
+        this.drive(v,v.tick,occ,dt); v.tick=0;
+      } else {v.s+=v.v*dt; this.place(v,dt);}
       v.spin = (v.spin + v.v * dt / v.def.wr) % (Math.PI * 2);
       v.lights = camInfo.night > 0.4 || camInfo.rain > 0.4;
     }
@@ -270,13 +305,23 @@ export class Traffic {
     if (lead === 'obstacle') return true;
     return !!(lead.crashed || lead.brokenDown || lead.hazard || lead.parked || lead.status === 'onscene' || lead.atStop);
   }
-  drive(v, dt, occ) {
+  drive(v, dt, occ, moveDt=dt) {
     const net = this.net, e = v.h >> 1, L = net.len[e];
     this.extend(v);
-    const vmax = Math.max(4, (net.speed[e] / 3.6) * (v.v0f || 1) * (v.siren ? 1.35 : 1)) * (v.slow || 1);
+    let vmax = Math.max(4, (net.speed[e] / 3.6) * (v.v0f || 1) * (v.siren ? 1.35 : 1)) * (v.slow || 1);
     let [gap, lv, lead] = this.leaderGap(v, occ);
     let stopAt = 1e9;
     const rem = L - v.s;
+    const next=v.route[v.ri+1];
+    if(next!=null && rem<36){
+      const arc=v.entryArc;
+      if(!arc || arc.from!==v.h || arc.to!==next || arc.lane!==v.lane)
+        v.entryArc=this.junctionArc(v,v.h,next,v.lane,Math.min(v.lane,net.laneCount(next)-1));
+      if(v.entryArc?.angle>.25){
+        const cornerSpeed=Math.sqrt(2.8*v.entryArc.span / v.entryArc.angle);
+        vmax=Math.min(vmax,Math.sqrt(cornerSpeed**2+4.4*Math.max(0,rem-v.entryArc.span)));
+      }
+    }
     // signals
     const approaches = net.stopAt.get(v.h);
     if (approaches && !v.siren) for (const [ci,g,stop] of approaches) {
@@ -355,7 +400,7 @@ export class Traffic {
     if (gap < 0.3 && lv < 0.1) v.v = 0;
     v.brake = acc < -0.8 || (v.v < 0.2 && gap < 20);
     v.wait = v.v < 0.3 ? v.wait + dt : 0;
-    v.s += v.v * dt;
+    v.s += v.v * moveDt;
     v.lat += (v.latT - v.lat) * Math.min(1, dt * 1.5);
     // advance across half-edges
     let guard = 0;
@@ -366,6 +411,7 @@ export class Traffic {
       v.ri++;
       if (v.ri >= v.route.length) { v.ri = v.route.length - 1; v.s = net.len[v.h >> 1] - 0.1; v.v = 0; break; }
       const nh2 = v.route[v.ri];
+      v.exitArc = v.entryArc?.to===nh2 ? v.entryArc : null; v.entryArc=null;
       v.h = nh2;
       v.lane = Math.min(v.lane, net.laneCount(v.h) - 1);
       // a pass that wasn't finished does not carry onto the next street (that left cars on the wrong side)
@@ -373,7 +419,7 @@ export class Traffic {
       if (v.fixedRoute && v.onEdge) v.onEdge(v);
       if (!v.fixedRoute && v.route.length > 64 && v.ri > 32) { v.route = v.route.slice(v.ri); v.ri = 0; }
     }
-    this.place(v);
+    this.place(v,moveDt);
   }
   conflict(v, node, occ) {
     // any higher-priority approaching vehicle within 35 m of the node (or on the roundabout)

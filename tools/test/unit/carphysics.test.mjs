@@ -132,3 +132,16 @@ test('low-speed manoeuvring is smooth: full lock at walking pace circles without
   const r = Math.abs(v.sp / v.ph.w);
   assert.ok(r > 3.5 && r < 9, `turning circle radius ${r.toFixed(1)} m`);
 });
+
+test('both motorcycles accelerate, steer and slow down through the player dynamics', () => {
+  for(const model of ['dirtbike','motorcycle']){
+    const {dyn}=world(), v=car(model);
+    run(dyn,v,4,{throttle:.8,steer:0});
+    const initial=v.sp;
+    assert.ok(initial>7);
+    run(dyn,v,.8,{throttle:.2,steer:.25});
+    assert.ok(Math.abs(v.heading)>.04);
+    run(dyn,v,2,{brake:1,steer:0});
+    assert.ok(Number.isFinite(v.sp) && Math.abs(v.sp)<initial);
+  }
+});
