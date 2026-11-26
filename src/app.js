@@ -22,6 +22,7 @@ import { Atmos } from './atmos.js';
 import { Landmarks } from './landmarks.js';
 import { Interiors } from './interiors.js';
 import { Fuel } from './fuel.js';
+import { Combat } from './combat.js';
 import { Audio } from './audio.js';
 import { Save } from './save.js';
 import { deviceProfile, frameTarget, preferenceKey, presets, qualityFor, tuneGraphics } from './graphics.js';
@@ -145,6 +146,8 @@ const init = G.save.initialBrothers(START);
 G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
 G.controller=new Controller(G);
+G.combat = new Combat(G);                 // weapons, fists, the brothers' arms (combat.js)
+G.people.rigs.onHero = (slot, a, dt) => G.combat.pose(slot, a, dt);
 // the brothers' own cars are Range Rovers (older saves had a hatch and an estate under these ids)
 const OWN = { 'cal-car': 'rangerover', 'leon-car': 'rangerover' };
 for (const sv of G.save.vehicles) {
@@ -231,7 +234,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt)) { B.update(dt, G.input); G.controller.actions(dt); } }
+  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt)) { B.update(dt, G.input); G.controller.actions(dt); G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3) {
@@ -286,6 +289,7 @@ function step(dt, render) {
       x:me.x - 1.7*Math.sin(heading), z:me.z + 1.7*Math.cos(heading), y:me.y, heading, visible:true,
       look:B.actor[B.active].look });
   }
+  G.combat.beginFrame();
   G.peds.draw(G.people, actors, cam, dt);
   G.wildlife.draw(cam);
   G.signalRenderer.draw(cam, (x, z) => G.tiles.ground(x, z), G.time);

@@ -478,8 +478,31 @@ export class Peds {
   disturb(x, z, r, kind) {
     for (const p of this.list) {
       const d = Math.hypot(p.x - x, p.z - z); if (d > r || p.fallT > 0) continue;
-      p.reactT = 2 + this.rand() * 2; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = d < 8 ? 'flee' : this.rand() < 0.3 ? 'phone' : 'point';
+      // gunfire: everyone in earshot runs, for longer; anything else, only those close by
+      const gun = kind === 'gun';
+      p.reactT = gun ? 5 + this.rand() * 4 : 2 + this.rand() * 2; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = d < 8 || gun ? 'flee' : this.rand() < 0.3 ? 'phone' : 'point';
     }
+  }
+  // a blow or a round (combat.js): kind 'jab' | 'body' | 'stagger' | 'down' | 'shot'; dir the heading of the force,
+  // dmg the health it takes (people start with 100). A shot that takes the last of it kills; a beating that does
+  // knocks them out. hitReactions.js draws the reaction; here the body is pushed and the person stops what they
+  // were doing, then (if they can) runs from whoever did it
+  hurt(p, dir, kind, dmg = 0, o = {}) {
+    if (p.dead) { if (p.react) p.react.jolt = 0.2; return; }
+    p.hp = (p.hp ?? 100) - dmg;
+    const lethal = p.hp <= 0 && (kind === 'shot' || o.lethal);
+    const type = lethal ? 'shot' : p.hp <= 0 || kind === 'down' ? 'down' : kind;
+    const lie = p.hp <= 0 ? 5 + this.rand() * 4 : 2.2 + this.rand();
+    const dur = { jab: 0.55, body: 1.0, stagger: 0.95, down: lie + 1.3, shot: lethal ? 1e9 : 0.6 }[type] ?? 0.6;
+    const push = ({ jab: 0.5, body: 0.9, stagger: 2.4, down: 3, shot: lethal ? 1.3 : 0.4 }[type] ?? 0.5) * (o.push ?? 1);
+    this.queueRemove(p);
+    p.stopIdx = null; p.goal = null; p.corner = null; p.dayPath = null; p.leader = null; p.mode = 'walk'; p.reactT = 0;
+    if (p.react && !p.react.dead && p.react.type === 'down' && type !== 'shot') { p.react.t = Math.min(p.react.t, 0.6); p.hp = Math.min(p.hp, 0); }   // a kick while they're down keeps them there
+    else p.react = { type, t: 0, dir, s: o.s ?? 1, side: o.side ?? (this.rand() < 0.5 ? -1 : 1), dead: lethal, lie, back: 1 };
+    p.impact = { elapsed: 0, duration: dur, knockdown: type === 'down' || lethal, vx: Math.cos(dir) * push, vz: Math.sin(dir) * push, react: true, from: dir + Math.PI };
+    if (!lethal && type !== 'shot') p.heading = dir + Math.PI;
+    p.fallT = dur;
+    if (lethal) { p.dead = true; p.deadT = 0; }
   }
   strike(p, heading, speed = 0) {
     if (p.impact) return;
@@ -500,6 +523,27 @@ export class Peds {
     const k = p.impact;
     k.elapsed = Math.min(k.duration, k.elapsed + dt);
     const t = k.elapsed;
+    if (k.react && p.react) {
+      const R = p.react; R.t += dt;
+      const drift = (1 - Math.exp(-4 * dt)) / 4;
+      const x = p.x + k.vx * drift, z = p.z + k.vz * drift;
+      if (!this.G.tiles.insideBuilding(x, z) && this.G.tiles.ground(x, z, p.y) != null) { p.x = x; p.z = z; this.ground(p); }
+      k.vx *= Math.exp(-4 * dt); k.vz *= Math.exp(-4 * dt);
+      p.fallT = k.duration - t;
+      // for the crowd renderer (no skeleton): the same fall, and a brace while it lasts
+      const down = R.type === 'down' || R.dead;
+      const fallUp = down ? (R.dead ? 1 : Math.max(0, 1 - Math.max(0, R.t - R.lie) / 1.1)) : 0;
+      p.fall = down ? Math.min(1, Math.max(0, (R.t - (R.dead ? 0.35 : 0.1)) / 0.5)) * fallUp : 0;
+      p.brace = down ? Math.min(1, R.t / 0.14) : Math.sin(Math.PI * Math.min(1, R.t / Math.max(0.3, k.duration)));
+      p.pose = 'brace'; p.speedNow = 0;
+      if (R.dead) { p.deadT += dt; if (p.deadT > 70 && !(this.info?.visible?.(p.x, p.y + 0.5, p.z, 1))) p.gone = true; return; }
+      if (p.fallT <= 0) {
+        // up again: off, away from whoever did it
+        p.impact = null; p.react = null; p.brace = 0; p.fall = 0;
+        p.reactT = 6 + this.rand() * 4; p.reactHeading = k.from; p.reactPose = 'flee';
+      }
+      return;
+    }
     const drift = (1 - Math.exp(-4 * dt)) / 4;
     const x = p.x + k.vx * drift, z = p.z + k.vz * drift;
     if (!this.G.tiles.insideBuilding(x,z) && this.G.tiles.ground(x,z,p.y) != null) {

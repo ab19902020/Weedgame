@@ -5,6 +5,7 @@ import { AnimationMixer, Group, Mesh, BoxGeometry, MeshStandardMaterial, LoopOnc
 import { texture, uniform, positionGeometry, smoothstep, mix, dot, vec3, abs, float } from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
+import { applyReaction } from './hitReactions.js';
 
 const propSlide = new BoxGeometry(.033, .17, .042);
 const propGrip = new BoxGeometry(.034, .05, .083);
@@ -105,6 +106,8 @@ function roleOf(a) {
   if (a.id === 'brother1') return 'leon';
   if (a.officer) return 'officer';
   const look = a.look;
+  // someone taking a punch or a round is always drawn with a skeleton, so the reaction can be seen
+  if (a.react && /^p\d+$/.test(a.id)) return look?.female ? 'civilian' : (look?.outfit ?? 0) % 2 ? 'tracksuit' : 'jacket';
   if (!/^p\d+$/.test(a.id) || !look || look.hood || look.bag || look.cap ||
       ['umbrella','phone','point','wave','talk','hands'].includes(a.pose)) return null;
   if (look.female) return look.style === 2 ? 'civilian' : null;
@@ -173,13 +176,18 @@ export class RiggedPeople {
       const bone = body.getObjectByName(name);
       return {bone,index, rest: bone?.quaternion.clone()};
     }).filter(joint => joint.bone);
-    return {role, root, body, prop, actions, mixer, reactionJoints, streetMaterials, head:body.getObjectByName('Head'), lock: 0, still: 0};
+    // the clip's own pose, saved after each update and put back before the next whenever IK or a reaction has moved
+    // bones on top of it (the mixer only writes a value when it changes, so a still clip wouldn't undo them)
+    const base = []; body.traverse(n => { if (n.isBone) base.push([n, n.quaternion.clone()]); });
+    return {role, root, body, prop, actions, mixer, reactionJoints, streetMaterials, head:body.getObjectByName('Head'), lock: 0, still: 0, base, extra: false};
   }
   // pick the clip for an actor's state; one-shots (jump, kick, fidgets) hold until they finish
   choose(slot, a, R, dt) {
     const speed = a.gaitSpeed ?? a.speedNow ?? a.speed ?? 0;
     if (a.previewClip) return { clip: R === NPC ? a.previewClip : (slot.actions[a.previewClip] ? a.previewClip : R.idle), scale: 1 };
     slot.lock = Math.max(0, slot.lock - dt);
+    if (a.react) return { clip: R.idle, scale: 1 };
+    if (a.kickT > 0 && a.kickClip && slot.actions[a.kickClip] && slot.clip !== a.kickClip) { a.kickT = 0; return { clip: a.kickClip, scale: 1.5, hold: true }; }
     if (a.jumpTime > 0 && R.jump && slot.clip !== R.jump) return { clip: R.jump, scale: R.jumpScale || 1, hold: true };
     if (a.hitTime > 0 && R.hit && slot.clip !== R.hit) return { clip: R.hit, scale: R.hitScale || 1, hold: true };
     if (slot.lock > 0) return { clip: slot.clip, scale: slot.scale };
@@ -191,7 +199,7 @@ export class RiggedPeople {
     if (speed > .1) { slot.still = 0; return { clip: R.walk, scale: Math.max(.65, Math.min(1.6, speed / R.walkSpeed)) }; }
     // standing: the hero fidgets now and then (nod, laugh, look round, take a call)
     slot.still += dt;
-    if (!R.source && R.fidgets && slot.still > 9 + (slot.wait ??= Math.random() * 8)) {
+    if (!R.source && R.fidgets && !a.armed && slot.still > 9 + (slot.wait ??= Math.random() * 8)) {
       slot.still = 0; slot.wait = Math.random() * 10;
       return { clip: R.fidgets[Math.floor(Math.random() * R.fidgets.length)], scale: 1, hold: true };
     }
@@ -204,7 +212,7 @@ export class RiggedPeople {
       const role = roleOf(a);
       if (!role || !ROLES[role]) continue;
       const distance = (a.x-cam.x)**2 + (a.z-cam.z)**2;
-      if (distance < ROLES[role].range ** 2) candidates.push({a,role,distance: ROLES[role].hero ? -1 : distance});
+      if (distance < ROLES[role].range ** 2 || (a.react && distance < 60 ** 2)) candidates.push({a,role,distance: ROLES[role].hero ? -1 : a.react ? distance * 0.02 : distance});
     }
     candidates.sort((a,b) => a.distance-b.distance);
     const visible = new Set();
@@ -247,8 +255,13 @@ export class RiggedPeople {
       if (slot.prop) slot.prop.visible = pick.clip === R.weaponHold;
       // Restore the sampled pose before the mixer evaluates the next frame.
       if (slot.braced) for (const j of slot.reactionJoints) j.bone.quaternion.copy(j.rest);
+      if (slot.extra) { for (const [bone, q] of slot.base) bone.quaternion.copy(q); slot.extra = false; }
       slot.mixer.update(dt);
-      slot.braced = a.brace > 0;
+      if (R.hero || a.react || slot.reacting) for (const e of slot.base) e[1].copy(e[0].quaternion);
+      // the brothers' arms (weapons, fists: combat.js); everyone else's reaction to a blow
+      if (R.hero) { if (this.onHero?.(slot, a, dt) !== false) slot.extra = true; }
+      else if (a.react || slot.reacting) { applyReaction(slot, a); slot.extra = true; }
+      slot.braced = a.brace > 0 && !a.react;
       if (slot.braced) {
         const angles = [-.28,-.85,-1.05,-.48,.68,.46];
         slot.reactionJoints.forEach(({bone,rest,index:i}) => {

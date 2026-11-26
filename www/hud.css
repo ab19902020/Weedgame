@@ -173,3 +173,18 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #fuelGauge[data-power="EV"]::before{content:'ϟ';color:#9de8b5;font-size:16px}
 #fuelGauge[data-power="EV"] svg{display:none}
 #bBeam{right:calc(max(14px,env(safe-area-inset-right)) + var(--u)*206px);bottom:calc(var(--u)*84px)}
+
+/* weapons: the wheel, the ammo count, the Fire button */
+#bWeapon{right:calc(max(14px,env(safe-area-inset-right)) + var(--u)*24px);bottom:calc(var(--u)*114px)}
+#btns #bHit.fire{background:radial-gradient(circle at 50% 30%,#7a2a22e6,#3a120ee6 75%);border-color:#ff9a7a}
+#ammo{position:absolute;right:calc(max(14px,env(safe-area-inset-right)) + var(--u)*24px);bottom:calc(var(--u)*178px);background:#0d1512d0;color:#fcf5db;border:1px solid #6d8a7d;border-radius:12px;padding:3px 10px;font:700 13px system-ui;font-variant-numeric:tabular-nums;pointer-events:none}
+#ammo.empty{color:#ff9a7a;border-color:#ff9a7a}
+#wheel{position:fixed;inset:0;z-index:8;display:grid;place-items:center;background:radial-gradient(circle,#0008 0,#000a 70%);pointer-events:auto}
+#wheel[hidden]{display:none}
+#wheel .ring{position:relative;width:min(78vh,78vw,420px);height:min(78vh,78vw,420px);border-radius:50%;background:radial-gradient(circle,#10201ae0 0 30%,#0c1813d8 31% 70%,#0000 71%);border:2px solid #6d8a7d66}
+#wheel .ring button{position:absolute;transform:translate(-50%,-50%);width:22%;height:22%;border-radius:50%;border:1px solid #6d8a7d;background:#17332ce8;color:#fcf5db;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;font:600 9px system-ui;padding:2px;touch-action:none}
+#wheel .ring button svg{width:58%;height:40%;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linejoin:round}
+#wheel .ring button b{font-size:8.5px;line-height:1.05;text-align:center;max-width:95%}
+#wheel .ring button em{position:absolute;top:4px;right:9px;font:700 8px system-ui;opacity:.6;font-style:normal}
+#wheel .ring button.on{background:#2f7a5aee;border-color:#9de8b5;box-shadow:0 0 0 3px #9de8b544}
+#wheel .wName{position:absolute;color:#fcf5db;font:700 16px system-ui;text-shadow:0 1px 4px #000;pointer-events:none}

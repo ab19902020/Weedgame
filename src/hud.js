@@ -6,6 +6,7 @@ import { GameMenu } from './gameMenu.js';
 import { Navigation, distanceLabel } from './navigation.js';
 import { STATES } from './weather.js';
 import { MapView, siteIcon, siteDot } from './mapView.js';
+import { WEAPONS, BY_KEY } from './weaponsData.js';
 
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 export const TESTSPOTS = [
@@ -24,6 +25,13 @@ const ICON = {
   exit: svg('<path d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"/>'),
   bus: svg('<rect x="5" y="3" width="14" height="15" rx="2"/><path d="M5 11h14M8 21v-3M16 21v-3"/><circle cx="8.5" cy="14.5" r=".6"/><circle cx="15.5" cy="14.5" r=".6"/>'),
   hand: svg('<path d="M7 12V6.5a1.5 1.5 0 013 0V11M10 10V4.5a1.5 1.5 0 013 0V11M13 10V5.5a1.5 1.5 0 013 0V12M16 11V8.5a1.5 1.5 0 013 0V14c0 4-3 7-7 7-3 0-5-2-6.5-4L3 13.5a1.5 1.5 0 012.4-1.8L7 14"/>'),
+  gun: svg('<path d="M3 8h15l1 2h2v2h-6l-1 1h-3l-1 6H6l1-6H3z"/>'),
+  pistol: svg('<path d="M3 8h15l1 2h2v2h-6l-1 1h-3l-1 6H6l1-6H3z"/>'),
+  smg: svg('<path d="M2 9h17v3h-5l-1 2v4h-2l-1-4H8l-1 4H5l1-5H2zM19 10.5h3"/>'),
+  rifle: svg('<path d="M1 10h4l1-2h12v2h5v2H17l-2 1v3h-2l-1-3H8l-2 3H3l1-3H1z"/>'),
+  shotgun: svg('<path d="M1 10h5l1-1h15v2.5H8l-1 1.5H4l-1 3H1zM9 11.5v2.5h6"/>'),
+  sniper: svg('<path d="M1 11h4l1-2h12v2h5v1.5H17l-2 1v3h-2l-1-3H8l-2 3H3l1-3H1zM8 5h8v3H8z"/>'),
+  knife: svg('<path d="M3 15l12-9c2-1.3 4.5-.5 5.5.5L8 16zM8 16l-3 3-2-2 2-2"/>'),
   fist: svg('<path d="M6 10V7.5a1.5 1.5 0 013 0V10M9 9.5V6.5a1.5 1.5 0 013 0V10M12 9.5V7a1.5 1.5 0 013 0v3M15 10V8.5a1.5 1.5 0 013 0V14c0 3.5-2.5 6-6 6H11c-3 0-5-2-5-5v-5z"/>'),
   run: svg('<circle cx="14" cy="4.5" r="2"/><path d="M5 12l3-4h5l2 4 3 1M11 8l-2 6 4 3-1 5M9 14l-3 6"/>'),
   jump: svg('<circle cx="12" cy="4" r="2"/><path d="M12 7v7M8 10l4-2 4 2M9 21l3-7 3 7M4 17h3M17 17h3"/>'),
@@ -51,6 +59,8 @@ export class Hud {
           <button id="bUse" class="ctx"><i>${ICON.door}</i><span>Enter</span></button>
           <button id="bPickup" class="mid" aria-label="Pick up">${ICON.hand}<b>Pick up</b></button>
           <button id="bHit" class="mid" aria-label="Hit">${ICON.fist}<b>Hit</b></button>
+          <button id="bWeapon" class="mid" aria-label="Weapons">${ICON.gun}<b>Weapons</b></button>
+          <div id="ammo" hidden></div>
           <button id="bRun" class="big" aria-label="Run">${ICON.run}<b>Run</b></button>
           <button id="bJump" class="big" aria-label="Jump">${ICON.jump}<b>Jump</b></button>
         </div>
@@ -62,6 +72,7 @@ export class Hud {
         </div>
         <div class="arrows" hidden><div id="sLeft" class="arrow" role="button" aria-label="Steer left">${ICON.left}</div><div id="sRight" class="arrow" role="button" aria-label="Steer right">${ICON.right}</div></div>
       </div>
+      <div id="wheel" hidden><div class="ring"></div><p class="wName"></p></div>
       <div id="speedo" hidden><b>0</b><small>MPH</small><i></i></div>
       <div id="map" hidden><canvas id="mapC"></canvas><div class="maptools"><div class="atlasTitle">Green County <em>Road Atlas</em></div><button id="mClose">Close</button></div>
       <div class="atlasPlaces"><select id="mPlaces" aria-label="Route to a place"><option value="">Route to a place…</option></select><button id="mFit" hidden>Route</button><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
@@ -71,7 +82,10 @@ export class Hud {
     this.mini = root.querySelector('#miniC').getContext('2d');
     this.el = id => root.querySelector('#' + id);
     const I = G.input;
-    for(const [id,action] of [['bJump','jump'],['bHit','hit'],['bPickup','pickup']])I.bindButton(this.el(id),action);
+    for(const [id,action] of [['bJump','jump'],['bPickup','pickup']])I.bindButton(this.el(id),action);
+    I.bindButton(this.el('bHit'), 'hit', true);     // held: an automatic keeps firing
+    this.el('bWeapon').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); this.toggleWheel(); });
+    this.buildWheel();
     I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn', true);
     I.bindButton(this.el('bBeam'),'beam'); I.bindButton(this.el('bHand'), 'brake', true); I.bindPedals(this.el('pGas'), this.el('pBrake')); I.bindArrows(this.el('sLeft'), this.el('sRight'));
     I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
@@ -120,7 +134,43 @@ export class Hud {
   renderFeed() { const now = performance.now(); this.feedItems = this.feedItems.filter(f => now - f.at < 14000); this.el('feed').innerHTML = this.feedItems.map(f => `<div>${esc(f.t)}</div>`).join(''); }
   fade(text) { const f = this.el('fade'); f.textContent = text || ''; f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }
   // ------------------------------------------------------------------ per frame
+  // ---------------------------------------------------------------- weapon wheel (combat.js)
+  buildWheel() {
+    const ring = this.el('wheel').querySelector('.ring'), G = this.G;
+    {
+      const items = [{ key: null, name: 'Fists', icon: 'fist' }, ...WEAPONS];
+      ring.innerHTML = items.map((w, k) => {
+        const a = (k / items.length) * Math.PI * 2 - Math.PI / 2, r = 41;
+        return `<button data-k="${w.key ?? ''}" style="left:${50 + Math.cos(a) * r}%;top:${50 + Math.sin(a) * r}%">${ICON[w.icon] || ICON.gun}<b>${w.name}</b><em>${k}</em></button>`;
+      }).join('');
+      ring.querySelectorAll('button').forEach(b => {
+        b.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); G.combat?.select(b.dataset.k || null); this.toggleWheel(false); });
+        b.addEventListener('pointerenter', () => { this.el('wheel').querySelector('.wName').textContent = b.querySelector('b').textContent; });
+      });
+    }
+    this.el('wheel').addEventListener('pointerdown', e => { if (e.target.id === 'wheel') this.toggleWheel(false); });
+  }
+  toggleWheel(open = this.el('wheel').hidden) {
+    const el = this.el('wheel'); if (this.G.brothers.me.vehicle) open = false;
+    el.hidden = !open; this.wheelOpen = open;
+    if (open) { const k = this.G.brothers.me.weapon || ''; el.querySelectorAll('.ring button').forEach(b => b.classList.toggle('on', b.dataset.k === k)); el.querySelector('.wName').textContent = this.G.combat?.status()?.name || 'Fists'; }
+  }
+  weaponChanged() {
+    const st = this.G.combat?.status(), hit = this.el('bHit');
+    hit.innerHTML = st && !st.melee ? `${ICON.gun}<b>Fire</b>` : st ? `${ICON.knife}<b>Slash</b>` : `${ICON.fist}<b>Hit</b>`;
+    hit.classList.toggle('fire', !!st && !st.melee);
+    this.el('bWeapon').innerHTML = `${st ? ICON[BY_KEY[st.key].icon] || ICON.gun : ICON.gun}<b>${st ? st.name.split(' ').pop() : 'Weapons'}</b>`;
+    this._ammo = null; this.updateAmmo();
+    if (st) this.toast(st.name + (st.melee ? '' : ' · unlimited ammo'), 1.5);
+  }
+  updateAmmo() {
+    const st = this.G.combat?.status(), el = this.el('ammo');
+    const t = st ? (st.melee ? st.name : st.reloading ? 'Reloading…' : `${st.mag} / ∞`) : '';
+    if (t === this._ammo) return; this._ammo = t;
+    el.hidden = !t; el.textContent = t; el.classList.toggle('empty', !!st && !st.melee && st.mag === 0);
+  }
   update(dt) {
+    if (!this.el('btns').querySelector('.foot').hidden) this.updateAmmo();
     const G = this.G, me = G.brothers.me, I = G.input;
     if (I.consume('map')) this.toggleMap();
     if (I.consume('dev')) this.toggleDev();
@@ -146,7 +196,8 @@ export class Hud {
     this.el('btns').querySelector('.arrows').hidden=!(drive&&steer==='Buttons');
     I.wheelEl.hidden=!(drive&&steer==='Steering wheel');
     I.rest.hidden=drive||ride;
-    for(const id of ['bJump','bHit','bPickup','bRun'])this.el(id).hidden=drive||ride;
+    for(const id of ['bJump','bHit','bPickup','bRun','bWeapon'])this.el(id).hidden=drive||ride;
+    if(drive||ride)this.el('ammo').hidden=true; else this.updateAmmo();
     this.el('bSwap').hidden=ride;
     if(drive!==this._wasDriving){this._wasDriving=drive;if(drive&&steer==='Tilt')I.calibrateTilt();}
     if(drive){

@@ -6,7 +6,8 @@
 // pedals: accelerator and brake, which you can rock between without lifting. Brake held at a standstill engages
 // reverse. Drag the free screen to look around. Handling assists (Easy or Realistic) are in carPhysics.js.
 const STICK_R = 58, WHEEL_R = 96;
-const KEYMAP = { ShiftLeft: 'run', ShiftRight: 'run', KeyF: 'use', Enter: 'use', KeyL: 'beam', KeyH: 'horn', Space: 'brake', Tab: 'swap', KeyM: 'map', KeyP: 'dev', Backquote: 'dev', KeyC: 'camera', KeyV: 'camera' };
+const KEYMAP = { ShiftLeft: 'run', ShiftRight: 'run', KeyF: 'use', Enter: 'use', KeyL: 'beam', KeyH: 'horn', Space: 'brake', Tab: 'swap', KeyM: 'map', KeyP: 'dev', Backquote: 'dev', KeyC: 'camera', KeyV: 'camera',
+  KeyJ: 'hit', KeyR: 'reload', KeyX: 'wheel', Digit0: 'weapon0', Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3', Digit4: 'weapon4', Digit5: 'weapon5', Digit6: 'weapon6', Digit7: 'weapon7', Digit8: 'weapon8', Digit9: 'weapon9', Minus: 'weapon10' };
 export class Input {
   constructor(root) {
     this.move = { x: 0, y: 0 }; this.look = { dx: 0, dy: 0 };

@@ -40,7 +40,10 @@ export class Controller {
       else{
         if(tap(2))I.pressed.add('jump');
         if(tap(1)||tap(7))I.pressed.add('hit');
-        if(tap(4)||tap(5))I.pressed.add('pickup');
+        this.padFire=!!(buttons[7]||buttons[1]);
+        if(tap(4))I.pressed.add('wheel');
+        if(tap(5))I.pressed.add('pickup');
+        if(tap(10))I.pressed.add('reload');
         if(tap(6))H.toast('Carrying '+this.bags[G.brothers.active]+' parcels');
       }
     }
@@ -55,16 +58,11 @@ export class Controller {
       }
     }
     const jump=I.consume('jump'),hit=I.consume('hit'),pickup=I.consume('pickup');
+    // Hit punches, slashes or fires (combat.js); held, it keeps an automatic firing
+    this.hitPressed=hit&&!me.vehicle;this.hitHeld=!me.vehicle&&(I.held.has('hit')||this.padFire);
     if(me.vehicle)return;
     if(jump && !(a.jumpTime>0) && !me.swimming)a.jumpTime=.68;
     if(a.jumpTime>0){a.jumpTime=Math.max(0,a.jumpTime-dt);const t=1-a.jumpTime/.68;a.y=me.y+3.2*t*(1-t);}
-    if(hit && !(a.hitTime>0)){
-      a.hitTime=.32;
-      const target=G.peds.near(me.x,me.z,1.7).find(p=>Math.cos(me.heading)*(p.x-me.x)+Math.sin(me.heading)*(p.z-me.z)>0);
-      G.audio?.play(target ? 'punch' : 'swing', me.x, me.y + 1, me.z, target ? .55 : .16);
-      if(target){G.peds.strike(target,me.heading);G.peds.disturb(me.x,me.z,12,'hit');}
-    }
-    if(a.hitTime>0){a.hitTime-=dt;a.pose='point';}
     if(pickup){
       const item=this.items.find(o=>o.visible && Math.hypot(o.position.x-me.x,o.position.z-me.z)<2.3);
       if(item){item.visible=false;this.bags[B.active]++;}G.hud.toast(item?'Parcel picked up':'No parcel within reach');

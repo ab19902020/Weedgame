@@ -67,15 +67,15 @@ export class Police {
     return inc;
   }
   onVehicleHit({ by, other, speed }) {
-    if (other.crashed || other.kind === 'police' && by.player) { if (other.kind === 'police') this.onOffence('hit a police car', other.x, other.z, 2); return; }
+    if (other.crashed || other.kind === 'police' && by.player) return;     // a crash is for the insurers, not a chase
     if (speed < 3) return;
     other.crashed = true; other.v = 0; other.hazard = true;
     const inc = this.createIncident('rtc', other.x, other.z, [other.id, by.id], { byPlayer: by.player, label: 'Road traffic collision' });
-    if (by.player) this.onOffence('collision', other.x, other.z, speed > 9 ? 2 : 1, inc);
+
   }
   onPedHit({ p, v, speed }) {
     this.createIncident('pedestrian', p.x, p.z, [v.id], { byPlayer: v.player, label: 'Pedestrian struck' });
-    if (v.player) this.onOffence('struck a pedestrian', p.x, p.z, 2);
+
   }
   // staged NPC collision (also happens naturally every few minutes near the player)
   stageCollision() {
@@ -316,6 +316,19 @@ export class Police {
     for (const o of this.officers) if (Math.hypot(o.x - x, o.z - z) < r * 0.85) return o;
     return null;
   }
+  // a crime nobody in uniform saw, reported in (a shop's alarm, a 999 call about gunfire): the nearest free cars
+  // are sent on blue lights; a pursuit once they're on you
+  callIn(what, x, z, level = 2, n = 2) {
+    const G = this.G, P = this.player;
+    const cars = this.units.filter(v => v.def && v.status !== 'onscene' && !(P.backup || []).includes(v) && v !== P.unit)
+      .sort((a, b) => Math.hypot(a.x - x, a.z - z) - Math.hypot(b.x - x, b.z - z)).slice(0, n);
+    if (!cars.length && !P.unit) { G.hud.feed(`Reported to the police (${what}) · no units free`); return; }
+    for (const c of cars) { c.status = 'pursuit'; c.siren = true; }
+    if (P.state === 'pursuit') { P.backup = [...(P.backup || []), ...cars]; P.level = Math.max(P.level, level); return; }
+    P.level = Math.max(P.level, level); P.what = what; P.unit = cars[0]; P.backup = cars.slice(1); P.t = 0; P.lost = 0; P.spotted = false;
+    P.state = level >= 2 ? 'pursuit' : 'stop';
+    G.hud.banner(level >= 2 ? `999 call: ${what} · police on the way — get away` : `Reported: ${what} · an officer is coming to have a word`, 'pursuit');
+  }
   onOffence(what, x, z, level, inc) {
     const w = this.witnessed(x, z);
     if (!w) { this.G.hud.feed(`Nobody from the police saw that (${what}).`); return; }
@@ -332,8 +345,8 @@ export class Police {
     P.t += dt;
     const me = G.brothers.me, speed = G.brothers.speedNow || 0;
     const u = P.unit;
-    // police car chases / follows
-    if (u && u.def && (P.state === 'pursuit' || P.state === 'stop')) {
+    // police cars chase / follow (the first one, and any backup sent after a 999 call)
+    for (const u of [P.unit, ...(P.backup || [])]) if (u && u.def && (P.state === 'pursuit' || P.state === 'stop')) {
       u.siren = true;
       if (!u.offroad && (u._rt = (u._rt || 0) - dt) <= 0) {
         u._rt = 2; const n = G.net.nearest(me.x, me.z, 120, e => G.net.flags[e] & 16);
@@ -366,8 +379,11 @@ export class Police {
     } else if (P.state === 'talking') {
       if (P.t > 6) this.resolve('Free to go.');
     } else if (P.state === 'pursuit') {
-      const seen = dist < 180;
-      P.lost = seen ? 0 : (P.lost || 0) + dt;
+      const seen = [P.unit, ...(P.backup || [])].some(c => c && Math.hypot(c.x - me.x, c.z - me.z) < 180);
+      if (seen) P.spotted = true;
+      // they can't lose you before they've found you; but if they never do, the search is called off
+      P.lost = seen || !P.spotted ? 0 : (P.lost || 0) + dt;
+      if (!P.spotted && P.t > 150) { this.resolve('The police searched the area but didn’t find you.'); return; }
       if (dist < 7 && speed < 2.5) { P.caught = (P.caught || 0) + dt; if (P.caught > 2.5) { P.state = 'detained'; P.t = 0; G.hud.banner('Detained · interviewed and released with a caution (fictional)', 'talk'); G.hud.fade('Released'); } }
       else P.caught = 0;
       // on foot after leaving the car: an officer gets out and gives chase
@@ -386,7 +402,8 @@ export class Police {
     if (u && u.def) { u.siren = false; u.status = 'patrol'; u.dest = this.beatNode(u); }
     if (u && u.fromCar) { u.gone = true; }   // an officer who left the car to chase goes back to it
     const car = this.chaseCar || (u && u.def ? u : null);
-    if (car) { car.siren = false; car.status = 'patrol'; car.dest = this.beatNode(car); if (car.offroad) { const n = this.G.net.nearest(car.x, car.z, 400, e => this.G.net.flags[e] & 16); if (n) this.rejoin(car, n, true); } }
+    for (const c of [car, ...(P.backup || [])]) if (c) { c.siren = false; c.status = 'patrol'; c.dest = this.beatNode(c); if (c.offroad) { c.offroad = false; const n = this.G.net.nearest(c.x, c.z, 400, e => this.G.net.flags[e] & 16); if (n) this.rejoin(c, n, true); } }
+    P.backup = []; P.spotted = false;
     this.chaseCar = null; P.away = 0;
     P.state = 'none'; P.level = 0; P.unit = null; P.still = 0; P.caught = 0; P.lost = 0;
     this.G.hud.banner(msg, 'clear', 4);
