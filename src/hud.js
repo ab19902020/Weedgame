@@ -64,7 +64,7 @@ export class Hud {
       <div id="map" hidden><canvas id="mapC"></canvas><div class="maptools"><div class="atlasTitle">Green County <em>Road Atlas</em></div><button id="mClose">Close</button></div>
       <div class="atlasPlaces"><select id="mPlaces" aria-label="Route to a place"><option value="">Route to a place…</option></select><button id="mFit" hidden>Route</button><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
       <div class="atlasFooter"><span id="mInfo"></span><button id="mClear">Clear waypoint</button></div></div>
-      <div id="dev" class="panel" hidden></div>
+      <div id="dev" class="panel" role="dialog" aria-labelledby="devTitle" hidden></div>
       <div id="perf" hidden></div>`;
     this.mini = root.querySelector('#miniC').getContext('2d');
     this.el = id => root.querySelector('#' + id);
@@ -111,7 +111,7 @@ export class Hud {
     this.perfOn = G.Q.has('perf');
     this.el('perf').hidden = !this.perfOn;
   }
-  toast(t, secs = 3) { const e = this.el('toast'); e.textContent = t; e.hidden = false; clearTimeout(this._tt); this._tt = setTimeout(() => e.hidden = true, secs * 1000); }
+  toast(t, secs = 3) { const panel = this.el('dev'); if (!panel.hidden && panel.querySelector('output')) panel.querySelector('output').textContent = t; const e = this.el('toast'); e.textContent = t; e.hidden = false; clearTimeout(this._tt); this._tt = setTimeout(() => e.hidden = true, secs * 1000); }
   banner(t, kind, secs) { const e = this.el('banner'); e.textContent = t; e.className = kind || ''; e.hidden = false; clearTimeout(this._bt); if (secs || kind === 'clear') this._bt = setTimeout(() => e.hidden = true, (secs || 4) * 1000); }
   feed(t) { this.feedItems.unshift({ t, at: performance.now() }); this.feedItems = this.feedItems.slice(0, 4); this.renderFeed(); }
   renderFeed() { const now = performance.now(); this.feedItems = this.feedItems.filter(f => now - f.at < 14000); this.el('feed').innerHTML = this.feedItems.map(f => `<div>${esc(f.t)}</div>`).join(''); }
@@ -121,6 +121,7 @@ export class Hud {
     const G = this.G, me = G.brothers.me, I = G.input;
     if (I.consume('map')) this.toggleMap();
     if (I.consume('dev')) this.toggleDev();
+    if (!this.el('dev').hidden && performance.now() >= (this.nextDevUpdate || 0)) { this.refreshDev(); this.nextDevUpdate = performance.now() + 1000; }
     const inCar = !!me.vehicle;
     const near = !inCar && G.brothers.nearestVehicle();
     const door=!inCar&&!G.transit.ride?G.interiors?.prompt:null;   // a building's front door (interiors.js)
@@ -324,35 +325,140 @@ export class Hud {
   }
   // ------------------------------------------------------------------ developer panel
   toggleDev() {
-    const d = this.el('dev'); d.hidden = !d.hidden; if (d.hidden) return;
+    const d = this.el('dev');
+    d.hidden = !d.hidden;
+    if (d.hidden) { this.el('bDev').focus({preventScroll:true}); return; }
+    if (d.childElementCount) { this.refreshDev(); this.el('devJump').focus(); return; }
     const G = this.G, w = G.world;
-    const btn = (label, fn, act) => { const b = document.createElement('button'); b.textContent = label; b.dataset.act = act || slug(label); b.onclick = e => { e.stopPropagation(); fn(); this.toggleDev(); this.toggleDev(); }; return b; };
-    d.innerHTML = '<button class="x" id="devX">×</button><h3>Developer</h3>';
-    d.querySelector('#devX').onclick = e => { e.stopPropagation(); d.hidden = true; };
-    const row = (title, items) => { const r = document.createElement('div'); r.className = 'row'; r.innerHTML = `<b>${title}</b>`; for (const it of items) r.append(it); d.append(r); };
+    d.innerHTML = `<header><h3 id="devTitle">Developer console</h3><button id="devX" aria-label="Close developer console">Close</button></header>
+      <select id="devJump" aria-label="Jump to section"><option value="">Jump to section…</option></select>
+      <div class="devScroll"></div><output aria-live="polite">Ready</output>`;
+    const jump = this.el('devJump'), body = d.querySelector('.devScroll'), status = d.querySelector('output');
+    this.el('devX').onclick = () => this.toggleDev();
+    d.onkeydown = e => {
+      if (['Escape','KeyP','Backquote'].includes(e.code)) { e.preventDefault(); if (!e.repeat) this.toggleDev(); }
+      if (e.key === 'Tab') {
+        const items = d.querySelectorAll('button,select'), first = items[0], last = items[items.length-1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+      e.stopPropagation();
+    };
+    let group;
+    const section = title => {
+      group = document.createElement('section');
+      const heading = document.createElement('h4'); heading.textContent = title; heading.tabIndex = -1;
+      group.append(heading); body.append(group); jump.add(new Option(title, String(body.children.length-1)));
+    };
+    jump.onchange = () => {
+      if (jump.value === '') return;
+      const selected = body.children[Number(jump.value)], heading = selected.firstChild;
+      (selected.querySelector('button') || heading).focus({preventScroll:true}); heading.scrollIntoView({block:'start'}); jump.value = '';
+    };
+    const dynamic = [];
+    const btn = (label, fn, act) => {
+      const b = document.createElement('button');
+      if (typeof label === 'function') { const update = () => { b.textContent = label(); }; dynamic.push(update); update(); }
+      else b.textContent = label;
+      b.dataset.act = act || slug(b.textContent);
+      b.onclick = () => { status.textContent = b.textContent; fn(); this.refreshDev(); };
+      return b;
+    };
+    const row = (title, items) => {
+      const r = document.createElement('div'), label = document.createElement('b');
+      r.className = 'row'; label.textContent = title; r.append(label,...items); group.append(r);
+    };
+    section('Live diagnostics');
+    const readout = document.createElement('p'); group.append(readout);
+    this.refreshDev = () => {
+      const me = G.brothers.me, animals = G.wildlife.sim.list;
+      readout.textContent = [
+        G.backend + ' · ' + G.quality + ' quality · ' + (G.perf.samples.at(-1)?.fps?.toFixed(1) ?? '…') + ' FPS',
+        me.short + ' · ' + (G.traffic.byId.get(me.vehicle)?.model || 'on foot') + ' · X ' + Math.round(me.x) + ' / Z ' + Math.round(me.z),
+        G.traffic.list.length + ' vehicles · ' + G.peds.list.length + ' pedestrians · ' + animals.length + ' animals',
+        'Weather ' + w.stateName() + ' · seed ' + w.s.seed + ' · police ' + G.police.player.state
+      ].join('\n');
+      for (const update of dynamic) update();
+    };
+    section('Characters & animation');
     const rigs = G.people.rigs;
     row('Character preview', ['cal', 'leon', 'officer', 'civilian', 'off'].map(role => btn(role, () => { rigs.previewRole = role === 'off' ? null : role; if (ROLES[role]?.hero) rigs.previewClip = ROLES[role].idle; }, 'preview-' + role)));
     for (const hero of ['cal', 'leon']) row(hero === 'cal' ? 'Cal' : 'Leon', ROLES[hero].clips.map(clip => btn(clip.replace(/_0?(\d)$/, ' $1').replace(/_/g, ' '), () => { rigs.previewRole = hero; rigs.previewClip = clip; }, hero + '-' + clip)));
     row('Animation', ['Idle', 'Walk', 'Run', 'Jump', 'Swim', 'WeaponHold'].map(clip => btn(clip, () => { if (!rigs.previewRole || ROLES[rigs.previewRole]?.hero) rigs.previewRole = 'civilian'; rigs.previewClip = clip; }, 'anim-' + clip.toLowerCase())));
-    row('Money & fuel', [btn('Add £500', () => { const b = G.brothers.me; b.cash = (b.cash ?? 1500) + 500; this.toast(`${b.short} has £${b.cash.toFixed(2)}`); }), btn('Fill this car', () => { const v = G.brothers.vehicleOf(G.brothers.me); if (v) { v.fuel = 1; this.toast('Tank filled'); } }), btn('Empty this car', () => { const v = G.brothers.vehicleOf(G.brothers.me); if (v) v.fuel = 0.02; })]);
+    section('Vehicles & fuel');
+    const fuel = amount => {
+      const v = G.brothers.vehicleOf(G.brothers.me);
+      if (!v) return this.toast('Enter a vehicle to test fuel');
+      v.fuel = amount; G.save.markVehicle(v); this.toast(amount === 1 ? 'Tank filled' : 'Tank set to 2%');
+    };
+    row('Money & fuel', [btn('Add £500', () => { const b = G.brothers.me; b.cash = (b.cash ?? 1500) + 500; this.toast(`${b.short} has £${b.cash.toFixed(2)}`); }), btn('Fill this car', () => fuel(1)), btn('Empty this car', () => fuel(.02))]);
+    const vehicles = {dirtbike:'Dirt bike', motorcycle:'Motorcycle', moped:'Moped', escooter:'E-scooter', rangerover:'Range Rover', sports:'Sports car', hatch:'Hatchback', saloon:'Saloon', estate:'Estate', suv:'SUV', coupe:'Coupé', hothatch:'Hot hatch', van:'Van'};
+    row('Spawn nearby', Object.entries(vehicles).map(([model,label]) => btn(label, () => {
+      const me = G.brothers.me, h = me.heading || 0;
+      if (me.inside || G.transit.ride) return this.toast('Go outside and leave public transport first');
+      for (const offset of [7,-7,13,-13]) {
+        const x = me.x + Math.cos(h)*offset, z = me.z + Math.sin(h)*offset;
+        const y = G.tiles.ground(x,z,me.y+1);
+        if (y == null || G.tiles.insideBuilding(x,z,y) || G.traffic.list.some(v => Math.hypot(v.x-x,v.z-z) < (v.len+5)/2)) continue;
+        G.traffic.add({kind:'parked',model,paint:model==='rangerover'?0x23382c:0xb5121b,x,y,z,heading:h,parked:true,free:true});
+        return this.toast(label+' delivered');
+      }
+      this.toast('No clear space nearby. Move to an open road.');
+    }, 'spawn-'+model)));
+    row('Vehicle', [btn('Repair', () => { const v = G.traffic.byId.get(G.brothers.me.vehicle) || G.brothers.nearestVehicle(8); if (v) { v.dmg = [0, 0, 0, 0]; G.save.markVehicle(v); this.toast('Repaired'); } else this.toast('No vehicle nearby'); }, 'repair')]);
+    section('Weather & time');
     row('Time', [6, 8, 12, 16, 18.5, 21, 0].map(h => btn(String(h).replace('.5', ':30'), () => w.setHour(h), 'time-' + h)));
-    row('Speed', [1, 30, 120, 600].map(s => btn(s + '×' + (w.s.scale === s ? ' ✓' : ''), () => w.s.scale = s, 'speed-' + s)));
-    row('Weather', Object.keys(STATES).map(k => btn(k + (w.stateName() === k ? ' ✓' : ''), () => w.force(k), 'weather-' + k)));
+    row('Speed', [1, 30, 120, 600].map(s => btn(() => s + '×' + (w.s.scale === s ? ' ✓' : ''), () => w.s.scale = s, 'speed-' + s)));
+    row('Weather', Object.keys(STATES).map(k => btn(() => k + (w.stateName() === k ? ' ✓' : ''), () => w.force(k), 'weather-' + k)));
     row('Surfaces', [btn('Dry', () => { w.s.wet = 0; w.s.puddle = 0; }), btn('Soak', () => { w.s.wet = 1; w.s.puddle = 0.9; })]);
-    row('World', [btn('Stage collision nearby', () => { const i = G.police.stageCollision(); this.toast(i ? 'Collision staged · watch for the response' : 'No suitable traffic nearby'); }),
+    section('Emergency response');
+    row('Incidents', [btn('Stage collision nearby', () => { const i = G.police.stageCollision(); this.toast(i ? 'Collision staged · watch for the response' : 'No suitable traffic nearby'); }),
       btn('Stage breakdown nearby', () => { const i = G.police.stageBreakdown(); this.toast(i ? 'A car has broken down · watch for the patrol and recovery truck' : 'No suitable traffic nearby'); }),
-      btn('Perf overlay', () => { this.perfOn = !this.perfOn; this.el('perf').hidden = !this.perfOn; }), btn('Save perf log', () => G.perf.export()),
-      btn(G.perf.fly.active ? 'Stop flythrough' : 'Perf flythrough', () => G.perf.fly.active ? G.perf.fly.finish(false) : G.perf.fly.start(), 'perf-flythrough'),
+    ]);
+    section('Performance & simulation');
+    row('Renderer', [btn('Perf overlay', () => { this.perfOn = !this.perfOn; this.el('perf').hidden = !this.perfOn; }), btn('Save perf log', () => G.perf.export()),
+      btn(() => G.perf.fly.active ? 'Stop flythrough' : 'Perf flythrough', () => G.perf.fly.active ? G.perf.fly.finish(false) : G.perf.fly.start(), 'perf-flythrough'),
       btn(G.backend === 'WebGPU' ? 'Use WebGL2' : 'Retry WebGPU', () => G.backend === 'WebGPU' ? G.useWebGL() : G.retryWebGPU())]);
-    row('Vehicle', [btn('Repair', () => { const v = G.traffic.byId.get(G.brothers.me.vehicle) || G.brothers.nearestVehicle(8); if (v) { v.dmg = [0, 0, 0, 0]; G.save.markVehicle(v); this.toast('Repaired'); } else this.toast('No vehicle nearby'); }, 'repair'),
-      btn('Range Rover', () => { const me = G.brothers.me, h = me.heading || 0; const x = me.x + Math.cos(h) * 7, z = me.z + Math.sin(h) * 7; G.traffic.add({ id: 'dev-rr-' + Date.now(), kind: 'parked', model: 'rangerover', paint: 0x23382c, x, y: G.tiles.ground(x, z, me.y + 1) ?? me.y, z, heading: h, parked: true, free: true }); this.toast('Range Rover delivered'); }, 'spawn-rangerover'),
-      btn('Sports car', () => { const me = G.brothers.me, h = me.heading || 0; const x = me.x + Math.cos(h) * 6, z = me.z + Math.sin(h) * 6; G.traffic.add({ id: 'dev-' + Date.now(), kind: 'parked', model: 'sports', paint: 0xb5121b, x, y: G.tiles.ground(x, z, me.y + 1) ?? me.y, z, heading: h, parked: true, free: true }); this.toast('Sports car delivered'); }, 'spawn-sports')]);
-    row('Sim', [1, 2, 4, 8].map(k => btn('×' + k + (G.simSteps === k ? ' ✓' : ''), () => G.simSteps = k, 'sim-' + k)));
+    row('Sim', [1, 2, 4, 8].map(k => btn(() => '×' + k + (G.simSteps === k ? ' ✓' : ''), () => G.simSteps = k, 'sim-' + k)));
+    section('Wildlife, transit & interiors');
+    const pin = (label, candidates) => {
+      const me = G.brothers.me;
+      let nearest, distance = Infinity;
+      for (const p of candidates) {
+        const m = Math.hypot(p.x-me.x,p.z-me.z);
+        if (m < distance) { nearest = p; distance = m; }
+      }
+      if (!nearest) return this.toast('No '+label.toLowerCase()+' currently available');
+      const name = nearest.title || nearest.name || nearest.key || label;
+      this.nav.set({name,x:nearest.x,z:nearest.z});
+      this.toast(name+' · '+Math.round(distance)+' m · waypoint set');
+    };
+    const locate = (name, list) => btn(name, () => pin(name,list()));
+    row('Set up a dog walk', [btn('Stage dog walker', () => {
+      const me = G.brothers.me, sim = G.wildlife.sim;
+      const walkers = G.peds.near(me.x,me.z,100).filter(p => p.id && !p.officer && !p.gone && p.mode === 'walk');
+      walkers.sort((a,b) => Math.hypot(a.x-me.x,a.z-me.z) - Math.hypot(b.x-me.x,b.z-me.z));
+      const walker = walkers[0];
+      if (!walker) return this.toast('No walking pedestrian within 100 m');
+      let dog = sim.dogs.get(walker.id);
+      if (!dog || dog.gone) {
+        if (sim.roam >= sim.max) return this.toast('Wildlife population is at capacity');
+        dog = sim.attachDog(walker,false,sim.rand());
+      }
+      pin('Dog walker',[{x:dog.x,z:dog.z,name:'Dog walker'}]);
+    })]);
+    row('Mark current location on map', [
+      locate('Dog walker', () => G.wildlife.sim.list.filter(a => a.key==='dog' && a.owner && !a.gone)),
+      locate('Wild animal', () => G.wildlife.sim.list.filter(a => a.key!=='dog' && !a.gone && !a.hidden)),
+      locate('Train station', () => G.transit.stations),
+      locate('Bus stop', () => G.net.busStops.map(([x,z,name]) => ({x,z,name}))),
+      locate('Building entrance', () => (G.interiors.sites || []).map(s => ({x:s.dx??s.x,z:s.dz??s.z,title:s.title}))),
+      locate('Petrol station', () => G.fuel.stations || [])
+    ]);
+    section('Travel & test locations');
     row('Go to', G.manifest.districts.filter(di => !/hamlet|neighbourhood/.test(di.kind || '')).map(di => btn(di.name, () => G.teleport(di.x, di.z), 'goto-' + slug(di.name))));
     row('Test spots', TESTSPOTS.map(([n, x, z, h]) => btn(n, () => G.teleport(x, z, h), 'spot-' + slug(n))));
-    const info = document.createElement('p'); info.textContent = `Renderer ${G.backend} · quality ${G.quality} · weather seed ${w.s.seed} · sandbox mode (no missions)`; d.append(info);
-    d.append(btn('Close', () => {}));
-    d.lastChild.onclick = () => d.hidden = true;
+    this.refreshDev(); jump.focus();
   }
 }
 function dot(c, x, z, r, col, edge, lw) { c.fillStyle = col; c.beginPath(); c.arc(x, z, r, 0, 7); c.fill(); if (edge) { c.strokeStyle = edge; c.lineWidth = lw || 1.5; c.stroke(); } }
