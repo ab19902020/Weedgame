@@ -16,7 +16,7 @@ export class Atmos {
     // the sky light by day and the street lights at night. Hidden under roofs, canopies and shelters.
     const g = new THREE.PlaneGeometry(1, 1);
     const seeds = new Float32Array(DROPS * 4);
-    for (let i = 0; i < DROPS; i++) { seeds[i * 4] = Math.random(); seeds[i * 4 + 1] = Math.random(); seeds[i * 4 + 2] = Math.random(); seeds[i * 4 + 3] = Math.random(); }
+    for (let i = 0; i < DROPS; i++) { seeds[i * 4] = Math.random(); seeds[i * 4 + 1] = Math.random(); seeds[i * 4 + 2] = Math.random(); seeds[i * 4 + 3] = (i + Math.random()) / DROPS; }
     const ig = new THREE.InstancedBufferGeometry().copy(g);
     ig.setAttribute('seed', new THREE.InstancedBufferAttribute(seeds, 4));
     ig.instanceCount = DROPS;
@@ -63,6 +63,7 @@ export class Atmos {
       const sg = new THREE.InstancedBufferGeometry().copy(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2));
       const ss = new Float32Array(SPLASHES * 4);
       for (let i = 0; i < SPLASHES; i++) for (let k = 0; k < 4; k++) ss[i * 4 + k] = Math.random();
+      for (let i = 0; i < SPLASHES; i++) ss[i*4+1] = (i+Math.random())/SPLASHES;
       sg.setAttribute('seed', new THREE.InstancedBufferAttribute(ss, 4)); sg.instanceCount = SPLASHES;
       const sm = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false });
       const se = attribute('seed', 'vec4');
@@ -98,6 +99,10 @@ export class Atmos {
     const me = this.G.brothers?.me, inCar = me?.vehicle;
     splashAt.value.set(x, inCar ? -1000 : (me?.y ?? 0), z);
     this.rain.visible = U.rain.value > 0.005; this.splash.visible = this.rain.visible && !inCar;
+    // Visibility thresholds are ordered, so only submit instances the rain shader can show.
+    const rain = Math.min(1,Math.max(0,U.rain.value));
+    this.rain.geometry.instanceCount = Math.ceil(rain*DROPS);
+    this.splash.geometry.instanceCount = Math.ceil(rain*SPLASHES);
     const ox = Math.floor(x / 32) * 32 - COVER_N / 2, oz = Math.floor(z / 32) * 32 - COVER_N / 2;
     const moved = ox !== this.coverAt.x || oz !== this.coverAt.z;
     if ((moved && (!this._cov || this._cov.ox !== ox || this._cov.oz !== oz)) || (this._coverDirty && !this._cov)) {
