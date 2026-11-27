@@ -83,3 +83,17 @@ test('upstairs and down again in the trap house; walls stop you', () => {
   r = walk(P, [hall.x1 - 0.5, P.levels[0].rooms.find(q => q.name === 'kitchen').y0 - 0.4], [hall.x1 + 2, P.levels[0].rooms.find(q => q.name === 'kitchen').y0 - 0.4], 0);
   assert.ok(r.x < hall.x1, `the wall held (${r.x.toFixed(2)} < ${hall.x1.toFixed(2)})`);
 });
+
+test('every residential sitting room faces its TV and has a fitted kitchen', () => {
+  for (const site of SITES) {
+    const plan = makePlan(site);
+    if (!plan.levels[0].rooms.some(room => room.name === 'living')) continue;
+    const sofa = plan.items.find(item => item.type.startsWith('sofa'));
+    const tv = plan.items.find(item => item.type === 'tv');
+    assert.ok(sofa && tv, site.name);
+    for (const [from, to] of [[sofa, tv], [tv, sofa]]) {
+      assert.ok(-(to.x-from.x)*Math.sin(from.rot)+(to.y-from.y)*Math.cos(from.rot)>0, site.name);
+    }
+    for (const type of ['units', 'fridge']) assert.ok(plan.items.some(item => item.type === type), site.name);
+  }
+});

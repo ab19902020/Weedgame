@@ -11,3 +11,4 @@ __pycache__/
 
 # Full episode masters belong to the private animation repository.
 www/assets/home/episodes/*.mp4
+builds/Green-County-*-dev.apk

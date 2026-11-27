@@ -79,8 +79,9 @@ export class Hud {
       <div id="wheel" hidden><div class="ring"></div><p class="wName"></p></div>
       <div id="speedo" hidden><b>0</b><small>MPH</small><i></i></div>
       <div id="map" hidden><canvas id="mapC"></canvas><div class="maptools"><div class="atlasTitle">Green County <em>Road Atlas</em></div><button id="mClose">Close</button></div>
-      <div class="atlasPlaces"><select id="mPlaces" aria-label="Route to a place"><option value="">Route to a place…</option></select><button id="mFit" hidden>Route</button><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
-      <div class="atlasFooter"><span id="mInfo"></span><button id="mClear">Clear waypoint</button></div></div>
+      <div class="atlasPlaces"><button id="mFit" hidden>Route</button><button id="mMe">Locate</button><button id="mOut" aria-label="Zoom out">−</button><button id="mIn" aria-label="Zoom in">+</button></div>
+      <section class="mapDirectory" aria-label="Find a destination"><nav id="mKinds" aria-label="Location categories"></nav>
+      <div class="placeDetail"><button id="mPrev" aria-label="Previous location">‹</button><div aria-live="polite"><small id="mDistance"></small><strong id="mName"></strong></div><button id="mNext" aria-label="Next location">›</button><button id="mGo">Set waypoint</button></div></section><div class="atlasFooter"><span id="mInfo"></span><button id="mClear">Clear waypoint</button></div></div>
       <div id="dev" class="panel" role="dialog" aria-labelledby="devTitle" hidden></div>
       <div id="perf" hidden></div>`;
     this.mini = root.querySelector('#miniC').getContext('2d');
@@ -103,24 +104,46 @@ export class Hud {
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
     this.mapView = { x: 0, z: 0, s: 0.25 };
     this.nav = new Navigation(G.net);
-    const places = [...G.transit.stations.map(s=>({...s,name:s.name+" station"})),...G.manifest.districts.filter(d=>!/hamlet|neighbourhood/.test(d.kind||'')), ...TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))];
-    const select = this.el('mPlaces');
-    places.forEach((place,index)=>select.add(new Option(place.name,String(index))));
-    // the buildings you can go into, once their list has loaded (interiors.js)
-    const addSites=()=>{ if(!G.interiors?.ready){ setTimeout(addSites,500); return; }
-      const group=(label,list,name)=>{ const grp=document.createElement('optgroup'); grp.label=label+' ('+list.length+')'; for(const s of list){ const i=places.length; places.push({name:name(s),x:s.dx??s.x,z:s.dz??s.z}); grp.appendChild(new Option(name(s)+' · '+s.district,String(i))); } select.appendChild(grp); };
-      const sites=G.interiors.sites;
-      group('Takeaways',sites.filter(s=>s.kind==='food').sort((a,b)=>a.title.localeCompare(b.title)),s=>s.title);
-      if(G.fuel?.ready) group('Petrol stations',[...G.fuel.stations].sort((a,b)=>a.title.localeCompare(b.title)),s=>s.title);
-      group('Shops to rob (corner shops)',sites.filter(s=>s.kind==='shop'&&!s.kiosk).sort((a,b)=>a.title.localeCompare(b.title)),s=>s.title);
-      group('Pubs (darts, pool, fruit machine)',sites.filter(s=>s.kind==='pub').sort((a,b)=>(b.district==='Woodley')-(a.district==='Woodley')||a.title.localeCompare(b.title)),s=>s.title);
-      group('Buildings you can go into',sites.filter(s=>s.kind!=='food'&&s.kind!=='pub'&&s.kind!=='shop'&&!s.kiosk).sort((a,b)=>(a.kind==='trap'?-2:a.kind==='nice'?-1:0)-(b.kind==='trap'?-2:b.kind==='nice'?-1:0)||a.title.localeCompare(b.title)),s=>s.title); };
-    addSites();
-    select.onchange = () => {
-      if (!select.value) return;
-      const p=places[Number(select.value)]; this.nav.set({x:p.x,z:p.z,name:p.name});
-      this.mapView.x=p.x; this.mapView.z=p.z; select.value='';
+    const homes = new Set(['nice','trap','terrace','semi','detached','bungalow','cottage']);
+    const sites = predicate => (G.interiors?.sites || []).filter(predicate);
+    const categories = {
+      Houses: () => sites(s => homes.has(s.kind) || s.brothersHome), 'Brothers’ home': () => sites(s => s.brothersHome), Shops: () => sites(s => s.kind==='shop' || s.kind==='mall'),
+      Food: () => sites(s => s.kind==='food'), Pubs: () => sites(s => s.kind==='pub'),
+      'Petrol stations': () => G.fuel?.stations || [], Stations: () => G.transit.stations.map(s => ({...s,name:s.name+' station'})),
+      Buildings: () => sites(s => !homes.has(s.kind) && !['shop','mall','food','pub'].includes(s.kind)),
+      Districts: () => G.manifest.districts, Landmarks: () => TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))
     };
+    let results=[], index=0, category='Houses';
+    const showPlace = () => {
+      const p=this.mapPlace=results[index];
+      this.el('mName').textContent=p?.name || 'No locations available';
+      this.el('mDistance').textContent=p ? [index+1+' / '+results.length, distanceLabel(p.distance)+' away', p.district].filter(Boolean).join(' · ') : category;
+      this.el('mGo').disabled=!p;
+      this.el('mPrev').disabled=this.el('mNext').disabled=results.length<2;
+      if(p) Object.assign(this.mapView,{x:p.x,z:p.z,s:Math.max(0.55,this.mapView.s)});
+    };
+    this.selectPlaces = (key=category) => {
+      category=key; index=0;
+      const me=G.brothers.me;
+      results=categories[key]().map(s=>{
+        const x=s.dx??s.x, z=s.dz??s.z;
+        return {x,z,name:s.title||s.name,district:s.district,distance:Math.hypot(x-me.x,z-me.z)};
+      }).filter(s=>Number.isFinite(s.distance)).sort((a,b)=>a.distance-b.distance);
+      for(const button of this.el('mKinds').children) button.setAttribute('aria-pressed',String(button.textContent===key));
+      showPlace();
+    };
+    for(const key of Object.keys(categories)){
+      const button=document.createElement('button'); button.textContent=key;
+      button.onclick=()=>{this.selectPlaces(key);this.el('mGo').focus({preventScroll:true});}; this.el('mKinds').append(button);
+    }
+    const cycle=step=>{if(results.length){index=(index+step+results.length)%results.length;showPlace();}};
+    this.el('mPrev').onclick=()=>cycle(-1); this.el('mNext').onclick=()=>cycle(1);
+    this.el('map').addEventListener('keydown', e=>{
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault(); e.stopPropagation(); cycle(e.key === 'ArrowLeft' ? -1 : 1);
+    });
+    this.el('mGo').onclick=()=>{if(this.mapPlace)this.nav.set({...this.mapPlace});};
+    G.events?.on('interiors',()=>{if(!this.el('map').hidden)this.selectPlaces();});
     this.el('mClear').onclick=()=>this.nav.set(null);
     this.el('mOut').onclick=()=>this.zoomMap(.65);
     this.el('mIn').onclick=()=>this.zoomMap(1.5);
@@ -356,7 +379,7 @@ export class Hud {
   }
   toggleMap(on) {
     const m = this.el('map'); on = on ?? m.hidden; m.hidden = !on;
-    if (on) { const me = this.G.brothers.me; this.mapView = { x: me.x, z: me.z, s: 0.35 }; }
+    if (on) { const me = this.G.brothers.me; this.mapView = { x: me.x, z: me.z, s: 0.35 }; this.selectPlaces(); this.el('mKinds').querySelector('[aria-pressed="true"]')?.focus({preventScroll:true}); }
   }
   ovTile(i, j) {
     const k = i + '_' + j; if (this.overview.has(k)) return this.overview.get(k);
@@ -373,7 +396,7 @@ export class Hud {
     const c = cv.getContext('2d');
     // names keep clear of the controls and of the brothers' markers
     const avoid = [];
-    for (const q of this.el('map').querySelectorAll('.maptools,.atlasPlaces,.atlasFooter')) { const r = q.getBoundingClientRect(); if (r.width) avoid.push([r.x + r.width / 2, r.y + r.height / 2, r.width + 8, r.height + 8]); }
+    for (const q of this.el('map').querySelectorAll('.maptools,.atlasPlaces,.atlasFooter,.mapDirectory')) { const r = q.getBoundingClientRect(); if (r.width) avoid.push([r.x + r.width / 2, r.y + r.height / 2, r.width + 8, r.height + 8]); }
     for (const b of G.brothers.b) avoid.push([(b.x - V.x) * V.s + W / 2, (b.z - V.z) * V.s + H / 2 - 8, 64, 58]);
     // and of the buildings you can go into (their marker, and the name beside the main ones)
     if (G.interiors?.ready) for (const site of G.interiors.sites) {
@@ -398,6 +421,10 @@ export class Hud {
           const key = site.kind === 'trap' || site.kind === 'nice' || site.kind === 'mall';
           siteIcon(c, x, z, site.kind, s < 0.05 && !key ? 5.5 : key ? 10 : 8);
           if ((s >= 0.22 || (key && s >= 0.04)) && z > 70 && z < H - 82) { c.font = `${key ? 800 : 700} ${key ? 12 : 11}px system-ui`; c.textAlign = 'left'; c.textBaseline = 'middle'; c.lineJoin = 'round'; c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; const t = key && s < 0.22 ? site.title.replace(/, .*/, '') : site.title; c.strokeText(t, x + 13, z); c.fillStyle = '#1d2420'; c.fillText(t, x + 13, z); }
+        }
+        if(this.mapPlace){
+          c.save(); c.beginPath(); c.arc(X(this.mapPlace.x),Z(this.mapPlace.z),15,0,Math.PI*2);
+          c.strokeStyle='#162d29'; c.lineWidth=5; c.stroke(); c.strokeStyle='#f5d772'; c.lineWidth=3; c.stroke(); c.restore();
         }
         // the brothers' cars and the police
         for (const v of G.traffic.list) {

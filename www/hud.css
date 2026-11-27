@@ -214,8 +214,31 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 #homeTV.playing { inset:0; transform:none; max-width:none; max-height:none; width:auto; border-radius:0; flex-flow:column; align-items:flex-start; padding:4px; }
 #homeTV iframe { width:100%; flex:1; background:#101419; border:0; }
 body:has(#homeTV) #hud {pointer-events:none;}
+/* sitting at a TV: the on-foot buttons and the stick are out of use, so out of sight behind the TV panel */
+body:has(#homeTV) #btns, body:has(#homeTV) #stickRest, body:has(#homeTV) #stickBase {visibility:hidden;}
 
 /* controller: the pointer for games on canvases and in the console, and the button the D-pad is on */
 #padCursor{position:fixed;left:-9px;top:-9px;width:18px;height:18px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #000a,inset 0 0 0 2px #000a;pointer-events:none;z-index:9999}
 #padCursor[hidden]{display:none}
 .pad-focus{outline:3px solid #f2c94c!important;outline-offset:2px}
+
+#map .mapDirectory{position:absolute;left:max(10px,env(safe-area-inset-left));bottom:calc(64px + env(safe-area-inset-bottom));width:min(440px,calc(100% - 24px));background:#122420f5;color:#faf8e9;border:1px solid #779086;border-radius:8px;box-shadow:0 4px 24px #08151050;overflow:hidden;font-family:system-ui,sans-serif}
+#mKinds{display:flex;overflow-x:auto;touch-action:pan-x;border-bottom:1px solid #677c70;scrollbar-width:thin}
+#map .mapDirectory button{min-height:40px;color:#f1f2e7;background:transparent;border:0;border-radius:0;padding:0 12px;white-space:nowrap;font-weight:650}
+#map #mKinds button[aria-pressed=true]{color:#f4d478;box-shadow:inset 0 -3px #f4d478}
+.placeDetail{display:flex;gap:4px;align-items:center;padding:6px}
+.placeDetail div{flex:1;min-width:0}.placeDetail strong,.placeDetail small{display:block}.placeDetail strong{font-size:15px;line-height:1.15}.placeDetail small{font-size:11px;color:#b8ccbd;margin-bottom:3px}
+#map .placeDetail #mGo{background:#eed185;color:#192823;border-radius:4px}
+#map .placeDetail #mPrev,#map .placeDetail #mNext{font-size:23px;padding:0 10px}
+#map .mapDirectory button:focus-visible{outline:2px solid #fff;outline-offset:-3px}
+@media(max-height:500px){#map .mapDirectory{bottom:calc(50px + env(safe-area-inset-bottom));width:min(410px,67vw)}}
+#countyMenu .menuContent{width:min(390px,88vw)}
+#countyMenu nav{grid-template-columns:1fr 1fr;gap:6px}
+#countyMenu nav button{border:1px solid #8b9d885e;border-radius:4px;min-height:42px;background:#172923ef}
+#countyMenu nav [data-go=play]{grid-column:1/-1;background:#efd189;color:#172720;padding:13px 16px;font-size:17px}
+#countyMenu nav button:focus-visible,#countyMenu nav button.pad-focus{outline:2px solid white;outline-offset:-3px}
+#countyMenu nav button:hover{background:#385043;color:#fff}
+
+#homeTV.watchFull { inset:0; width:auto; max-width:none; max-height:none; transform:none; border:0; border-radius:0; background:black; align-content:center; }
+#homeTV.watchFull video { width:100%; height:calc(100% - 90px); object-fit:contain; }
+#homeTV video[hidden] { display:none; }

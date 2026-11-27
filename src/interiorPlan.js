@@ -306,6 +306,29 @@ function wallItem(P, lv, r, side, type, w, d, h, o = {}) {
 const mid = r => [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2];
 const sides = ['y0', 'y1', 'x0', 'x1'];
 
+function livingWalls(P, level, room, preferred, sofaWidth, tvWidth) {
+  const opposite = { x0:'x1', x1:'x0', y0:'y1', y1:'y0' };
+  for (const scale of [1, 0.85, 0.7, 0.55]) {
+    for (const side of [preferred, ...sides.filter(s => s !== preferred)]) {
+      const sofa = Math.max(1.05, sofaWidth * scale), tv = Math.max(0.65, tvWidth * scale);
+      if (against(P, level, room, side, tv, 0.42, {h:0.5}) &&
+          against(P, level, room, opposite[side], sofa, 0.92, {h:0.85})) {
+        return {side, opposite:opposite[side], sofa, tv};
+      }
+    }
+  }
+  return {side:preferred, opposite:opposite[preferred], sofa:sofaWidth, tv:tvWidth};
+}
+
+function kitchenItem(P, level, room, side, type, width, depth, height, options) {
+  for (const w of type === 'units' ? [width, Math.min(width, 2.4), Math.min(width, 1.6), 1.2] : [width]) {
+    for (const wall of [side, ...sides.filter(s => s !== side)]) {
+      const item = wallItem(P, level, room, wall, type, w, depth, height, options);
+      if (item) return item;
+    }
+  }
+}
+
 // ------------------------------------------------------------------ houses
 function stairsFit(P, fh, room) {
   const n = Math.max(11, Math.round(fh / 0.195)), rise = fh;
@@ -396,14 +419,15 @@ function furnishHouse(P, s) {
   // living room: the sofa facing the TV across the room, coffee table, armchair, rug, a lamp, plants
   if (L) {
     const tvSide = L.x1 - L.x0 > L.y1 - L.y0 ? (R() < 0.5 ? 'x0' : 'x1') : 'y1';
-    const opp = { x0: 'x1', x1: 'x0', y0: 'y1', y1: 'y0' }[tvSide];
     const longW = tvSide[0] === 'x' ? L.y1 - L.y0 : L.x1 - L.x0;
     const sw = clamp(longW * 0.55, 1.6, nice ? 3.0 : 2.3);
-    const tvU = wallItem(P, g, L, tvSide, 'tvunit', clamp(sw * 0.7, 1.0, 1.8), 0.42, 0.5, { col: trap ? 0x2c2a28 : pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58, 0x55585c]) });
+    const layout = livingWalls(P, g, L, tvSide, sw, clamp(sw * 0.7, 1.0, 1.8));
+    const opp = layout.opposite;
+    const tvU = wallItem(P, g, L, layout.side, 'tvunit', layout.tv, 0.42, 0.5, { col: trap ? 0x2c2a28 : pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58, 0x55585c]) });
     // (the brothers' own: a big 16:9 set, about 90 inches, black until it's switched on: homeTV.js)
     if (tvU) P.add(g, 'tv', tvU.x, tvU.y, s.brothersHome ? 2.0 : trap ? 1.45 : nice ? 1.6 : 1.15, 0.08, s.brothersHome ? 1.13 : 0.7, { rot: tvU.rot, base: 0.5, solid: false, dark: !!s.brothersHome });
     if(s.brothersHome && tvU)P.add(g,'box',tvU.x+.55*Math.cos(tvU.rot),tvU.y+.55*Math.sin(tvU.rot),.26,.21,.065,{base:.5,col:0x21252c,rot:tvU.rot,solid:false});
-    const so = wallItem(P, g, L, opp, nice ? 'sofaL' : 'sofa', sw, 0.92, 0.85, { col: sofa, col2: trap ? 0x4a3d32 : null, worn: trap });
+    const so = wallItem(P, g, L, opp, nice ? 'sofaL' : 'sofa', layout.sofa, 0.92, 0.85, { col: sofa, col2: trap ? 0x4a3d32 : null, worn: trap });
     if (so && tvU) {
       const [cx, cy] = [(so.x + tvU.x) / 2, (so.y + tvU.y) / 2];
       P.add(g, 'rug', cx, cy, sw * 0.95, 1.6, 0.01, { rot: so.rot, col: trap ? 0x4f463b : pick(R, [0xb8a68a, 0x7d8c9c, 0x9a5b4b, 0xd8cfc0, 0x4d5a4e]), solid: false, stained: trap });
@@ -423,9 +447,9 @@ function furnishHouse(P, s) {
   if (kitchen) {
     const run = kitchen.x1 - kitchen.x0 - 0.2;
     const kSide = kitchen.y1 >= P.D - 0.01 ? 'y1' : 'x1';
-    const it = wallItem(P, g, kitchen, kSide, 'units', Math.min(run, nice ? 5 : 3.6), 0.62, 0.92, { splash: trap ? 0xd9d2bf : pick(R, [0xf2f1ec, 0xdfe8ea, 0x9fb3c8, 0xd9c7a7, 0x2c2c2c]), col: P.style.units === 'tired white' ? 0xe8e3d6 : UNITS.find(u => u[1] === P.style.units)?.[0], top: trap ? 0x8c8270 : nice ? 0xeae6e0 : pick(R, [0x3b3b3b, 0xd9d2c4, 0x8a6a4a, 0xf0efe9]), tall: false, at: 0.4, sink: true });
+    const it = kitchenItem(P, g, kitchen, kSide, 'units', Math.min(run, nice ? 5 : 3.6), 0.62, 0.92, { splash: trap ? 0xd9d2bf : pick(R, [0xf2f1ec, 0xdfe8ea, 0x9fb3c8, 0xd9c7a7, 0x2c2c2c]), col: P.style.units === 'tired white' ? 0xe8e3d6 : UNITS.find(u => u[1] === P.style.units)?.[0], top: trap ? 0x8c8270 : nice ? 0xeae6e0 : pick(R, [0x3b3b3b, 0xd9d2c4, 0x8a6a4a, 0xf0efe9]), tall: false, at: 0.4, sink: true });
     if (it) P.add(g, 'wallunits', it.x, it.y, it.w * 0.8, 0.34, 0.7, { rot: it.rot, base: 1.45, col: it.col, solid: false });
-    wallItem(P, g, kitchen, kSide === 'y1' ? (R() < 0.5 ? 'x0' : 'x1') : 'y1', 'fridge', 0.62, 0.65, 1.8, { tall: true, col: trap ? 0xe9e7e0 : pick(R, [0xe9e7e0, 0xb9bcbf, 0x2c2c2c]), at: R() < 0.5 ? 0.04 : 0.96 });
+    kitchenItem(P, g, kitchen, kSide === 'y1' ? (R() < 0.5 ? 'x0' : 'x1') : 'y1', 'fridge', 0.62, 0.65, 1.8, { tall: true, col: trap ? 0xe9e7e0 : pick(R, [0xe9e7e0, 0xb9bcbf, 0x2c2c2c]), at: R() < 0.5 ? 0.04 : 0.96 });
     if (nice) { const [cx, cy] = mid(kitchen); P.add(g, 'island', cx, cy - 0.2, 2.2, 1.0, 0.92, { col: UNITS.find(u => u[1] === P.style.units)?.[0] || 0x2e3d55, top: 0xeae6e0 }); }
     const tableRoom = Dn && Dn !== kitchen ? Dn : kitchen;
     const [tx, ty] = mid(tableRoom);
@@ -502,9 +526,10 @@ function bungalow(P, s) {
   // the same furnishing as a house, all on one floor
   const L = P.find(g, 'living'), K = P.find(g, 'kitchen');
   const sofaCol = pick(R, SOFA);
-  const tv = wallItem(P, g, L, 'x0', 'tvunit', 1.2, 0.42, 0.5, { col: pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58]) });
+  const layout = livingWalls(P, g, L, 'x0', clamp((L.y1 - L.y0) * 0.55, 1.5, 2.2), 1.2);
+  const tv = wallItem(P, g, L, layout.side, 'tvunit', layout.tv, 0.42, 0.5, { col: pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58]) });
   if (tv) P.add(g, 'tv', tv.x, tv.y, 1.1, 0.08, 0.65, { rot: tv.rot, base: 0.5, solid: false });
-  const so = wallItem(P, g, L, 'x1', 'sofa', clamp((L.y1 - L.y0) * 0.55, 1.5, 2.2), 0.9, 0.85, { col: sofaCol });
+  const so = wallItem(P, g, L, layout.opposite, 'sofa', layout.sofa, 0.9, 0.85, { col: sofaCol });
   if (so && tv) { P.add(g, 'rug', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 1.8, 1.4, 0.01, { rot: so.rot, col: pick(R, [0xb8a68a, 0x7d8c9c, 0x9a5b4b, 0xd8cfc0]), solid: false }); P.add(g, 'coffeetable', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 0.9, 0.5, 0.42, { rot: so.rot, col: 0x6b5236, clutter: 'books' }); }
   wallItem(P, g, L, 'y1', 'homefire', 1.3, 0.38, 2.0, { tall: true, col: pick(R, [0xf2f1ec, 0x8a6a4a, 0xd8c29a]), lit: R() < 0.5, at: 0.3 });
   wallItem(P, g, L, 'x0', 'lamp', 0.35, 0.35, 1.55, { at: 0.05 });
@@ -512,9 +537,9 @@ function bungalow(P, s) {
   wallItem(P, g, L, 'y0', 'armchair', 0.85, 0.85, 0.85, { col: pick(R, SOFA), at: 0.15 });
   wallItem(P, g, L, 'y1', 'shelves', 0.9, 0.32, 1.8, { tall: true, col: pick(R, [0xe9e4da, 0x8a6a4a]) });
   wallItem(P, g, L, 'y0', 'plant', 0.45, 0.45, 1.0, { at: 0.9 });
-  const u = wallItem(P, g, K, 'y1', 'units', Math.min(K.x1 - K.x0 - 0.2, 3.2), 0.62, 0.92, { col: units[0], top: pick(R, [0x3b3b3b, 0xd9d2c4, 0x8a6a4a]), sink: true });
+  const u = kitchenItem(P, g, K, 'y1', 'units', Math.min(K.x1 - K.x0 - 0.2, 3.2), 0.62, 0.92, { col: units[0], top: pick(R, [0x3b3b3b, 0xd9d2c4, 0x8a6a4a]), sink: true });
   if (u) P.add(g, 'wallunits', u.x, u.y, u.w * 0.8, 0.34, 0.7, { rot: u.rot, base: 1.45, col: units[0], solid: false });
-  wallItem(P, g, K, 'x0', 'fridge', 0.62, 0.65, 1.8, { tall: true, col: 0xe9e7e0, at: 0.9 });
+  kitchenItem(P, g, K, 'x0', 'fridge', 0.62, 0.65, 1.8, { tall: true, col: 0xe9e7e0, at: 0.9 });
   const [tx, ty] = mid(K); P.add(g, 'table', tx, ty - 0.2, 1.1, 0.8, 0.75, { col: pick(R, [0x8a6a4a, 0xd8c29a]), chairs: 2, chairCol: pick(R, [0x3b3b3b, 0xd8c29a]) });
   for (const r of g.rooms) if (/^bed/.test(r.name)) {
     const big = r.name === 'bed1';
