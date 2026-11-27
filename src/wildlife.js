@@ -21,7 +21,7 @@ export class Wildlife {
       water: (x, z) => T.waterLevel(x, z),
       trees: (x, z, r) => this.trees(x, z, r),
       treesLoaded: (x, z) => { const t = T.tileAt(x, z); return !!(t && t.trees); },
-      busy: (x, z) => G.peds.density(x, z),
+      busy: (x, z) => G.peds.busy(x, z),
       bigRoad: (x, z, r) => !!net.nearest(x, z, r, e => big.has(net.cls[e])),
       blocked: (x, z, y) => !!T.insideBuilding(x, z, y),
       visible: (x, y, z, r) => camInfo.visible(x, y, z, r),

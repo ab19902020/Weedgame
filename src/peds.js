@@ -47,16 +47,22 @@ export class Peds {
     G.events.on('impact', e => this.disturb(e.x, e.z, 45, 'crash'));
     G.events.on('noise', e => this.disturb(e.x, e.z, e.r || 30, e.kind));
   }
-  // density by place / time / weather
-  density(x, z) {
-    const G = this.G, hr = G.world.hours();
-    const core = coreAt(x, z);
-    const dow = new Date(G.world.time * 1000).getDay();
+  // footfall by place / time / weather: how many people are about, on the scale the wildlife reads (wildlifeSpecies
+  // busyFactor: a quiet close at night ~0.2, a Woodley street at 13:00 on a weekday ~38, Broad Street on a Saturday
+  // afternoon ~300)
+  busy(x, z) {
+    const G = this.G, hr = G.world.hours(), dow = new Date(G.world.time * 1000).getDay();
+    return (110 * footfall('local', dow, hr) + coreAt(x, z) * 300 * footfall('centre', dow, hr)) * (1 - G.world.cur.rain * 0.55);
+  }
+  // how many pedestrians to keep about you. streets (0..1): how built-up the place is, from the walkable streets and
+  // paths around it (1 in any town or suburb; open country ~0.15), so a few country lanes aren't crowded like a high
+  // street. e.g. Broad Street on a Saturday at 14:00 -> ~500 (the preset caps it: 110 / 190 / 280); a Woodley street
+  // at 13:00 on a weekday -> ~80, at 16:00 ~140; and in a town never fewer than a couple of dozen about, even in the
+  // small hours (v0.41.1: about twice as many again, so a town feels lived in)
+  density(x, z, streets = 1) {
+    const G = this.G, hr = G.world.hours(), dow = new Date(G.world.time * 1000).getDay();
     const wet = 1 - G.world.cur.rain * 0.55;
-    // e.g. Broad Street on a Saturday at 14:00 -> ~500 (the preset caps it: 110 / 190 / 280); a Woodley street at 13:00
-    // on a weekday -> ~80, at 16:00 ~140; and never fewer than a couple of dozen about, even in the small hours (v0.41:
-    // about twice as many again: a town should feel lived in)
-    return Math.max(22, (230 * footfall('local', dow, hr) + core * 520 * footfall('centre', dow, hr)) * wet);
+    return Math.max(22 * streets, (230 * streets * footfall('local', dow, hr) + coreAt(x, z) * 520 * footfall('centre', dow, hr)) * wet);
   }
   pickWalkEdge(focus) {
     // collect walkable edges in range
@@ -125,7 +131,13 @@ export class Peds {
     const G = this.G, net = this.net; this.info = info;
     R = Math.min(190, (G.budget?.peopleDist || 170) + 30); KILL = R + 50;
     this.timer -= dt;
-    if (!this._ef || Math.hypot(this._ef.x - focus.x, this._ef.z - focus.z) > 40) { this._edges = this.pickWalkEdge(focus); this._ef = { x: focus.x, z: focus.z }; }
+    if (!this._ef || Math.hypot(this._ef.x - focus.x, this._ef.z - focus.z) > 40) {
+      this._edges = this.pickWalkEdge(focus); this._ef = { x: focus.x, z: focus.z };
+      // how built-up it is here: the walkable streets in range, as if within 190 m (town centres ~1300, suburbs
+      // 600-1200, villages 200-950, hamlets and open country 0-250)
+      const n = this._edges.length * (190 / R) ** 2;
+      this.streets = Math.min(1, Math.max(0.15, (n - 100) / 500));
+    }
     if (this.timer <= 0) {
       this.timer = 0.3;
       for(const [id,p] of this.residents){
@@ -133,7 +145,7 @@ export class Peds {
         p.t+=Math.max(0,G.time-p.awaySince);p.planAfter=0;p.mode='walk';p.goal=null;
         this.list.push(p);this.residents.delete(id);
       }
-      const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z));
+      const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z, this.streets ?? 1));
       const tries = this.list.length < target * 0.6 ? 7 : 3;
       if (this.list.length < target) for (let i = 0; i < tries; i++) { if (this.rand() < 0.18) this.spawnAtDoor(focus, info); else this.spawn(focus, info, this.list.length < target * 0.3); }
       for (let i = this.list.length - 1; i >= 0; i--) {
