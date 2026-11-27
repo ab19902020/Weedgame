@@ -78,6 +78,26 @@ export class Peds {
       }
     return out;
   }
+  // more people out than the place and hour call for (evening coming on, or somewhere quieter): a few at a time go
+  // indoors. Out of sight and not close by, they're simply gone; in view, they walk in at a door near them. Only
+  // ordinary passers-by going about their day: nobody hurt, fleeing, queueing, at an incident, in uniform or with
+  // company (a pair or a group keeps together)
+  thin(focus, info, surplus) {
+    const L = this.list; if (surplus <= 0 || !L.length) return;
+    let n = Math.min(surplus, 3);
+    for (let k = 0, kn = Math.min(L.length, 40); k < kn && n > 0; k++) {   // (a few dozen looked at per tick, in turn)
+      const p = L[this._thinAt = ((this._thinAt || 0) + 1) % L.length];
+      if (p.gone || p.dead || p.officer || p.hiVis || p.carried || p.awaitingMedic || p.medicFall || p.impact || p.react || p.reactT > 0 || p.wound) continue;
+      if (p.leader || p.partner || p.goal?.kind === 'door' || !String(p.id).startsWith('p')) continue;
+      if (!(p.mode === 'walk' || (p.mode === 'scene' && p.activity))) continue;
+      if (Math.hypot(p.x - focus.x, p.z - focus.z) > 30 && !info.visible(p.x, p.y + 1, p.z, 1)) { p.gone = true; n--; }
+      else {
+        const D = this.doorsNear(p.x, p.z, 45); if (!D.length) continue;
+        const door = D[Math.floor(this.rand() * D.length)];
+        p.mode = 'walk'; p.dayPath = null; p.goal = { kind: 'door', x: door.x, z: door.z }; n--;
+      }
+    }
+  }
   side(e) { return this.net.walkCls.has(this.net.cls[e]) ? 0 : 1; }
   get _pedCls() { return this.__pc ?? (this.__pc = this.net.classes.indexOf('pedestrian')); }
   pos(p) {
@@ -140,14 +160,16 @@ export class Peds {
     }
     if (this.timer <= 0) {
       this.timer = 0.3;
+      const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z, this.streets ?? 1));
       for(const [id,p] of this.residents){
+        if(this.list.length>=target)break;
         if(Math.hypot(p.x-focus.x,p.z-focus.z)>R || this.G.tiles.terrain(p.x,p.z)==null || info.visible(p.x,p.y+1,p.z,1))continue;
         p.t+=Math.max(0,G.time-p.awaySince);p.planAfter=0;p.mode='walk';p.goal=null;
         this.list.push(p);this.residents.delete(id);
       }
-      const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z, this.streets ?? 1));
       const tries = this.list.length < target * 0.6 ? 7 : 3;
       if (this.list.length < target) for (let i = 0; i < tries; i++) { if (this.rand() < 0.18) this.spawnAtDoor(focus, info); else this.spawn(focus, info, this.list.length < target * 0.3); }
+      else this.thin(focus, info, this.list.length - Math.ceil(target * 1.1) - 3);
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
         const d = Math.hypot(p.x - focus.x, p.z - focus.z);
@@ -289,7 +311,10 @@ export class Peds {
       if (gd < (p.goal.kind === 'door' ? 14 : 6)) {
         if (p.goal.kind === 'door') { p.mode = 'toDoor'; return; }
         if(p.goal.kind==='routine'){
-          p.dayPath=null;p.mode='scene';p.sceneT=p.activity==='Shopping'?18:Math.max(65,((p.activity==='Home'?7:18)-this.G.world.hours()+24)%24*3600/Math.max(1,this.G.world.s.scale));
+          p.dayPath=null;
+          // home for the night: in at a door (once nobody's looking), not stood outside until seven in the morning
+          if(p.activity==='Home'){const D=this.doorsNear(p.x,p.z,45);if(D.length){const door=D[Math.floor(this.rand()*D.length)];p.goal={kind:'door',x:door.x,z:door.z};p.planAfter=p.t+120;return;}}
+          p.mode='scene';p.sceneT=p.activity==='Shopping'?18:Math.max(65,((p.activity==='Home'?7:18)-this.G.world.hours()+24)%24*3600/Math.max(1,this.G.world.s.scale));
           p.scenePose=p.activity==='Home'?'idle':p.job==='courier'?'phone':'talk';
           p.sceneX=p.x+1;p.sceneZ=p.z;p.planAfter=p.t+p.sceneT+1;
         }
