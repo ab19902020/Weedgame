@@ -18,9 +18,19 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 
 `www/characters/cal.glb` and `www/characters/leon.glb` are the two playable brothers. Both were supplied by the project owner as Tripo-generated models with their animation sets, and were processed with `tools/characters/prepare-hero.mjs` (see `docs/CLAUDE-CHARACTERS.md`).
 
+Everyone else on the street is drawn by the crowd renderer (`src/humans.js`). Four in five ordinary pedestrians are one of the fourteen people of **"Citizen NPC Pack 1 Character Lowpoly Mobile"** by 00amza (https://sketchfab.com/3d-models/citizen-npc-pack-1-character-lowpoly-mobile-711ee48bcf80426bbf98ad01e1b9da1c), licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/). This work is based on that pack: `tools/characters/bake-citizens.py` merges each citizen's body and head, brings the A-pose arms down to the sides, fits every vertex to the crowd's skeleton and packs the textures into one atlas (`www/characters/citizens.bin`, `.json`, `.jpg`). The source pack is kept in `source-assets/incoming/`.
+
 ## Vehicles
 
 `www/vehicles/rangerover.glb` is the brothers' Range Rover. It is a Tripo-generated model supplied by the project owner, processed with `tools/vehicles/prepare-car.mjs`: the body merged into one mesh, the four wheels split out about their axles, and the textures resized. The game draws it with `src/heroCars.js`, scaled to 4.95 m. The Range Rover name and badging belong to Jaguar Land Rover; the project uses them for the owner's private game.
+
+Part of the traffic is **"Generic passenger car pack"** by Comrade1280 (https://sketchfab.com/3d-models/generic-passenger-car-pack-20f9af9b8a404d5cb022ac6fe87f21f5), licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/). This work is based on that pack: `tools/vehicles/bake-car-pack.py` turns each of its ten cars to the traffic renderer's frame, measures its axles, corrects its inside-out normals, drops its wheels (the game draws its own) and packs the bodies and lamps into one atlas (`www/vehicles/carpack.bin`, `.json`, `.jpg`).
+
+## Props
+
+`www/props/traffic-cone.glb` is the Traffic Cone from **Crayon City Complete v1.2.0** (Crayon), used under the Crayon City Props Asset License v1.1 (`www/props/CRAYON-LICENSE.txt`: free use in games, attribution appreciated). The police set cones out behind crashes and breakdowns (`src/cones.js`).
+
+The other supplied packs in `source-assets/incoming/` (four real-car models under the Sketchfab Standard licence, the AmiPolyGon forest pack, the Designersoup low-poly cars and the rest of Crayon City) are archived there and not yet in the game.
 
 ## Sound recordings
 

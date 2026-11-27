@@ -2,6 +2,10 @@
 
 Cal and Leon, the playable brothers, are the only skinned GLB characters (`src/riggedPeople.js`). Everyone else on the street, police on foot included, is the procedural crowd in `src/humans.js`: one instanced body mesh, skinned in the vertex shader, with its clothes, hair, accessories, gait and hit and shot reactions all generated in code. The officer and civilian GLBs from the earlier hand-over were removed in v0.36 at the owner's request, together with their Blender rigging script.
 
+## Pedestrians: the citizen pack
+
+Four in five ordinary pedestrians are one of the fourteen people of the supplied "Citizen NPC Pack 1" (00amza, CC-BY-4.0): eight men and six women, five of them in skirts. The pack has no skeleton, so `tools/characters/bake-citizens.py` fits each one to the crowd's procedural skeleton. It stands them at 1.79 m (the instance scale gives each their own height), finds their joints, sorts every vertex into torso, arm, leg or skirt with its place along the limb, and brings the A-pose arms down to hang at the sides. They then walk, run, sit, stand in their own ways and take blows and rounds exactly like the rest of the crowd, as fourteen instanced draws. Shop staff, police on duty and bus and train passengers stay procedural (uniforms, hi-vis, seating). Rebuild with `python3 tools/characters/bake-citizens.py <unzipped pack>` after unzipping `source-assets/incoming/citizen_npc_pack_1_character_lowpoly_mobile.zip`.
+
 Open **Dev → Character preview** and pick **cal** or **leon** to stand a copy of a brother beside you, then choose any of his clips. Select **off** afterwards.
 
 ## Cal and Leon (the playable brothers)
