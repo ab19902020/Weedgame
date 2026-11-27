@@ -333,6 +333,32 @@ function drawWall(gb, P, lv, s, H, top) {
       }
       face(gb, horiz, c, side, p0, p1, H + h0, H + h1, wm, wc);
     }
+    // Trim follows the solid wall segments, including the sills beneath windows.
+    for (const [start, end, low, high] of spans) {
+      if (sf || end - start < 0.12) continue;
+      const band = (bottom, upper, material, colour, offset) => {
+        const from = Math.max(low, bottom), to = Math.min(high, upper);
+        if (to > from) face(gb, horiz, c + side * offset, side, start, end, H + from, H + to, material, colour);
+      };
+      if (P.style.pub || P.style.church) {
+        band(0.08, 0.94, 'wood', P.style.pub ? 0x836348 : 0xb59a74, 0.014);
+        band(0.94, 1.01, 'plain', 0x624833, 0.023);
+      } else if (P.style.warehouse || P.style.office || P.style.shop || P.style.food || P.style.mall) {
+        band(0.78, 0.85, 'plain', r.brand || P.style.brand || P.style.st?.accent || (P.style.warehouse ? 0xdba33a : 0x89969a), 0.015);
+      } else if (!P.style.trap) {
+        band(ceil - 0.07, ceil, 'plain', 0xf2eee4, 0.018);
+      }
+    }
+    // Place a rocker switch beside the doorway only where the plate fits on solid wall.
+    const door = ops.find(o => o.kind === 'door' || o.kind === 'front');
+    if (door) {
+      const u = [door.b + 0.16, door.a - 0.16].find(p =>
+        spans.some(([a,b,low,high]) => p-0.05 >= a && p+0.05 <= b && low <= 1.1 && high >= 1.2));
+      if (u !== undefined) {
+        face(gb,horiz,c+side*0.022,side,u-0.045,u+0.045,H+1.10,H+1.19,'plain',0xdad8d0);
+        face(gb,horiz,c+side*0.026,side,u-0.015,u+0.015,H+1.12,H+1.17,'plain',0xfbf9ef);
+      }
+    }
     // skirting along the floor (not across doorways)
     if (!r.kind || !/warehouse|mall|church/.test(r.kind)) {
       let sa = s.a;
@@ -477,9 +503,16 @@ function arch(gb, fr, len, hgt, col) {
 function lights(gb, r, lv, top, style) {
   const [cx, cy] = [(r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2];
   const f = { x: cx, y: cy, rot: 0, h: 0 };
-  if (r.kind === 'warehouse' || r.kind === 'office' || r.kind === 'shop' || r.kind === 'unit') {
-    const sx = r.kind === 'warehouse' ? 6 : 3, sy = r.kind === 'warehouse' ? 8 : 2.4;
-    for (let x = r.x0 + sx / 2; x < r.x1; x += sx) for (let y = r.y0 + sy / 2; y < r.y1; y += sy) gb.box('glow', { x, y, rot: 0, h: 0 }, -0.6, 0.6, -0.1, 0.1, top - 0.06, top - 0.01, 0xfffbf0, { flat: 1.4 });
+  if (['warehouse', 'office', 'shop', 'unit', 'food', 'stock'].includes(r.kind)) {
+    const width = r.x1-r.x0, depth = r.y1-r.y0, industrial = r.kind === 'warehouse';
+    const cols = Math.max(1, Math.round(width / (industrial ? 6 : 3.4)));
+    const rows = Math.max(1, Math.round(depth / (industrial ? 8 : 3.2)));
+    const half = Math.min(0.62, width / cols * 0.36);
+    for (let i=0; i<cols; i++) for (let j=0; j<rows; j++) {
+      const fixture = { x:r.x0+(i+0.5)*width/cols, y:r.y0+(j+0.5)*depth/rows, rot:0, h:top };
+      gb.box('plain', fixture, -half, half, -0.14, 0.14, -0.08, 0, industrial ? 0x465158 : 0xc0c5c6);
+      gb.box('glow', fixture, -half*0.94, half*0.94, -0.105, 0.105, -0.09, -0.08, r.kind === 'food' ? 0xffebce : 0xf4f8ff, {flat:1.35});
+    }
     return;
   }
   if (r.kind === 'mall') { if (r.name === 'concourse') for (let x = r.x0 + 4; x < r.x1 - 2; x += 8) gb.box('glow', { x, y: cy, rot: 0, h: 0 }, -3.4, 3.4, -2.2, 2.2, top - 0.05, top - 0.01, 0xf4fbff, { flat: 1.45, skip: 't' }); return; }
