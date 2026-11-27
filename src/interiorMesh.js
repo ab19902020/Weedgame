@@ -591,6 +591,17 @@ const ITEM = {
     for (let u = -w / 2 + 0.3; u < w / 2; u += 0.6) gb.box('plain', f, u - 0.08, u + 0.08, d / 2 - 0.018, d / 2, it.h - 0.15, it.h - 0.13, 0x9a9a98);
     if (!it.island) gb.box('tile', f, -w / 2, w / 2, -d / 2 - 0.005, -d / 2 + 0.008, it.h, it.h + 0.5, it.splash ?? 0xf2f1ec, { skip: 'bd' });
     if (it.sink) { gb.box('plain', f, -0.3, 0.3, -0.2, 0.2, it.h - 0.001, it.h + 0.003, 0xb9bcbf); gb.box('plain', f, -0.25, 0.25, -0.16, 0.16, it.h + 0.003, it.h + 0.004, 0x55585c); gb.box('plain', f, -0.02, 0.02, -0.22, -0.18, it.h, it.h + 0.3, 0xb9bcbf); }
+    // A kettle and matching mugs on the spare end of a domestic worktop.
+    if (!it.island && w >= 2.1) {
+      const x = -w / 2 + 0.24;
+      gb.cyl('plain', f, x, -0.06, 0.095, it.h, it.h + 0.20, 0x87939a, 10);
+      gb.cyl('plain', f, x, -0.06, 0.075, it.h + 0.20, it.h + 0.22, 0x31383a, 10);
+      gb.box('plain', f, x-0.135, x-0.09, -0.08, -0.04, it.h+0.06, it.h+0.17, 0x31383a);
+      for (const offset of [0.20, 0.31]) {
+        gb.cyl('plain', f, x+offset, 0.08, 0.041, it.h, it.h+0.085, 0xe9e3d3, 8);
+        gb.cyl('plain', f, x+offset, 0.08, 0.033, it.h+0.085, it.h+0.086, 0x635146, 8);
+      }
+    }
     const hob = w > 1.8 ? w / 2 - 0.45 : null;
     if (hob != null) { gb.box('plain', f, hob - 0.3, hob + 0.3, -0.25, 0.25, it.h, it.h + 0.01, 0x161616); for (const [a, b] of [[-0.14, -0.12], [0.14, -0.12], [-0.14, 0.12], [0.14, 0.12]]) gb.cyl('plain', f, hob + a, b, 0.07, it.h + 0.01, it.h + 0.012, 0x3a3a3a, 8); gb.box('plain', f, hob - 0.3, hob + 0.3, d / 2 - 0.022, d / 2 - 0.018, 0.2, 0.8, 0x161616); }
   },
@@ -616,6 +627,8 @@ const ITEM = {
     gb.box('plain', f, -w / 2 + 0.03, w / 2 - 0.03, -d / 2 + 0.06, d / 2 - 0.03, 0.32, 0.5, 0xf4f2ec);
     gb.box('plain', f, -w / 2 + 0.01, w / 2 - 0.01, -d / 2 + 0.6, d / 2 - 0.01, 0.5, 0.56, it.col);
     gb.box('plain', f, -w / 2 + 0.01, w / 2 - 0.01, d / 2 - 0.015, d / 2 + 0.005, 0.3, 0.56, it.col);
+    // Folded throw across the foot of the duvet.
+    gb.box('plain', f, -w/2+0.025, w/2-0.025, d/2-0.45, d/2-0.12, 0.56, 0.59, shadeK(it.col, 0.7));
     const np = w > 1.2 ? 2 : 1;
     for (let k = 0; k < np; k++) { const u = np === 2 ? (k ? 0.38 : -0.38) * w / 1.5 : 0; gb.box('plain', f, u - 0.3, u + 0.3, -d / 2 + 0.12, -d / 2 + 0.5, 0.5, 0.64, 0xffffff); }
   },

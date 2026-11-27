@@ -299,8 +299,8 @@ function house(P, s) {
   if (wide) {
     P.room(f, 'bed1', 0, 0, hx0, yh, { floor: bedFloor, wall: ['plaster', pick(R, Object.values(PAINT))] });
     P.room(f, 'bed2', hx0 + hw, 0, W, yh, { floor: bedFloor, wall: ['plaster', pick(R, Object.values(PAINT))] });
-    P.room(f, 'landing2', hx0, yh, hx0 + hw, Math.min(D - 1.8, yh + 0.95), { group: 'landing', floor: ['carpet', carpet], wall: ['plaster', paint2], windows: 0 });
-    P.room(f, 'bath', hx0, Math.min(D - 1.8, yh + 0.95), hx0 + hw, D, { floor: ['tile', bathCol], wall: ['tile', 0xf2f1ec], frosted: true, winW: 0.7 });
+    P.room(f, 'landing2', hx0, yh, hx0 + hw, Math.min(D - 1.35, yh + 0.95), { group: 'landing', floor: ['carpet', carpet], wall: ['plaster', paint2], windows: 0 });
+    P.room(f, 'bath', hx0, Math.min(D - 1.35, yh + 0.95), hx0 + hw, D, { floor: ['tile', bathCol], wall: ['tile', 0xf2f1ec], frosted: true, winW: 0.7 });
     P.room(f, 'bed3', 0, yh, hx0, D, { floor: bedFloor, wall: ['plaster', paint2] });
     P.room(f, s.brothersHome?'study':'bed4', hx0 + hw, yh, W, D, { floor: bedFloor, wall: ['plaster', pick(R, Object.values(PAINT))] });
     P.door(f, 'landing', 'bed1', { at: yh - 0.6 }); P.door(f, 'landing', 'bed2', { at: yh - 0.6 });
@@ -541,7 +541,12 @@ function shop(P, s) {
   const ax0 = cs === 'x0' ? 1.6 : 1.4, ax1 = W - (cs === 'x1' ? 1.6 : 1.4);
   for (let y = 2.4, k = 0; y < D - sd - 1.6; y += 2.0, k++) if (ax1 - ax0 > 2) P.add(g, 'gondola2', (ax0 + ax1) / 2, y, ax1 - ax0 - 0.6, 0.9, 1.5, { seed: k + 2 });
   const st = P.find(g, 'stock');
-  for (let k = 0; k < 8; k++) P.add(g, 'box', st.x0 + 0.6 + R() * (W - 1.2), st.y0 + 0.5 + R() * (sd - 1), 0.5 + R() * 0.4, 0.4 + R() * 0.3, 0.3 + R() * 0.9, { col: pick(R, [0xb08a5a, 0xc49a68, 0x9c7a50]), rot: R() * 0.4 });
+  // Deliveries line the back wall, leaving the stockroom door and a walking aisle clear.
+  for (let x = 0.7; x < W - 0.8; x += 1.15) {
+    const height = 0.42 + R() * 0.28;
+    P.add(g, 'box', x, st.y1 - 0.48, 0.84, 0.66, height, { col: 0xb08a5a });
+    if (R() < 0.65) P.add(g, 'box', x, st.y1 - 0.48, 0.62, 0.48, 0.38, { base: height, col: 0xc49a68 });
+  }
 }
 
 // ------------------------------------------------------------------ a pub
