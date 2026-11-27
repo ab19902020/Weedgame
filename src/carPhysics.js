@@ -198,7 +198,7 @@ export class CarDynamics {
     for (const o of G.traffic.list) {
       if (o === v || o.hidden || o.dead) continue;
       const ddx = o.x - v.x, ddz = o.z - v.z, rr = r + o.def.L / 2;
-      if (ddx * ddx + ddz * ddz < rr * rr && Math.abs((o.y || 0) - v.y) < 2.5) this.others.push(o);
+      if (ddx * ddx + ddz * ddz < rr * rr && Math.abs((o.y || 0) - v.y) < 2.5 && !o.fallenBike) this.others.push(o);   // (a bike lying in the road is driven over: carjack.js slides it)
     }
   }
   // ------------------------------------------------------------------ one substep of the dynamics
@@ -500,7 +500,8 @@ export class CarDynamics {
         // a hard hit: the front crumples and takes much of the speed you had left with it, so you don't go on
         // shoving the other car down the road
         if (!pair && !kinematic && -vn > 5) {
-          const left = -(ph.vx * nx + ph.vz * nz), extra = Math.min(left, Math.min(7, 0.42 * (-vn - 5)));
+          // (as much as the other weighs against you: a bicycle hardly slows a car)
+          const left = -(ph.vx * nx + ph.vz * nz), extra = Math.min(left, Math.min(7, 0.42 * (-vn - 5)) * Math.min(1, Po.m / P.m));
           if (extra > 0) { ph.vx += nx * extra; ph.vz += nz * extra; }
         }
         // friction along the contact (scraping down a car's side)
