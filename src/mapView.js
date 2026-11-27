@@ -27,14 +27,14 @@ const ROAD = {
   U: { z: 2, w: 1.7, real: 6, minS: 0.08, cas: '#bfb7aa', fill: '#ffffff', mini: '#f8f8f3', label: 0.5 },
   C: { z: 3, w: 2.2, real: 7, minS: 0.05, cas: '#b39c4e', fill: '#fbe38a', mini: '#f4d977', label: 0.35 },
   B: { z: 4, w: 2.6, real: 8, minS: 0.025, cas: '#a8661c', fill: '#f4a242', mini: '#ffb257', label: 0.25 },
-  A: { z: 5, w: 3.0, real: 9, minS: 0, cas: '#8d2a22', fill: '#e14a3e', mini: '#ff786a', label: 0.18 },
-  T: { z: 6, w: 3.5, real: 11, minS: 0, cas: '#13512e', fill: '#2a9b5b', mini: '#4bd38d', label: 0.14 },
-  M: { z: 7, w: 4.2, real: 11, minS: 0, cas: '#14386f', fill: '#2f71d4', mini: '#5aa8ff', label: 0.1 },
+  A: { z: 5, w: 3.0, real: 9, minS: 0, cas: '#8d2a22', fill: '#db6653', mini: '#ff9c88', label: 0.18 },
+  T: { z: 6, w: 3.5, real: 11, minS: 0, cas: '#13512e', fill: '#24896a', mini: '#68dbc0', label: 0.14 },
+  M: { z: 7, w: 4.2, real: 11, minS: 0, cas: '#14386f', fill: '#376bb2', mini: '#5aa8ff', label: 0.1 },
 };
 const ORDER = Object.keys(ROAD).sort((a, b) => ROAD[a].z - ROAD[b].z);
 // land cover (build_world.py LC) in the atlas's light key and the minimap's dark one
 const LAND = [
-  ['#e7efdc', '#25312b'], ['#eef0ea', '#2a3431'], ['#f1efe9', '#2c3532'], ['#ebe7e1', '#2a3431'], ['#a9d2ef', '#22506c'],
+  ['#e7efdc', '#25312b'], ['#eef0ea', '#2a3431'], ['#f1efe9', '#2c3532'], ['#ebe7e1', '#2a3431'], ['#92cdd6', '#22506c'],
   ['#b5d5a1', '#1f3f2a'], ['#f3efd7', '#2f3429'], ['#c9e5b5', '#23452e'], ['#e9e6e1', '#2e3533'], ['#e0dadf', '#2e3131'],
   ['#e9e5da', '#2b3430'], ['#edf1e5', '#27312d'], ['#f2ede4', '#313936'], ['#bde2ab', '#24482e'], ['#d8e7c1', '#2b3e2b'],
   ['#c8deb3', '#243e2b'], ['#cde2c2', '#283f2e'], ['#ece4ea', '#2f2e34'], ['#e7e0cd', '#32312a'], ['#f4eac6', '#393728'],
@@ -42,15 +42,15 @@ const LAND = [
 const rgb = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
 // (the minimap's key is the atlas's pulled towards a dark green-grey: mid tones, so the white roads, blue water and
 // green parks stand out over any scene; greens and water keep more of their colour)
-const MINI_BASE = [24, 34, 30];
+const MINI_BASE = [12, 28, 40];
 const toMini = (h, f) => rgb(h).map((v, i) => Math.round(v * (1 - f) + MINI_BASE[i] * f));
-const LAND_RGB = LAND.map(p => { const a = rgb(p[0]), green = a[1] > a[0] + 12 && a[1] > a[2] - 30; return [a, toMini(p[0], green || a[2] > a[0] + 30 ? 0.5 : 0.6)]; });
+const LAND_RGB = LAND.map(p => { const a = rgb(p[0]), green = a[1] > a[0] + 12 && a[1] > a[2] - 30; return [a, toMini(p[0], green || a[2] > a[0] + 30 ? 0.65 : 0.77)]; });
 const AT = {   // atlas layers
-  bg: '#e7efdc', water: '#a9d2ef', waterEdge: '#82b7de', plaza: '#f5f0e7', pave: '#f3f1eb', path: '#ebe5d8', carriage: '#ffffff', carriageEdge: '#cfc8bd',
-  bld: '#e1d8d0', bldMid: '#d9cfc5', bldEdge: '#c6b8ac', bldShadow: 'rgba(110,92,74,0.2)', text: '#2b2824', halo: 'rgba(255,255,255,0.92)', place: '#1f2a24',
+  bg: '#e7efdc', water: '#92cdd6', waterEdge: '#5ba5b3', plaza: '#f5f0e7', pave: '#f3f1eb', path: '#ebe5d8', carriage: '#ffffff', carriageEdge: '#cfc8bd',
+  bld: '#dfd6c9', bldMid: '#d4c8b9', bldEdge: '#af9f8d', bldShadow: 'rgba(110,92,74,0.2)', text: '#2b2824', halo: 'rgba(255,255,255,0.92)', place: '#1f2a24',
 };
 const MI = {   // minimap layers
-  bg: '#58615b', water: '#3d8fd1', waterEdge: '#7fbdf0', plaza: '#7a817b', pave: '#737a75', path: '#6c736d', bld: '#8f9792', bldEdge: '#4b524e',
+  bg: '#344953', water: '#18799b', waterEdge: '#7fbdf0', plaza: '#7a817b', pave: '#737a75', path: '#6c736d', bld: '#70828a', bldEdge: '#384a55',
   bldShadow: 'rgba(16,22,20,0.35)', walk: '#e9dfc2', rail: '#3a3346', railTie: '#d9d3e2', casing: 'rgba(14,19,17,0.92)',
 };
 const isRef = s => /^(M\d+|A\d+(\(M\))?|B\d+)$/.test(s);
@@ -286,7 +286,7 @@ export class MapView {
     const tr = G.transit;
     if (tr && s > 0.8) for (const [si] of tr.services || []) {
       const st = G.net.busStops[si]; if (!st) continue; const x = X(st[0]), z = Z(st[1]); if (x < -8 || x > W + 8 || z < -8 || z > H + 8) continue;
-      c.fillStyle = '#1b6f8a'; c.strokeStyle = '#ffffff'; c.lineWidth = 1.4; c.beginPath(); c.roundRect ? c.roundRect(x - 3.5, z - 3.5, 7, 7, 1.5) : c.rect(x - 3.5, z - 3.5, 7, 7); c.fill(); c.stroke();
+      siteIcon(c, x, z, 'bus', 7);
     }
     this.labels(c, V, W, H, X, Z, s, avoid);
     return whole && !(near && tiles.length < this.wanted);
@@ -308,8 +308,7 @@ export class MapView {
       c.font = '700 11.5px system-ui';
       for (const st of tr.stations) {
         const x = X(st.x), z = Z(st.z); if (x < -10 || x > W + 10 || z < -10 || z > H + 10) continue;
-        c.beginPath(); c.arc(x, z, 5.5, 0, 7); c.fillStyle = '#ffffff'; c.fill(); c.strokeStyle = '#d6332a'; c.lineWidth = 3; c.stroke();
-        c.beginPath(); c.arc(x, z, 7.2, 0, 7); c.strokeStyle = 'rgba(255,255,255,0.9)'; c.lineWidth = 1; c.stroke();
+        siteIcon(c, x, z, 'rail', 9);
         boxes.push([x, z, 14, 14]);
         if (s <= 0.1) continue;
         const w = c.measureText(st.name).width;
@@ -566,30 +565,49 @@ export class MapView {
   }
 }
 
-// ------------------------------------------------------------------ enterable buildings on the maps
-const SITE = { trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', home: '#2a9d8f', food: '#f08a24', fuel: '#1d6fa5' };
-const siteCol = k => SITE[k] || SITE.home;
-// a rounded square in the kind's colour with a white glyph: a house, a crate, an office block, a bag, a glass, a cross
-export function siteIcon(c, x, z, kind, r) {
-  c.save(); c.translate(x, z);
-  c.fillStyle = siteCol(kind); c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(1.4, r * 0.2);
-  c.beginPath(); c.roundRect ? c.roundRect(-r, -r, r * 2, r * 2, r * 0.35) : c.rect(-r, -r, r * 2, r * 2); c.fill(); c.stroke();
-  c.fillStyle = '#ffffff'; c.strokeStyle = '#ffffff'; c.lineWidth = Math.max(1, r * 0.16);
-  const k = r * 0.62;
+
+// Shared 24-unit pictograms for the atlas, category selector and heading-up radar.
+const MARKERS = {
+  home: ['#14675e', 'M4 11L12 4l8 7 M6 10v10h5v-6h3v6h4V10'],
+  nice: ['#805c18', 'M3 11l9-7 9 7 M6 10v10h12V10 M10 20v-6h4v6 M16 6V4h2v4'],
+  trap: ['#a3483d', 'M3 11l9-7 9 7 M6 10v10h12V10 M13 10l-3 5h4l-3 4'],
+  shop: ['#28745d', 'M4 10l2-5h12l2 5-2 2-3-2-3 2-3-2-3 2z M6 13v6h12v-6'],
+  mall: ['#765794', 'M5 9h14l1 11H4z M9 10V7a3 3 0 0 1 6 0v3'],
+  food: ['#ae572d', 'M5 10a7 6 0 0 1 14 0z M4 14l4 1 4-1 4 1 4-1 M5 18h14'],
+  pub: ['#945629', 'M5 7h11v12H6z M16 9h3q3 4-3 6 M8 10v5 M12 10v5'],
+  fuel: ['#186e8a', 'M4 20V5h10v15 M3 20h12 M7 8h4v4H7z M14 13h2v3q0 3 3 2V9l-3-4'],
+  office: ['#476590', 'M5 20V5h10v15 M15 11h4v9 M3 20h18 M8 8h1m2 0h1m-4 4h1m2 0h1m-4 4h1m2 0h1'],
+  warehouse: ['#596875', 'M3 10l9-6 9 6 M5 10v10h14V10 M8 20v-8h8v8 M8 15h8 M8 18h8'],
+  church: ['#6b5f93', 'M12 3v6 M9 5h6 M5 13l7-6 7 6 M6 13v7h12v-7 M10 20v-4a2 2 0 0 1 4 0v4'],
+  rail: ['#964954', 'M7 5h10l1 10-2 2H8l-2-2z M7 11h10 M8 20l2-3m6 3-2-3 M9 14h1m4 0h1'],
+  bus: ['#345c85', 'M5 6q7-3 14 0v12H5z M6 12h12 M8 15h1m6 0h1 M7 18v2m10-2v2'],
+  car: ['#306591', 'M4 14l2-2 2-5h8l2 5 2 2v4H4z M7 12h10 M6 15h2m8 0h2 M6 18v2m12-2v2'],
+  police: ['#384a9b', 'M12 3l8 3v6q-1 5-8 9-7-4-8-9V6z M8 12l3 3 5-6'],
+  district: ['#48665b', 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z M9 4v14m6-12v14'],
+  landmark: ['#8b6442', 'M5 19h14 M7 16h10 M9 15l2-11h2l2 11z'],
+};
+const paths = new Map();
+export function siteIcon(c, x, y, kind, radius, rotation = 0, accent) {
+  const [colour, glyph] = MARKERS[kind] || MARKERS.home;
+  if (!paths.has(glyph)) paths.set(glyph, new Path2D(glyph));
+  c.save();
+  c.translate(x, y);
+  c.rotate(rotation);
+  c.scale(radius / 12, radius / 12);
   c.beginPath();
-  if (kind === 'warehouse') { c.rect(-k, -k * 0.35, k * 2, k * 1.25); c.moveTo(-k, -k * 0.35); c.lineTo(0, -k); c.lineTo(k, -k * 0.35); c.fill(); }
-  else if (kind === 'office') { c.fillRect(-k * 0.65, -k, k * 1.3, k * 1.9); c.fillStyle = siteCol(kind); for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) c.fillRect(-k * 0.45 + j * k * 0.55, -k * 0.75 + i * k * 0.55, k * 0.32, k * 0.3); }
-  else if (kind === 'shop' || kind === 'mall') { c.moveTo(-k * 0.8, -k * 0.25); c.lineTo(k * 0.8, -k * 0.25); c.lineTo(k * 0.65, k * 0.95); c.lineTo(-k * 0.65, k * 0.95); c.closePath(); c.fill(); c.beginPath(); c.arc(0, -k * 0.25, k * 0.42, Math.PI, 0); c.stroke(); }
-  else if (kind === 'pub') { c.moveTo(-k * 0.55, -k * 0.9); c.lineTo(k * 0.55, -k * 0.9); c.lineTo(k * 0.4, k * 0.95); c.lineTo(-k * 0.4, k * 0.95); c.closePath(); c.fill(); }
-  else if (kind === 'church') { c.fillRect(-k * 0.16, -k, k * 0.32, k * 2); c.fillRect(-k * 0.6, -k * 0.45, k * 1.2, k * 0.3); }
-  else if (kind === 'food') { c.beginPath(); c.arc(0, -k * 0.15, k * 0.8, Math.PI, 0); c.fill(); c.fillRect(-k * 0.85, k * 0.05, k * 1.7, k * 0.22); c.fillRect(-k * 0.8, k * 0.4, k * 1.6, k * 0.42); }
-  else if (kind === 'fuel') { c.fillRect(-k * 0.75, -k * 0.9, k * 1.0, k * 1.8); c.fillStyle = siteCol(kind); c.fillRect(-k * 0.55, -k * 0.7, k * 0.6, k * 0.5); c.fillStyle = '#ffffff'; c.fillRect(k * 0.3, -k * 0.45, k * 0.2, k * 1.1); c.fillRect(k * 0.25, -k * 0.6, k * 0.45, k * 0.18); }
-  else { c.moveTo(0, -k); c.lineTo(k, -k * 0.05); c.lineTo(k * 0.7, -k * 0.05); c.lineTo(k * 0.7, k * 0.9); c.lineTo(-k * 0.7, k * 0.9); c.lineTo(-k * 0.7, -k * 0.05); c.lineTo(-k, -k * 0.05); c.closePath(); c.fill(); if (kind === 'trap') { c.fillStyle = siteCol(kind); c.fillRect(-k * 0.22, k * 0.25, k * 0.44, k * 0.65); } }
+  c.roundRect(-12, -12, 24, 24, 7);
+  c.fillStyle = accent || colour;
+  c.fill();
+  c.lineWidth = 3;
+  c.strokeStyle = '#162c37';
+  c.stroke();
+  c.lineWidth = 1.3;
+  c.strokeStyle = '#f5f4df';
+  c.stroke();
+  c.translate(-12, -12);
+  c.strokeStyle = '#fffdf3';
+  c.lineWidth = 1.9;
+  c.lineJoin = c.lineCap = 'round';
+  c.stroke(paths.get(glyph));
   c.restore();
-}
-// on the minimap (which turns): a ringed dot in the kind's colour; u is a CSS pixel in world units
-export function siteDot(c, x, z, kind, u) {
-  c.fillStyle = siteCol(kind); c.strokeStyle = '#ffffff'; c.lineWidth = 1.6 * u;
-  c.beginPath(); c.arc(x, z, 5 * u, 0, 7); c.fill(); c.stroke();
-  c.fillStyle = '#ffffff'; c.beginPath(); c.arc(x, z, 1.8 * u, 0, 7); c.fill();
 }

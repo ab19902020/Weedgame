@@ -5,7 +5,7 @@ import { ROLES } from './riggedPeople.js';
 import { GameMenu } from './gameMenu.js';
 import { Navigation, distanceLabel } from './navigation.js';
 import { STATES } from './weather.js';
-import { MapView, siteIcon, siteDot } from './mapView.js';
+import { MapView, siteIcon } from './mapView.js';
 import { WEAPONS, BY_KEY } from './weaponsData.js';
 
 const DIRS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
@@ -132,8 +132,11 @@ export class Hud {
       for(const button of this.el('mKinds').children) button.setAttribute('aria-pressed',String(button.textContent===key));
       showPlace();
     };
+    const categoryIcons = { Houses:'home', 'Brothers’ home':'nice', Shops:'shop', Food:'food', Pubs:'pub', 'Petrol stations':'fuel', Stations:'rail', Buildings:'office', Districts:'district', Landmarks:'landmark' };
     for(const key of Object.keys(categories)){
       const button=document.createElement('button'); button.textContent=key;
+      const badge=document.createElement('canvas'); badge.width=badge.height=48; badge.setAttribute('aria-hidden','true');
+      siteIcon(badge.getContext('2d'),24,24,categoryIcons[key],21); button.prepend(badge);
       button.onclick=()=>{this.selectPlaces(key);this.el('mGo').focus({preventScroll:true});}; this.el('mKinds').append(button);
     }
     const cycle=step=>{if(results.length){index=(index+step+results.length)%results.length;showPlace();}};
@@ -290,15 +293,14 @@ export class Hud {
     const rot = this.menu.settings.orientation === 'North up' ? 0 : me.vehicle ? -me.heading-Math.PI/2 : -(G.brothers.cam.yaw + Math.PI / 2) - Math.PI; // map rotates with camera
     const c = this.mini, R = S / 2;
     this.atlas.minimap(c, S, dpr, me, scale, rot, c => {
-      this.nav.draw(c, x => x, z => z, 1 / scale);
-      if (G.interiors?.ready) { const reach = (S / 2) / scale; for (const site of G.interiors.sites) { if (site.kiosk || Math.abs(site.dx - me.x) > reach || Math.abs(site.dz - me.z) > reach) continue; siteDot(c, site.dx, site.dz, site.kind, 1 / scale); } }
-      if (G.fuel?.ready) { const reach = (S / 2) / scale; for (const st of G.fuel.stations) { if (Math.abs(st.x - me.x) > reach || Math.abs(st.z - me.z) > reach) continue; siteDot(c, st.x, st.z, 'fuel', 1 / scale); } }
+      this.nav.draw(c, x => x, z => z, 1 / scale, -rot);
+      if (G.interiors?.ready) { const reach = (S / 2) / scale; for (const site of G.interiors.sites) { if (site.kiosk || Math.abs(site.dx - me.x) > reach || Math.abs(site.dz - me.z) > reach) continue; siteIcon(c, site.dx, site.dz, site.kind, 8 / scale, -rot); } }
+      if (G.fuel?.ready) { const reach = (S / 2) / scale; for (const st of G.fuel.stations) { if (Math.abs(st.x - me.x) > reach || Math.abs(st.z - me.z) > reach) continue; siteIcon(c, st.x, st.z, 'fuel', 8 / scale, -rot); } }
       const reach = R / scale;
       for (const v of G.traffic.list) {
         if (Math.abs(v.x - me.x) > reach || Math.abs(v.z - me.z) > reach) continue;
-        if (v.kind === 'police') dot(c, v.x, v.z, 4.5 / scale, v.siren ? (Math.floor(performance.now() / 250) % 2 ? '#2a6cff' : '#ff2a2a') : '#3a7aff', '#0b1220', 1.2 / scale);
-        else if (v.owner || v.free) dot(c, v.x, v.z, 4 / scale, '#7fd0ff', '#0b1220', 1.2 / scale);
-        else if (v.kind === 'bus') dot(c, v.x, v.z, 3.5 / scale, '#c080ff', '#0b1220', 1 / scale);
+        const kind = v.kind === 'police' ? 'police' : v.owner || v.free ? 'car' : v.kind === 'bus' ? 'bus' : null;
+        if (kind) siteIcon(c, v.x, v.z, kind, 7 / scale, -rot, v.siren && (Math.floor(performance.now()/350)%2) ? '#b44751' : undefined);
       }
     });
     // screen space: the other brother (held at the rim when out of range), the needle, north
@@ -310,8 +312,11 @@ export class Hud {
     dot(c, R + ox, R + oz, 6.5, '#ffb347', '#1a1208', 1.6);
     c.fillStyle = '#1a1208'; c.font = '800 8.5px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(other.short[0], R + ox, R + oz + 0.5);
     c.save(); c.translate(R, R);
-    c.fillStyle = 'rgba(47,140,255,0.25)'; c.beginPath(); c.arc(0, 0, 13, 0, 7); c.fill();
     c.rotate(me.heading + rot);
+    const sweep=c.createRadialGradient(0,0,3,0,0,32);
+    sweep.addColorStop(0,'#71e5ff80'); sweep.addColorStop(1,'#71e5ff00');
+    c.fillStyle=sweep; c.beginPath(); c.moveTo(0,0); c.arc(0,0,32,-0.52,0.52); c.closePath(); c.fill();
+    c.fillStyle = 'rgba(47,140,255,0.25)'; c.beginPath(); c.arc(0, 0, 13, 0, 7); c.fill();
     c.beginPath(); c.moveTo(11, 0); c.lineTo(-7.5, -7.5); c.lineTo(-3.5, 0); c.lineTo(-7.5, 7.5); c.closePath();
     c.lineJoin = 'round'; c.lineWidth = 4.5; c.strokeStyle = 'rgba(8,14,22,0.55)'; c.stroke();
     c.lineWidth = 2.4; c.strokeStyle = '#ffffff'; c.stroke(); c.fillStyle = '#2f8cff'; c.fill();
@@ -419,8 +424,8 @@ export class Hud {
         // the brothers' cars and the police
         for (const v of G.traffic.list) {
           const x = X(v.x), z = Z(v.z); if (x < -10 || x > W + 10 || z < -10 || z > H + 10) continue;
-          if (v.owner || v.free) { c.save(); c.translate(x, z); c.rotate(v.heading); c.fillStyle = '#2b8fe8'; c.strokeStyle = '#ffffff'; c.lineWidth = 1.6; c.beginPath(); c.roundRect ? c.roundRect(-7, -4, 14, 8, 2.5) : c.rect(-7, -4, 14, 8); c.fill(); c.stroke(); c.fillStyle = '#bfe3ff'; c.fillRect(1.5, -3, 3, 6); c.restore(); }
-          else if (v.kind === 'police') dot(c, x, z, s < 0.1 ? 3.2 : 4.5, v.siren ? (Math.floor(now / 250) % 2 ? '#2a6cff' : '#ff2a2a') : '#2a4cff', '#ffffff', s < 0.1 ? 1 : 1.4);
+          const kind = v.kind === 'police' ? 'police' : v.owner || v.free ? 'car' : v.kind === 'bus' ? 'bus' : null;
+          if (kind) siteIcon(c, x, z, kind, s < 0.1 ? 5 : 8, 0, v.siren && (Math.floor(now/350)%2) ? '#b44751' : undefined);
         }
         // the brothers: you as a needle, the other as a ringed initial
         G.brothers.b.forEach((b, i) => {
