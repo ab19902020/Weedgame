@@ -24,7 +24,7 @@ const ease = x => { x = clamp01(x); return x * x * (3 - 2 * x); };
 export function reactionPose(R, out = {}) {
   const t = R.t, s = R.s ?? 1;
   out.spine = 0; out.spineLo = 0; out.head = 0; out.twist = 0; out.arms = 0; out.armsOut = 0; out.hips = 0; out.knees = 0; out.fall = 0; out.drop = 0;
-  out.back = 1; out.kneel = 0; out.kSide = 1; out.armSide = 0; out.armFling = 0; out.writhe = 0; out.writheRoll = 0;
+  out.back = 1; out.kneel = 0; out.kSide = 1; out.armSide = 0; out.armFling = 0; out.writhe = 0; out.writheRoll = 0; out.fallTurn = 0;
   switch (R.type) {
     case 'jab': { const k = pulse(t, 0.07, 0.22) * s; out.head = 0.55 * k; out.spine = 0.16 * k; out.twist = 0.25 * k * (R.side || 1); out.arms = 0.25 * k; break; }
     case 'body': { const k = pulse(t, 0.1, 0.45) * s; out.spine = -0.62 * k; out.head = -0.3 * k; out.hips = 0.35 * k; out.knees = 0.45 * k; out.arms = -0.5 * k; break; }
@@ -38,6 +38,26 @@ export function reactionPose(R, out = {}) {
         const b0 = head ? 0.02 : 0.12 + st, f0 = head ? 0.12 : 0.35 + st;
         const buckle = ease((t - b0) / (head ? 0.18 : 0.35)); out.hips = 0.9 * buckle; out.knees = 1.5 * buckle; out.drop = 0.35 * buckle;
         out.fall = ease((t - f0) / (head ? 0.42 : 0.55)); out.armsOut = (head ? 0.2 : 0.5) * Math.min(1, t * 4) * (1 - out.fall * 0.5); out.back = R.back ?? 1;
+        out.fallTurn = (R.fallTurn || 0) * out.fall;
+        if (R.style === 'knees') {
+          // the legs go: down on to the knees, doubled over the wound a moment, then forward on to the face
+          const kn = ease((t - 0.05) / 0.3), over = ease((t - 0.8) / 0.55);
+          out.knees = 2.0 * kn; out.hips = 1.05 * kn; out.drop = 0.52 * kn; out.spine = -0.35 * kn * (1 - over) + 0.15 * fl;
+          out.head = -0.25 * kn + 0.3 * fl; out.arms = -0.7 * kn * (1 - over); out.armsOut = 0.3 * over; out.fall = over;
+        } else if (R.style === 'spin') {
+          // turned round by it, arm flung out, and down sideways
+          const tw = ease(t / 0.32);
+          out.twist = 1.25 * tw * (R.side || 1); out.armSide = R.side || 1; out.armFling = 1.3 * pulse(t, 0.06, 0.45);
+          out.knees = 0.9 * ease((t - 0.1) / 0.3); out.hips = 0.5 * ease((t - 0.1) / 0.3); out.fall = ease((t - 0.28) / 0.5);
+          out.fallTurn = (R.fallTurn || 0) * Math.max(tw * 0.5, out.fall);
+        } else if (R.style === 'thrown') {
+          // a shotgun at close range: off their feet backwards, arms out
+          const k = pulse(t, 0.03, 0.3);
+          out.spine = 0.55 * k; out.head = 0.75 * k; out.armsOut = 1.15 * Math.min(1, t * 8) * (1 - ease((t - 0.5) / 0.5) * 0.5);
+          out.knees = 0.35 * k; out.hips = 0.25 * k; out.drop = 0; out.fall = ease((t - 0.03) / 0.34);
+        }
+        // a twitch or two once they're down
+        if (R.twitch && t > 1.1 && t < 2.8) { const e = Math.exp(-(t - 1.1) * 1.8); out.spine += 0.06 * Math.sin(t * 37) * e; out.armsOut += 0.08 * Math.max(0, Math.sin(t * 23)) * e; }
         if (R.jolt > 0) { out.spine += R.jolt; R.jolt = Math.max(0, R.jolt - 0.02); }
       } else { const k = pulse(t, 0.06, 0.3) * s; out.spine = 0.3 * k; out.head = 0.35 * k; out.twist = 0.5 * k * (R.side || 1); out.arms = -0.35 * k; out.knees = 0.2 * k; }
       break;

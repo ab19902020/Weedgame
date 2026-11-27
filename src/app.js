@@ -23,6 +23,8 @@ import { Wanted } from './wanted.js';
 import { Emergency } from './emergency.js';
 import { Taxis } from './taxis.js';
 import { Phone } from './phone.js';
+import { Gore } from './gore.js';
+import { Carjack } from './carjack.js';
 import { Parking, Buses } from './services.js';
 import { Atmos } from './atmos.js';
 import { Landmarks } from './landmarks.js';
@@ -113,6 +115,7 @@ G.haptics = new Haptics(G);          // controller rumble and DualSense triggers
 G.neighbourhood=new Neighbourhood(G);
 G.emergency = new Emergency(G);      // ambulances and fire engines, all over the map (emergency.js)
 G.taxis = new Taxis(G, camInfo);      // cabs on the streets and Kerb rides (taxis.js)
+G.carjack = new Carjack(G);           // taking anyone's car or bike; riders thrown off bikes (carjack.js)
 G.parking = new Parking(G);
 G.buses = new Buses(G);
 G.transit = new Transit(G);
@@ -165,6 +168,7 @@ G.phone = new Phone(G);              // the phone: Kerb, the atlas, the radio (p
 G.controller=new Controller(G);
 G.radio = new GameRadio(G);
 G.combat = new Combat(G);                 // weapons, fists, the brothers' arms (combat.js)
+G.gore = new Gore(G);                     // blood: spray, spatter, wounds, pools (gore.js)
 G.people.rigs.onHero = (slot, a, dt) => G.combat.pose(slot, a, dt);
 // the brothers' own cars are Range Rovers (older saves had a hatch and an estate under these ids)
 const OWN = { 'cal-car': 'rangerover', 'leon-car': 'rangerover' };
@@ -262,7 +266,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt) && !G.taxis.ride(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
+  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt) && !G.taxis.ride(dt) && !G.carjack.update(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   // (four times a second, squared distances: it ran over every signal head in the loaded world every frame)
@@ -293,6 +297,7 @@ function step(dt, render) {
   G.breakables.update(dt);
   G.buses.update(dt, G.focus, camInfo);
   G.peds.update(dt, G.focus, camInfo);
+  G.gore.update(dt);
   G.wildlife.update(dt);
   G.police.update(dt);
   G.cones.update(dt);

@@ -12,7 +12,7 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, float, vec2, vec3, vec4, int, attribute, positionGeometry, normalGeometry, positionWorld, varyingProperty,
-  sin, cos, abs, max, min, mix, step, smoothstep, clamp, floor, fract, pow, length, normalize, select, texture, fwidth, modelWorldMatrix,
+  sin, cos, atan, abs, max, min, mix, step, smoothstep, clamp, floor, fract, pow, length, normalize, select, texture, fwidth, modelWorldMatrix,
 } from 'three/tsl';
 import { bakeFaceAtlas, bakeHairTexture, FACE_ATLAS as FA } from './faceBake.js';
 import { U, cloudShadow } from './env.js';
@@ -353,6 +353,22 @@ const unpack = v => { const r = floor(v.div(65536)), g = floor(v.sub(r.mul(65536
 
 // tex: a texture atlas (the citizen pack) instead of the procedural clothes, faces and hair: the same skinning, gait,
 // stances and reactions, without the body-shape changes (the meshes have their own shapes)
+// a wound's blood on the body (gore.js sets ped.wounds): w = (angle round the body from the front, height on a standing
+// body, how far it's soaked, how wet). Measured round the body (so it works on a citizen's mesh as on ours), spreading
+// further down than up as it runs, ragged at the edge; the two wounds together
+function woundBlood(rp, w0, w1) {
+  const one = w => {
+    let da = atan(rp.x, rp.z).sub(w.x);
+    da = da.sub(floor(da.add(Math.PI).div(Math.PI * 2)).mul(Math.PI * 2));
+    const dy = rp.y.sub(w.y), down = step(dy, 0);
+    const d = length(vec2(da.mul(0.15), dy.mul(mix(float(1), float(0.42), down))));
+    const rag = sin(rp.x.mul(61).add(rp.y.mul(47))).mul(sin(rp.z.mul(53).sub(rp.y.mul(39)))).mul(0.22).add(1);
+    return float(1).sub(smoothstep(w.z.mul(0.5), w.z, d.mul(rag))).mul(step(0.001, w.z)).mul(w.w);
+  };
+  return max(one(w0), one(w1));
+}
+// darker and nearly black where it's soaked through, a brighter wet red at the edge
+const bloodColour = b => mix(vec3(0.12, 0.006, 0.005), vec3(0.04, 0.0018, 0.0013), smoothstep(0.5, 1.0, b));
 function crowdMaterial(tex = null) {
   const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.8, metalness: 0 });
   if (tex) m.side = THREE.DoubleSide;   // (the pack's skirts and hair are single sheets)
@@ -367,6 +383,9 @@ function crowdMaterial(tex = null) {
   const vLegs = varyingProperty('vec4', 'vLegs');   // shorts, tights, denim, (unused)
   const vOutfit = varyingProperty('float','vOutfit');
   const vFace = varyingProperty('float', 'vFace');  // face atlas cell (0-3 men, 4-7 women)
+  // two wounds (gore.js): the angle round the body from the front, the height, how far the blood has soaked, how wet
+  const vW0 = varyingProperty('vec4', 'vW0'), vW1 = varyingProperty('vec4', 'vW1');
+  const iW0 = attribute('iW0', 'vec4'), iW1 = attribute('iW1', 'vec4');
   const faceTex = bakeFaceAtlas(), hairTex = bakeHairTexture();
   // Neutralised facial albedo (skin detail, brows, lips) baked from character scans: one cell per face type.
   const portraitTex = new THREE.TextureLoader().load('assets/people/face-detail.png');
@@ -379,6 +398,7 @@ function crowdMaterial(tex = null) {
     const acc = floor(iExt.x.add(0.5)), gait = floor(iExt.z.add(0.5));
     vOutfit.assign(floor(flags.div(2048)));
     vFace.assign(floor(fract(iSty.x).mul(20).add(0.5)));
+    vW0.assign(iW0); vW1.assign(iW1);
     vSkinC.assign(unpack(iCol.x)); vTopC.assign(unpack(iCol.y)); vLegC.assign(unpack(iCol.z)); vAccC.assign(unpack(iExt.y));
     vHairC.assign(vec4(unpack(iCol.w), step(0.6, fract(iCol.x.mul(0.000031)))));
     vMisc.assign(vec4(bit(flags, 3), floor(flags.div(64)).sub(floor(flags.div(256)).mul(4)), floor(flags.div(256)).mod(8), bit(flags, 1)));
@@ -526,7 +546,8 @@ function crowdMaterial(tex = null) {
     vN.assign(modelWorldMatrix.mul(vec4(rotY(n, yaw),0)).xyz);
     return rotY(p, yaw).add(iPos.xyz);
   })();
-  if (tex) return texturedLook(m, tex, vN, sk);
+  const blood = woundBlood(positionGeometry, vW0, vW1);
+  if (tex) return texturedLook(m, tex, vN, sk, blood);
   // fabric folds (bunching at elbows, knees and the waist), fine weave and hair strands perturb the normal
   {
     const rg = sk.z, rp0 = positionGeometry, cloth = step(0.5, rg).mul(step(rg, 2.5)).add(eq(rg, 14)).min(1);
@@ -655,10 +676,11 @@ function crowdMaterial(tex = null) {
   // rain soaks clothes (not skin, not the umbrella) unless the umbrella is up
   const soak = U.wet.mul(float(1).sub(step(0.5, vMisc.w))).mul(step(0.5, region)).mul(step(region, 2.5)).mul(0.28);
   col = col.mul(float(1).sub(soak));
+  col = mix(col, bloodColour(blood), blood.mul(0.94));
   m.colorNode = col.mul(cloudShadow(positionWorld));
-  m.roughnessNode = sel(region.lessThan(0.5), mix(mix(float(0.64), float(0.42), tint), float(0.2), white.add(iris).min(1)),
+  m.roughnessNode = mix(sel(region.lessThan(0.5), mix(mix(float(0.64), float(0.42), tint), float(0.2), white.add(iris).min(1)),
     sel(region.lessThan(2.5), mix(float(0.88), float(0.55), soak.mul(3)), sel(region.lessThan(3.5), mix(float(0.45), float(0.7), step(1.5, shoeI)), sel(region.lessThan(4.5), float(0.78).sub(ht.r.mul(0.2)),
-    sel(region.lessThan(6.5), float(0.3), sel(region.lessThan(7.5), float(0.28), sel(region.lessThan(12.5), float(0.6), sel(region.lessThan(13.5), float(0.45), float(0.85)))))))));
+    sel(region.lessThan(6.5), float(0.3), sel(region.lessThan(7.5), float(0.28), sel(region.lessThan(12.5), float(0.6), sel(region.lessThan(13.5), float(0.45), float(0.85))))))))), float(0.3), blood);
   m.metalnessNode = eq(region, 11).mul(0.9);
   // faint subsurface warmth on skin; retro-reflective bands glow under headlights at night
   m.emissiveNode = lightPool(positionWorld).mul(col).add(skinD.mul(eq(region, 0)).mul(vec3(0.04, 0.015, 0.01))).add(vec3(0.4).mul(max(bands.mul(hiVis.sub(fireKit)), fireBands.mul(fireKit)).mul(eq(region, 1)).mul(U.night)));
@@ -666,13 +688,13 @@ function crowdMaterial(tex = null) {
 }
 
 // the citizens' surfaces: their own textures, darkened where rain soaks clothes, cloud shadow, lamp light
-function texturedLook(m, tex, vN, sk) {
+function texturedLook(m, tex, vN, sk, blood) {
   const region = sk.z, base = texture(tex, tslUv()).rgb;
   const soak = U.wet.mul(step(0.5, region)).mul(0.25);
-  const col = base.mul(float(1).sub(soak));
+  const col = mix(base.mul(float(1).sub(soak)), bloodColour(blood), blood.mul(0.94));
   m.colorNode = col.mul(cloudShadow(positionWorld));
   m.normalNode = worldToView(normalize(vN));
-  m.roughnessNode = sel(region.lessThan(0.5), float(0.62), mix(float(0.86), float(0.55), soak.mul(3)));
+  m.roughnessNode = mix(sel(region.lessThan(0.5), float(0.62), mix(float(0.86), float(0.55), soak.mul(3))), float(0.3), blood);
   m.emissiveNode = lightPool(positionWorld).mul(col).add(col.mul(eq(region, 0)).mul(vec3(0.03, 0.012, 0.008)));
   return m;
 }
@@ -774,13 +796,13 @@ function makeBatch(model, material, max, shadows) {
   geo.setIndex(model.index);
   for (const [name,attr] of Object.entries(model.attributes)) geo.setAttribute(name,attr);
   const set = {max,geo};
-  for (const name of ['iPos','iAnim','iCol','iSty','iExt','iR1','iR2','iR3']) {
+  for (const name of ['iPos','iAnim','iCol','iSty','iExt','iR1','iR2','iR3','iW0','iW1']) {
     const attr = new THREE.InstancedBufferAttribute(new Float32Array(max*4),4);
     attr.setUsage(THREE.DynamicDrawUsage);
     geo.setAttribute(name,attr);
     set[name] = attr;
   }
-  set.attrs = [set.iPos, set.iAnim, set.iCol, set.iSty, set.iExt, set.iR1, set.iR2, set.iR3];
+  set.attrs = [set.iPos, set.iAnim, set.iCol, set.iSty, set.iExt, set.iR1, set.iR2, set.iR3, set.iW0, set.iW1];
   set.mesh = new THREE.Mesh(geo, material);
   set.mesh.castShadow = shadows;
   set.mesh.receiveShadow = true;
@@ -933,7 +955,7 @@ export function writeCrowdMember(S, i, a, citizen = false) {
     // the dead don't lie with their knees up: the buckled legs straighten out on the ground
     if (R.dead) { hp *= 1 - 0.75 * fall; kn *= 1 - 0.65 * fall; }
     kneel = -(P.kSide || 1) * P.kneel;
-    fyaw = -((P.back >= 0 ? R.dir : R.dir + Math.PI) - hd);
+    fyaw = -((P.back >= 0 ? R.dir : R.dir + Math.PI) + (P.fallTurn || 0) - hd);
     drop = (P.kneel > 0.01 ? P.drop : Math.max(P.drop, legDrop(hp, kn))) * (1 - fall);
   } else {
     // knocked down by a car: onto their back
@@ -960,4 +982,9 @@ export function writeCrowdMember(S, i, a, citizen = false) {
   R1[o] = rF; R1[o + 1] = rS; R1[o + 2] = rTw; R1[o + 3] = rHd;
   R2[o] = clutch; R2[o + 1] = flail; R2[o + 2] = one; R2[o + 3] = kn;
   R3[o] = hp; R3[o + 1] = kneel; R3[o + 2] = fall; R3[o + 3] = fyaw;
+  // wounds (gore.js): none is a zero radius
+  const Wd = a.wounds, W0 = S.iW0?.array, W1 = S.iW1?.array;
+  if (!W0) return;
+  if (Wd?.length) { const w = Wd[0]; W0[o] = w.a; W0[o + 1] = w.y; W0[o + 2] = w.r; W0[o + 3] = w.k; const v = Wd[1]; if (v) { W1[o] = v.a; W1[o + 1] = v.y; W1[o + 2] = v.r; W1[o + 3] = v.k; } else W1[o + 2] = 0; }
+  else { W0[o + 2] = 0; W1[o + 2] = 0; }
 }

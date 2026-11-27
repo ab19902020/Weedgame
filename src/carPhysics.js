@@ -245,8 +245,9 @@ export class CarDynamics {
       const target = crossingCentre ? 0 : steerT;
       ph.steer += Math.max(-rate * h, Math.min(rate * h, target - ph.steer));
     } else {
-      // driverless: parked cars sit on their handbrake and in gear, crashed traffic on the footbrake
-      brk = v.parked ? 0.75 : 0.85; hb = !!v.parked; ph.steer *= 0.9;
+      // driverless: parked cars sit on their handbrake and in gear; crashed traffic stands on the brakes, the wheels
+      // locked and scrubbing, so it slews to a stop in a few metres
+      brk = v.parked ? 0.75 : 1; hb = !!v.parked || !!v.crashed; ph.steer *= 0.9;
     }
     const delta = ph.steer, cd = Math.cos(delta), sd = Math.sin(delta);
     // ---- engine and gearbox
@@ -484,19 +485,28 @@ export class CarDynamics {
       const pushShare = Po.m / (P.m + Po.m);
       if (vn < 0) {
         const rna = ra[0] * nz - ra[1] * nx, rnb = rb[0] * nz - rb[1] * nx;
-        const e = 0.18;
+        // crumple zones soak up a crash: very little bounce. And a car you hit (not one being driven through this
+        // physics) takes it as if braced, as one and a half times its mass: it lurches, slews and stops in a few
+        // metres instead of being flung off down the road, and yours stops harder for it
+        const e = pair ? 0.12 : 0.05, mB = pair ? Po.m : Po.m * 1.8, IB = pair ? Po.Iz : Po.Iz * 1.8;
         // a gentle nudge against moving traffic: that car keeps its line (its driver brakes for us)
-        let invB = 1 / Po.m + rnb * rnb / Po.Iz;
+        let invB = 1 / mB + rnb * rnb / IB;
         const jTry = -(1 + e) * vn / (1 / P.m + rna * rna / P.Iz + invB);
-        const dvB = jTry / Po.m;
+        const dvB = jTry / mB;
         const kinematic = !oLoose && !o.parked && dvB < 1.6 && !o.player && !pair;
         if (kinematic) invB = 0;
         const j = -(1 + e) * vn / (1 / P.m + rna * rna / P.Iz + invB);
         ph.vx += j * nx / P.m; ph.vz += j * nz / P.m; ph.w += rna * j / P.Iz;
+        // a hard hit: the front crumples and takes much of the speed you had left with it, so you don't go on
+        // shoving the other car down the road
+        if (!pair && !kinematic && -vn > 5) {
+          const left = -(ph.vx * nx + ph.vz * nz), extra = Math.min(left, Math.min(7, 0.42 * (-vn - 5)));
+          if (extra > 0) { ph.vx += nx * extra; ph.vz += nz * extra; }
+        }
         // friction along the contact (scraping down a car's side)
         const tx = -nz, tz = nx, vt = (va[0] - vb[0]) * tx + (va[1] - vb[1]) * tz;
         const rta = ra[0] * tz - ra[1] * tx, rtb = rb[0] * tz - rb[1] * tx;
-        let jt = -vt / (1 / P.m + rta * rta / P.Iz + (kinematic ? 0 : 1 / Po.m + rtb * rtb / Po.Iz));
+        let jt = -vt / (1 / P.m + rta * rta / P.Iz + (kinematic ? 0 : 1 / mB + rtb * rtb / IB));
         jt = Math.max(-0.3 * j, Math.min(0.3 * j, jt));
         ph.vx += jt * tx / P.m; ph.vz += jt * tz / P.m; ph.w += rta * jt / P.Iz;
         this.kick(v, (j * nx + jt * tx) / P.m, (j * nz + jt * tz) / P.m, fx, fz, rx, rz);
@@ -512,12 +522,13 @@ export class CarDynamics {
           this.kick(o, -(j * nx + jt * tx) / Po.m, -(j * nz + jt * tz) / Po.m, ofx, ofz, -ofz, ofx);
         } else if (!kinematic && !o.player) {
           const ophL = this.makeLoose(o);
-          ophL.vx -= (j * nx + jt * tx) / Po.m; ophL.vz -= (j * nz + jt * tz) / Po.m; ophL.w -= (rnb * j + rtb * jt) / Po.Iz;
+          ophL.vx -= (j * nx + jt * tx) / mB; ophL.vz -= (j * nz + jt * tz) / mB; ophL.w -= (rnb * j + rtb * jt) / IB;
           if (!o.parked && !o.crashed && Math.abs(vn) > 2.5) this.G.events.emit('vehicleHit', { by: v, other: o, speed: Math.abs(vn) });
           if (!o.parked) { o.crashed = true; o.hazard = true; o.v = 0; }
           this.damage(o, Po, cx, cz, j / Po.m);
           const ofx = Math.cos(o.heading), ofz = Math.sin(o.heading);
-          this.kick(o, -(j * nx + jt * tx) / Po.m, -(j * nz + jt * tz) / Po.m, ofx, ofz, -ofz, ofx);
+          // (the body lurches with the whole of the blow, even if the car itself is shoved less)
+          this.kick(o, -(j * nx + jt * tx) / Po.m * 1.4, -(j * nz + jt * tz) / Po.m * 1.4, ofx, ofz, -ofz, ofx);
         }
         this.damage(v, P, cx, cz, j / P.m);
         worst = Math.max(worst, -vn);
@@ -572,13 +583,16 @@ export class CarDynamics {
     if (-vn > 1) this.events.push({ x: v.x + r0x, z: v.z + r0z, speed: -vn });
     return -vn;
   }
-  // dent the zone nearest the contact; dv is the change of velocity the hit caused (m/s)
+  // dent the zone nearest the contact; dv is the change of velocity the hit caused (m/s). The dents are what you
+  // see; the engine (v.eng, 0 sound to 1 wrecked) wears separately, mostly from hits to the front, and it's that
+  // which makes a car smoke (from 0.6) and in the end catch fire (emergency.js): it takes several hard crashes
   damage(v, P, x, z, dv) {
     if (dv < 2.2) return;
     const d = v.dmg || (v.dmg = [0, 0, 0, 0]);
     const fx = Math.cos(v.heading), fz = Math.sin(v.heading), dx = x - v.x, dz = z - v.z;
     const lx = dx * fx + dz * fz, lz = -dx * fz + dz * fx;
     const amt = Math.min(0.45, (dv - 2.2) / 20);
+    v.eng = Math.min(1.2, (v.eng || 0) + amt * (lx > P.L * 0.2 ? 0.5 : 0.16));
     const ex = Math.abs(lx) / (P.L / 2), ez = Math.abs(lz) / (P.W / 2);
     const end = Math.max(0, Math.min(1, (ex - 0.55) / 0.35)), side = Math.max(0, Math.min(1, (ez - 0.5) / 0.4));
     const wEnd = end * (1 - side * 0.4), wSide = side * (1 - end * 0.4);

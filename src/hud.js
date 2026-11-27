@@ -266,11 +266,13 @@ export class Hud {
     const giveUp=!inCar&&!near&&!!G.wanted?.canGiveUp();
     // taxis (taxis.js): waving one down, getting in the one that's waiting for you, asking to be let out
     const TX=G.taxis, job=TX?.job, cabRide=!!TX?.riding, cabHere=!inCar&&job?.stage==='waiting'&&Math.hypot(job.v.x-me.x,job.v.z-me.z)<job.v.def.W/2+3.2, hail=!inCar&&!near&&!door&&!boardable&&TX?.hailCab;
-    const useText=cabRide?'Stop here':cabHere?(job.kind==='kerb'?'Get in (Kerb)':'Get in (taxi)'):hail?'Hail taxi':giveUp?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
+    // someone's car or bike to take (carjack.js)
+    const jack=!inCar&&!near&&!door&&!boardable&&!hail&&!cabHere&&G.carjack?.near, jackText=jack?({escooter:'Take scooter',moped:'Take moped',bicycle:'Take bike',ebike:'Take bike',motorcycle:'Take motorbike',dirtbike:'Take motorbike'}[jack.model]||'Steal car'):'';
+    const useText=cabRide?'Stop here':cabHere?(job.kind==='kerb'?'Get in (Kerb)':'Get in (taxi)'):hail?'Hail taxi':jack?jackText:giveUp?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
     const use=this.el('bUse');
     if(use.lastChild.textContent!==useText){use.lastChild.textContent=useText;use.firstChild.innerHTML=inCar||G.transit.ride&&G.transit.currentStop()?ICON.exit:boardable||G.transit.ride?ICON.bus:ICON.door;}
-    use.disabled=!!waiting&&!cabHere&&!hail&&!cabRide;
-    const ready=giveUp||inCar||near||G.transit.ride||boardable||door||cabHere||hail||cabRide;
+    use.disabled=!!waiting&&!cabHere&&!hail&&!cabRide&&!jack;
+    const ready=giveUp||inCar||near||G.transit.ride||boardable||door||cabHere||hail||cabRide||jack;
     use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable||door)&&!inCar);
     // on foot: stick and actions; driving: wheel (or arrows) and pedals; riding a bus or train: just the stop button
     const ride=!!G.transit.ride||cabRide, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Steering wheel';
@@ -576,7 +578,7 @@ export class Hud {
       }
       this.toast('No clear space nearby. Move to an open road.');
     }, 'spawn-'+model)));
-    row('Vehicle', [btn('Repair', () => { const v = G.traffic.byId.get(G.brothers.me.vehicle) || G.brothers.nearestVehicle(8); if (v) { v.dmg = [0, 0, 0, 0]; G.save.markVehicle(v); this.toast('Repaired'); } else this.toast('No vehicle nearby'); }, 'repair')]);
+    row('Vehicle', [btn('Repair', () => { const v = G.traffic.byId.get(G.brothers.me.vehicle) || G.brothers.nearestVehicle(8); if (v) { v.dmg = [0, 0, 0, 0]; v.eng = 0; v.smoking = false; v.flat = null; G.save.markVehicle(v); this.toast('Repaired'); } else this.toast('No vehicle nearby'); }, 'repair')]);
     section('Weather & time');
     row('Time', [6, 8, 12, 16, 18.5, 21, 0].map(h => btn(String(h).replace('.5', ':30'), () => w.setHour(h), 'time-' + h)));
     row('Speed', [1, 30, 120, 600].map(s => btn(() => s + '×' + (w.s.scale === s ? ' ✓' : ''), () => w.s.scale = s, 'speed-' + s)));

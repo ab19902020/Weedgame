@@ -120,8 +120,9 @@ export class Emergency {
     const G = this.G, f = G.focus;
     for (const v of G.traffic.list) {
       if (v.player || v.owner || v.burning || v.burnt || !v.dmg || v.def?.wheels === 2 || v.law || v.kind === 'fire' || v.kind === 'ambulance' || v.kind === 'taxi' || Math.hypot(v.x - f.x, v.z - f.z) > 220) continue;
+      // the engine wrecked (carPhysics.js v.eng), or the whole car smashed in
       const d = v.dmg, total = d[0] + d[1] + d[2] + d[3];
-      if (d[0] < 0.8 && d[1] < 0.9 && total < 2.2) { v.smokeT = 0; continue; }
+      if ((v.eng || 0) < 1 && total < 3.2) { v.smokeT = 0; continue; }
       v.smoking = true; v.smokeT = (v.smokeT || 0) + 1;
       if (v.smokeT >= 8 && this.ignite(v)) return;
     }
@@ -273,7 +274,7 @@ export class Emergency {
   }
   // ---------------------------------------------------------------- the ambulance
   // the way a patient's body lies from their feet (as humans.js lays it): with the blow, or backwards for a car's
-  bodyDir(P) { const R = P.react; return R ? (R.back >= 0 ? R.dir : R.dir + Math.PI) : P.heading + Math.PI; }
+  bodyDir(P) { const R = P.react; return R ? (R.back >= 0 ? R.dir : R.dir + Math.PI) + (R.fallTurn || 0) : P.heading + Math.PI; }
   ambulance(c, dt) {
     const G = this.G, v = c.unit, F = this.frame(v), [A, B] = c.crew, P = c.patient;
     const ground = (x, z) => G.tiles.ground(x, z, v.y + 1) ?? v.y;

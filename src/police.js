@@ -73,7 +73,7 @@ export class Police {
     if (speed < 3) return;
     other.crashed = true; other.v = 0; other.hazard = true;
     const inc = this.createIncident('rtc', other.x, other.z, [other.id, by.id], { byPlayer: by.player, injury: speed >= 10, trapped: speed >= 23 && other.def?.wheels !== 2, label: 'Road traffic collision' });
-    if(inc.injury && other.kind==='traffic'){
+    if(inc.injury && other.kind==='traffic' && other.def?.wheels!==2){   // (a rider is thrown off: carjack.js has them)
       const side=other.def.W/2+.65;
       const patient={id:'injured-'+inc.id,look:People.randomLook(this.rand),x:other.x-Math.sin(other.heading)*side,
         y:other.y,z:other.z+Math.cos(other.heading)*side,heading:other.heading,h:other.h,s:other.s,sideSign:1,lane:0,

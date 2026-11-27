@@ -200,6 +200,7 @@ export class Brothers {
     G.carDyn.drive(v, dt, ctl);
     const hit = G.carDyn.flush(v);
     if (hit > 2) this.cam.shake = Math.max(this.cam.shake || 0, Math.min(1, hit / 14));
+    if (hit > 11) G.slowmo = Math.max(G.slowmo || 0, Math.min(0.3, 0.1 + (hit - 11) * 0.02));   // a big hit: the moment stretches
     // pedestrians
     G.events.emit('vehicleSweep', { v, x: v.x, z: v.z, speed: Math.abs(v.sp) });
     const ph = v.ph;

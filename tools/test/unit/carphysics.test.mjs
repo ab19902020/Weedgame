@@ -158,3 +158,27 @@ test('pedal and electric vehicles accelerate, brake and retain unassisted pedall
   run(dyn,v,15,{throttle:1,steer:0});
   assert.ok(v.sp>3 && v.sp<8);
 });
+
+test('a car takes several hard crashes before its engine smokes (v.eng from 0.6)', () => {
+  const wall = [[20, -20], [30, -20], [30, 20], [20, 20]];
+  const { dyn } = world({ buildings: [wall] }), v = car('hatch');
+  const crash = () => { v.x = 0; v.z = 0; v.heading = 0; dyn.ph(v); v.ph.vx = 13.4; v.ph.vz = 0; v.ph.w = 0; run(dyn, v, 3, { throttle: 0, steer: 0 }); };
+  crash();
+  assert.ok(v.dmg[0] > 0.12, `a 30 mph crash dents the front (${v.dmg[0].toFixed(2)})`);
+  assert.ok((v.eng || 0) < 0.6, `but one crash doesn't make it smoke (engine ${(v.eng || 0).toFixed(2)})`);
+  let n = 1; while ((v.eng || 0) < 0.6 && n < 12) { crash(); n++; }
+  assert.ok(n >= 3 && n < 12, `smoking after ${n} crashes`);
+});
+
+test('a hard rear-end at 45 mph shoves the car ahead a few metres and it stops, not flung off down the road', () => {
+  const hatch = car('hatch', 14, 0, 0, { kind: 'traffic', v: 0, parked: false });
+  const { dyn } = world({ cars: [hatch] }), rr = car('rangerover', 0, 0, 0, { player: true });
+  dyn.ph(rr); rr.ph.vx = 20;
+  let peak = 0;
+  run(dyn, rr, 8, { throttle: 0, brake: 0, steer: 0 }, 1 / 60, () => { if (hatch.ph) peak = Math.max(peak, Math.hypot(hatch.ph.vx, hatch.ph.vz)); });
+  const moved = hatch.x - 14;
+  assert.ok(hatch.crashed, 'it was hit');
+  assert.ok(peak > 4 && peak < 12, `thrown forward at ${peak.toFixed(1)} m/s`);
+  assert.ok(moved > 2 && moved < 11, `shoved ${moved.toFixed(1)} m (with nobody braking)`);
+  assert.ok(Math.hypot(hatch.ph.vx, hatch.ph.vz) < 0.2, 'and came to a stop');
+});

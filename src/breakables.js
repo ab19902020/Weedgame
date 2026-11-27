@@ -321,6 +321,9 @@ export class Breakables {
     this.carBits(v, x, y, z, speed, nx, nz);
     if (other) this.carBits(other, x, y, z, speed * 0.8, -nx, -nz);
     for (const c of other ? [v, other] : [v]) this.shed(c);
+    // a hard one: a cloud of dust and road grit kicked up, steam from a burst radiator
+    if (speed > 8) for (let k = 0, n = Math.min(7, 2 + Math.round(speed / 5)); k < n; k++)
+      this.G.tyreFx?.puff(x + (Math.random() - 0.5) * 1.2, y - 0.25 + Math.random() * 0.6, z + (Math.random() - 0.5) * 1.2, nx * 1.2 + (Math.random() - 0.5), nz * 1.2 + (Math.random() - 0.5), 0);
   }
   // a badly smashed end loses its number plate and a length of bumper trim (once per end)
   shed(v) {
@@ -378,15 +381,15 @@ export class Breakables {
       }
     }
     this.debris.update(dt);
-    // smashed-in fronts steam and smoke
+    // a badly damaged engine smokes from under the bonnet (carPhysics.js wears v.eng; from 0.6, thickening)
     this.smokeT += dt;
     if (this.smokeT > 0.09) {
       this.smokeT = 0;
       const cam = G.camera.position;
       for (const v of G.traffic.list) {
-        const d = v.dmg; if (!d || d[0] < 0.45 || v.hidden) continue;
+        const e = v.eng || 0; if (e < 0.6 || v.hidden) continue;
         if ((v.x - cam.x) ** 2 + (v.z - cam.z) ** 2 > 80 * 80) continue;
-        if (Math.random() > (d[0] - 0.35) * 1.6) continue;
+        if (Math.random() > (e - 0.5) * 1.5) continue;
         const L = v.def.L / 2 - 0.5, c = Math.cos(v.heading), s = Math.sin(v.heading);
         G.tyreFx?.puff(v.x + c * L, (v.y || 0) + 1.0, v.z + s * L, (v.ph?.vx || 0) * 0.5, (v.ph?.vz || 0) * 0.5, 0);
       }

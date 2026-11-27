@@ -517,11 +517,21 @@ export class Peds {
     const type = lethal ? 'shot' : p.hp <= 0 || kind === 'down' ? 'down' : kind;
     const lie = p.hp <= 0 ? 5 + this.rand() * 4 : 2.2 + this.rand();
     const dur = { jab: 0.55, body: 1.0, stagger: 0.95, down: lie + 1.3, shot: lethal ? 1e9 : 0.6 }[type] ?? 0.6;
-    const push = ({ jab: 0.5, body: 0.9, stagger: 2.4, down: 3, shot: lethal ? 1.3 : 0.4 }[type] ?? 0.5) * (o.push ?? 1);
+    // how a fatal round takes them (hitReactions.js): a head shot drops them; a shotgun or a big round close in throws
+    // them back; from behind they go down forwards; otherwise backwards, down on to their knees and forwards, or
+    // spun round and down sideways (and some stagger a step or two first)
+    let style = null, fallTurn = 0;
+    if (lethal && kind === 'shot') {
+      const r = this.rand();
+      style = o.zone === 'head' ? 'drop' : o.big ? 'thrown' : o.fromBack ? 'back' : r < 0.38 ? 'back' : r < 0.66 ? 'knees' : r < 0.86 ? 'spin' : 'back';
+      fallTurn = style === 'spin' ? (o.sideHit || (this.rand() < 0.5 ? -1 : 1)) * (0.9 + this.rand() * 0.6) : (this.rand() - 0.5) * 0.8;
+    }
+    const push = ({ jab: 0.5, body: 0.9, stagger: 2.4, down: 3, shot: lethal ? (style === 'thrown' ? 4.2 : 1.3) : 0.4 }[type] ?? 0.5) * (o.push ?? 1);
     this.queueRemove(p);
     p.stopIdx = null; p.goal = null; p.corner = null; p.dayPath = null; p.leader = null; p.mode = 'walk'; p.reactT = 0;
     if (p.react && !p.react.dead && p.react.type === 'down' && type !== 'shot') { p.react.t = Math.min(p.react.t, 0.6); p.hp = Math.min(p.hp, 0); }   // a kick while they're down keeps them there
-    else p.react = { type, t: 0, dir, s: o.s ?? 1, side: o.side ?? (this.rand() < 0.5 ? -1 : 1), dead: lethal, lie, back: 1, zone: o.zone, stumble: lethal && o.zone !== 'head' && this.rand() < 0.35 };
+    else p.react = { type, t: 0, dir, s: o.s ?? 1, side: o.side ?? o.sideHit ?? (this.rand() < 0.5 ? -1 : 1), dead: lethal, lie, back: style === 'knees' ? -1 : 1, zone: o.zone, stumble: lethal && style === 'back' && this.rand() < 0.4,
+      style, fallTurn, twitch: lethal && this.rand() < 0.6 };
     const pushK = p.react.stumble ? 2.4 : 1;
     p.impact = { elapsed: 0, duration: dur, knockdown: type === 'down' || lethal, vx: Math.cos(dir) * push * pushK, vz: Math.sin(dir) * push * pushK, react: true, from: dir + Math.PI };
     if (!lethal && type !== 'shot') p.heading = dir + Math.PI;
@@ -583,7 +593,13 @@ export class Peds {
       p.pose = 'brace'; p.speedNow = 0;
       if (R.dead) {
         // a pool of blood spreads out from under the body once it's down
-        if (!R.pooled && R.t > 1.1) { R.pooled = true; const fd = R.dir + (R.back >= 0 ? 0 : Math.PI); this.G.combat?.fx?.stain?.(p.x + Math.cos(fd) * 0.55, (this.G.tiles.ground(p.x, p.z, p.y + 0.5) ?? p.y) + 0.02, p.z + Math.sin(fd) * 0.55, 1.1 + this.rand() * 0.5); }
+        if (!R.pooled && R.t > 1.1) {
+          R.pooled = true;
+          const fd = R.dir + (R.back >= 0 ? 0 : Math.PI) + (R.fallTurn || 0), along = R.zone === 'head' ? 1.45 : 0.75;
+          const x = p.x + Math.cos(fd) * along, z = p.z + Math.sin(fd) * along, gy = (this.G.tiles.ground(x, z, p.y + 0.5) ?? p.y) + 0.004;
+          if (this.G.gore) this.G.gore.pool(x, gy, z, 1.5 + this.rand() * 0.9, 22 + this.rand() * 12);
+          else this.G.combat?.fx?.stain?.(x, gy, z, 1.1 + this.rand() * 0.5);
+        }
         p.deadT += dt; if (p.deadT > 70 && !p.awaitingMedic && !(this.info?.visible?.(p.x, p.y + 0.5, p.z, 1))) p.gone = true; return;
       }
       if (p.fallT <= 0 && R.then === 'drop') {

@@ -334,7 +334,7 @@ export class Combat {
     for (const p of G.peds.list) {
       const dx = p.x - o.x, dz = p.z - o.z; if (dx * dx + dz * dz > (best.t + 1) ** 2) continue;
       let A, Bv, r = 0.27;
-      if (p.dead && p.react?.t > 1.2) { const h = p.react.dir; A = _a.set(p.x, p.y + 0.15, p.z); Bv = _b.set(p.x + Math.cos(h) * 1.6, p.y + 0.15, p.z + Math.sin(h) * 1.6); r = 0.2; }
+      if (p.dead && p.react?.t > 1.2) { const h = p.react.dir + (p.react.back >= 0 ? 0 : Math.PI) + (p.react.fallTurn || 0); A = _a.set(p.x, p.y + 0.15, p.z); Bv = _b.set(p.x + Math.cos(h) * 1.6, p.y + 0.15, p.z + Math.sin(h) * 1.6); r = 0.2; }
       else { A = _a.set(p.x, p.y + 0.2, p.z); Bv = _b.set(p.x, p.y + 1.62, p.z); }
       const t = raySegment(o, d, A, Bv, r);
       if (t != null && t < best.t) best = { kind: 'ped', t, ped: p };
@@ -435,8 +435,9 @@ export class Combat {
         }
         // a parked car's alarm goes off
         if ((v.parked || v.kind === 'parked') && !v.player && !(v.alarmT > 0)) { v.alarmT = 14; this.alarms.add(v); }
-        // a car that's taken a lot smokes from under the bonnet
-        if (v.dmg[0] > 0.55 || v.dmg[1] > 0.55) v.smoking = true;
+        // rounds into the front wear the engine (it smokes once it's had a lot: breakables.js)
+        if (zone === 0) v.eng = Math.min(1.2, (v.eng || 0) + 0.025 * w.damage / 30);
+        if ((v.eng || 0) > 0.6) v.smoking = true;
         break;
       }
       case 'ped': {
@@ -447,10 +448,14 @@ export class Combat {
         const zone = ped.dead ? 'torso' : rel > 1.5 ? 'head' : rel < 0.95 ? 'leg' : Math.abs(lat) > 0.17 && rel > 1.05 ? 'arm' : 'torso';
         // a round to the head kills, whatever the gun (as in GTA)
         const mul = { head: 99, torso: 1, arm: 0.5, leg: 0.6 }[zone];
-        fx.puff(p, _b.copy(d).multiplyScalar(1.2), [0.32, 0.02, 0.02], 0.85, 0.06, zone === 'head' ? 0.45 : 0.32, 0.5);
-        D?.burst('drop', zone === 'head' ? 6 : 3, p.x, p.y, p.z, d.x * 2, 0.6, d.z * 2, 0.8, [0.3, 0.01, 0.01]);
-        G.audio?.play?.('punch', p.x, p.y, p.z, 0.22);
-        G.peds.hurt?.(ped, Math.atan2(d.z, d.x), 'shot', w.damage * mul, { s: Math.min(1.4, w.damage / 30), head: zone === 'head', zone, fromBack: along > 0.3, sideHit: lat > 0 ? 1 : -1, by: 'player', how: 'shot' });
+        const wasDead = ped.dead, lying = ped.dead || (ped.fall || 0) > 0.5, big = !!w.pellets || w.damage >= 60;
+        G.peds.hurt?.(ped, Math.atan2(d.z, d.x), 'shot', w.damage * mul, { s: Math.min(1.4, w.damage / 30), head: zone === 'head', zone, fromBack: along > 0.3, sideHit: lat > 0 ? 1 : -1, by: 'player', how: 'shot', big });
+        // the blood (gore.js): the full spray for the first round or pellet to hit them, a little more for the rest
+        const again = ped._goreT === G.time; ped._goreT = G.time;
+        if (G.gore && !again) G.gore.hit(ped, p, d, { zone, lethal: ped.dead && !wasDead, big, lying });
+        else if (G.gore) G.gore.wound(ped, p, d, { zone, big, lying });
+        else D?.burst('drop', 3, p.x, p.y, p.z, d.x * 2, 0.6, d.z * 2, 0.8, [0.3, 0.01, 0.01]);
+        if (!again) G.audio?.play?.('punch', p.x, p.y, p.z, 0.22);
         if (ped.officer) G.events.emit('copShot', { p: ped });   // shooting at the police brings in the armed units (wanted.js)
         break;
       }
@@ -518,7 +523,8 @@ export class Combat {
       if (p) {
         const dir = Math.atan2(p.z - me.z, p.x - me.x);
         G.peds.hurt?.(p, dir, 'shot', BY_KEY.knife.damage, { s: 0.8, side: k.side, by: 'player', how: 'stabbed' });
-        this.fx.puff(new THREE.Vector3(p.x, p.y + 1.2, p.z), new THREE.Vector3(Math.cos(dir), 0.4, Math.sin(dir)), [0.32, 0.02, 0.02], 0.8, 0.06, 0.3, 0.5);
+        this.fx.puff(new THREE.Vector3(p.x, p.y + 1.2, p.z), new THREE.Vector3(Math.cos(dir), 0.4, Math.sin(dir)), [0.3, 0.016, 0.014], 0.8, 0.06, 0.35, 0.55);
+        G.gore?.slash(p, new THREE.Vector3(p.x, p.y + 1.15, p.z), new THREE.Vector3(Math.cos(dir), 0, Math.sin(dir)));
         G.audio?.play?.('punch', p.x, p.y + 1.2, p.z, 0.5);
         G.slowmo = Math.max(G.slowmo || 0, 0.06); s.shake += 0.25;
       }
