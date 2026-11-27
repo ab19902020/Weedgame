@@ -30,7 +30,9 @@ Part of the traffic is **"Generic passenger car pack"** by Comrade1280 (https://
 
 `www/props/traffic-cone.glb` is the Traffic Cone from **Crayon City Complete v1.2.0** (Crayon), used under the Crayon City Props Asset License v1.1 (`www/props/CRAYON-LICENSE.txt`: free use in games, attribution appreciated). The police set cones out behind crashes and breakdowns (`src/cones.js`).
 
-The other supplied packs in `source-assets/incoming/` (four real-car models under the Sketchfab Standard licence, the AmiPolyGon forest pack, the Designersoup low-poly cars and the rest of Crayon City) are archived there and not yet in the game.
+The four real cars, **2014 BMW X3**, **2016 BMW M3 (F80)**, **2019 Volvo S60** and **2023 Mercedes-Benz EQC** by ActsOfDoge (Sketchfab, Sketchfab Standard licence: use in all types of derivative works), are simplified with gltfpack and baked by `tools/vehicles/bake-real-cars.py` into `www/vehicles/realcars.*`. The bus stops use the kit's **Bus Shelter** and **Bus Stop Sign** (`www/props/`, `src/kit.js`), under the same Crayon licence as the cone.
+
+The other supplied packs in `source-assets/incoming/` (the AmiPolyGon forest pack and the Crayon trees, too cartoon-like beside the game's trees; the Designersoup low-poly cars, fantasy and off-road styles; the rest of Crayon City) are archived there and not in the game.
 
 ## Sound recordings
 
