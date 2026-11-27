@@ -223,7 +223,9 @@ export class CarDynamics {
       // the grip allows, plus their working slip), so a full-lock swipe at speed turns as hard as the car can
       // instead of scrubbing the front or snapping the tail
       if (u > 6) { const dg = P.wb * muS * G0 * 0.95 / (u * u) + 0.09; maxSteer += (Math.min(maxSteer, dg) - maxSteer) * Math.min(1, A * 1.2); }
-      steerT = ctl.steer * maxSteer;
+      // Preserve parking lock while making small motorway corrections more progressive.
+      const precision = 0.26 * Math.min(1, speed / 18) * A;
+      steerT = ctl.steer * (1 - precision + precision * Math.abs(ctl.steer)) * maxSteer;
       // counter-steer assist: steer into a slide (not while the handbrake is held, so handbrake turns still work). The
       // slide is the rear tyres' own slip beyond their working angle, not the body's angle to its path (in a tight
       // turn at walking pace that is geometry, and steering into it wound the lock on past full)
@@ -233,9 +235,11 @@ export class CarDynamics {
       }
       steerT += ((dmg[3] - dmg[2]) * 0.05 + Math.max(dmg[0] - 0.5, 0) * 0.03) * Math.min(1, speed / 10);   // bent steering pulls
       // the wheel turns quickly at parking speeds and more calmly at speed, and comes back to centre faster
-      const back = Math.abs(steerT) < Math.abs(ph.steer) - 1e-3;
+      const crossingCentre = steerT * ph.steer < 0;
+      const back = crossingCentre || Math.abs(steerT) < Math.abs(ph.steer) - 1e-3;
       const rate = 3.2 / (1 + Math.max(0, u) / (16 + 14 * (1 - A))) * (back ? 1.7 : 1);
-      ph.steer += Math.max(-rate * h, Math.min(rate * h, steerT - ph.steer));
+      const target = crossingCentre ? 0 : steerT;
+      ph.steer += Math.max(-rate * h, Math.min(rate * h, target - ph.steer));
     } else {
       // driverless: parked cars sit on their handbrake and in gear, crashed traffic on the footbrake
       brk = v.parked ? 0.75 : 0.85; hb = !!v.parked; ph.steer *= 0.9;

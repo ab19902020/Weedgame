@@ -34,13 +34,20 @@ export class Audio {
     const A = this.ctx = new (window.AudioContext || window.webkitAudioContext)();
     this.on = true;
     this.master = A.createGain(); this.master.gain.value = 0.8; this.master.connect(A.destination);
+    this.outdoors = A.createGain();
+    this.roomTone = A.createGain();
+    this.inside = !!this.G.brothers?.me?.inside;
+    this.outdoors.gain.value = this.inside ? 0 : 1;
+    this.roomTone.gain.value = this.inside ? 0.34 : 0;
+    this.outdoors.connect(this.master);
+    this.roomTone.connect(this.master);
     this.listener = A.listener;
     // ambient beds: a gain and a filter each (the filter muffles them inside a car); recordings attach on load
-    const bed = (hz = 20000) => { const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = hz; f.Q.value = 0.5; const g = A.createGain(); g.gain.value = 0; f.connect(g); g.connect(this.master); return { f, g }; };
+    const bed = (hz = 20000) => { const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = hz; f.Q.value = 0.5; const g = A.createGain(); g.gain.value = 0; f.connect(g); g.connect(this.outdoors); return { f, g }; };
     this.rain = bed(); this.rainRoof = bed(); this.wind = bed(); this.leaves = bed(); this.hum = bed();
-    this.murmur = { g: A.createGain() }; this.murmur.g.gain.value = 0; this.murmur.g.connect(this.master);
+    this.murmur = { g: A.createGain() }; this.murmur.g.gain.value = 0; this.murmur.g.connect(this.outdoors);
     // positioned loops: the nearest siren and the nearest crossing that is bleeping
-    const spot = (ref = 10, roll = 1.2) => { const g = A.createGain(); g.gain.value = 0; const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = ref; p.rolloffFactor = roll; g.connect(p); p.connect(this.master); return { g, p }; };
+    const spot = (ref = 10, roll = 1.2) => { const g = A.createGain(); g.gain.value = 0; const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = ref; p.rolloffFactor = roll; g.connect(p); p.connect(this.outdoors); return { g, p }; };
     this.siren = spot(25, 1); this.crossing = spot(6, 1.4);
     this.railRoll = spot(13, 1.2); this.carCabin = bed(2100); this.diesel = bed(5300);
     this.railPosition = new Float64Array(6);
@@ -50,22 +57,39 @@ export class Audio {
       const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 500;
       const g = A.createGain(); g.gain.value = 0; const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = 6; p.rolloffFactor = 1.3;
       const tg = A.createGain(); tg.gain.value = 0; const tf = A.createBiquadFilter(); tf.type = 'lowpass'; tf.frequency.value = 1800;
-      f.connect(g); g.connect(p); tf.connect(tg); tg.connect(p); p.connect(this.master);
+      f.connect(g); g.connect(p); tf.connect(tg); tg.connect(p); p.connect(this.outdoors);
       this.voices.push({ f, g, p, tg, tf });
     }
     // the player's own car: tyre squeal, a heavier screech, road roar and metal scrape, all recorded loops
-    const car = (hz = 20000) => { const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = hz; const g = A.createGain(); g.gain.value = 0; f.connect(g); g.connect(this.master); return { f, g }; };
+    const car = (hz = 20000) => { const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = hz; const g = A.createGain(); g.gain.value = 0; f.connect(g); g.connect(this.outdoors); return { f, g }; };
     this.squeal = car(); this.screech = car(); this.road = car(2500); this.gravel = car(3000); this.scrape = car();
     this.lastCue = new Map();
     this.pedSteps = new WeakMap();
     this.engines = {};
     this.ready = Promise.all([
+      this.loadClip('garden-bird').then(buf => { this.bird = buf; }).catch(console.warn),
+      this.loadClip('passing-engine').then(buf => { this.trafficIdle = buf; }).catch(console.warn),
+      this.loadClip('room-tone').then(buf => this.slice(buf, [0, buf.duration], this.roomTone)).catch(console.warn),
       this.loadFleet().catch(error => console.warn('Fleet audio unavailable', error)),
       this.loadRecordings().catch(error => console.warn('Sound recordings unavailable', error)),
       this.loadWorld().catch(error => console.warn('World sound bank unavailable', error)),
     ]);
     this.stepT = 0;
     this.slipWas = 0; this.hbWas = false;
+  }
+  async loadClip(name) {
+    const response = await fetch('sfx/' + name + '.ogg');
+    if (!response.ok) throw Error(name + ' HTTP ' + response.status);
+    return this.ctx.decodeAudioData(await response.arrayBuffer());
+  }
+  setInterior(inside) {
+    if (!this.ctx || this.inside === inside) return;
+    this.inside = inside;
+    const t = this.ctx.currentTime;
+    for (const [node, level] of [[this.outdoors, inside ? 0 : 1], [this.roomTone, inside ? 0.34 : 0]]) {
+      node.gain.cancelAndHoldAtTime(t);
+      node.gain.linearRampToValueAtTime(level, t + 0.12);
+    }
   }
   async loadRecordings() {
     const response = await fetch('sfx/berkshire.ogg');
@@ -137,7 +161,7 @@ export class Audio {
     const r = await fetch(url); if (!r.ok) throw Error(url + ' HTTP ' + r.status);
     const buf = await this.ctx.decodeAudioData(await r.arrayBuffer()), A = this.ctx;
     const out = A.createGain(), filt = A.createBiquadFilter(); filt.type = 'lowpass'; filt.frequency.value = 2500; filt.Q.value = 0.7;
-    out.gain.value = 0; out.connect(filt); filt.connect(this.master);
+    out.gain.value = 0; out.connect(filt); filt.connect(this.outdoors);
     const loops = bank.rpm.map(rpm => { const g = A.createGain(); g.gain.value = 0; g.connect(out); return { rpm, g, src: this.slice(buf, bank.cues['r' + rpm], g) }; });
     Object.assign(E, { ready: true, buf, out, filt, loops, lastThr: 0, cues: bank.cues });
     return E;
@@ -147,7 +171,7 @@ export class Audio {
   engineShot(kind, name, gain = 0.8) {
     const E = this.engines[kind]; if (!E?.ready || !E.cues[name]) return false;
     const [start, len] = E.cues[name], s = this.ctx.createBufferSource(), g = this.ctx.createGain();
-    s.buffer = E.buf; g.gain.value = gain; s.connect(g); g.connect(this.master); s.start(0, start, len);
+    s.buffer = E.buf; g.gain.value = gain; s.connect(g); g.connect(this.outdoors); s.start(0, start, len);
     return true;
   }
   // engine start for the car you get into
@@ -184,9 +208,9 @@ export class Audio {
   // tile pitched up is the click of the balls and the cue's tip)
   tap(name, gain = 0.4, rate = 1) {
     if (!this.bank || !cues[name]) return;
-    const p = this.G.camera.position; this.shotFrom(this.bank, cues[name], 't:' + name, p.x, p.y, p.z, gain, 5, rate);
+    const p = this.G.camera.position; this.shotFrom(this.bank, cues[name], 't:' + name, p.x, p.y, p.z, gain, 5, rate, this.master);
   }
-  shotFrom(buf, options, key, x, y, z, gain, ref, rate = 1) {
+  shotFrom(buf, options, key, x, y, z, gain, ref, rate = 1, output = this.outdoors) {
     let index = Math.floor(Math.random() * options.length);
     if (options.length > 1 && index === this.lastCue.get(key)) index = (index + 1) % options.length;
     this.lastCue.set(key, index);
@@ -196,7 +220,7 @@ export class Audio {
     volume.gain.value = gain;
     pan.refDistance = ref;
     this.setPos(pan, x, y, z);
-    source.connect(volume); volume.connect(pan); pan.connect(this.master);
+    source.connect(volume); volume.connect(pan); pan.connect(output);
     source.onended = () => { source.disconnect(); volume.disconnect(); pan.disconnect(); };
     source.start(0, start, length);
   }
@@ -215,11 +239,15 @@ export class Audio {
     const s = A.createBufferSource(), g = A.createGain(), p = A.createPanner();
     s.buffer = this.wbank; s.loop = true; s.loopStart = la; s.loopEnd = lb;
     g.gain.value = 0.6; p.refDistance = 6; this.setPos(p, x, y, z);
-    s.connect(g); g.connect(p); p.connect(this.master); s.start(0, start);
+    s.connect(g); g.connect(p); p.connect(this.outdoors); s.start(0, start);
     s.onended = () => { s.disconnect(); g.disconnect(); p.disconnect(); };
     this.hornV = { s, g, p, t0: A.currentTime };
   }
   step(actor, run, level) {
+    if (actor === this.G.brothers.me && actor.inside) {
+      if (this.bank) this.shotFrom(this.bank, cues.boots, 'indoor-step', actor.x, actor.y, actor.z, level * 0.75, 5, run ? 1.08 : 1, this.master);
+      return;
+    }
     let name = groundSounds[this.G.tiles.landcover(actor.x, actor.z)] || 'boots';
     if (run && name === 'boots') name = 'run';
     if ((name === 'run' || name === 'boots') && this.G.world.s.puddle > .1 && Math.random() < this.G.world.s.puddle * .4) {
@@ -231,12 +259,21 @@ export class Audio {
   update(dt, G) {
     if (!this.on) return;
     const t = this.ctx.currentTime, cam = G.camera.position, me = G.brothers.me;
+    this.setInterior(!!me.inside);
     const L = this.listener, f = G.camera.getWorldDirection(this._d || (this._d = new G.THREE.Vector3()));
     if (L.positionX) { L.positionX.value = cam.x; L.positionY.value = cam.y; L.positionZ.value = cam.z; L.forwardX.value = f.x; L.forwardY.value = f.y; L.forwardZ.value = f.z; L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0; }
     else { L.setPosition(cam.x, cam.y, cam.z); L.setOrientation(f.x, f.y, f.z, 0, 1, 0); }
     this.updateRail(G,cam,t);
     const w = G.world.cur, rain = w.rain;
     const inCar = !!me.vehicle;
+    if (this.bird && !me.inside && !inCar && G.treesNear > 0.35 && rain < 0.3 && t > (this.nextBird || 0)) {
+      this.nextBird = t + 24 + Math.random() * 45;
+      const hour = G.world.hours();
+      if (hour >= 5 && hour < 21) {
+        const a = Math.random() * Math.PI * 2;
+        this.shotFrom(this.bird, [[0, this.bird.duration]], 'blackbird', me.x + 12*Math.cos(a), me.y + 3, me.z + 12*Math.sin(a), 0.38, 8);
+      }
+    }
     const sheltered = !inCar && G.shelteredAt(me.x, me.y + 1.2, me.z);
     // rain: open = the broad hiss of rain all around; in a car or under a canopy = muffled, with the drumming
     // of drops on the roof over the top
@@ -269,12 +306,12 @@ export class Audio {
       if (sound === 'dirtbike') {
         band = sp > (vo.band === 5700 ? 10 : 13) ? 5700 : sp > (vo.band === 3600 ? 3 : 5) ? 3600 : 1500;
       }
-      if(vo.sound!==sound || vo.band!==band){
-        const bank = sound === 'diesel' ? this.fleetBank : sound === 'traffic' ? this.bank : this.engines[sound]?.buf;
+      if(vo.sound!==sound || vo.band!==band || (sound === 'traffic' && this.trafficIdle && vo.engine?.buffer !== this.trafficIdle)){
+        const bank = sound === 'diesel' ? this.fleetBank : sound === 'traffic' ? (this.trafficIdle || this.bank) : this.engines[sound]?.buf;
         if(!bank && isMotorbike(sound) && !this.engines[sound]) this.loadEngine(sound).catch(e=>console.warn(e));
         if(vo.engine){ vo.engine.stop(); vo.engine.disconnect(); vo.engine=null; }
         if(bank){
-          const cue=sound==='diesel' ? fleet.dieselIdle : sound==='traffic' ? cues.engine[0] : ENGINES[sound].bank.cues['r'+band];
+          const cue=sound==='diesel' ? fleet.dieselIdle : sound==='traffic' ? (bank === this.trafficIdle ? [0, bank.duration] : cues.engine[0]) : ENGINES[sound].bank.cues['r'+band];
           vo.engine=this.slice(bank,cue,vo.f);vo.sound=sound;vo.band=band;
         } else vo.sound=null;
       }
