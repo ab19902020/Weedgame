@@ -45,6 +45,15 @@ export class Controller {
     // ---- menus and panels
     const panel = this.panel();
     if (panel) { this.menu(dt, panel, pad, tap, axis); this.previous = buttons; return; }
+    // ---- radio wheel: left D-pad opens, right stick or D-pad chooses, Cross confirms.
+    if(G.radio?.opened){
+      const x=axis(2),y=axis(3);if(Math.hypot(x,y)>.4)G.radio.select(x<-.35?'off':y<0?'music':'podcast');
+      if(tap(UP))G.radio.select('music');if(tap(DOWN))G.radio.select('podcast');if(tap(LEFT))G.radio.select('off');
+      if(tap(X)){G.radio.tune(G.radio.selected);G.radio.close();}else if(tap(O))G.radio.close();
+      if(tap(L1))G.radio.skip(-1);if(tap(R1))G.radio.skip(1);
+      this.previous=buttons;return;
+    }
+    if(tap(LEFT)&&G.radio?.device()){G.radio.toggle();this.previous=buttons;return;}
     // ---- weapon wheel: L1 held, a stick points at the weapon, let go to take it
     if (H.wheelOpen) { this.wheel(tap, up, axis, buttons); this.previous = buttons; return; }
     // ---- playing

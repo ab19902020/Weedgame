@@ -427,6 +427,7 @@ function furnishHouse(P, s) {
     const tvU = wallItem(P, g, L, layout.side, 'tvunit', layout.tv, 0.42, 0.5, { col: trap ? 0x2c2a28 : pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58, 0x55585c]) });
     // (the brothers' own: a big 16:9 set, about 90 inches, black until it's switched on: homeTV.js)
     if (tvU) P.add(g, 'tv', tvU.x, tvU.y, s.brothersHome ? 2.0 : trap ? 1.45 : nice ? 1.6 : 1.15, 0.08, s.brothersHome ? 1.13 : 0.7, { rot: tvU.rot, base: 0.5, solid: false, dark: !!s.brothersHome });
+    if(tvU)P.add(g,'radio',tvU.x-.35*Math.cos(tvU.rot),tvU.y-.35*Math.sin(tvU.rot),.24,.16,.15,{base:.5,rot:tvU.rot,solid:false});
     if(s.brothersHome && tvU)P.add(g,'box',tvU.x+.55*Math.cos(tvU.rot),tvU.y+.55*Math.sin(tvU.rot),.26,.21,.065,{base:.5,col:0x21252c,rot:tvU.rot,solid:false});
     const so = wallItem(P, g, L, opp, nice ? 'sofaL' : 'sofa', layout.sofa, 0.92, 0.85, { col: sofa, col2: trap ? 0x4a3d32 : null, worn: trap });
     if (so && tvU) {
@@ -533,7 +534,7 @@ function bungalow(P, s) {
   const sofaCol = pick(R, SOFA);
   const layout = livingWalls(P, g, L, 'x0', clamp((L.y1 - L.y0) * 0.55, 1.5, 2.2), 1.2);
   const tv = wallItem(P, g, L, layout.side, 'tvunit', layout.tv, 0.42, 0.5, { col: pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58]) });
-  if (tv) P.add(g, 'tv', tv.x, tv.y, 1.1, 0.08, 0.65, { rot: tv.rot, base: 0.5, solid: false });
+  if (tv) { P.add(g, 'tv', tv.x, tv.y, 1.1, 0.08, 0.65, { rot: tv.rot, base: 0.5, solid: false }); P.add(g,'radio',tv.x-.3*Math.cos(tv.rot),tv.y-.3*Math.sin(tv.rot),.24,.16,.15,{base:.5,rot:tv.rot,solid:false}); }
   const so = wallItem(P, g, L, layout.opposite, 'sofa', layout.sofa, 0.9, 0.85, { col: sofaCol });
   if (so && tv) { P.add(g, 'rug', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 1.8, 1.4, 0.01, { rot: so.rot, col: pick(R, [0xb8a68a, 0x7d8c9c, 0x9a5b4b, 0xd8cfc0]), solid: false }); P.add(g, 'coffeetable', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 0.9, 0.5, 0.42, { rot: so.rot, col: 0x6b5236, clutter: 'books' }); }
   wallItem(P, g, L, 'y1', 'homefire', 1.3, 0.38, 2.0, { tall: true, col: pick(R, [0xf2f1ec, 0x8a6a4a, 0xd8c29a]), lit: R() < 0.5, at: 0.3 });

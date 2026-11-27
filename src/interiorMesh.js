@@ -665,6 +665,7 @@ function chairsRound(gb, f, w, d, n, col) {
 const ITEM = {
   box: (gb, it, f) => gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col ?? 0xb08a5a),
   tvunit: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.05, it.h, it.col); gb.box('plain', f, -it.w / 2 + 0.05, it.w / 2 - 0.05, -it.d / 2 + 0.03, it.d / 2 - 0.03, 0, 0.05, 0x222222); },
+  radio: (gb,it,f)=>{gb.box('plain',f,-.12,.12,-.08,.08,0,.15,0x272b30);gb.box('plain',f,-.105,-.02,.081,.085,.025,.125,0x131619);for(let i=0;i<5;i++)gb.box('plain',f,-.10,-.025,.086,.088,.035+i*.018,.04+i*.018,0x6b7073);gb.box('glow',f,.005,.103,.081,.085,.078,.125,0x4b8479,{flat:.6});gb.box('plain',f,.02,.065,.083,.099,.022,.065,0xb8b8b8);},
   tv: (gb, it, f) => {
     gb.box('plain', f, -it.w / 2, it.w / 2, -0.03, 0.03, 0.1, 0.1 + it.h, 0x161616);
     gb.box(it.dark ? 'plain' : 'glow', f, -it.w / 2 + 0.025, it.w / 2 - 0.025, 0.031, 0.034, 0.125, 0.075 + it.h, it.dark ? 0x07090b : 0x29425e, { flat: 0.9 });
