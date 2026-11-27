@@ -46,20 +46,31 @@ export const MODELS = {
   sport2: { L: 3.91, W: 1.77, H: 1.04, wb: 2.45, wr: 0.31, wx: -0.12, track: 1.37, prof: 'saloon', max: 12, mass: 1300, pack: 'sport2' },
   suv2: { L: 4.61, W: 2.07, H: 1.73, wb: 2.73, wr: 0.38, wx: 0.07, track: 1.46, prof: 'suv', max: 30, mass: 1900, pack: 'suv2' },
   wagon: { L: 4.38, W: 1.95, H: 1.38, wb: 2.63, wr: 0.3, wx: 0.02, track: 1.4, prof: 'estate', max: 30, mass: 1500, pack: 'wagon' },
+  // the supplied real cars (ActsOfDoge, Sketchfab Standard licence; tools/vehicles/bake-real-cars.py, simplified with
+  // gltfpack to about 11,000 triangles): drawn in full near you, as the matching fleet body beyond 45 m (`far`)
+  bmwx3: { L: 4.64, W: 2.11, H: 1.7, wb: 2.82, wr: 0.36, wx: 0.06, track: 1.6, prof: 'suv', max: 12, mass: 1850, pack: 'bmwx3', set: 'realcars', far: 'suv' },
+  bmwm3: { L: 4.62, W: 2.0, H: 1.46, wb: 2.78, wr: 0.34, wx: 0.12, track: 1.5, prof: 'saloon', max: 10, mass: 1600, pack: 'bmwm3', set: 'realcars', far: 'saloon' },
+  volvos60: { L: 4.77, W: 2.05, H: 1.47, wb: 2.88, wr: 0.34, wx: 0.07, track: 1.56, prof: 'saloon', max: 12, mass: 1700, pack: 'volvos60', set: 'realcars', far: 'saloon' },
+  mercedeseqc: { L: 4.76, W: 2.15, H: 1.65, wb: 2.88, wr: 0.4, wx: 0.03, track: 1.55, prof: 'suv', max: 10, mass: 2400, pack: 'mercedeseqc', set: 'realcars', far: 'suv' },
 };
 // the car pack joins the traffic mix once it has loaded (VehicleRenderer.loadPack)
-export const PACK = { ready: false, names: Object.keys(MODELS).filter(k => MODELS[k].pack), weights: { compact: 1, coupe2: 0.5, hatch2: 1.4, minivan: 0.8, offroad: 0.4, pickup: 0.35, sedan: 1.2, sport2: 0.15, suv2: 1, wagon: 1 } };
-PACK.total = PACK.names.reduce((a, k) => a + PACK.weights[k], 0);
+export const PACK = { ready: false, names: Object.keys(MODELS).filter(k => MODELS[k].pack), weights: { compact: 1, coupe2: 0.5, hatch2: 1.4, minivan: 0.8, offroad: 0.4, pickup: 0.35, sedan: 1.2, sport2: 0.15, suv2: 1, wagon: 1, bmwx3: 0.6, bmwm3: 0.35, volvos60: 0.5, mercedeseqc: 0.4 }, loaded: new Set() };
+PACK.total = PACK.names.reduce((a, k) => a + PACK.weights[k], 0);   // (randomModel picks only among loaded models: see below)
 
 // a car-pack body: its own texture, repainted per car where the texture shows the original paint (ref, linear; null
 // keeps the texture's colours), dark glass, and lamps that light with the car's lights and brakes (front +x)
-function packMaterial(tex, ref) {
+// (full: the real cars, whose 'paint' part (3) takes the car's paint in full, keeping its light and shade)
+function packMaterial(tex, ref, full = false) {
   // (satin, no clearcoat: the textures already carry the body's shading, and a clearcoat turned dark cars into mirrors)
   const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.55, metalness: 0 });
   const part = attribute('part', 'float'), t = texture(tex, uv()).rgb, ip = attribute('iPaint', 'vec3'), st = attribute('iState', 'vec4');
-  const glass = step(0.5, part).mul(step(part, 1.5)), lamp = step(1.5, part), body = float(1).sub(glass).sub(lamp);
+  const glass = step(0.5, part).mul(step(part, 1.5)), lamp = step(1.5, part).mul(step(part, 2.5)), paintPart = step(2.5, part);
+  const body = float(1).sub(glass).sub(lamp).sub(paintPart);
   let paint = t;
-  if (ref) {
+  if (ref && full) {
+    const P = vec3(ref[0], ref[1], ref[2]), lum = c => c.x.mul(0.2126).add(c.y.mul(0.7152)).add(c.z.mul(0.0722));
+    paint = mix(t, ip.mul(lum(t).div(lum(P).max(0.004)).clamp(0.35, 1.6)), paintPart);
+  } else if (ref) {
     // texels near the original paint colour (compared in display space) take the car's paint, keeping their light and
     // shade as a brightness ratio (a per-channel ratio blew dark reds up into white)
     // (by hue: the textures' tops are lighter than their sides, so a match on the colour itself missed bonnets and roofs)
@@ -72,7 +83,7 @@ function packMaterial(tex, ref) {
   }
   const col = mix(mix(paint, vec3(0.012, 0.015, 0.02), glass), t, lamp);
   m.colorNode = col.mul(cloudShadow(positionWorld));
-  m.roughnessNode = mix(mix(float(0.55), float(0.08), glass), float(0.25), lamp);
+  m.roughnessNode = mix(mix(mix(float(0.55), float(0.38), paintPart), float(0.08), glass), float(0.25), lamp);
   // headlamps (not red) at the front with the lights on; tail lamps (red) at the back, brighter on the brakes
   const brake = step(0.5, fract(st.x.mul(0.5))), lights = st.y, front = step(0, positionGeometry.x);
   const red = step(t.g.mul(1.6), t.r).mul(step(0.22, t.r));
@@ -101,7 +112,7 @@ const MODEL_LIST = Object.entries(MODELS);
 // traffic mix (UK-ish), and paints: sports models get brighter colours
 export function randomModel(r) {
   // about four cars in ten from the car pack, by how common each kind is (once it's loaded)
-  if (PACK.ready) { const q = (r * 7.31) % 1; if (q < 0.4) { let t = ((r * 53.7) % 1) * PACK.total; for (const k of PACK.names) { t -= PACK.weights[k]; if (t <= 0) return k; } return PACK.names[0]; } }
+  if (PACK.ready) { const q = (r * 7.31) % 1; if (q < 0.45) { let t = ((r * 53.7) % 1) * PACK.total; for (const k of PACK.names) { t -= PACK.weights[k]; if (t <= 0) return PACK.loaded.has(k) ? k : 'hatch'; } return 'hatch'; } }
   return r < .065 ? 'evsaloon' : r < .115 ? 'evsuv' : r < 0.31 ? 'hatch' : r < 0.52 ? 'saloon' : r < 0.65 ? 'estate' : r < 0.8 ? 'suv' : r < 0.9 ? 'van' : r < 0.95 ? 'hothatch' : r < 0.985 ? 'coupe' : 'sports';
 }
 const SPORT_PAINTS = [0xb5121b, 0xe8e8e8, 0x111111, 0x1446a0, 0xf2b705, 0xe25a12, 0x2f6d3a, 0x7d8085];
@@ -204,9 +215,10 @@ function buildModel(def, key, lod = 0) {
 export class VehicleRenderer {
   // the car pack (tools/vehicles/bake-car-pack.py): geometries, one material per car (its own paint reference), then
   // it joins the traffic mix
-  async loadPack() {
+  loadPack() { this.loadSet('carpack', false); this.loadSet('realcars', true); }
+  async loadSet(name, full) {
     try {
-      const [J, buf, tex] = await Promise.all([fetch('vehicles/carpack.json').then(r => r.json()), fetch('vehicles/carpack.bin').then(r => r.arrayBuffer()), new THREE.TextureLoader().loadAsync('vehicles/carpack.jpg')]);
+      const [J, buf, tex] = await Promise.all([fetch(`vehicles/${name}.json`).then(r => r.json()), fetch(`vehicles/${name}.bin`).then(r => r.arrayBuffer()), new THREE.TextureLoader().loadAsync(`vehicles/${name}.jpg`)]);
       tex.colorSpace = THREE.SRGBColorSpace; tex.flipY = false; tex.anisotropy = 4;
       const L = J.layout, V = J.vertices;
       const pos = new Float32Array(buf, L.position.offset, V * 3), nq = new Int8Array(buf, L.normal.offset, V * 4), uq = new Uint16Array(buf, L.uv.offset, V * 2);
@@ -222,10 +234,11 @@ export class VehicleRenderer {
         g.setAttribute('part', new THREE.BufferAttribute(T, 1));
         g.setIndex(new THREE.BufferAttribute(idx.slice(c.iStart, c.iStart + c.iCount), 1));
         const ref = c.paint ? new THREE.Color().setRGB(c.paint[0], c.paint[1], c.paint[2], THREE.SRGBColorSpace) : null;
-        this.meshes[c.name] = this.far[c.name] = this.make(def, g, this.shadowsOn, packMaterial(tex, ref && [ref.r, ref.g, ref.b]));
+        this.meshes[c.name] = this.far[c.name] = this.make(def, g, this.shadowsOn, packMaterial(tex, ref && [ref.r, ref.g, ref.b], full));
+        PACK.loaded.add(c.name);
       }
       PACK.ready = true;
-    } catch (e) { console.warn('car pack', e); }
+    } catch (e) { console.warn('car pack', name, e); }
   }
   constructor(scene, shadows) {
     this.meshes = {}; this.idx = {};
@@ -338,8 +351,9 @@ export class VehicleRenderer {
       const dx = v.x - cam.x, dz = v.z - cam.z; if (dx * dx + dz * dz > md2) continue;
       // a hand-made model (the brothers' Range Rovers, 85,000 triangles) past 35 m: the instanced SUV stands in for it,
       // as GTA swaps a car for its low-detail model at a distance
-      const d2 = dx * dx + dz * dz, mk = MODELS[v.model].glb && d2 > 35 * 35 && !v.camInside && this.meshes.suv ? 'suv' : v.model;
-      if (mk !== v.model) this.heroCars?.hide(v);   // (kept, hidden: rebuilding it on the way back would stall a frame)
+      const md = MODELS[v.model], d2 = dx * dx + dz * dz;
+      const mk = md.glb && d2 > 35 * 35 && !v.camInside && this.meshes.suv ? 'suv' : md.far && d2 > 45 * 45 && !v.camInside && this.meshes[md.far] ? md.far : v.model;
+      if (md.glb && mk !== v.model) this.heroCars?.hide(v);   // (kept, hidden: rebuilding it on the way back would stall a frame)
       const def = MODELS[mk], farM = this.far[mk], isFar = d2 > FAR2 && farM !== this.meshes[mk];
       const mesh = isFar ? farM : this.meshes[mk], C = isFar ? countsFar : counts, i = C[mk];
       if (!mesh || i >= def.max) continue;

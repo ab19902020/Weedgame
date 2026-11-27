@@ -6,6 +6,11 @@ import android.os.Build;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
+import android.view.InputDevice;
+import android.os.CombinedVibration;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceRequest;
@@ -137,7 +142,37 @@ public class Main extends Activity {
       SharedPreferences.Editor e = prefs.edit();
       if (json != null && json.length() > 2) e.putString("legacySave", json);
       e.putBoolean("migrated06", true).apply();
-      runOnUiThread(() -> web.loadUrl(ORIGIN + "index.html"));
+      runOnUiThread(new Runnable() { public void run() { web.loadUrl(ORIGIN + "index.html"); } });   // (no lambdas: plain dx)
+    }
+    // a game controller's own rumble motors (DualShock 4, DualSense or any pad with them, over Bluetooth or USB):
+    // strong is the low, heavy motor, weak the high one, 0..1, for ms milliseconds. False when there's no pad that can
+    @JavascriptInterface public boolean rumble(float strong, float weak, int ms) {
+      if (Build.VERSION.SDK_INT < 26 || ms <= 0) return false;
+      int a = Math.round(Math.max(0f, Math.min(1f, strong)) * 255), b = Math.round(Math.max(0f, Math.min(1f, weak)) * 255);
+      for (int id : InputDevice.getDeviceIds()) {
+        InputDevice d = InputDevice.getDevice(id);
+        if (d == null) continue;
+        int src = d.getSources();
+        if ((src & InputDevice.SOURCE_GAMEPAD) != InputDevice.SOURCE_GAMEPAD && (src & InputDevice.SOURCE_JOYSTICK) != InputDevice.SOURCE_JOYSTICK) continue;
+        try {
+          if (Build.VERSION.SDK_INT >= 31) {
+            VibratorManager vm = d.getVibratorManager();
+            int[] ids = vm.getVibratorIds();
+            if (ids.length == 0) continue;
+            if (a == 0 && b == 0) { vm.cancel(); return true; }
+            if (ids.length >= 2) {
+              CombinedVibration.ParallelCombination c = CombinedVibration.startParallel();
+              if (a > 0) c.addVibrator(ids[0], VibrationEffect.createOneShot(ms, a));
+              if (b > 0) c.addVibrator(ids[1], VibrationEffect.createOneShot(ms, b));
+              vm.vibrate(c.combine());
+            } else vm.vibrate(CombinedVibration.createParallel(VibrationEffect.createOneShot(ms, Math.max(a, b))));
+            return true;
+          }
+          Vibrator v = d.getVibrator();
+          if (v != null && v.hasVibrator()) { v.vibrate(VibrationEffect.createOneShot(ms, Math.max(1, Math.max(a, b)))); return true; }
+        } catch (Exception ex) { /* a pad that won't rumble */ }
+      }
+      return false;
     }
     @JavascriptInterface public String savePerf(String json) {
       try {

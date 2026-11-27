@@ -400,7 +400,8 @@ function furnishHouse(P, s) {
     const longW = tvSide[0] === 'x' ? L.y1 - L.y0 : L.x1 - L.x0;
     const sw = clamp(longW * 0.55, 1.6, nice ? 3.0 : 2.3);
     const tvU = wallItem(P, g, L, tvSide, 'tvunit', clamp(sw * 0.7, 1.0, 1.8), 0.42, 0.5, { col: trap ? 0x2c2a28 : pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58, 0x55585c]) });
-    if (tvU) P.add(g, 'tv', tvU.x, tvU.y, s.brothersHome ? 1.85 : trap ? 1.45 : nice ? 1.6 : 1.15, 0.08, 0.7, { rot: tvU.rot, base: 0.5, solid: false });
+    // (the brothers' own: a big 16:9 set, about 90 inches, black until it's switched on: homeTV.js)
+    if (tvU) P.add(g, 'tv', tvU.x, tvU.y, s.brothersHome ? 2.0 : trap ? 1.45 : nice ? 1.6 : 1.15, 0.08, s.brothersHome ? 1.13 : 0.7, { rot: tvU.rot, base: 0.5, solid: false, dark: !!s.brothersHome });
     if(s.brothersHome && tvU)P.add(g,'box',tvU.x+.55*Math.cos(tvU.rot),tvU.y+.55*Math.sin(tvU.rot),.26,.21,.065,{base:.5,col:0x21252c,rot:tvU.rot,solid:false});
     const so = wallItem(P, g, L, opp, nice ? 'sofaL' : 'sofa', sw, 0.92, 0.85, { col: sofa, col2: trap ? 0x4a3d32 : null, worn: trap });
     if (so && tvU) {

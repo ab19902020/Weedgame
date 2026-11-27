@@ -6,7 +6,8 @@ const choices={
   steering:['Steering (touch)','Steering wheel','Buttons','Tilt'],
   handling:['Handling','Easy (assists on)','Realistic (fewer assists)'],
   wildlife:['Wildlife','Plenty','Realistic'],
-  buttons:['Touch button size','Standard','Large','Compact']
+  buttons:['Touch button size','Standard','Large','Compact'],
+  rumble:['Controller vibration','On','Off']
 };
 export class GameMenu {
   constructor(hud) {
@@ -33,6 +34,8 @@ export class GameMenu {
     credits.rel = 'noopener';
     credits.style.color = 'inherit';
     prefs.append(credits);
+    // DualSense adaptive triggers (and lightbar) need the pad picked once in a desktop Chrome / Edge (haptics.js)
+    if (navigator.hid) { const ds=document.createElement('button'); ds.textContent='DualSense triggers'; ds.onclick=()=>this.hud.G.haptics?.connectDualSense(); prefs.append(ds); }
     const back=document.createElement('button'); back.textContent='Back';prefs.append(back);
     const page=settings=>{prefs.hidden=!settings;menu.querySelector('nav').hidden=settings;};
     back.onclick=()=>page(false);
@@ -57,6 +60,7 @@ export class GameMenu {
     document.documentElement.style.setProperty('--mini-size',({Compact:'112px',Large:'174px'})[this.settings.size] || '150px');
     document.documentElement.style.setProperty('--u',({Large:'1.18',Compact:'.84'})[this.settings.buttons] || '1');
     if(this.settings.steering==='Tilt'){try{this.hud.G.input.calibrateTilt();}catch{}}
+    if(this.hud.G.haptics)this.hud.G.haptics.on=this.settings.rumble!=='Off';
   }
   resetInput(){const i=this.hud.G.input;i.release();i.keys.clear();i.pressed.clear();i.held.clear();}
   open(){this.resetInput();this.el.hidden=false;this.el.querySelector('nav button').focus();}

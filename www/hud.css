@@ -210,6 +210,12 @@ html,body{margin:0;height:100%;overflow:hidden;background:#20262b;color:#eee;fon
 @keyframes lockin{from{width:80px;height:80px;margin:-40px 0 0 -40px;opacity:.4}}
 #homeTV { position:fixed; z-index:80; bottom:max(12px,env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); display:flex; flex-wrap:wrap; justify-content:center; gap:6px; width:max-content; max-width:92vw; max-height:46vh; overflow:auto; padding:9px; border-radius:12px; background:#12191ef2; color:white; pointer-events:auto; }
 #homeTV button { font:600 14px system-ui; color:#f4f6f4; background:#30434b; border:1px solid #567079; border-radius:7px; min-height:40px; padding:6px 14px; }
+#homeTV button:focus-visible, #homeTV button.pad-focus { outline:3px solid #f2c94c; outline-offset:1px; background:#46606a; }
 #homeTV.playing { inset:0; transform:none; max-width:none; max-height:none; width:auto; border-radius:0; flex-flow:column; align-items:flex-start; padding:4px; }
 #homeTV iframe { width:100%; flex:1; background:#101419; border:0; }
 body:has(#homeTV) #hud {pointer-events:none;}
+
+/* controller: the pointer for games on canvases and in the console, and the button the D-pad is on */
+#padCursor{position:fixed;left:-9px;top:-9px;width:18px;height:18px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 2px #000a,inset 0 0 0 2px #000a;pointer-events:none;z-index:9999}
+#padCursor[hidden]{display:none}
+.pad-focus{outline:3px solid #f2c94c!important;outline-offset:2px}

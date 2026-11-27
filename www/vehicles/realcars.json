@@ -1,0 +1,113 @@
+{
+ "source": "2014 BMW X3, 2016 BMW M3 (F80), 2019 Volvo S60, 2023 Mercedes-Benz EQC by ActsOfDoge (Sketchfab), Sketchfab Standard licence",
+ "vertices": 38542,
+ "indices": 132135,
+ "layout": {
+  "position": {
+   "offset": 0,
+   "bytes": 462504
+  },
+  "normal": {
+   "offset": 462504,
+   "bytes": 154168
+  },
+  "uv": {
+   "offset": 616672,
+   "bytes": 154168
+  },
+  "part": {
+   "offset": 770840,
+   "bytes": 38542
+  },
+  "index": {
+   "offset": 809384,
+   "bytes": 264270
+  }
+ },
+ "cars": [
+  {
+   "name": "bmwx3",
+   "cls": "suv",
+   "L": 4.641,
+   "W": 2.11,
+   "H": 1.698,
+   "wb": 2.819,
+   "wr": 0.359,
+   "wx": 0.061,
+   "track": 1.596,
+   "paint": [
+    0.953,
+    0.953,
+    0.953
+   ],
+   "full": true,
+   "vStart": 0,
+   "vCount": 11417,
+   "iStart": 0,
+   "iCount": 35853
+  },
+  {
+   "name": "bmwm3",
+   "cls": "saloon",
+   "L": 4.619,
+   "W": 2.003,
+   "H": 1.456,
+   "wb": 2.779,
+   "wr": 0.345,
+   "wx": 0.12,
+   "track": 1.5,
+   "paint": [
+    0.295,
+    0.3,
+    0.293
+   ],
+   "full": true,
+   "vStart": 11417,
+   "vCount": 10549,
+   "iStart": 35853,
+   "iCount": 36951
+  },
+  {
+   "name": "volvos60",
+   "cls": "saloon",
+   "L": 4.768,
+   "W": 2.055,
+   "H": 1.47,
+   "wb": 2.885,
+   "wr": 0.339,
+   "wx": 0.074,
+   "track": 1.559,
+   "paint": [
+    0.808,
+    0.804,
+    0.808
+   ],
+   "full": true,
+   "vStart": 21966,
+   "vCount": 8417,
+   "iStart": 72804,
+   "iCount": 29619
+  },
+  {
+   "name": "mercedeseqc",
+   "cls": "suv",
+   "L": 4.759,
+   "W": 2.153,
+   "H": 1.655,
+   "wb": 2.883,
+   "wr": 0.397,
+   "wx": 0.027,
+   "track": 1.555,
+   "paint": [
+    0.838,
+    0.866,
+    0.897
+   ],
+   "full": true,
+   "vStart": 30383,
+   "vCount": 8159,
+   "iStart": 102423,
+   "iCount": 29712
+  }
+ ]
+}

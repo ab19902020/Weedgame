@@ -634,7 +634,7 @@ const ITEM = {
   tvunit: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.05, it.h, it.col); gb.box('plain', f, -it.w / 2 + 0.05, it.w / 2 - 0.05, -it.d / 2 + 0.03, it.d / 2 - 0.03, 0, 0.05, 0x222222); },
   tv: (gb, it, f) => {
     gb.box('plain', f, -it.w / 2, it.w / 2, -0.03, 0.03, 0.1, 0.1 + it.h, 0x161616);
-    gb.box('glow', f, -it.w / 2 + 0.025, it.w / 2 - 0.025, 0.031, 0.034, 0.125, 0.075 + it.h, 0x29425e, { flat: 0.9 });
+    gb.box(it.dark ? 'plain' : 'glow', f, -it.w / 2 + 0.025, it.w / 2 - 0.025, 0.031, 0.034, 0.125, 0.075 + it.h, it.dark ? 0x07090b : 0x29425e, { flat: 0.9 });
     gb.box('plain', f, -0.15, 0.15, -0.1, 0.1, 0, 0.1, 0x161616);
   },
   sofa: (gb, it, f) => {

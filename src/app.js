@@ -31,6 +31,7 @@ import { Perf } from './perf.js';
 import { Trains } from './trains.js';
 import { LampGlow } from './lampGlow.js';
 import { Cones } from './cones.js';
+import { Haptics } from './haptics.js';
 import { Stations } from './stations.js';
 import { Wildlife } from './wildlife.js';
 
@@ -100,6 +101,7 @@ G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
 G.peds = new Peds(G);
 G.police = new Police(G);
 G.cones = new Cones(G);              // traffic cones at police scenes (cones.js)
+G.haptics = new Haptics(G);          // controller rumble and DualSense triggers (haptics.js)
 G.neighbourhood=new Neighbourhood(G);
 G.parking = new Parking(G);
 G.buses = new Buses(G);
@@ -282,6 +284,7 @@ function step(dt, render) {
   G.wildlife.update(dt);
   G.police.update(dt);
   G.cones.update(dt);
+  G.haptics.update(dt);
   G.trains.update(dt);
   G.neighbourhood.update(dt);
   G.atmos.updateCover(me.x, me.z);

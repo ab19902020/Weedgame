@@ -292,6 +292,7 @@ export class Combat {
     if (!w.fire?.muffle) this.fx.flash(o, s.aimDir, big * (w.pellets ? 1.4 : 1)); else this.fx.flash(o, s.aimDir, 0.08);
     this.fx.puff(o, _a.copy(s.aimDir).multiplyScalar(1.5), [0.62, 0.62, 0.6], w.fire?.muffle ? 0.15 : 0.35, 0.08, 0.5, 0.9);
     this.sample(w.fire.sample, o.x, o.y, o.z, w.fire.gain, w.fire.rate, w.fire.muffle || 0);
+    if (i === G.brothers.active) G.haptics?.shot(w);
     if (!w.pellets && !w.bolt && s.gun) {
       _b.set(-1, 0.6, -0.2).applyQuaternion(s.gunQ);
       _c.set(0, 0.03, 0.02).applyQuaternion(s.gunQ).add(s.gun.position);
@@ -488,6 +489,7 @@ export class Combat {
         const dir = Math.atan2(p.z - me.z, p.x - me.x);
         G.peds.hurt?.(p, dir, m.reaction, m.dmg, { s: 1, side: m.hand === 'L' ? -1 : 1 });
         G.audio?.play?.(m.kick ? 'kick' : 'punch', p.x, p.y + 1.4, p.z, m.kick ? 0.7 : 0.6);
+        if (i === G.brothers.active) G.haptics?.hit(m.kick);
         G.slowmo = Math.max(G.slowmo || 0, m.kick ? 0.12 : 0.07);
         s.shake += m.kick ? 0.5 : 0.3;
         this.report(m.reaction === 'down' ? 'assault' : 'assault', me.x, me.z, m.reaction === 'down' ? 2 : 1);

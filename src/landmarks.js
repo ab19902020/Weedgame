@@ -6,6 +6,7 @@ import { Fn, uv, vec3, float, fract, step, mix, max, positionWorld, normalWorld 
 import { mergeGeos } from './tiles.js';
 import { U } from './env.js';
 import { lightPool } from './materials.js';
+import { loadKit, kitMaterial } from './kit.js';
 
 const stoneMat = () => { const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.85 }); const u = uv(); const course = step(0.94, fract(u.y.div(0.45))).mul(0.12); m.colorNode = vec3(0.74, 0.66, 0.5).mul(float(1).sub(course)).mul(mix(float(1), float(0.78), U.wet)); m.emissiveNode = lightPool(positionWorld).mul(vec3(0.7, 0.62, 0.5)); return m; };
 const brickMat = () => { const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.8 }); const u = uv(); const band = step(0.82, fract(u.y.div(1.6))); const bx = fract(u.x.div(0.225).add(step(0.5, fract(u.y.div(0.15))).mul(0.5))), by = fract(u.y.div(0.075)); const mortar = max(step(0.93, bx), step(0.85, by)).mul(0.25); m.colorNode = mix(vec3(0.5, 0.16, 0.1), vec3(0.78, 0.6, 0.42), band).mul(float(1).sub(mortar)).mul(mix(float(1), float(0.8), U.wet)); m.emissiveNode = lightPool(positionWorld).mul(vec3(0.5, 0.2, 0.15)); return m; };
@@ -57,6 +58,18 @@ export class Landmarks {
     this.group = new THREE.Group(); G.scene.add(this.group);
     this.poles = new THREE.InstancedMesh(mergeGeos([new THREE.CylinderGeometry(0.04, 0.04, 2.7, 6).translate(0, 1.35, 0).toNonIndexed(), box(1.02, .31, .055, 0, 2.55, 0),box(.29,.49,.06,0,1.49,0)]), new THREE.MeshStandardNodeMaterial({ color: 0xd02020, roughness: 0.6 }), G.net.busStops.length);
     this.poles.count = 0; this.group.add(this.poles);
+    // the supplied kit's bus stop flag and shelter, once loaded (the plain ones above stand in until then)
+    this.busShelters = [];
+    loadKit('bus-stop-sign').then(g => { if (g) { this.poles.geometry = g; this.poles.material = kitMaterial(); } });
+    loadKit('bus-shelter').then(g => { if (!g) return; this.shelterGeo = g; for (const [c, grp] of this.busShelters) this.kitShelter(c, grp); });
+  }
+  // a kit shelter in place of the frame-and-glass one: scaled to the stop's shelter, its floor on the pavement
+  kitShelter(c, grp) {
+    grp.clear();
+    const m = new THREE.Mesh(this.shelterGeo, kitMaterial()), k = c.l / 3.46;
+    m.scale.set(k, k, c.w / 1.763); m.position.y = -c.hh;
+    m.castShadow = this.G.renderer.shadowMap.enabled && this.G.budget?.shadow?.buildings !== false; m.receiveShadow = true;
+    grp.add(m);
   }
   onTile(t) {
     const G = this.G;
@@ -86,7 +99,9 @@ export class Landmarks {
   canopy(c) {
     const grp = new THREE.Group();
     grp.position.set(c.x, c.y, c.z); grp.rotation.y = -c.h;
+    if (c.bus && this.shelterGeo) { this.kitShelter(c, grp); return grp; }
     if (c.bus) {
+      this.busShelters.push([c, grp]);
       const frame=[];
       for(const x of [-c.l/2,0,c.l/2])frame.push(box(.055,2.3,.055,x,-1.16,-c.w/2+.025));
       for(const h of [-.86,-1.08])frame.push(box(c.l,.035,.045,0,h,-c.w/2+.034));
