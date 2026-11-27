@@ -17,7 +17,7 @@ export class GameMenu {
     this.settings.steering=({'Drag wheel':'Steering wheel','Arrow buttons':'Buttons'})[this.settings.steering]||this.settings.steering;
     const menu=this.el=document.createElement('section');
     menu.id='countyMenu';menu.setAttribute('aria-label','Green County menu');
-    menu.innerHTML=`<div class="menuContent"><small>BERKSHIRE · ENGLAND</small><h1>Green<br>County</h1><nav><button data-go="play">Enter free roam ↗</button><button data-go="atlas">Road Atlas</button><button data-go="settings">Settings</button></nav><section class="preferences" hidden><h2>Settings</h2></section></div>`;
+    menu.innerHTML=`<div class="menuContent"><small>BERKSHIRE · ENGLAND</small><h1>Green<br>County</h1><nav><button data-go="play">Enter free roam ↗</button><button data-go="atlas">Explore map</button><button data-go="shops">Nearest shop</button><button data-go="houses">Nearest house</button><button data-go="settings">Settings</button></nav><section class="preferences" hidden><h2>Settings</h2></section></div>`;
     document.body.append(menu);
     const prefs=menu.querySelector('.preferences');
     for(const [id,[label,...values]] of Object.entries(choices)){
@@ -43,7 +43,14 @@ export class GameMenu {
       const action=e.target.dataset.go;
       if(action==='settings'){page(true);return;}
       if(!action)return;
-      this.close();if(action==='atlas')hud.toggleMap(true);
+      this.close();
+      if (['atlas','shops','houses'].includes(action)) {
+        hud.toggleMap(true);
+        if (action !== 'atlas') {
+          hud.selectPlaces(action === 'shops' ? 'Shops' : 'Houses');
+          hud.el('mKinds').querySelector('[aria-pressed="true"]')?.focus();
+        }
+      }
     };
     hud.el('bMenu').onclick=()=>this.open();
     addEventListener('keydown',e=>{

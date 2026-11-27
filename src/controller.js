@@ -128,6 +128,8 @@ export class Controller {
       }
     }
     if (isMap) {
+      if (tap(L2)) H.el('mPrev').click();
+      if (tap(R2)) H.el('mNext').click();
       H.mapView.x += axis(0) * dt * 450 / H.mapView.s; H.mapView.z += axis(1) * dt * 450 / H.mapView.s;
       if (tap(L1) || tap(R1)) H.zoomMap(tap(L1) ? 0.7 : 1.4);
       if (tap(TRI)) { const { x, z } = H.mapView; H.nav.set({ x, z, name: G.roadName(x, z) || 'Dropped pin' }); }

@@ -5,7 +5,7 @@
 // (controller.js steps through any open panel marked data-pad="menu").
 import * as THREE from 'three/webgpu';
 
-const episodes = [
+const southPark = [
   ['Elon Gets Upgraded', 'Elon_Gets_Upgraded_1080p'],
   ['Interdimensional Cable', 'Interdimensional_Cable_South_Park_1080p'],
   ['Make America Cartman Again', 'Make_America_Cartman_Again_1080p'],
@@ -13,6 +13,16 @@ const episodes = [
   ['Midterm Meltdown', 'Midterm_Meltdown_1080p'], ['Couples Counseling', 'Couples_Counseling_1080p'],
   ['Player Owned', 'Player_Owned_Episode_1080p'], ['Roads Are Optional', 'Roads_Are_Optional_1080p'], ['Free Ride', 'free_ride'],
 ];
+const series = {
+  'South Park': southPark,
+  'All or Something': [
+    ['The Clear Plan', 'ALL_OR_SOMETHING_EP1_THE_CLEAR_PLAN_1080p'],
+    ['Three Midfielders', 'all_or_something_ep01_three_midfielders'],
+    ['Welcome to Hull', 'all_or_something_ep02_welcome_to_hull'],
+    ['Clear the Air', 'ALL_OR_SOMETHING_CLEAR_THE_AIR_1080x1920'],
+    ['Why United Are Failing', 'WHY_UNITED_ARE_FAILING_1080x1920']
+  ]
+};
 const CHANNELS = [['BBC Berks News', 'news'], ['Sport: Reading v Swindon', 'sport'], ['Weather', 'weather'], ['Music', 'music'], ['Nature', 'nature']];
 const HEADLINES = ['Roadworks on the A329(M) into next week', 'Wokingham council approves new cycle lanes', 'Reading Festival line-up announced',
   'Thames Valley Police appeal for witnesses in Woodley', 'Royal Berkshire Hospital opens new wing', 'Dinton Pastures lake reopens after clean-up',
@@ -20,7 +30,7 @@ const HEADLINES = ['Roadworks on the A329(M) into next week', 'Wokingham council
   'Record crowds at the Madejski for derby day'];
 
 export class HomeTV {
-  constructor(interiors) { this.interiors = interiors; this.generation = 0; this.episodesOk = null; this.t = 0; }
+  constructor(interiors) { this.interiors = interiors; this.generation = 0; this.t = 0; }
   get G() { return this.interiors.G; }
   sit(room) {
     if (this.seated) return;
@@ -37,8 +47,6 @@ export class HomeTV {
     this.panel.dataset.pad = 'menu';
     this.panel.addEventListener('pointerdown', e => e.stopPropagation());
     document.body.append(this.panel);
-    // the episodes are packaged separately (tools/home/episodes.py): offered only when they're there
-    if (this.episodesOk == null) fetch('assets/home/episodes/' + episodes[0][1] + '.mp4', { method: 'HEAD' }).then(r => { this.episodesOk = r.ok; }).catch(() => { this.episodesOk = false; });
     this.off();
   }
   updateSeat(dt) {
@@ -80,7 +88,7 @@ export class HomeTV {
   menu() {
     this.clear();
     for (const [name, id] of CHANNELS) this.button(name, () => this.watch(id));
-    if (this.episodesOk) this.button('Episodes', () => this.channels());
+    for (const name of Object.keys(series)) this.button(name, () => this.channels(name));
     this.button('Games console', () => this.consoleMenu());
     this.button('Turn TV off', () => this.off()); this.button('Stand up', () => this.stand());
     this.watch('news', true);
@@ -97,20 +105,21 @@ export class HomeTV {
     for (const [name, id] of CHANNELS) this.button(name, () => { this.channel = null; this.watch(id, true); });
     this.button('TV menu', () => this.menu()); this.button('Turn TV off', () => this.off());
   }
-  channels() {
+  channels(name) {
+    this.seriesName = name; const episodes = series[name];
     this.clear(); episodes.forEach(([title], i) => this.button(title, () => this.play(i)));
     this.button('Back', () => this.menu());
   }
   play(i) {
-    this.clear(); const [title, file] = episodes[i], v = document.createElement('video'); this.video = v;
-    v.playsInline = true; v.preload = 'metadata'; v.src = 'assets/home/episodes/' + file + '.mp4';
+    this.clear(); const episodes = series[this.seriesName], [title, file] = episodes[i], v = document.createElement('video'); this.video = v;
+    v.playsInline = true; v.preload = 'metadata'; v.src = (episodes === southPark ? 'assets/home/episodes/' : 'assets/home/united/') + file + '.mp4';
     const tex = new THREE.VideoTexture(v); tex.colorSpace = THREE.SRGBColorSpace;
     this.screenOn(tex);
     const pause = this.button('Pause', () => { if (v.paused) v.play().catch(() => {}); else v.pause(); });
     v.onpause = () => pause.textContent = 'Play'; v.onplay = () => pause.textContent = 'Pause';
     const next = () => this.play((i + 1) % episodes.length);
     v.onended = next; v.onerror = () => { if (this.video === v) pause.textContent = title + ' unavailable'; };
-    this.button('Next episode', next); this.button('TV menu', () => this.menu()); v.play().catch(() => { pause.textContent = 'Play'; });
+    this.button('Previous episode', () => this.play((i + episodes.length - 1) % episodes.length)); this.button('Next episode', next); this.button('Episode list', () => this.channels(this.seriesName)); this.button('TV menu', () => this.menu()); v.play().catch(() => { pause.textContent = 'Play'; });
   }
   consoleMenu() {
     this.clear(); this.button('Narco Lord', () => this.game('narco')); this.button('The Results Business', () => this.game('results'));
