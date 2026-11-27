@@ -11,6 +11,7 @@ import { repairGaps, alignRoads } from '../../src/roadProfile.js';
 import { cleanSignals, motorwayLayout, kerbBusStops, applyStops, barriers } from '../../src/roadDetail.js';
 import { Trains } from '../../src/trains.js';
 import { Stations } from '../../src/stations.js';
+import { RoadSurfaceAudit } from './roadSurfaceAudit.mjs';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const load = async f => { const raw = fs.readFileSync(path.join(root, f)); const ab = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength); try { return decode(ab); } catch { return decode(await inflate(ab)); } };
 const c = await load('www/world/network.bin');
@@ -46,13 +47,14 @@ const pip = (poly, x, z) => { let c = false; for (const ring of poly) for (let i
 const depthIn = (polys, x, z) => { for (const poly of polys) if (pip(poly, x, z)) { let d = 1e9; for (const ring of poly) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [ax, az] = ring[j], [bx, bz] = ring[i]; if ((Math.abs(ax - bx) < 1e-3 && Math.abs(ax / 32 - Math.round(ax / 32)) < 1e-4) || (Math.abs(az - bz) < 1e-3 && Math.abs(az / 32 - Math.round(az / 32)) < 1e-4)) continue; const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1; let t = ((x - ax) * ex + (z - az) * ez) / L2; t = Math.max(0, Math.min(1, t)); d = Math.min(d, Math.hypot(x - ax - ex * t, z - az - ez * t)); } return d; } return 0; };
 const man = JSON.parse(fs.readFileSync(path.join(root, 'www/world/manifest.json'), 'utf8'));
 const keys = process.env.TILES ? process.env.TILES.split(',') : man.tiles.slice(0, Number(process.argv[2]) || man.tiles.length);
+const surface = process.env.ROAD_SURFACE === '1' ? new RoadSurfaceAudit(net, keys) : null;
 const S = { tiles: 0, tileErrors: 0, lamps: 0, lampsInRoad: 0, trees: 0, treesInRoad: 0, props: 0, propsInRoad: 0, piers: 0, piersInRoad: 0 }, ex = [];
 for (const key of keys) {
   results.length = 0;
   await self.onmessage({ data: { type: 'tile', url: 'world/tiles/' + key + '.bin', key, lod: 0 } });
   const out = results[0]; if (!out || out.error) { S.tileErrors++; console.log('error', key, out?.error?.slice(0, 200)); continue; }
   const { arrays: A } = await load('www/world/tiles/' + key + '.bin');
-  const polys = roadPolys(A); S.tiles++;
+  const polys = roadPolys(A); S.tiles++; surface?.consume(out);
   const chk = (kind, x, z, r, sub = '') => { S[kind]++; const d = depthIn(polys, x, z); if (d > r) { S[kind + 'InRoad']++; if (ex.length < 20) ex.push([kind + sub, key, Math.round(x + out.ox), Math.round(z + out.oz), +d.toFixed(2)]); } };
   for (let k = 0; k < out.lamps.length; k += 4) chk('lamps', out.lamps[k], out.lamps[k + 2], 0.25);
   for (let k = 0; k < out.trees.length; k += 4) chk('trees', out.trees[k], out.trees[k + 2], 0.25);
@@ -75,3 +77,11 @@ for (const key of keys) {
 console.log(JSON.stringify(S)); for (const e of ex) console.log(JSON.stringify(e));
 
 if (S.tileErrors || S.tiles !== keys.length || S.piersInRoad || S.lampsInRoad || S.treesInRoad || S.propsInRoad) process.exitCode = 1;
+
+if (surface) {
+  const report=surface.report();
+  console.log('road surface audit',JSON.stringify(report.totals));
+  for (const r of report.roadIssues.slice(0,30)) console.log(JSON.stringify(r));
+  if(process.env.ROAD_REPORT)fs.writeFileSync(process.env.ROAD_REPORT,JSON.stringify(report,null,2)+'\n');
+  if(report.totals.noSurface || report.totals.heightMismatch || report.totals.junctionCandidates || report.totals.gradeCandidates)process.exitCode=1;
+}
