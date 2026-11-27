@@ -25,3 +25,19 @@ test('dispatch distinguishes a shunt, an injury and a trapped occupant and avoid
     assert.deepEqual(area.calls.map(c=>c.service),services);
   }
 });
+
+test('walk straight through the brothers’ lounge from the front door to the kitchen', () => {
+  const {sites} = JSON.parse(readFileSync(new URL('../../../www/world/interiors.json',import.meta.url)));
+  const home = sites.find(s => s.id === 2);
+  const p = makePlan({...home, brothersHome:true});
+  const lounge = p.find(p.levels[0], 'living');
+  assert.ok(home.doorX > lounge.x0 && home.doorX < lounge.x1);
+  assert.equal(p.exit.x, home.doorX);
+  for (let y = 0.4; y < lounge.y1 + 0.9; y += 0.05) {
+    for (const offset of [-0.3, 0, 0.3]) {
+      const x = p.exit.x + offset;
+      const [actualX, actualY] = p.collide(x,y,0.32,0);
+      assert.ok(Math.hypot(actualX-x, actualY-y) < 0.001, 'Blocked at '+[x,y]);
+    }
+  }
+});
