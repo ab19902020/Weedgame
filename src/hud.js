@@ -487,9 +487,8 @@ export class Hud {
     });
     section('Characters & animation');
     const rigs = G.people.rigs;
-    row('Character preview', ['cal', 'leon', 'officer', 'civilian', 'off'].map(role => btn(role, () => { rigs.previewRole = role === 'off' ? null : role; if (ROLES[role]?.hero) rigs.previewClip = ROLES[role].idle; }, 'preview-' + role)));
+    row('Character preview', ['cal', 'leon', 'off'].map(role => btn(role, () => { rigs.previewRole = role === 'off' ? null : role; if (ROLES[role]?.hero) rigs.previewClip = ROLES[role].idle; }, 'preview-' + role)));
     for (const hero of ['cal', 'leon']) row(hero === 'cal' ? 'Cal' : 'Leon', ROLES[hero].clips.map(clip => btn(clip.replace(/_0?(\d)$/, ' $1').replace(/_/g, ' '), () => { rigs.previewRole = hero; rigs.previewClip = clip; }, hero + '-' + clip)));
-    row('Animation', ['Idle', 'Walk', 'Run', 'Jump', 'Swim', 'WeaponHold'].map(clip => btn(clip, () => { if (!rigs.previewRole || ROLES[rigs.previewRole]?.hero) rigs.previewRole = 'civilian'; rigs.previewClip = clip; }, 'anim-' + clip.toLowerCase())));
     section('Vehicles & fuel');
     const fuel = amount => {
       const v = G.brothers.vehicleOf(G.brothers.me);

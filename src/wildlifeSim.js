@@ -123,8 +123,9 @@ export class WildSim {
   plan(f) {
     const hour = this.hour, rain = this.W.rain();
     if (this.t >= this.uT) { for (const k of this.transient) this.u[k] = this.rand(); this.uT = this.t + 150 + this.rand() * 150; }
-    const ok = this.samples.filter(s => s);
+    const ok = this._ok ||= []; ok.length = 0; for (const s of this.samples) if (s) ok.push(s);
     if (ok.length < 16) return;
+    const seen = this._seen ||= new Set();
     for (const key of this.transient) {
       const S = SPECIES[key], range = this.rangeOf(S);
       let sum = 0, n = 0;
@@ -138,7 +139,7 @@ export class WildSim {
       const E = this.E[key] = prev == null ? E0 : prev + (E0 - prev) * 0.06;
       const gMean = (S.group[0] + S.group[1]) / 2;
       const want = Math.min(Math.floor(E + this.u[key]), Math.ceil(S.cap / gMean));
-      let have = 0, far = null, fd = -1; const seen = new Set();
+      let have = 0, far = null, fd = -1; seen.clear();
       // (only those passing through: not the places' animals, the nesting birds or the dogs)
       for (const a of this.list) if (a.key === key && !a.leaving && !a.site && !a.nest && !a.owner && !seen.has(a.group)) {
         seen.add(a.group); have++;
@@ -281,13 +282,15 @@ export class WildSim {
   }
 
   // ---------------------------------------------------------------- what frightens them
+  // (the entries are pooled and refilled every frame: they were a fresh object for every person and car in range)
   gatherThreats(f) {
-    const T = this.threats, W = this.W; T.length = 0;
-    if (f.vehicle) T.push({ x: f.x, z: f.z, k: f.vspeed > 2 ? 0.8 : 0.4, kind: 'car', still: f.vspeed < 0.5 });
-    else T.push({ x: f.x, z: f.z, k: f.speed > 3 ? 1.6 : f.speed > 0.4 ? 1 : 0.65, kind: 'player', still: f.speed < 0.3 });
-    for (const p of W.peds()) if (Math.abs(p.x - f.x) < 160 && Math.abs(p.z - f.z) < 160) T.push({ x: p.x, z: p.z, k: 0.55, kind: 'ped' });
-    for (const a of this.list) if (a.key === 'dog') T.push({ x: a.x, z: a.z, k: a.offLead ? 1.5 : 1.1, kind: 'dog', dog: a });
-    for (const c of W.cars()) if (Math.abs(c.x - f.x) < 160 && Math.abs(c.z - f.z) < 160 && Math.abs(c.sp || 0) > 2) T.push({ x: c.x, z: c.z, k: 0.6, kind: 'car' });
+    const T = this.threats, W = this.W, pool = this._tPool ||= []; T.length = 0;
+    const add = (x, z, k, kind, still = false, dog = null) => { const t = pool[T.length] ||= {}; t.x = x; t.z = z; t.k = k; t.kind = kind; t.still = still; t.dog = dog; T.push(t); };
+    if (f.vehicle) add(f.x, f.z, f.vspeed > 2 ? 0.8 : 0.4, 'car', f.vspeed < 0.5);
+    else add(f.x, f.z, f.speed > 3 ? 1.6 : f.speed > 0.4 ? 1 : 0.65, 'player', f.speed < 0.3);
+    for (const p of W.peds()) if (Math.abs(p.x - f.x) < 160 && Math.abs(p.z - f.z) < 160) add(p.x, p.z, 0.55, 'ped');
+    for (const a of this.list) if (a.key === 'dog') add(a.x, a.z, a.offLead ? 1.5 : 1.1, 'dog', false, a);
+    for (const c of W.cars()) if (Math.abs(c.x - f.x) < 160 && Math.abs(c.z - f.z) < 160 && Math.abs(c.sp || 0) > 2) add(c.x, c.z, 0.6, 'car');
   }
   // the most pressing threat: { d (distance scaled by how frightening it is), x, z, kind } or null
   threat(a, reach) {
@@ -300,7 +303,11 @@ export class WildSim {
       const q = Math.hypot(dx, dz) / t.k;
       if (q < bq) { bq = q; best = t; }
     }
-    return best ? { d: bq, x: best.x, z: best.z, kind: best.kind, t: best } : null;
+    // (one result object per caller slot, reused; callers read it at once)
+    if (!best) return null;
+    const r = this._thr = this._thr === this._thrA ? (this._thrB ||= {}) : (this._thrA ||= {});
+    r.d = bq; r.x = best.x; r.z = best.z; r.kind = best.kind; r.t = best;
+    return r;
   }
   // standing still at the water's edge: the ducks, geese and swans swim over (hoping for bread)
   watchFeeder(f, dt) {

@@ -25,7 +25,7 @@ export class Robbery {
     const toW = (x, y) => I.toWorld(s, x, y), head = (dx, dy) => Math.atan2(s.ax[1] * dx + s.ay[1] * dy, s.ax[0] * dx + s.ay[0] * dy);
     for (const sp of P.staffSpots || []) {
       const [x, z] = toW(sp.x, sp.y);
-      out.push({ id: `clerk-${s.id}`, x, y: b.floor0, z, heading: head(sp.dx, sp.dy), base: head(sp.dx, sp.dy), look: { ...People.randomLook(R), top: shopColour(s.name, R), cap: false, hood: false, bag: false, umbrella: 0 },
+      out.push({ id: `clerk-${s.id}`, x, y: b.floor0, z, heading: head(sp.dx, sp.dy), base: head(sp.dx, sp.dy), look: { ...People.randomLook(R, { work: true }), top: shopColour(s.name, R), cap: false, hood: false, bag: false, umbrella: 0 },
         visible: true, speed: 0, t: R() * 9, phase: 0, pose: 'idle', staff: true, clerk: true });
     }
     return (b.people = out);

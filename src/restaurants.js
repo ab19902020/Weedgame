@@ -23,7 +23,7 @@ export class Restaurants {
     const R = mulberry(s.seed || 1);
     const toW = (x, y) => I.toWorld(s, x, y);
     const head = (dx, dy) => { const wx = s.ax[0] * dx + s.ay[0] * dy, wz = s.ax[1] * dx + s.ay[1] * dy; return Math.atan2(wz, wx); };
-    const staffLook = () => ({ ...People.randomLook(R), top: st.uniform, cap: R() < 0.7, hood: false, bag: false, umbrella: 0, hiVis: false });
+    const staffLook = () => ({ ...People.randomLook(R, { work: true }), top: st.uniform, cap: R() < 0.7, hood: false, bag: false, umbrella: 0, hiVis: false });
     // one at each till, and up to two in the kitchen
     let k = 0;
     for (const sp of P.staffSpots) {

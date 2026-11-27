@@ -132,6 +132,15 @@ export class Police {
     }
     for (const inc of this.incidents) this.updateIncident(inc, dt);
     this.incidents = this.incidents.filter(i => !(i.status === 'cleared' && i.t > 30));
+    // cones behind the vehicles at a scene the officers are attending, taken in when it's cleared (cones.js)
+    const C = G.cones;
+    if (C) {
+      for (const inc of this.incidents) {
+        if (inc.status !== 'onscene' || !inc.parties?.length || C.sets.has('inc' + inc.id)) continue;
+        const v = G.traffic.byId.get(inc.parties[0]); if (v) C.taper('inc' + inc.id, v);
+      }
+      for (const key of C.sets.keys()) if (key.startsWith('inc') && !this.incidents.some(i => 'inc' + i.id === key && i.status === 'onscene')) C.clear(key);
+    }
     this.updatePlayer(dt);
     // foot patrols wander within their beat
     for (const o of this.officers) {

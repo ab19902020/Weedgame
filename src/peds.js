@@ -24,7 +24,9 @@ export function footfall(kind, dow, hour) {
   return day[h0] * (1 - f) + day[h1] * f;
 }
 
-const R = 190, KILL = 240;
+// people are kept within R of you and dropped (out of sight) past KILL: R follows the preset's draw distance for
+// people (peopleDist), so the pedestrians a preset can afford are the ones you can actually see
+let R = 190, KILL = 240;
 const CORES = []; // filled from manifest districts (town centres are busier)
 
 export class Peds {
@@ -49,8 +51,9 @@ export class Peds {
     const core = d && d.core ? Math.max(0, 1 - Math.hypot(x - d.x, z - d.z) / d.coreR) : 0;
     const dow = new Date(G.world.time * 1000).getDay();
     const wet = 1 - G.world.cur.rain * 0.55;
-    // e.g. Broad Street on a Saturday at 14:00 -> ~110; a Woodley close at 06:00 on a weekday -> ~0.2
-    return (10 * footfall('local', dow, hr) + core * 110 * footfall('centre', dow, hr)) * wet;
+    // e.g. Broad Street on a Saturday at 14:00 -> ~200 (the preset caps it: 45 / 80 / 140); a Woodley street at 13:00 on
+    // a weekday -> ~19, at 16:00 ~33; at 06:00 ~2
+    return (55 * footfall('local', dow, hr) + core * 200 * footfall('centre', dow, hr)) * wet;
   }
   pickWalkEdge(focus) {
     // collect walkable edges in range
@@ -72,7 +75,9 @@ export class Peds {
     const net = this.net, t = net.at(p.h, p.s, this.tmp), e = p.h >> 1;
     const off = this.side(e) ? (net.width[e] / 2 + 1.05 + p.lane * 0.6) : p.lane * 0.5;
     const ox = t[4] * off * p.sideSign, oz = -t[3] * off * p.sideSign;
-    return [t[0] + ox, t[2] + oz, t[3], t[4]];
+    // (one scratch array: every caller unpacks it at once; a new one per person per frame was garbage)
+    const o = this._pa ||= [0, 0, 0, 0]; o[0] = t[0] + ox; o[1] = t[2] + oz; o[2] = t[3]; o[3] = t[4];
+    return o;
   }
   spawn(focus, info, near) {
     const edges = this._edges; if (!edges || !edges.length) return;
@@ -111,6 +116,7 @@ export class Peds {
   }
   update(dt, focus, info) {
     const G = this.G, net = this.net; this.info = info;
+    R = Math.min(190, (G.budget?.peopleDist || 170) + 30); KILL = R + 50;
     this.timer -= dt;
     if (!this._ef || Math.hypot(this._ef.x - focus.x, this._ef.z - focus.z) > 40) { this._edges = this.pickWalkEdge(focus); this._ef = { x: focus.x, z: focus.z }; }
     if (this.timer <= 0) {
@@ -120,7 +126,7 @@ export class Peds {
         p.t+=Math.max(0,G.time-p.awaySince);p.planAfter=0;p.mode='walk';p.goal=null;
         this.list.push(p);this.residents.delete(id);
       }
-      const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z) * (G.quality === 'low' ? 0.5 : 1));
+      const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z));
       if (this.list.length < target) for (let i = 0; i < 3; i++) { if (this.rand() < 0.18) this.spawnAtDoor(focus, info); else this.spawn(focus, info, this.list.length < target * 0.3); }
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
@@ -574,7 +580,7 @@ export class Peds {
       }
       if (p.fallT <= 0 && R.then === 'drop') {
         // the wound takes them down: they lie there hurt, writhing, then get up and limp or hunch away
-        const lie = 5 + this.rand() * 7, back = R.type === 'shotArch' ? 1 : -1;
+        const lie = 5 + this.rand() * 7, back = 1;   // onto their back, knees drawn up
         p.react = { type: 'down', t: 0.05, dir: R.dir, s: 1, side: R.side, dead: false, lie, back, writhe: 1, zone: R.zone };
         p.impact = { elapsed: 0, duration: lie + 1.3, knockdown: true, vx: 0, vz: 0, react: true, from: k.from };
         p.fallT = lie + 1.3; if (p.wound) p.wound.life += lie;

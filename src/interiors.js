@@ -136,12 +136,13 @@ export class Interiors {
     if (this.food.order && !this.food.order.done && (!IN || IN.site !== this.food.order.site) && G.time > this.food.order.readyAt + 2) { const o = this.food.order; o.ready = true; this.food.takeAway(o); }
     this.food.hud();
     const t = G.time || performance.now() / 1000;
-    for (const [id, n] of this.near) {
+    // (forEach: iterating a Map's entries makes a [key, value] array for each one, every frame)
+    this.near.forEach((n, id) => {
       const s = this.byId.get(id);
       if (n.ringY == null) { const g = G.tiles.ground(s.dx, s.dz); if (g != null) { n.ringY = g; n.group.position.y = g; } }
       const k = 1 + 0.08 * Math.sin(t * 2.4 + id);
       n.ring.scale.set(k, 1, k); n.ring.visible = n.disc.visible = !IN;
-    }
+    });
   }
   // the people inside the place you're in (staff, diners), drawn with the street's crowd
   get people() { const b = this.at(this.G.brothers.me); return !b ? [] : b.site.kind === 'food' || b.site.kind === 'pub' ? this.food.people(b) : b.site.kind === 'shop' ? this.rob.people(b) : []; }

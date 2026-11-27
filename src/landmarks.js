@@ -104,7 +104,7 @@ export class Landmarks {
       else for (const u of [-c.l / 2 + 0.3, c.l / 2 - 0.3]) for (const v of [-c.w / 2 + 0.3, c.w / 2 - 0.3]) posts.push(box(0.2, c.hh, 0.2, u, -c.hh / 2, v));
       if (posts.length) grp.add(new THREE.Mesh(mergeGeos(posts), this.metal));
     }
-    grp.traverse(o => { o.castShadow = this.G.renderer.shadowMap.enabled; o.receiveShadow = true; });
+    grp.traverse(o => { o.castShadow = this.G.renderer.shadowMap.enabled && this.G.budget?.shadow?.buildings !== false; o.receiveShadow = true; });
     return grp;
   }
   // Cemetery Junction gateway (1843): Bath-stone carriage arch with flanking lodge bays,
@@ -134,7 +134,7 @@ export class Landmarks {
     const p = g.attributes.position, uvA = new Float32Array(p.count * 2);
     for (let i = 0; i < p.count; i++) { uvA[i * 2] = p.getX(i) + p.getZ(i); uvA[i * 2 + 1] = p.getY(i); }
     g.setAttribute('uv', new THREE.BufferAttribute(uvA, 2)); g.computeVertexNormals();
-    const mesh = new THREE.Mesh(g, this.stone); mesh.castShadow = mesh.receiveShadow = G.renderer.shadowMap.enabled;
+    const mesh = new THREE.Mesh(g, this.stone); mesh.receiveShadow = G.renderer.shadowMap.enabled; mesh.castShadow = mesh.receiveShadow && G.budget?.shadow?.buildings !== false;
     grp.add(mesh);
     // dark windows and doors in the lodges
     const win = [];
@@ -200,10 +200,10 @@ export class Landmarks {
       f.position.set(tx + Math.sin(a) * 3.15, base + 22, tz + Math.cos(a) * 3.15); f.rotation.y = a; grp.add(f);
       for (const [len, w] of [[1.0, 0.12], [1.35, 0.08]]) { const h = new THREE.Mesh(new THREE.BoxGeometry(w, len, 0.04).translate(0, len / 2, 0), this.dark); h.position.copy(f.position).add(new THREE.Vector3(Math.sin(a) * 0.04, 0, Math.cos(a) * 0.04)); h.rotation.y = a; grp.add(h); this.hands.push([h, len > 1.1]); }
     }
-    const sh = G.renderer.shadowMap.enabled;
-    for (const m of [walls, tmesh, spire]) { m.castShadow = m.receiveShadow = sh; grp.add(m); }
+    const sh = G.renderer.shadowMap.enabled, cast = sh && G.budget?.shadow?.buildings !== false;
+    for (const m of [walls, tmesh, spire]) { m.receiveShadow = sh; m.castShadow = cast; grp.add(m); }
     grp.add(new THREE.Mesh(mergeGeos(wins), this.dark));
-    grp.add(Object.assign(new THREE.Mesh(roof, this.slate), { castShadow: sh }));
+    grp.add(Object.assign(new THREE.Mesh(roof, this.slate), { castShadow: cast }));
     return grp;
   }
   update() {

@@ -115,7 +115,7 @@ export class PassengerCabin extends T.Group {
   constructor(type,colour){
     super();this.typeName=type;this.seated=[];this.layout=layout(type);this.paint=new T.MeshStandardMaterial({color:colour});
     this.add(new T.Mesh(this.layout.body,material),new T.Mesh(this.layout.stripe,this.paint),new T.Mesh(this.layout.windows,glass));
-    this.riders = createCrowdBatch(24,false);
+    this.riders = createCrowdBatch(24,1);
     // Instances are placed in the vertex shader, so use the cabin dimensions for culling.
     this.riders.geo.boundingSphere = new T.Sphere(new T.Vector3(0,this.layout.H/2,0),
       Math.hypot(this.layout.L/2,this.layout.H/2,1.5));

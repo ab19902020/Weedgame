@@ -16,7 +16,7 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 
 ## Characters
 
-`www/characters/cal.glb` and `www/characters/leon.glb` are the two playable brothers. Both were supplied by the project owner as Tripo-generated models with their animation sets, and were processed with `tools/characters/prepare-hero.mjs` (see `docs/CLAUDE-CHARACTERS.md`). `officer.glb` and `civilian.glb` come from the earlier character hand-over.
+`www/characters/cal.glb` and `www/characters/leon.glb` are the two playable brothers. Both were supplied by the project owner as Tripo-generated models with their animation sets, and were processed with `tools/characters/prepare-hero.mjs` (see `docs/CLAUDE-CHARACTERS.md`).
 
 ## Vehicles
 

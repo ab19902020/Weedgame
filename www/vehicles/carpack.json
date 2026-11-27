@@ -1,0 +1,217 @@
+{
+ "source": "Generic passenger car pack by Comrade1280 (Sketchfab), CC-BY-4.0",
+ "vertices": 50838,
+ "indices": 139416,
+ "layout": {
+  "position": {
+   "offset": 0,
+   "bytes": 610056
+  },
+  "normal": {
+   "offset": 610056,
+   "bytes": 203352
+  },
+  "uv": {
+   "offset": 813408,
+   "bytes": 203352
+  },
+  "part": {
+   "offset": 1016760,
+   "bytes": 50838
+  },
+  "index": {
+   "offset": 1067600,
+   "bytes": 278832
+  }
+ },
+ "cars": [
+  {
+   "name": "compact",
+   "cls": "hatch",
+   "L": 3.257,
+   "W": 1.607,
+   "H": 1.315,
+   "wb": 2.083,
+   "wr": 0.243,
+   "wx": -0.07,
+   "track": 1.132,
+   "paint": [
+    0.008,
+    0.576,
+    0.776
+   ],
+   "vStart": 0,
+   "vCount": 5243,
+   "iStart": 0,
+   "iCount": 15303
+  },
+  {
+   "name": "coupe2",
+   "cls": "saloon",
+   "L": 4.239,
+   "W": 1.884,
+   "H": 1.278,
+   "wb": 2.413,
+   "wr": 0.3,
+   "wx": -0.016,
+   "track": 1.326,
+   "paint": [
+    0.004,
+    0.157,
+    0.506
+   ],
+   "vStart": 5243,
+   "vCount": 4671,
+   "iStart": 15303,
+   "iCount": 12246
+  },
+  {
+   "name": "hatch2",
+   "cls": "hatch",
+   "L": 3.956,
+   "W": 1.741,
+   "H": 1.352,
+   "wb": 2.404,
+   "wr": 0.3,
+   "wx": -0.039,
+   "track": 1.382,
+   "paint": [
+    0.69,
+    0.6,
+    0.0
+   ],
+   "vStart": 9914,
+   "vCount": 4929,
+   "iStart": 27549,
+   "iCount": 13620
+  },
+  {
+   "name": "minivan",
+   "cls": "van",
+   "L": 4.609,
+   "W": 1.868,
+   "H": 1.763,
+   "wb": 2.84,
+   "wr": 0.318,
+   "wx": -0.066,
+   "track": 1.405,
+   "paint": [
+    0.231,
+    0.004,
+    0.004
+   ],
+   "vStart": 14843,
+   "vCount": 5238,
+   "iStart": 41169,
+   "iCount": 14982
+  },
+  {
+   "name": "offroad",
+   "cls": "suv",
+   "L": 3.939,
+   "W": 1.96,
+   "H": 1.57,
+   "wb": 2.321,
+   "wr": 0.358,
+   "wx": 0.062,
+   "track": 1.47,
+   "paint": null,
+   "vStart": 20081,
+   "vCount": 4460,
+   "iStart": 56151,
+   "iCount": 13002
+  },
+  {
+   "name": "pickup",
+   "cls": "suv",
+   "L": 5.18,
+   "W": 2.068,
+   "H": 1.698,
+   "wb": 3.194,
+   "wr": 0.376,
+   "wx": 0.119,
+   "track": 1.459,
+   "paint": [
+    0.0,
+    0.259,
+    0.114
+   ],
+   "vStart": 24541,
+   "vCount": 5158,
+   "iStart": 69153,
+   "iCount": 13746
+  },
+  {
+   "name": "sedan",
+   "cls": "saloon",
+   "L": 4.359,
+   "W": 1.942,
+   "H": 1.342,
+   "wb": 2.615,
+   "wr": 0.304,
+   "wx": 0.013,
+   "track": 1.396,
+   "paint": [
+    0.392,
+    0.349,
+    0.114
+   ],
+   "vStart": 29699,
+   "vCount": 5752,
+   "iStart": 82899,
+   "iCount": 14262
+  },
+  {
+   "name": "sport2",
+   "cls": "saloon",
+   "L": 3.912,
+   "W": 1.768,
+   "H": 1.04,
+   "wb": 2.452,
+   "wr": 0.308,
+   "wx": -0.123,
+   "track": 1.371,
+   "paint": [
+    0.604,
+    0.016,
+    0.016
+   ],
+   "vStart": 35451,
+   "vCount": 4066,
+   "iStart": 97161,
+   "iCount": 11568
+  },
+  {
+   "name": "suv2",
+   "cls": "suv",
+   "L": 4.611,
+   "W": 2.068,
+   "H": 1.733,
+   "wb": 2.731,
+   "wr": 0.376,
+   "wx": 0.067,
+   "track": 1.459,
+   "paint": null,
+   "vStart": 39517,
+   "vCount": 6084,
+   "iStart": 108729,
+   "iCount": 16845
+  },
+  {
+   "name": "wagon",
+   "cls": "estate",
+   "L": 4.383,
+   "W": 1.95,
+   "H": 1.38,
+   "wb": 2.634,
+   "wr": 0.304,
+   "wx": 0.019,
+   "track": 1.399,
+   "paint": null,
+   "vStart": 45601,
+   "vCount": 5237,
+   "iStart": 125574,
+   "iCount": 13842
+  }
+ ]
+}

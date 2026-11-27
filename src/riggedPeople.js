@@ -1,45 +1,13 @@
-// Close-range characters share geometry and materials, but each owns its skeleton and mixer.
-// Roles: 'officer' and 'civilian' (19-joint rigs, six clips, near the camera) and the heroes 'cal' and 'leon'
-// (the playable Ward brothers: Tripo rigs with 21 and 20 clips, prepared by tools/characters/prepare-hero.mjs).
-import { AnimationMixer, AnimationClip, Group, Mesh, BoxGeometry, MeshStandardMaterial, LoopOnce, Color, MeshStandardNodeMaterial, DataTexture, RepeatWrapping, LinearMipmapLinearFilter, LinearFilter } from 'three/webgpu';
-import { texture, uniform, positionGeometry, smoothstep, mix, dot, vec3, abs, float } from 'three/tsl';
+// The two playable Ward brothers, Cal and Leon: Tripo rigs with 21 and 20 clips (prepared by
+// tools/characters/prepare-hero.mjs), each with its own skeleton and mixer. They are the only skinned GLB
+// characters in the game; everyone else on the street is the procedural crowd (humans.js), which also draws
+// every pedestrian's hit and shot reactions.
+import { AnimationMixer, AnimationClip, Group, LoopOnce } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
-import { applyReaction, applyWound } from './hitReactions.js';
-
-const propSlide = new BoxGeometry(.033, .17, .042);
-const propGrip = new BoxGeometry(.034, .05, .083);
-const propSurface = new MeshStandardMaterial({color: 0x363a40, roughness: .83});
-
-// Neutral cloth swatches multiply the civilian's own outfit colour. Mipmaps filter the
-// yarn and diagonal denim ribs into a continuous tone at street distance.
-const swatches = new Map();
-function clothSwatch(field) {
-  if (swatches.has(field)) return swatches.get(field);
-  const size = 128, pixels = new Uint8Array(size*size*4);
-  for (let y=0; y<size; y++) for (let x=0; x<size; x++) {
-    const diagonal = Math.cos((x+y)*Math.PI/4);
-    const warp = Math.cos(x*Math.PI/2)*Math.cos(y*Math.PI/2);
-    const yarn = field === 'legs' ? 11*diagonal+4*warp : 8*warp;
-    const shade = Math.round(231+yarn);
-    pixels.set([shade,shade,shade,255],(y*size+x)*4);
-  }
-  const tex = new DataTexture(pixels,size,size);
-  tex.wrapS = tex.wrapT = RepeatWrapping;
-  tex.repeat.set(12,12);
-  tex.generateMipmaps = true;
-  tex.minFilter = LinearMipmapLinearFilter;
-  tex.magFilter = LinearFilter;
-  tex.needsUpdate = true;
-  swatches.set(field,tex);
-  return tex;
-}
 
 // per-role clip names for the game's states, natural walk/run speeds (m/s) and presentation
-const NPC = { idle: 'Idle', walk: 'Walk', run: 'Run', jump: 'Jump', swim: 'Swim', weaponHold: 'WeaponHold', once: ['Jump'], walkSpeed: 1.4, runSpeed: 3.8, scale: 1, swimTilt: true, prop: 'HandR', range: 44 };
 export const ROLES = {
-  officer: NPC,
-  civilian: NPC,
   cal: {
     idle: 'standing_relax', walk: 'walk', run: 'run', jump: 'run_upstairs', swim: 'swim', hit: 'box_01',
     once: ['run_upstairs', 'front_kick_01', 'front_kick_02', 'box_01', 'box_02', 'turn', 'fall', 'scratch'],
@@ -62,58 +30,11 @@ export const ROLES = {
     scale: 1.81 / 0.971, walkSpeed: 1.21, runSpeed: 4.38, jumpScale: 2.2, hitScale: 1.5, swimTilt: false, prop: null, range: 160, hero: true, shadow: true,
   },
 };
-// Share the existing character meshes and clips. Only the nearest eight people need mixers.
-for (const [role,source] of [['jacket','cal'],['tracksuit','leon']]) {
-  ROLES[role] = {...ROLES[source],source,hero:false,shadow:false,range:24};
-}
-function streetClothing(source) {
-  const mat = new MeshStandardNodeMaterial();
-  mat.normalMap = source.normalMap;
-  mat.normalScale.copy(source.normalScale);
-  mat.roughnessMap = source.roughnessMap;
-  mat.side = source.side;
-  mat.roughness = .88;
-  const top = uniform(new Color()), legs = uniform(new Color());
-  const p = positionGeometry, base = texture(source.map);
-  const luma = dot(base.rgb,vec3(.2126,.7152,.0722));
-  // The bind pose puts the hands at the ends of the outstretched sleeves.
-  const shirt = smoothstep(.46,.50,p.y).mul(float(1).sub(smoothstep(.76,.80,p.y)))
-    .mul(float(1).sub(smoothstep(.39,.43,abs(p.x))));
-  const trousers = smoothstep(.072,.105,p.y).mul(float(1).sub(smoothstep(.46,.50,p.y)));
-  mat.colorNode = mix(mix(base.rgb,legs.mul(luma.mul(3).add(.16)),trousers),
-    top.mul(luma.mul(2.4).add(.21)),shirt);
-  return {mat,top,legs};
-}
-function jerseyClothing(original) {
-  const mat = new MeshStandardNodeMaterial();
-  const p = positionGeometry, side = abs(p.x);
-  const legs = uniform(new Color()), top = uniform(new Color());
-  const skin = texture(original.map).rgb;
-  const cuffs = smoothstep(.37,.38,side);
-  const neckline = float(1.355).add(smoothstep(.055,.15,side).mul(.072));
-  const covered = float(1).sub(smoothstep(neckline,neckline.add(.004),p.y)).mul(float(1).sub(cuffs));
-  const waist = smoothstep(.868,.873,p.y);
-  const jersey = top.mul(texture(clothSwatch('top')).r);
-  const denim = legs.mul(texture(clothSwatch('legs')).r);
-  mat.colorNode = mix(skin,mix(denim,jersey,waist),covered);
-  mat.side = original.side;
-  mat.roughness = .82;
-  return {mat,top,legs};
-}
-// The civilian GLB depicts a long-haired woman in a jersey. Keep other silhouettes and
-// accessories on their own detailed crowd mesh when approaching or leaving the camera.
 function roleOf(a) {
   if (a.previewRole) return a.previewRole;
   if (a.id === 'brother0') return 'cal';
   if (a.id === 'brother1') return 'leon';
-  if (a.officer) return 'officer';
-  const look = a.look;
-  // someone taking a punch or a round is always drawn with a skeleton, so the reaction can be seen
-  if ((a.react || a.wound) && /^p\d+$/.test(a.id)) return look?.female ? 'civilian' : (look?.outfit ?? 0) % 2 ? 'tracksuit' : 'jacket';
-  if (!/^p\d+$/.test(a.id) || !look || look.hood || look.bag || look.cap ||
-      ['umbrella','phone','point','wave','talk','hands'].includes(a.pose)) return null;
-  if (look.female) return look.style === 2 ? 'civilian' : null;
-  return look.outfit % 2 ? 'tracksuit' : 'jacket';
+  return null;
 }
 
 const byDistance = (a, b) => a.distance - b.distance;
@@ -142,72 +63,33 @@ export class RiggedPeople {
     root.add(body);
     if (R.shadow) body.traverse(n => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; n.frustumCulled = false; } });
     const mixer = new AnimationMixer(body);
-    const clips = R.source ? asset.animations.filter(clip => [R.walk,R.run,R.idle,R.swim,R.jump].includes(clip.name)) : asset.animations;
-    const actions = Object.fromEntries(clips.map(clip => [clip.name, mixer.clipAction(clip)]));
+    const actions = Object.fromEntries(asset.animations.map(clip => [clip.name, mixer.clipAction(clip)]));
     for (const name of R.once) if (actions[name]) { actions[name].setLoop(LoopOnce, 1); actions[name].clampWhenFinished = true; }
-    let prop = null;
-    const hand = R.prop && body.getObjectByName(R.prop);
-    if (hand) {
-      prop = new Group();
-      const slide = new Mesh(propSlide, propSurface);
-      slide.position.set(0,.043,.046);
-      const grip = new Mesh(propGrip, propSurface);
-      grip.rotation.x = -.16;
-      prop.add(slide, grip);
-      hand.add(prop);
-      prop.position.y = .085;
-    }
     this.scene.add(root);
-    const streetMaterials = [];
-    if (R.source) body.traverse(node => {
-      if (!node.isSkinnedMesh) return;
-      const clothing = streetClothing(node.material);
-      node.material = clothing.mat;
-      streetMaterials.push(clothing);
-    });
-    if (role === 'civilian') {
-      let skin;
-      body.traverse(node => { if (node.isMesh && node.material.map) skin = node.material; });
-      if (skin) {
-        const clothing = jerseyClothing(skin);
-        streetMaterials.push(clothing);
-        body.traverse(node => {
-          if (node.isMesh && node.material.name !== 'Dark shoes') node.material = clothing.mat;
-        });
-      }
-    }
-    const names = R.source ? ['Spine2','L_Upperarm','R_Upperarm','L_Thigh','L_Calf','R_Calf'] :
-      R === NPC ? ['Chest','ArmL','ArmR','ThighL','ShinL','ShinR'] : [];
-    const seatJoints=role==='leon'?['L_Thigh','R_Thigh','L_Calf','R_Calf'].map(name=>body.getObjectByName(name)).filter(Boolean).map(bone=>({bone,rest:bone.quaternion.clone()})):[];
-    const reactionJoints = names.map((name,index) => {
-      const bone = body.getObjectByName(name);
-      return {bone,index, rest: bone?.quaternion.clone()};
-    }).filter(joint => joint.bone);
+    const seatJoints = role === 'leon' ? ['L_Thigh','R_Thigh','L_Calf','R_Calf'].map(name => body.getObjectByName(name)).filter(Boolean).map(bone => ({ bone, rest: bone.quaternion.clone() })) : [];
     // the clip's own pose, saved after each update and put back before the next whenever IK or a reaction has moved
     // bones on top of it (the mixer only writes a value when it changes, so a still clip wouldn't undo them)
     const base = []; body.traverse(n => { if (n.isBone) base.push([n, n.quaternion.clone()]); });
-    return {role, root, body, prop, actions, mixer, seatJoints, reactionJoints, streetMaterials, head:body.getObjectByName('Head'), lock: 0, still: 0, base, extra: false};
+    return {role, root, body, actions, mixer, seatJoints, head:body.getObjectByName('Head'), lock: 0, still: 0, base, extra: false};
   }
   // pick the clip for an actor's state; one-shots (jump, kick, fidgets) hold until they finish
   choose(slot, a, R, dt) {
     const speed = a.gaitSpeed ?? a.speedNow ?? a.speed ?? 0;
     if(a.pose==='seated' && slot.actions.sit)return {clip:'sit',scale:1};
-    if (a.previewClip) return { clip: R === NPC ? a.previewClip : (slot.actions[a.previewClip] ? a.previewClip : R.idle), scale: 1 };
+    if (a.previewClip) return { clip: slot.actions[a.previewClip] ? a.previewClip : R.idle, scale: 1 };
     slot.lock = Math.max(0, slot.lock - dt);
-    if (a.react) return { clip: R.idle, scale: 1 };
     if (a.kickT > 0 && a.kickClip && slot.actions[a.kickClip] && slot.clip !== a.kickClip) { a.kickT = 0; return { clip: a.kickClip, scale: 1.5, hold: true }; }
     if (a.jumpTime > 0 && R.jump && slot.clip !== R.jump) return { clip: R.jump, scale: R.jumpScale || 1, hold: true };
     if (a.hitTime > 0 && R.hit && slot.clip !== R.hit) return { clip: R.hit, scale: R.hitScale || 1, hold: true };
     if (slot.lock > 0) return { clip: slot.clip, scale: slot.scale };
     if (a.pose === 'swim' && R.swim) return { clip: R.swim, scale: speed > 0.25 ? Math.max(0.8, Math.min(1.5, speed / 1.1)) : 0.45 };   // slow strokes treading water
-    if (a.pose === 'weaponHold' && R.weaponHold) return { clip: R.weaponHold, scale: 1 };
     if (a.pose === 'jump' && R.jump) return { clip: R.jump, scale: 1 };
     if (a.phoneT > 0 && R.phone) return { clip: R.phone, scale: 1 };
     if (speed > 2.5) return { clip: R.run, scale: Math.max(.75, Math.min(1.5, speed / R.runSpeed)) };
     if (speed > .1) { slot.still = 0; return { clip: R.walk, scale: Math.max(.65, Math.min(1.6, speed / R.walkSpeed)) }; }
     // standing: the hero fidgets now and then (nod, laugh, look round, take a call)
     slot.still += dt;
-    if (!R.source && R.fidgets && !a.armed && slot.still > 9 + (slot.wait ??= Math.random() * 8)) {
+    if (R.fidgets && !a.armed && slot.still > 9 + (slot.wait ??= Math.random() * 8)) {
       slot.still = 0; slot.wait = Math.random() * 10;
       return { clip: R.fidgets[Math.floor(Math.random() * R.fidgets.length)], scale: 1, hold: true };
     }
@@ -220,8 +102,8 @@ export class RiggedPeople {
       const role = roleOf(a);
       if (!role || !ROLES[role]) continue;
       const distance = (a.x-cam.x)**2 + (a.z-cam.z)**2;
-      if (distance < ROLES[role].range ** 2 || ((a.react || a.wound) && distance < 60 ** 2)) {
-        const r = recs[candidates.length] ||= {}; r.a = a; r.role = role; r.distance = ROLES[role].hero ? -1 : a.react || a.wound ? distance * 0.02 : distance;
+      if (distance < ROLES[role].range ** 2) {
+        const r = recs[candidates.length] ||= {}; r.a = a; r.role = role; r.distance = distance;
         candidates.push(r);
       }
     }
@@ -229,23 +111,13 @@ export class RiggedPeople {
     const visible = this._vis ||= new Set(); visible.clear();
     for (let ci = 0; ci < candidates.length && ci < 8; ci++) {
       const { a, role } = candidates[ci];
-      const asset = this.load(ROLES[role].source || role);
+      const asset = this.load(role);
       if (!asset) continue;
       const R = ROLES[role];
       let slot = this.active.get(a.id);
       if (slot && slot.role !== role) { this.remove(a.id, slot); slot = null; }
-      if (!slot) { slot = this.pool?.[role]?.pop() || this.create(role,asset); slot.root.visible = true; this.active.set(a.id,slot); }
+      if (!slot) { slot = this.kept?.get(a.id); if (slot && slot.role === role) { this.kept.delete(a.id); slot.root.visible = true; } else slot = this.create(role,asset); this.active.set(a.id,slot); }
       visible.add(a.id);
-      if (!R.hero && a.look && slot.look !== a.look) {
-        for (const {top,legs} of slot.streetMaterials) {
-          top.value.setHex(a.look.top);
-          legs.value.setHex(a.look.legs);
-        }
-        if (slot.head && R.source) slot.head.scale.set(1+((a.look.build ?? .35)-.35)*.13,1,1+((a.look.build ?? .35)-.35)*.09);
-        const height = a.look.h || 1, build = (a.look.build ?? .35)-.35;
-        slot.root.scale.set(height*(1+build*.16),height,height*(1+build*.14));
-        slot.look = a.look;
-      }
       const pick = this.choose(slot, a, R, dt);
       const action = slot.actions[pick.clip] || slot.actions[R.idle];
       if (slot.clip !== pick.clip) {
@@ -264,49 +136,27 @@ export class RiggedPeople {
       const swim = pick.clip === R.swim;
       slot.body.rotation.x = swim && R.swimTilt ? Math.PI*.46 : -(a.fall || 0)*Math.PI/2;
       slot.body.position.y = swim && R.swimTilt ? .5 : .15*(a.fall || 0);
-      if (slot.prop) slot.prop.visible = pick.clip === R.weaponHold;
       // Restore the sampled pose before the mixer evaluates the next frame.
-      if (slot.braced) for (const j of slot.reactionJoints) j.bone.quaternion.copy(j.rest);
       if (slot.extra) { for (const [bone, q] of slot.base) bone.quaternion.copy(q); slot.extra = false; }
       if(slot.wasSeated)for(const j of slot.seatJoints)j.bone.quaternion.copy(j.rest);
       slot.mixer.update(dt);
-      if (R.hero || a.react || slot.reacting || a.wound) for (const e of slot.base) e[1].copy(e[0].quaternion);
+      for (const e of slot.base) e[1].copy(e[0].quaternion);
       slot.wasSeated=a.pose==='seated' && slot.seatJoints.length>0;
       if(slot.wasSeated){
         slot.body.position.y=-.43;
         slot.seatJoints.forEach(({bone,rest},i)=>{rest.copy(bone.quaternion);bone.rotateX(i<2?-1.46:1.48);});
       }
-      // the brothers' arms (weapons, fists: combat.js); everyone else's reaction to a blow
-      if (R.hero) { if (this.onHero?.(slot, a, dt) !== false) slot.extra = true; }
-      else if (a.react || slot.reacting) { applyReaction(slot, a); slot.extra = true; }
-      else if (a.wound) { applyWound(slot, a); slot.extra = true; }
-      slot.braced = a.brace > 0 && !a.react;
-      if (slot.braced) {
-        const angles = [-.28,-.85,-1.05,-.48,.68,.46];
-        slot.reactionJoints.forEach(({bone,rest,index:i}) => {
-          rest.copy(bone.quaternion);
-          bone.rotateX(angles[i]*a.brace);
-        });
-      }
+      // the brothers' arms (weapons, fists: combat.js)
+      if (this.onHero?.(slot, a, dt) !== false) slot.extra = true;
     }
     for (const [id,slot] of this.active) if (!visible.has(id)) this.remove(id,slot);
     return visible;
   }
-  // a rig no longer needed goes back to a pool for its role, hidden, its pose put back, ready for the next person who
-  // comes close (building one clones a 78-bone skeleton and its materials: a hitch every time the nearest eight
-  // people changed). Past a few spare per role it's thrown away.
+  // a brother out of range (one left far behind) is hidden and kept for when he's near again (building a rig clones
+  // a 78-bone skeleton: a hitch); the preview figure is thrown away
   remove(id,slot) {
     this.active.delete(id);
-    const P = (this.pool ||= {})[slot.role] ||= [];
-    if (!ROLES[slot.role]?.hero && P.length < 4) {
-      if (slot.extra || slot.reacting) for (const [bone, q] of slot.base) bone.quaternion.copy(q);
-      slot.extra = false; slot.reacting = false; slot.braced = false; slot.wasSeated = false;
-      slot.body.quaternion.identity(); slot.body.position.set(0, 0, 0); slot.body.rotation.set(0, 0, 0);
-      slot.mixer.stopAllAction(); slot.clip = null; slot.lock = 0; slot.look = null;
-      slot.root.visible = false; P.push(slot);
-      return;
-    }
-    for (const {mat} of slot.streetMaterials) mat.dispose();
+    if (/^brother/.test(id)) { slot.root.visible = false; (this.kept ||= new Map()).set(id, slot); return; }
     slot.mixer.stopAllAction();
     slot.mixer.uncacheRoot(slot.body);
     slot.body.traverse(node => { if (node.isSkinnedMesh) node.skeleton.dispose(); });

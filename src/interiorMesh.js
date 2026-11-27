@@ -111,16 +111,22 @@ export function materials() {
   return MATS;
 }
 // the overall brightness (and a warmer cast at night) for every interior
+// (called every frame: it only does anything when the daylight has changed visibly, and makes no garbage)
+let lastDay = -1;
+const warm = new THREE.Color(), lit = new THREE.Color(1.6, 1.6, 1.6);
 export function setDaylight(day) {
+  if (Math.abs(day - lastDay) < 0.004) return;
+  lastDay = day;
   const m = materials(), k = 0.94 + 0.1 * day;
-  const warm = new THREE.Color(1.0, 0.97 - 0.03 * (1 - day), 0.92 - 0.06 * (1 - day)).multiplyScalar(k);
-  for (const [n, mm] of Object.entries(m)) if (n !== 'glass' && n !== 'frosted') mm.color.copy(n === 'glow' || n === 'stained' || n === 'sign' || n.startsWith('menu:') ? new THREE.Color(1.6, 1.6, 1.6) : warm);
+  warm.setRGB(1.0, 0.97 - 0.03 * (1 - day), 0.92 - 0.06 * (1 - day)).multiplyScalar(k);
+  for (const n in m) { if (n === 'glass' || n === 'frosted') continue; m[n].color.copy(n === 'glow' || n === 'stained' || n === 'sign' || n.startsWith('menu:') ? lit : warm); }
 }
 
 // the menu boards over the counter: dishes and prices on a dark board, lit (one texture per place kind and panel)
 function menuMaterial(cat, k, n) {
   const M = materials(), name = `menu:${cat}:${k}:${n}`;
   if (M[name]) return name;
+  lastDay = -1;   // (so setDaylight lights the new board)
   const menu = MENUS[cat] || MENUS.burger, st = STYLE[cat] || STYLE.burger;
   const c = document.createElement('canvas'); c.width = 768; c.height = 256;
   const g = c.getContext('2d');

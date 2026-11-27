@@ -148,7 +148,7 @@ export class Tiles {
     this.addMesh(t, tg, this.mats.terrain, { receive: true }).name = 'terrain';
     // buildings
     const bg = geoFrom(d.buildings, 'bA', 4);
-    if (bg) this.addMesh(t, bg, this.mats.building, { cast: d.lod === 0, receive: true }).name = 'buildings';
+    if (bg) this.addMesh(t, bg, this.mats.building, { cast: d.lod === 0 && this.budget?.shadow?.buildings !== false, receive: true }).name = 'buildings';
     // open water: a surface over the carved bed (lakes, rivers, brooks), drawn after the opaque world
     if (d.water) {
       const wg = new THREE.BufferGeometry();

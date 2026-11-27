@@ -13,6 +13,10 @@ export const KEEP_R = 250;        // the fleet within this radius of either brot
 const RANK = { motorway: 10, trunk: 9, primary: 8, secondary: 7, tertiary: 6, motorway_link: 8, trunk_link: 7, primary_link: 7, secondary_link: 6, tertiary_link: 5, unclassified: 4, residential: 3, living_street: 2, service: 1, busway: 3 };
 const DENS = { motorway: 1 / 120, trunk: 1 / 140, primary: 1 / 110, secondary: 1 / 160, tertiary: 1 / 220, motorway_link: 1 / 300, trunk_link: 1 / 300, primary_link: 1 / 240, secondary_link: 1 / 300, tertiary_link: 1 / 400, unclassified: 1 / 520, residential: 1 / 1040, living_street: 1 / 1800 };
 
+const byS = (a, b) => a.s - b.s;
+// a junction arc (cubic Hermite through the lane ends) and its derivative
+const hermite = (u, w, tangent, start, end, d0, d1) => w * w * (1 + 2 * u) * start + u * u * (3 - 2 * u) * end + tangent * u * w * (w * d0 - u * d1);
+const hermiteD = (u, w, tangent, start, end, d0, d1) => 6 * u * w * (end - start) + tangent * (w * (1 - 3 * u) * d0 + u * (3 * u - 2) * d1);
 export class Traffic {
   setRadius(bubble) { if (bubble > 0) setTrafficRadius(bubble); }
   cellWeights() { return this._cw || (this._cw = _cellWeights(this.net, DENS, F_DRIVE)); }
@@ -115,11 +119,9 @@ export class Traffic {
     if(arc && Math.abs(offset)<=arc.span){
       const u=.5+.5*offset/arc.span, w=1-u, {a,b}=arc;
       const tangent=2*arc.span;
-      const sample=(start,end,d0,d1)=> w*w*(1+2*u)*start+u*u*(3-2*u)*end+tangent*u*w*(w*d0-u*d1);
-      const deriv=(start,end,d0,d1)=>6*u*w*(end-start)+tangent*(w*(1-3*u)*d0+u*(3*u-2)*d1);
-      hd=Math.atan2(deriv(a.z,b.z,a.dz,b.dz),deriv(a.x,b.x,a.dx,b.dx));
-      tx=sample(a.x,b.x,a.dx,b.dx)+Math.sin(hd)*v.lat;
-      tz=sample(a.z,b.z,a.dz,b.dz)-Math.cos(hd)*v.lat;
+      hd=Math.atan2(hermiteD(u,w,tangent,a.z,b.z,a.dz,b.dz),hermiteD(u,w,tangent,a.x,b.x,a.dx,b.dx));
+      tx=hermite(u,w,tangent,a.x,b.x,a.dx,b.dx)+Math.sin(hd)*v.lat;
+      tz=hermite(u,w,tangent,a.z,b.z,a.dz,b.dz)-Math.cos(hd)*v.lat;
     }
     // a car knocked off its line (carPhysics.js) eases back into lane instead of snapping
     if (v._offLane && v.x != null) {
@@ -255,12 +257,15 @@ export class Traffic {
     this.routeBudget = 3;
     const net = this.net;
     // occupancy buckets per half-edge
-    const occ = this.occ = new Map();
+    // (one map and its lists reused every frame: rebuilding them made garbage for every car, every frame)
+    const occ = this.occ ||= new Map(), spare = this._occSpare ||= [];
+    for (const l of occ.values()) { l.length = 0; spare.push(l); }
+    occ.clear();
     for (const v of this.list) {
       if (v.parked || v.h == null || v.player) continue;
-      let l = occ.get(v.h); if (!l) occ.set(v.h, l = []); l.push(v);
+      let l = occ.get(v.h); if (!l) occ.set(v.h, l = spare.pop() || []); l.push(v);
     }
-    for (const l of occ.values()) l.sort((a, b) => a.s - b.s);
+    for (const l of occ.values()) if (l.length > 1) l.sort(byS);
     const R2 = FULL_R * FULL_R;
     for (const v of this.list) {
       if (v.parked || v.player || v.h == null) continue;
@@ -301,7 +306,8 @@ export class Traffic {
         if (l2 && l2.length) { const o = l2[0]; const g = L - v.s + o.s - o.len / 2 - v.len / 2; if (g < gap) { gap = g; lv = o.v; lead = o; } }
       }
     }
-    return [gap, lv, lead];
+    // (the result in fields, not a new array per car per frame)
+    this.lgGap = gap; this.lgV = lv; this.lgLead = lead;
   }
   // Is the stationary thing ahead something to drive round, rather than the back of a queue? Only a car that has
   // crashed or broken down, a bus at its stop, a police car at a scene, a parked car or the player in the lane.
@@ -316,7 +322,7 @@ export class Traffic {
     this.extend(v);
     let vmax = Math.max(4, (net.speed[e] / 3.6) * (v.v0f || 1) * (v.siren ? 1.35 : 1)) * (v.slow || 1);
     if (v.citySpeed) vmax = Math.min(vmax,v.citySpeed);
-    let [gap, lv, lead] = this.leaderGap(v, occ);
+    this.leaderGap(v, occ); let gap = this.lgGap, lv = this.lgV, lead = this.lgLead;
     let stopAt = 1e9;
     const rem = L - v.s;
     const next=v.route[v.ri+1];

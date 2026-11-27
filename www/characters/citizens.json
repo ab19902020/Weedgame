@@ -1,0 +1,187 @@
+{
+ "source": "Citizen NPC Pack 1 Character Lowpoly Mobile by 00amza (Sketchfab), CC-BY-4.0",
+ "vertices": 20061,
+ "indices": 77583,
+ "layout": {
+  "position": {
+   "offset": 0,
+   "bytes": 240732
+  },
+  "normal": {
+   "offset": 240732,
+   "bytes": 80244
+  },
+  "uv": {
+   "offset": 320976,
+   "bytes": 80244
+  },
+  "skin": {
+   "offset": 401220,
+   "bytes": 320976
+  },
+  "index": {
+   "offset": 722196,
+   "bytes": 155166
+  }
+ },
+ "atlas": [
+  2048,
+  2560
+ ],
+ "citizens": [
+  {
+   "name": "man in a grey suit",
+   "female": false,
+   "height": 1.901,
+   "skirt": false,
+   "hem": null,
+   "vStart": 0,
+   "vCount": 1742,
+   "iStart": 0,
+   "iCount": 7128
+  },
+  {
+   "name": "woman, white blouse and navy floral skirt",
+   "female": true,
+   "height": 1.81,
+   "skirt": true,
+   "hem": 0.539,
+   "vStart": 1742,
+   "vCount": 1301,
+   "iStart": 7128,
+   "iCount": 5697
+  },
+  {
+   "name": "man, dark jacket and grey T-shirt",
+   "female": false,
+   "height": 1.896,
+   "skirt": false,
+   "hem": null,
+   "vStart": 3043,
+   "vCount": 1287,
+   "iStart": 12825,
+   "iCount": 5166
+  },
+  {
+   "name": "man in a black suit, green tie",
+   "female": false,
+   "height": 1.924,
+   "skirt": false,
+   "hem": null,
+   "vStart": 4330,
+   "vCount": 1689,
+   "iStart": 17991,
+   "iCount": 6975
+  },
+  {
+   "name": "woman in a grey skirt suit",
+   "female": true,
+   "height": 1.809,
+   "skirt": true,
+   "hem": 0.519,
+   "vStart": 6019,
+   "vCount": 1946,
+   "iStart": 24966,
+   "iCount": 7728
+  },
+  {
+   "name": "man, red jumper",
+   "female": false,
+   "height": 1.903,
+   "skirt": false,
+   "hem": null,
+   "vStart": 7965,
+   "vCount": 1217,
+   "iStart": 32694,
+   "iCount": 5085
+  },
+  {
+   "name": "woman, white blouse and pale floral skirt",
+   "female": true,
+   "height": 1.802,
+   "skirt": true,
+   "hem": 0.534,
+   "vStart": 9182,
+   "vCount": 1634,
+   "iStart": 37779,
+   "iCount": 5910
+  },
+  {
+   "name": "man, blazer, check shirt and grey trousers",
+   "female": false,
+   "height": 1.875,
+   "skirt": false,
+   "hem": null,
+   "vStart": 10816,
+   "vCount": 1317,
+   "iStart": 43689,
+   "iCount": 4548
+  },
+  {
+   "name": "woman, beige top and orange skirt",
+   "female": true,
+   "height": 1.793,
+   "skirt": true,
+   "hem": 0.534,
+   "vStart": 12133,
+   "vCount": 1201,
+   "iStart": 48237,
+   "iCount": 4632
+  },
+  {
+   "name": "man, green overshirt and black jeans",
+   "female": false,
+   "height": 1.903,
+   "skirt": false,
+   "hem": null,
+   "vStart": 13334,
+   "vCount": 1342,
+   "iStart": 52869,
+   "iCount": 5250
+  },
+  {
+   "name": "man, navy shirt and jeans",
+   "female": false,
+   "height": 1.91,
+   "skirt": false,
+   "hem": null,
+   "vStart": 14676,
+   "vCount": 1179,
+   "iStart": 58119,
+   "iCount": 4161
+  },
+  {
+   "name": "man, navy jacket and chinos",
+   "female": false,
+   "height": 1.876,
+   "skirt": false,
+   "hem": null,
+   "vStart": 15855,
+   "vCount": 1543,
+   "iStart": 62280,
+   "iCount": 5448
+  },
+  {
+   "name": "woman, cream blouse and maroon skirt",
+   "female": true,
+   "height": 1.765,
+   "skirt": true,
+   "hem": 0.424,
+   "vStart": 17398,
+   "vCount": 1372,
+   "iStart": 67728,
+   "iCount": 4752
+  },
+  {
+   "name": "woman, cream shirt and white trousers",
+   "female": true,
+   "height": 1.799,
+   "skirt": false,
+   "hem": null,
+   "vStart": 18770,
+   "vCount": 1291,
+   "iStart": 72480,
+   "iCount": 5103
+  }
+ ]
+}

@@ -2,11 +2,11 @@
 import * as THREE from 'three/webgpu';
 import { Fn, attribute, vec2, vec3, float, int, mix, step, sin, fract, floor, positionLocal, positionGeometry, instanceIndex, select, abs, length, smoothstep, uniformArray } from 'three/tsl';
 import { motorcycleMesh } from './motorcycles.js';
-import { U } from './env.js';
+import { U, cloudShadow } from './env.js';
 import { mergeGeos } from './tiles.js';
 import { lightPool } from './materials.js';
 import { buildCar, vehicleMaterial, wheelGeometry, wheelMaterial, CAR_SPECS } from './carModel.js';
-import { positionWorld } from 'three/tsl';
+import { positionWorld, texture, uv } from 'three/tsl';
 
 const FAR_LOD = 70;   // metres: beyond this cars use the light body
 export const MODELS = {
@@ -34,7 +34,53 @@ export const MODELS = {
   motorcycle: { L:2.18,W:.84,H:1.1,wb:1.53,wr:.315,prof:'roadbike',max:40,mass:295,wheels:2,tyre:.145 },
   moped: { L: 1.85, W: 0.72, H: 1.15, wb: 1.25, wr: 0.28, prof: 'moped', max: 70, mass: 180, wheels: 2, tyre: 0.07 },
   escooter: { L: 1.15, W: 0.55, H: 1.2, wb: 0.85, wr: 0.15, prof: 'scooter', max: 50, mass: 30, wheels: 2, tyre: 0.045 },
+  // the supplied car pack ("Generic passenger car pack" by Comrade1280, CC-BY-4.0; tools/vehicles/bake-car-pack.py):
+  // textured bodies drawn by their own material, our wheels at the measured axles and track
+  compact: { L: 3.26, W: 1.61, H: 1.32, wb: 2.08, wr: 0.24, wx: -0.07, track: 1.13, prof: 'hatch', max: 30, mass: 1050, pack: 'compact' },
+  coupe2: { L: 4.24, W: 1.88, H: 1.28, wb: 2.41, wr: 0.3, wx: -0.02, track: 1.33, prof: 'saloon', max: 30, mass: 1400, pack: 'coupe2' },
+  hatch2: { L: 3.96, W: 1.74, H: 1.35, wb: 2.4, wr: 0.3, wx: -0.04, track: 1.38, prof: 'hatch', max: 30, mass: 1150, pack: 'hatch2' },
+  minivan: { L: 4.61, W: 1.87, H: 1.76, wb: 2.84, wr: 0.32, wx: -0.07, track: 1.41, prof: 'van', max: 30, mass: 1800, pack: 'minivan' },
+  offroad: { L: 3.94, W: 1.96, H: 1.57, wb: 2.32, wr: 0.36, wx: 0.06, track: 1.47, prof: 'suv', max: 20, mass: 1900, pack: 'offroad' },
+  pickup: { L: 5.18, W: 2.07, H: 1.7, wb: 3.19, wr: 0.38, wx: 0.12, track: 1.46, prof: 'suv', max: 20, mass: 2100, pack: 'pickup' },
+  sedan: { L: 4.36, W: 1.94, H: 1.34, wb: 2.62, wr: 0.3, wx: 0.01, track: 1.4, prof: 'saloon', max: 30, mass: 1450, pack: 'sedan' },
+  sport2: { L: 3.91, W: 1.77, H: 1.04, wb: 2.45, wr: 0.31, wx: -0.12, track: 1.37, prof: 'saloon', max: 12, mass: 1300, pack: 'sport2' },
+  suv2: { L: 4.61, W: 2.07, H: 1.73, wb: 2.73, wr: 0.38, wx: 0.07, track: 1.46, prof: 'suv', max: 30, mass: 1900, pack: 'suv2' },
+  wagon: { L: 4.38, W: 1.95, H: 1.38, wb: 2.63, wr: 0.3, wx: 0.02, track: 1.4, prof: 'estate', max: 30, mass: 1500, pack: 'wagon' },
 };
+// the car pack joins the traffic mix once it has loaded (VehicleRenderer.loadPack)
+export const PACK = { ready: false, names: Object.keys(MODELS).filter(k => MODELS[k].pack), weights: { compact: 1, coupe2: 0.5, hatch2: 1.4, minivan: 0.8, offroad: 0.4, pickup: 0.35, sedan: 1.2, sport2: 0.15, suv2: 1, wagon: 1 } };
+PACK.total = PACK.names.reduce((a, k) => a + PACK.weights[k], 0);
+
+// a car-pack body: its own texture, repainted per car where the texture shows the original paint (ref, linear; null
+// keeps the texture's colours), dark glass, and lamps that light with the car's lights and brakes (front +x)
+function packMaterial(tex, ref) {
+  // (satin, no clearcoat: the textures already carry the body's shading, and a clearcoat turned dark cars into mirrors)
+  const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.55, metalness: 0 });
+  const part = attribute('part', 'float'), t = texture(tex, uv()).rgb, ip = attribute('iPaint', 'vec3'), st = attribute('iState', 'vec4');
+  const glass = step(0.5, part).mul(step(part, 1.5)), lamp = step(1.5, part), body = float(1).sub(glass).sub(lamp);
+  let paint = t;
+  if (ref) {
+    // texels near the original paint colour (compared in display space) take the car's paint, keeping their light and
+    // shade as a brightness ratio (a per-channel ratio blew dark reds up into white)
+    // (by hue: the textures' tops are lighter than their sides, so a match on the colour itself missed bonnets and roofs)
+    const P = vec3(ref[0], ref[1], ref[2]), g = vec3(1 / 2.2), lum = c => c.x.mul(0.2126).add(c.y.mul(0.7152)).add(c.z.mul(0.0722));
+    const tS = t.max(0).pow(g), pS = P.pow(g), mean = c => c.x.add(c.y).add(c.z).div(3);
+    const cT = tS.sub(mean(tS)), cP = pS.sub(mean(pS));
+    const satT = length(cT), satP = length(cP), same = cT.dot(cP).div(satT.mul(satP).max(1e-5));   // (grey texels: no hue, no NaN)
+    const w = smoothstep(0.82, 0.94, same).mul(smoothstep(0.2, 0.45, satT.div(satP.max(0.01)))).mul(body);
+    paint = mix(t, ip.mul(lum(t).div(lum(P).max(0.004)).clamp(0.35, 1.8)), w);
+  }
+  const col = mix(mix(paint, vec3(0.012, 0.015, 0.02), glass), t, lamp);
+  m.colorNode = col.mul(cloudShadow(positionWorld));
+  m.roughnessNode = mix(mix(float(0.55), float(0.08), glass), float(0.25), lamp);
+  // headlamps (not red) at the front with the lights on; tail lamps (red) at the back, brighter on the brakes
+  const brake = step(0.5, fract(st.x.mul(0.5))), lights = st.y, front = step(0, positionGeometry.x);
+  const red = step(t.g.mul(1.6), t.r).mul(step(0.22, t.r));
+  const head = lamp.mul(front).mul(float(1).sub(red)).mul(lights).mul(2.6);
+  const tail = lamp.mul(float(1).sub(front)).mul(red).mul(lights.mul(0.9).add(brake.mul(2.6)));
+  m.emissiveNode = t.mul(head.add(tail)).add(lightPool(positionWorld).mul(col));
+  return m;
+}
 
 function profile(kind, L, H) {
   const l = L / 2;
@@ -50,10 +96,12 @@ function profile(kind, L, H) {
 }
 
 // wheel x offset per model (front-engined cars sit their wheels forward of the body centre)
-for (const [k, d] of Object.entries(MODELS)) if (!d.glb) d.wx = CAR_SPECS[k] ? (CAR_SPECS[k].wheelX || 0) * d.L / 2 : 0;
+for (const [k, d] of Object.entries(MODELS)) if (!d.glb && !d.pack) d.wx = CAR_SPECS[k] ? (CAR_SPECS[k].wheelX || 0) * d.L / 2 : 0;
 const MODEL_LIST = Object.entries(MODELS);
 // traffic mix (UK-ish), and paints: sports models get brighter colours
 export function randomModel(r) {
+  // about four cars in ten from the car pack, by how common each kind is (once it's loaded)
+  if (PACK.ready) { const q = (r * 7.31) % 1; if (q < 0.4) { let t = ((r * 53.7) % 1) * PACK.total; for (const k of PACK.names) { t -= PACK.weights[k]; if (t <= 0) return k; } return PACK.names[0]; } }
   return r < .065 ? 'evsaloon' : r < .115 ? 'evsuv' : r < 0.31 ? 'hatch' : r < 0.52 ? 'saloon' : r < 0.65 ? 'estate' : r < 0.8 ? 'suv' : r < 0.9 ? 'van' : r < 0.95 ? 'hothatch' : r < 0.985 ? 'coupe' : 'sports';
 }
 const SPORT_PAINTS = [0xb5121b, 0xe8e8e8, 0x111111, 0x1446a0, 0xf2b705, 0xe25a12, 0x2f6d3a, 0x7d8085];
@@ -154,6 +202,31 @@ function buildModel(def, key, lod = 0) {
 }
 
 export class VehicleRenderer {
+  // the car pack (tools/vehicles/bake-car-pack.py): geometries, one material per car (its own paint reference), then
+  // it joins the traffic mix
+  async loadPack() {
+    try {
+      const [J, buf, tex] = await Promise.all([fetch('vehicles/carpack.json').then(r => r.json()), fetch('vehicles/carpack.bin').then(r => r.arrayBuffer()), new THREE.TextureLoader().loadAsync('vehicles/carpack.jpg')]);
+      tex.colorSpace = THREE.SRGBColorSpace; tex.flipY = false; tex.anisotropy = 4;
+      const L = J.layout, V = J.vertices;
+      const pos = new Float32Array(buf, L.position.offset, V * 3), nq = new Int8Array(buf, L.normal.offset, V * 4), uq = new Uint16Array(buf, L.uv.offset, V * 2);
+      const pt = new Uint8Array(buf, L.part.offset, V), idx = new Uint16Array(buf, L.index.offset, J.indices);
+      for (const c of J.cars) {
+        const def = MODELS[c.name]; if (!def) continue;
+        const n = c.vCount, v0 = c.vStart, N = new Float32Array(n * 3), UV = new Float32Array(n * 2), T = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const j = v0 + i; N[i * 3] = nq[j * 4] / 127; N[i * 3 + 1] = nq[j * 4 + 1] / 127; N[i * 3 + 2] = nq[j * 4 + 2] / 127; UV[i * 2] = uq[j * 2] / 65535; UV[i * 2 + 1] = uq[j * 2 + 1] / 65535; T[i] = pt[j]; }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(pos.slice(v0 * 3, (v0 + n) * 3), 3));
+        g.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+        g.setAttribute('uv', new THREE.BufferAttribute(UV, 2));
+        g.setAttribute('part', new THREE.BufferAttribute(T, 1));
+        g.setIndex(new THREE.BufferAttribute(idx.slice(c.iStart, c.iStart + c.iCount), 1));
+        const ref = c.paint ? new THREE.Color().setRGB(c.paint[0], c.paint[1], c.paint[2], THREE.SRGBColorSpace) : null;
+        this.meshes[c.name] = this.far[c.name] = this.make(def, g, this.shadowsOn, packMaterial(tex, ref && [ref.r, ref.g, ref.b]));
+      }
+      PACK.ready = true;
+    } catch (e) { console.warn('car pack', e); }
+  }
   constructor(scene, shadows) {
     this.meshes = {}; this.idx = {};
     const mat = vehicleMaterial(MODEL_LIST);
@@ -167,20 +240,22 @@ export class VehicleRenderer {
     this.wheels.frustumCulled = false; this.wheels.count = 0; scene.add(this.wheels);
     // two levels of detail per car model: full detail near the camera, a light body beyond FAR_LOD m
     this.far = {};
-    const make = (def, g, shadow) => {
+    const make = (def, g, shadow, material = mat) => {
       const st = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 4), 4); st.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute('iState', st);
       const pa = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 3), 3); pa.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute('iPaint', pa);
       const dg = new THREE.InstancedBufferAttribute(new Float32Array(def.max * 4), 4); dg.setUsage(THREE.DynamicDrawUsage);
       g.setAttribute('iDmg', dg);
-      const m = new THREE.InstancedMesh(g, mat, def.max);
+      const m = new THREE.InstancedMesh(g, material, def.max);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0; m.frustumCulled = false; m.castShadow = shadow; m.receiveShadow = false;
       scene.add(m); return m;
     };
+    this.make = make; this.shadowsOn = shadows; this.scene = scene;
+    this.loadPack();
     for (const [name, def] of Object.entries(MODELS)) {
-      if (def.glb) continue;   // drawn by heroCars.js
+      if (def.glb || def.pack) continue;   // drawn by heroCars.js / loaded with the car pack
       this.meshes[name] = make(def, buildModel(def, name), shadows);
       this.far[name] = CAR_SPECS[name] ? make(def, buildModel(def, name, 1), false) : this.meshes[name];
     }
@@ -250,8 +325,8 @@ export class VehicleRenderer {
     S.p = Math.max(-0.14, Math.min(0.14, S.p)); S.r = Math.max(-0.16, Math.min(0.16, S.r));
   }
   draw(vehicles, cam, maxDist = 700) {
-    const counts = {}, countsFar = {}; for (const k in MODELS) { counts[k] = 0; countsFar[k] = 0; }
-    for(const riders of Object.values(this.riders)) riders.count=0;
+    const counts = this._cn ||= {}, countsFar = this._cf ||= {}; for (const k in MODELS) { counts[k] = 0; countsFar[k] = 0; }
+    for (const k in this.riders) this.riders[k].count = 0;
     this.feet.count=0;this.drivingLamp.intensity=0;
     for(const mesh of this.legs) mesh.count=0;
     let wn = 0, sn = 0, bn = 0;
@@ -267,7 +342,7 @@ export class VehicleRenderer {
       if (mk !== v.model) this.heroCars?.hide(v);   // (kept, hidden: rebuilding it on the way back would stall a frame)
       const def = MODELS[mk], farM = this.far[mk], isFar = d2 > FAR2 && farM !== this.meshes[mk];
       const mesh = isFar ? farM : this.meshes[mk], C = isFar ? countsFar : counts, i = C[mk];
-      if (i >= def.max) continue;
+      if (!mesh || i >= def.max) continue;
       if (d2 < 160 * 160) this.suspension(v, dt);
       const S = v._sus;
       // ground pose (wheels), then the sprung body on top of it
@@ -341,12 +416,11 @@ export class VehicleRenderer {
       }
       // wheels: two, on the centreline, for a moped or scooter
       if (d2 < (isFar ? 110 * 110 : 160 * 160) && wn < 1496) {
-        const sp = CAR_SPECS[mk], r = def.wr, hw = def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
-        const wsty = def.prof==='cycle' ? [.91,4,v.spin||0,0] : mk==='dirtbike' ? [.77,4,v.spin||0,0] : mk==='motorcycle' ? [.72,1,v.spin||0,1] : sp ? [sp.rim || 0.66, sp.wheel || 0, v.spin || 0, sp.caliper ? 1 : 0] : [0.62, 2, v.spin || 0, 0];
-        const posts = def.wheels === 2 ? [[a + o, 0, 1], [-a + o, 0, 0]] : [[a + o, hw, 1], [a + o, -hw, 1], [-a + o, hw, 0], [-a + o, -hw, 0]];
-        const tyre = def.tyre || 0.22;
-        for (const [wx, wz, steer] of posts) {
-          this.iWheel.array.set(wsty, wn * 4);
+        // (each model's wheel style and positions worked out once, not as fresh arrays for every car every frame)
+        const W = WHEELS[mk] ||= wheelsOf(mk, def), r = def.wr, posts = W.posts, tyre = def.tyre || 0.22, spin = v.spin || 0, iw = this.iWheel.array;
+        for (let k = 0; k < posts.length; k += 3) {
+          const wx = posts[k], wz = posts[k + 1], steer = posts[k + 2];
+          iw[wn * 4] = W.sty[0]; iw[wn * 4 + 1] = W.sty[1]; iw[wn * 4 + 2] = spin; iw[wn * 4 + 3] = W.sty[3];
           this._w.makeRotationZ(-(v.spin || 0));
           const sa = v.player ? v.steer : v.steerVis;
           if (steer && sa) this._w.premultiply(this._steer.makeRotationY(-sa));
@@ -355,16 +429,9 @@ export class VehicleRenderer {
         }
       }
     }
-    const commit = (m, n) => {
-      m.count = n; m.visible = n > 0;   // empty instanced meshes cost a draw call
-      if (n) { for(const attr of [m.instanceMatrix,m.geometry.attributes.iPaint,m.geometry.attributes.iState,m.geometry.attributes.iDmg]){
-          attr.clearUpdateRanges(); attr.addUpdateRange(0,n*attr.itemSize); attr.needsUpdate=true;
-        } }
-    };
-    for(const riders of [...Object.values(this.riders),...this.legs,this.feet]){
-      riders.visible=riders.count>0;
-      if(riders.visible)riders.instanceMatrix.needsUpdate=true;
-    }
+    for (const k in this.riders) { const riders = this.riders[k]; riders.visible = riders.count > 0; if (riders.visible) riders.instanceMatrix.needsUpdate = true; }
+    for (const riders of this.legs) { riders.visible = riders.count > 0; if (riders.visible) riders.instanceMatrix.needsUpdate = true; }
+    this.feet.visible = this.feet.count > 0; if (this.feet.visible) this.feet.instanceMatrix.needsUpdate = true;
     this.heroCars?.finish();
     for (const k in MODELS) {
       if (!this.meshes[k]) continue;
@@ -375,6 +442,21 @@ export class VehicleRenderer {
     this.shadows.count = sn; this.shadows.visible = sn > 0; this.shadows.instanceMatrix.needsUpdate = true;
     this.beams.count = bn; this.beams.visible = bn > 0; if (bn) this.beams.instanceMatrix.needsUpdate = true;
   }
+}
+// an instanced model's count and the ranges of its per-car attributes to upload (empty ones cost a draw call: hidden)
+function commit(m, n) {
+  m.count = n; m.visible = n > 0;
+  if (!n) return;
+  const A = m.geometry.attributes;
+  for (const attr of [m.instanceMatrix, A.iPaint, A.iState, A.iDmg]) { attr.clearUpdateRanges(); attr.addUpdateRange(0, n * attr.itemSize); attr.needsUpdate = true; }
+}
+// wheel style [rim, kind, (spin), caliper] and positions [x, z, steers] x n for a model
+const WHEELS = {};
+function wheelsOf(mk, def) {
+  const sp = CAR_SPECS[mk], hw = def.track ? def.track / 2 + 0.06 : def.W / 2 - 0.105 + (sp?.flare || 0) * 0.8, a = def.wb / 2, o = def.wx || 0;
+  const sty = def.prof === 'cycle' ? [.91, 4, 0, 0] : mk === 'dirtbike' ? [.77, 4, 0, 0] : mk === 'motorcycle' ? [.72, 1, 0, 1] : sp ? [sp.rim || 0.66, sp.wheel || 0, 0, sp.caliper ? 1 : 0] : [0.62, 2, 0, 0];
+  const posts = def.wheels === 2 ? [a + o, 0, 1, -a + o, 0, 0] : [a + o, hw, 1, a + o, -hw, 1, -a + o, hw, 0, -a + o, -hw, 0];
+  return { sty, posts };
 }
 // unit quad on the ground (x along the car, z across); opacity: a soft rounded rectangle, darkest under the tyres
 function contactGeometry() { const g = new THREE.PlaneGeometry(1, 1); g.rotateX(-Math.PI / 2); return g; }
