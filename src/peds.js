@@ -88,14 +88,15 @@ export class Peds {
     for (let k = 0, kn = Math.min(L.length, 40); k < kn && n > 0; k++) {   // (a few dozen looked at per tick, in turn)
       const p = L[this._thinAt = ((this._thinAt || 0) + 1) % L.length];
       if (p.gone || p.dead || p.officer || p.hiVis || p.carried || p.awaitingMedic || p.medicFall || p.impact || p.react || p.reactT > 0 || p.wound) continue;
-      if (p.leader || p.partner || p.goal?.kind === 'door' || !String(p.id).startsWith('p')) continue;
+      if ((p.leader && !p.leader.gone) || (p.partner && !p.partner.gone) || !String(p.id).startsWith('p')) continue;
       if (!(p.mode === 'walk' || (p.mode === 'scene' && p.activity))) continue;
-      if (Math.hypot(p.x - focus.x, p.z - focus.z) > 30 && !info.visible(p.x, p.y + 1, p.z, 1)) { p.gone = true; n--; }
-      else {
-        const D = this.doorsNear(p.x, p.z, 45); if (!D.length) continue;
-        const door = D[Math.floor(this.rand() * D.length)];
-        p.mode = 'walk'; p.dayPath = null; p.goal = { kind: 'door', x: door.x, z: door.z }; n--;
-      }
+      if (Math.hypot(p.x - focus.x, p.z - focus.z) > 30 && !info.visible(p.x, p.y + 1, p.z, 1)) { p.gone = true; n--; continue; }
+      if (p.goal?.kind === 'door' || p.goal?.kind === 'away') continue;   // (already on their way)
+      // in view: in at a door near them, or with none about, off away from you (and gone once out of sight)
+      const D = this.doorsNear(p.x, p.z, 80);
+      p.mode = 'walk'; p.dayPath = null; p.leader = null; p.partner = null; n--;
+      if (D.length) { const door = D[Math.floor(this.rand() * D.length)]; p.goal = { kind: 'door', x: door.x, z: door.z }; }
+      else { const a = Math.atan2(p.z - focus.z, p.x - focus.x); p.goal = { kind: 'away', x: focus.x + Math.cos(a) * (KILL + 60), z: focus.z + Math.sin(a) * (KILL + 60) }; }
     }
   }
   side(e) { return this.net.walkCls.has(this.net.cls[e]) ? 0 : 1; }
