@@ -119,7 +119,7 @@ export class Emergency {
     if (this.calls.some(c => c.service === 'fire')) return;
     const G = this.G, f = G.focus;
     for (const v of G.traffic.list) {
-      if (v.player || v.burning || v.burnt || !v.dmg || v.def?.wheels === 2 || v.law || v.kind === 'fire' || v.kind === 'ambulance' || Math.hypot(v.x - f.x, v.z - f.z) > 220) continue;
+      if (v.player || v.owner || v.burning || v.burnt || !v.dmg || v.def?.wheels === 2 || v.law || v.kind === 'fire' || v.kind === 'ambulance' || v.kind === 'taxi' || Math.hypot(v.x - f.x, v.z - f.z) > 220) continue;
       const d = v.dmg, total = d[0] + d[1] + d[2] + d[3];
       if (d[0] < 0.8 && d[1] < 0.9 && total < 2.2) { v.smokeT = 0; continue; }
       v.smoking = true; v.smokeT = (v.smokeT || 0) + 1;
@@ -157,7 +157,7 @@ export class Emergency {
       const cam = G.camera.position;
       for (let i = this.wrecks.length - 1; i >= 0; i--) {
         const w = this.wrecks[i];
-        if (w.player || !G.traffic.list.includes(w)) { this.wrecks.splice(i, 1); continue; }
+        if (w.player || w.owner || !G.traffic.list.includes(w)) { this.wrecks.splice(i, 1); continue; }
         if (Math.hypot(w.x - cam.x, w.z - cam.z) > 350) { G.traffic.remove(w); this.wrecks.splice(i, 1); }
       }
     }
@@ -503,11 +503,12 @@ export class Emergency {
     const smoke = Math.max(k, damp ? Math.max(0, 0.6 - (c.t || 0) / 20) : 0);
     for (const o of g.children) {
       if (o.userData.smoke != null) {
-        const j = o.userData.smoke, u = (t * 0.25 + j / 7) % 1, sc = (0.35 + u * 1.2) * (0.35 + 0.65 * smoke);
-        o.position.set(Math.sin(j * 1.9) * 0.4 + u * 0.9, 0.9 + u * 5, Math.cos(j * 2.3) * 0.4); o.scale.setScalar(sc); o.visible = smoke > 0.02;
+        // (rising from above the flames, so the fire itself shows; spreading as it climbs and drifts)
+        const j = o.userData.smoke, u = (t * 0.25 + j / 7) % 1, sc = (0.25 + u * 1.25) * (0.35 + 0.65 * smoke);
+        o.position.set(Math.sin(j * 1.9) * 0.4 + u * 1.1, 1.7 + u * 5.5, Math.cos(j * 2.3) * 0.4); o.scale.setScalar(sc); o.visible = smoke > 0.02;
       } else {
-        const j = o.userData.k, f = 1 + 0.3 * Math.sin(t * 9 + j * 1.3) + 0.15 * Math.sin(t * 23 + j), r = (0.3 + j * 0.04) * (0.4 + 0.6 * k);
-        o.visible = k > 0.03; o.scale.set(r, (0.9 + 0.25 * (j % 3)) * f * k * 1.25, r); o.position.y = 0.5 * k * f;
+        const j = o.userData.k, f = 1 + 0.3 * Math.sin(t * 9 + j * 1.3) + 0.15 * Math.sin(t * 23 + j), r = (0.34 + j * 0.05) * (0.4 + 0.6 * k);
+        o.visible = k > 0.03; o.scale.set(r, (1.0 + 0.3 * (j % 3)) * f * k * 1.4, r); o.position.y = 0.55 * k * f;
       }
     }
   }

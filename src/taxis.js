@@ -58,7 +58,7 @@ export class Taxis {
   quote(dest) {
     const G = this.G, me = G.brothers.me, r = makeRoute(G.net, me, dest, false);
     if (!r || r.length < 40) return null;
-    return { dest, metres: r.length, fare: fare(r.length), mins: Math.max(2, Math.round(r.length / 8.5 / 60)), distance: distanceLabel(r.length) };
+    return { dest, metres: r.length, fare: fare(r.length), mins: Math.max(2, Math.round(r.length / 6 / 60)), distance: distanceLabel(r.length) };
   }
   // book a Kerb: a driver a few streets away is sent to where you're standing
   book(q) {
@@ -81,9 +81,10 @@ export class Taxis {
     const J = this.job; if (!J || J.stage === 'riding') return;
     this.release(J.v); this.job = null; this.G.hud.toast(why);
   }
-  // the road point by you a car can stop at
+  // the road point by you a car can stop at: a street close by, or further off (a car park's roads too) from a
+  // pedestrian precinct or a park
   kerbside(x, z) {
-    const net = this.G.net, n = net.nearest(x, z, 40, e => ROADS(net, e));
+    const net = this.G.net, n = net.nearest(x, z, 45, e => ROADS(net, e)) || net.nearest(x, z, 110, e => (net.flags[e] & 16) && !/motorway|track/.test(net.classes[net.cls[e]]));
     return n ? { x: n.x, z: n.z, e: n.e, s: n.s } : null;
   }
   // a car from a few streets away, out of sight, on its way to `at`
@@ -291,9 +292,10 @@ export class Taxis {
   status() {
     const J = this.job; if (!J) return null;
     const G = this.G, v = J.v, me = G.brothers.me;
-    if (J.stage === 'coming') { const d = Math.hypot(v.x - me.x, v.z - me.z); return { stage: 'coming', eta: Math.max(1, Math.round(d * 1.4 / 9 / 60)), metres: d }; }
+    // (town driving: lights, junctions and the way round, about 5 m/s on average as the crow flies)
+    if (J.stage === 'coming') { const d = Math.hypot(v.x - me.x, v.z - me.z); return { stage: 'coming', eta: Math.max(1, Math.round(d * 1.4 / 5 / 60)), metres: d }; }
     if (J.stage === 'waiting') return { stage: 'waiting', metres: Math.hypot(v.x - me.x, v.z - me.z) };
     const d = J.drop ? Math.hypot(v.x - J.drop.x, v.z - J.drop.z) : 0;
-    return { stage: 'riding', eta: J.dest ? Math.max(1, Math.round(d * 1.35 / 8.5 / 60)) : null, metres: d };
+    return { stage: 'riding', eta: J.dest ? Math.max(1, Math.round(d * 1.35 / 6 / 60)) : null, metres: d };
   }
 }
