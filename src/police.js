@@ -57,7 +57,7 @@ export class Police {
   // ---------------------------------------------------------------- incidents
   createIncident(type, x, z, parties, opts = {}) {
     const inc = { id: this.nextInc++, type, x, z, parties, t: 0, status: 'new', witnesses: [], reportedAt: null, unit: null, byPlayer: !!opts.byPlayer, label: opts.label || type };
-    inc.injury = !!opts.injury; inc.trapped = !!opts.trapped; inc.patient = opts.patient;
+    inc.injury = !!opts.injury; inc.trapped = !!opts.trapped; inc.patient = opts.patient; inc.medical = !!opts.medical;   // medical: an ambulance only (someone hurt, nobody killed)
     this.incidents.push(inc);
     // witnesses: nearby pedestrians react; one of them phones it in
     const w = this.G.peds.near(x, z, 55);
@@ -81,13 +81,13 @@ export class Police {
       this.G.peds.list.push(patient);inc.patient=patient;inc.drivers=[patient];
     }
   }
-  onPedHit({ p, v, speed }) {
-    if (p.awaitingMedic) return;
+  onPedHit({ p, v, speed, fatal }) {
+    if (p.awaitingMedic || (!fatal && speed < 4.5)) return;   // a bump that doesn't knock them down needs no ambulance
     p.awaitingMedic = true;
     this.createIncident('pedestrian', p.x, p.z, [v.id], { byPlayer: v.player, injury: true, patient: p, label: p.dead ? 'Fatal collision with a pedestrian' : 'Pedestrian struck' });
   }
   // someone killed (by gun or knife: a car's are onPedHit's): a scene the police attend, and an ambulance for them
-  // (neighbourhood.js sends it; the paramedics take the body away when they leave)
+  // (emergency.js sends it; the paramedics take the body away)
   onKilled({ p, how }) {
     if (how === 'car' || p.awaitingMedic) return;
     p.awaitingMedic = true;
@@ -194,6 +194,12 @@ export class Police {
   }
   updateIncident(inc, dt) {
     const G = this.G; inc.t += dt;
+    if (inc.medical) {
+      // someone hurt (shot and down, knocked out): the call goes to the ambulance service (emergency.js), not to us
+      if (inc.status === 'new' && inc.t > inc.callAt) { inc.status = 'reported'; G.hud.feed(`999 call: ${inc.label} · ${G.roadName(inc.x, inc.z) || 'nearby'} · ambulance requested`); }
+      if (inc.status === 'reported' && !inc.medicalBusy && (inc.medicalDone || inc.medicalClosed)) { inc.status = 'cleared'; inc.t = 0; }
+      return;
+    }
     if (inc.status === 'new' && inc.t > inc.callAt) {
       inc.status = 'reported';
       const u = this.nearestUnit(inc.x, inc.z);
@@ -221,7 +227,7 @@ export class Police {
       }
       // long responses get time to arrive (route length at blue-light speed plus margin), then stand down cleanly
       const limit = inc.respondLimit || (inc.respondLimit = 300 + (u.routeLen || 0) / 6);
-      if (inc.status === 'responding' && inc.t > limit) { inc.status = 'cleared'; inc.t = 0; u.status = 'patrol'; u.siren = false; u.incident = null; u.target = null; u.dest = this.beatNode(u); G.hud.feed(`${u.id}: stood down (${inc.label}) · another unit dealt with it`); for (const id of inc.parties) { const v = G.traffic.byId.get(id); if (v && !v.player) { v.crashed = false; v.hazard = false; v.brokenDown = false; } } for (const dd of inc.drivers || []) dd.gone = true; }
+      if (inc.status === 'responding' && inc.t > limit && !inc.medicalBusy) { inc.status = 'cleared'; inc.t = 0; u.status = 'patrol'; u.siren = false; u.incident = null; u.target = null; u.dest = this.beatNode(u); G.hud.feed(`${u.id}: stood down (${inc.label}) · another unit dealt with it`); for (const id of inc.parties) { const v = G.traffic.byId.get(id); if (v && !v.player) { v.crashed = false; v.hazard = false; v.brokenDown = false; } } for (const dd of inc.drivers || []) dd.gone = true; }
     }
     if (inc.status === 'onscene') {
       // officers walk to the scene, talk with drivers, then clear
@@ -232,7 +238,7 @@ export class Police {
         G.peds.ground(o);
       }
       if (inc.type === 'breakdown') { this.updateBreakdown(inc, dt); return; }
-      if (inc.officers.every(o => Math.hypot(inc.x - o.x, inc.z - o.z) < 6) ? (inc.atScene = (inc.atScene || 0) + dt) > 60 : inc.t - inc.arrived > 420) {
+      if (!inc.medicalBusy && (inc.officers.every(o => Math.hypot(inc.x - o.x, inc.z - o.z) < 6) ? (inc.atScene = (inc.atScene || 0) + dt) > 60 : inc.t - inc.arrived > 420)) {
         inc.status = 'cleared'; inc.t = 0;
         const u = inc.unit;
         for (const o of inc.officers) o.gone = true;

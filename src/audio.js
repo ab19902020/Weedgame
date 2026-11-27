@@ -50,6 +50,7 @@ export class Audio {
     // positioned loops: the nearest siren and the nearest crossing that is bleeping
     const spot = (ref = 10, roll = 1.2) => { const g = A.createGain(); g.gain.value = 0; const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = ref; p.rolloffFactor = roll; g.connect(p); p.connect(this.outdoors); return { g, p }; };
     this.siren = spot(25, 1); this.crossing = spot(6, 1.4);
+    this.hose = spot(7, 1.3);   // a fire crew's jet: the rain recording's hiss, where the water's landing
     this.railRoll = spot(13, 1.2); this.carCabin = bed(2100); this.diesel = bed(5300);
     this.railPosition = new Float64Array(6);
     // per-vehicle voices for nearby traffic: a recorded engine plus recorded tyre roar on the road
@@ -139,7 +140,7 @@ export class Audio {
     this.wbank = await this.ctx.decodeAudioData(await r.arrayBuffer());
     const L = (name, node) => this.wloop(name, node);
     L('rain', this.rain.f); L('rainroof', this.rainRoof.f); L('wind', this.wind.f); L('leaves', this.leaves.f); L('traffic', this.hum.f);
-    L('siren', this.siren.g); L('crossing', this.crossing.g);
+    L('siren', this.siren.g); L('crossing', this.crossing.g); L('rain', this.hose.g);
     this.squeal.src = L('squeal', this.squeal.f); this.screech.src = L('screech', this.screech.f); this.road.src = L('road', this.road.f); this.gravel.src = L('gravel', this.gravel.f); L('scrape', this.scrape.f);
     for (const voice of this.voices) voice.tyre = L('road', voice.tf);
   }
@@ -408,5 +409,9 @@ export class Audio {
     for (const v of G.traffic.list) if (v.siren) { const d = Math.hypot(v.x - cam.x, v.z - cam.z); if (d < 400 && (!sv || d < sv[1])) sv = [v, d]; }
     if (sv) this.setPos(this.siren.p, sv[0].x, (sv[0].y || 0) + 1.5, sv[0].z);
     this.siren.g.gain.setTargetAtTime(sv ? 0.55 : 0, t, 0.15);
+    // a fire crew's hose on (emergency.js)
+    const hs = G.emergency?.hoseAt(cam);
+    if (hs) this.setPos(this.hose.p, hs[0], hs[1], hs[2]);
+    this.hose.g.gain.setTargetAtTime(hs ? 0.6 * (inCar ? 0.45 : 1) : 0, t, 0.25);
   }
 }

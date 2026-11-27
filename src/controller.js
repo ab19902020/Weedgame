@@ -2,8 +2,8 @@
 //   on foot   left stick move (L3 —), right stick camera (R3 camera behind), Cross sprint, Square jump,
 //             Triangle enter / exit a vehicle and every interaction, Circle reload (melee with no gun), R2 fire /
 //             attack, L2 aim (free aim; with Lock-on aiming in Settings, flick the right stick to switch target),
-//             L1 weapon wheel (hold, point a stick, let go), R1 pick up, D-pad down switch brother, D-pad up map,
-//             touchpad map, Options pause
+//             L1 weapon wheel (hold, point a stick, let go), R1 pick up, D-pad down switch brother, D-pad up the phone
+//             (Kerb rides, phone.js), touchpad or Share the map, Options pause
 //   driving   R2 accelerate, L2 brake / reverse, R1 handbrake (Cross too), L3 horn, Triangle get out,
 //             D-pad right headlights / full beam, touchpad camera, D-pad down switch brother
 //   menus     D-pad or left stick move between buttons (any direction), Cross choose, Circle back, Options close;
@@ -41,6 +41,7 @@ export class Controller {
     // ---- Options: the pause menu (it closes any other panel first)
     if (tap(OPT) || tap(PS)) {
       if(G.radio?.opened){G.radio.close();this.previous=buttons;return;}
+      if(G.phone?.open){G.phone.toggle(false);this.previous=buttons;return;}
       if (!M.el.hidden) M.close(); else if (!H.el('map').hidden) H.toggleMap(false); else M.open();
       this.previous = buttons; return;
     }
@@ -69,7 +70,8 @@ export class Controller {
     I.look.dx += cv(axis(2)) * dt * 260 * boost; I.look.dy += cv(axis(3)) * dt * 200;
     if (tap(TRI)) I.pressed.add('use');
     if (tap(DOWN)) I.pressed.add('swap');
-    if (tap(UP) || tap(SHARE)) H.toggleMap(true);
+    if (tap(UP)) G.phone?.toggle(true);
+    if (tap(SHARE)) H.toggleMap(true);
     if (car) {
       I.padY = (pad.buttons[L2]?.value || 0) - (pad.buttons[R2]?.value || 0);
       I.padBrake = buttons[R1] || buttons[X];

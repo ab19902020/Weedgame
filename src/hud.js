@@ -19,6 +19,7 @@ const ICON = {
   cam: svg('<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>'),
   swap: svg('<path d="M4 8h13l-3-3M20 16H7l3 3"/>'),
   map: svg('<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/>'),
+  phone: svg('<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M10.5 18.5h3"/>'),
   menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
   dev: svg('<path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/>'),
   door: svg('<path d="M5 20V5l9-2v18zM14 5h5v15h-5M11 12h.5"/>'),
@@ -56,7 +57,7 @@ export class Hud {
       <div id="fade"></div>
       <div id="btns">
         <div class="top">
-          <button id="bCam" data-act="camera" aria-label="Camera">${ICON.cam}<b>Camera</b></button><button id="bSwap" aria-label="Swap brother">${ICON.swap}<b>Swap</b></button><button id="bMap" aria-label="Map">${ICON.map}<b>Map</b></button><button id="bMenu" aria-label="Menu">${ICON.menu}<b>Menu</b></button><button id="bDev" aria-label="Developer">${ICON.dev}<b>Dev</b></button>
+          <button id="bCam" data-act="camera" aria-label="Camera">${ICON.cam}<b>Camera</b></button><button id="bSwap" aria-label="Swap brother">${ICON.swap}<b>Swap</b></button><button id="bPhone" aria-label="Phone">${ICON.phone}<b>Phone</b></button><button id="bMap" aria-label="Map">${ICON.map}<b>Map</b></button><button id="bMenu" aria-label="Menu">${ICON.menu}<b>Menu</b></button><button id="bDev" aria-label="Developer">${ICON.dev}<b>Dev</b></button>
         </div>
         <div class="foot">
           <button id="bUse" class="ctx"><i>${ICON.door}</i><span>Enter</span></button>
@@ -100,7 +101,7 @@ export class Hud {
     this.buildWheel();
     I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn', true);
     I.bindButton(this.el('bBeam'),'beam'); I.bindButton(this.el('bHand'), 'brake', true); I.bindPedals(this.el('pGas'), this.el('pBrake')); I.bindArrows(this.el('sLeft'), this.el('sRight'));
-    I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bDev'), 'dev');
+    I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bPhone'), 'phone'); I.bindButton(this.el('bDev'), 'dev');
     this.el('mClose').onclick = () => this.toggleMap(false);
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
     this.mapView = { x: 0, z: 0, s: 0.25 };
@@ -114,6 +115,7 @@ export class Hud {
       Buildings: () => sites(s => !homes.has(s.kind) && !['shop','mall','food','pub'].includes(s.kind)),
       Districts: () => G.manifest.districts, Landmarks: () => TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))
     };
+    this.placeCategories = categories;   // (the phone's Kerb app offers the same places)
     let results=[], index=0, category='Houses';
     const showPlace = () => {
       const p=this.mapPlace=results[index];
@@ -262,14 +264,16 @@ export class Hud {
     const boardable=!door&&!me.inside&&G.transit.nearby(me);
     const waiting=!inCar && !near && !boardable && !door && !me.inside && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
     const giveUp=!inCar&&!near&&!!G.wanted?.canGiveUp();
-    const useText=giveUp?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
+    // taxis (taxis.js): waving one down, getting in the one that's waiting for you, asking to be let out
+    const TX=G.taxis, job=TX?.job, cabRide=!!TX?.riding, cabHere=!inCar&&job?.stage==='waiting'&&Math.hypot(job.v.x-me.x,job.v.z-me.z)<job.v.def.W/2+3.2, hail=!inCar&&!near&&!door&&!boardable&&TX?.hailCab;
+    const useText=cabRide?'Stop here':cabHere?(job.kind==='kerb'?'Get in (Kerb)':'Get in (taxi)'):hail?'Hail taxi':giveUp?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
     const use=this.el('bUse');
     if(use.lastChild.textContent!==useText){use.lastChild.textContent=useText;use.firstChild.innerHTML=inCar||G.transit.ride&&G.transit.currentStop()?ICON.exit:boardable||G.transit.ride?ICON.bus:ICON.door;}
-    use.disabled=!!waiting;
-    const ready=giveUp||inCar||near||G.transit.ride||boardable||door;
+    use.disabled=!!waiting&&!cabHere&&!hail&&!cabRide;
+    const ready=giveUp||inCar||near||G.transit.ride||boardable||door||cabHere||hail||cabRide;
     use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable||door)&&!inCar);
     // on foot: stick and actions; driving: wheel (or arrows) and pedals; riding a bus or train: just the stop button
-    const ride=!!G.transit.ride, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Steering wheel';
+    const ride=!!G.transit.ride||cabRide, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Steering wheel';
     I.driving=drive; I.steering=steer;
     // handling: Easy (traction and stability control, ABS, steering assist; the default) or Realistic (carPhysics.js)
     I.assists=/^Realistic/.test(this.menu?.settings?.handling||'')?0:1;
@@ -296,6 +300,8 @@ export class Hud {
     if (this._acc > 0.1) { this._acc = 0; const notice=this.nav.update(me); if(notice) this.toast(notice); this.miniText(); this.renderFeed(); this.drawClock(); }
     // the maps draw every frame (the minimap turns smoothly; the atlas redraws only when its view or contents change)
     if (!this.el('map').hidden) this.drawMap(); else this.drawMini();
+    if(cabRide){const st=TX.status();this.el('guidance').hidden=false;this.el('guidance').firstChild.textContent=job.kind==='kerb'?'KERB':'TAXI';this.el('guidance').lastChild.textContent=job.dest?job.dest.name+(st?.eta?' · '+st.eta+' min':'')+(job.fare?' · £'+job.fare.toFixed(2):''):'Where to? Use your phone';}
+    else if(job&&!inCar&&(job.stage==='coming'||job.stage==='waiting')){this.el('guidance').hidden=false;this.el('guidance').firstChild.textContent=job.kind==='kerb'?'KERB · '+job.plate:'TAXI';this.el('guidance').lastChild.textContent=job.stage==='waiting'?'Your ride is here':(job.kind==='kerb'?job.driver+' is ':'')+'on the way · '+(TX.status()?.eta||1)+' min';}
     if(G.transit.ride){this.el('guidance').hidden=false;this.el('guidance').firstChild.textContent=G.transit.ride===G.transit?'RAIL':'BUS '+G.transit.ride.ref;this.el('guidance').lastChild.textContent='Next: '+G.transit.nextName()+(G.transit.request?' · Stop requested':'');}
     if (this.perfOn) this.el('perf').textContent = G.perf.text();
   }
@@ -327,8 +333,8 @@ export class Hud {
       const reach = R / scale;
       for (const v of G.traffic.list) {
         if (Math.abs(v.x - me.x) > reach || Math.abs(v.z - me.z) > reach) continue;
-        const kind = v.kind === 'police' ? 'police' : v.owner || v.free ? 'car' : v.kind === 'bus' ? 'bus' : null;
-        if (kind) siteIcon(c, v.x, v.z, kind, 7 / scale, -rot, v.siren && (Math.floor(performance.now()/350)%2) ? '#b44751' : undefined);
+        const kind = v.kind === 'police' ? 'police' : v.owner || v.free || v.kerb || (v === G.taxis?.job?.v) ? 'car' : v.kind === 'bus' ? 'bus' : null;
+        if (kind) siteIcon(c, v.x, v.z, kind, (v.kerb ? 9 : 7) / scale, -rot, v.siren && (Math.floor(performance.now()/350)%2) ? '#b44751' : v === G.taxis?.job?.v ? '#1fa36a' : undefined);
       }
     });
     // screen space: the other brother (held at the rim when out of range), the needle, north
@@ -580,7 +586,9 @@ export class Hud {
     section('Emergency response');
     row('Incidents', [btn('Stage collision nearby', () => { const i = G.police.stageCollision(); this.toast(i ? 'Collision staged · watch for the response' : 'No suitable traffic nearby'); }),
       ...[['injury','Injury crash'],['rescue','Trapped occupant']].map(([severity,label])=>btn(label,()=>this.toast(G.police.stageCollision(severity)?label+' staged':'No suitable traffic nearby'))),
-      btn('Vehicle fire',()=>this.toast(G.neighbourhood.startFire()?'Vehicle fire reported':'No available crew or suitable location')),
+      btn('Vehicle fire',()=>this.toast(G.emergency.startFire()?'Vehicle fire reported':'No available crew or suitable location')),
+      btn('Casualty nearby',()=>{ const me=G.brothers.me, p=G.peds.near(me.x,me.z,45).filter(p=>!p.officer&&!p.dead&&!p.awaitingMedic&&p.mode==='walk').sort((a,b)=>Math.hypot(a.x-me.x,a.z-me.z)-Math.hypot(b.x-me.x,b.z-me.z))[0];
+        if(!p)return this.toast('Nobody nearby'); G.peds.hurt(p,Math.atan2(p.z-me.z,p.x-me.x),'down',1000); this.toast('Someone is down · watch for the ambulance'); }),
       btn('Stage breakdown nearby', () => { const i = G.police.stageBreakdown(); this.toast(i ? 'A car has broken down · watch for the patrol and recovery truck' : 'No suitable traffic nearby'); }),
     ]);
     row('Police', [btn('Wanted ★ +1', () => { const W = G.wanted; W.setLevel(W.level ? W.level + 1 : 2, 'Dev: police on to you'); W.spotted(G.brothers.me); }),

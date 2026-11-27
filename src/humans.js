@@ -24,7 +24,7 @@ import { length as tslLength, uv as tslUv, vec3 as tslVec3, float as tslFloat, s
 
 // instance capacity and range of each level of detail: near (fingers, full faces), mid, far
 const CAP = [28, 120, 300], LOD_NEAR = 11, LOD_MID = 36;   // metres
-const POSE = { walk: 0, idle: 0, flee: 0, talk: 1, phone: 2, umbrella: 3, wave: 4, point: 5, hands: 6, shelter: 7, brace: 8, seated: 9, aim: 10 };
+const POSE = { walk: 0, idle: 0, flee: 0, talk: 1, phone: 2, umbrella: 3, wave: 4, point: 5, hands: 6, shelter: 7, brace: 8, seated: 9, aim: 10, hold: 11 };
 const TAG = { always: 0, hairShort: 1, hairLong: 2, hairBun: 3, hairCurly: 4, hairPony: 5, hairBuzz: 6, helmet: 10, umbrella: 11, bag: 12, cap: 13, hood: 14,
   glasses: 15, beanie: 16, backpack: 17, carrier: 18, headphones: 19, scarf: 20, coat: 21, skirt: 22, phone: 23, gun: 24 };
 // regions: 0 skin, 1 top, 2 trousers, 3 shoes, 4 hair, 6 helmet, 7 umbrella canopy, 8 bag, 9 dark trim, 10 cap, 11 metal,
@@ -457,15 +457,15 @@ function crowdMaterial(tex = null) {
     const sElb = pockets.mul(0.62).add(folded.mul(1.28)).add(texting.mul(1.6));
     const sTw = pockets.mul(0.32).add(folded.mul(1.05)).add(texting.mul(0.5));
     const armPose = isArm.mul(sel(pose.greaterThan(5.5), float(1), isR.mul(step(0.5, pose)))).mul(mix(float(1),brace,eq(pose,8)));
-    const aimP = eq(pose, 10);
+    const aimP = eq(pose, 10), holdP = eq(pose, 11);
     const pFlex = sel(eq(pose, 1).greaterThan(0.5), sin(t.mul(3.1)).mul(0.25).add(0.5), sel(eq(pose, 2).greaterThan(0.5), float(0.35), sel(eq(pose, 3).greaterThan(0.5), float(1.0),
-      sel(eq(pose, 4).greaterThan(0.5), float(0.2), sel(eq(pose, 5).greaterThan(0.5), float(1.45), sel(eq(pose, 6).greaterThan(0.5), float(0.3), sel(aimP.greaterThan(0.5), float(1.5), float(0.55))))))));
+      sel(eq(pose, 4).greaterThan(0.5), float(0.2), sel(eq(pose, 5).greaterThan(0.5), float(1.45), sel(eq(pose, 6).greaterThan(0.5), float(0.3), sel(aimP.greaterThan(0.5), float(1.5), sel(holdP.greaterThan(0.5), float(1.05), float(0.55)))))))));
     const pAbd = sel(eq(pose, 1).greaterThan(0.5), float(0.15), sel(eq(pose, 2).greaterThan(0.5), float(0.45), sel(eq(pose, 3).greaterThan(0.5), float(0.05),
-      sel(eq(pose, 4).greaterThan(0.5), float(2.5), sel(eq(pose, 5).greaterThan(0.5), float(0.1), sel(eq(pose, 6).greaterThan(0.5), float(2.7), sel(aimP.greaterThan(0.5), float(0.05), float(-0.32))))))));
+      sel(eq(pose, 4).greaterThan(0.5), float(2.5), sel(eq(pose, 5).greaterThan(0.5), float(0.1), sel(eq(pose, 6).greaterThan(0.5), float(2.7), sel(aimP.greaterThan(0.5), float(0.05), sel(holdP.greaterThan(0.5), float(0.08), float(-0.32)))))))));
     const pElb = sel(eq(pose, 1).greaterThan(0.5), sin(t.mul(2.3)).mul(0.2).add(1.3), sel(eq(pose, 2).greaterThan(0.5), float(2.55), sel(eq(pose, 3).greaterThan(0.5), float(1.05),
-      sel(eq(pose, 4).greaterThan(0.5), sin(t.mul(8)).mul(0.35).add(0.6), sel(eq(pose, 5).greaterThan(0.5), float(0.05), sel(eq(pose, 6).greaterThan(0.5), float(0.25), sel(aimP.greaterThan(0.5), float(0.12), float(1.7))))))));
+      sel(eq(pose, 4).greaterThan(0.5), sin(t.mul(8)).mul(0.35).add(0.6), sel(eq(pose, 5).greaterThan(0.5), float(0.05), sel(eq(pose, 6).greaterThan(0.5), float(0.25), sel(aimP.greaterThan(0.5), float(0.12), sel(holdP.greaterThan(0.5), float(0.85), float(1.7)))))))));
     let aFlex = mix(mix(gFlex, sFlex, st), pFlex, armPose), aAbd = mix(mix(gAbd, sAbd, st), pAbd, armPose), aElb = mix(mix(gElb, sElb, st), pElb, armPose);
-    let aTw = mix(sTw.mul(st), aimP.mul(0.3), armPose);
+    let aTw = mix(sTw.mul(st), aimP.mul(0.3).add(holdP.mul(0.35)), armPose);
     // reactions: both hands to the stomach, arms flung out (or thrown back), one arm flung by a round or holding a wound
     aFlex = mix(aFlex, float(0.36), clutch); aAbd = mix(aAbd, float(0.02), clutch); aElb = mix(aElb, float(1.4), clutch); aTw = mix(aTw, float(0.85), clutch);
     const flOut = max(flail, 0), flBack = max(flail.negate(), 0);
@@ -561,7 +561,14 @@ function crowdMaterial(tex = null) {
   const sideStripe = step(abs(rp.z.sub(0.0)), 0.012).mul(step(0.0, sideX)).mul(isArmF.add(isLegF).min(1));
   let topC = mix(topRaw, accC, max(opening.mul(openJacket), stripes.mul(striped)));
   topC = mix(topC, vec3(0.8), sideStripe.mul(tracksuit));
-  topC = mix(topC, mix(vec3(0.62, 0.7, 0.02), vec3(0.55), bands), hiVis);
+  // on duty, by service (the umbrella-colour slot, unused in uniform): police in yellow with silver bands; the fire
+  // brigade's tunic its own dark colour, banded yellow and silver; paramedics in yellow with green chequered bands
+  const fireKit = hiVis.mul(eq(umbI, 1)), medicKit = hiVis.mul(eq(umbI, 2));
+  const chequer = step(0.5, fract(rp.x.add(rp.z).mul(9).add(rp.y.mul(9))));
+  const bandC = mix(vec3(0.55), mix(vec3(0.62, 0.7, 0.02), vec3(0.03, 0.27, 0.09), chequer), medicKit);
+  topC = mix(topC, mix(vec3(0.62, 0.7, 0.02), bandC, bands), hiVis.sub(fireKit));
+  const fireBands = step(abs(rp.y.sub(1.0)), 0.03).add(step(abs(rp.y.sub(1.235)), 0.022)).min(1);
+  topC = mix(topC, mix(topC, mix(vec3(0.6), vec3(0.62, 0.62, 0.1), step(abs(rp.y.sub(1.0)), 0.012).add(step(abs(rp.y.sub(1.235)), 0.008)).min(1)), fireBands), fireKit);
   // clothing detail: zip, hem shadow, seams, knee wear on trousers, a hoodie's front pocket and cords
   const zip = front.mul(step(abs(rp.x), 0.004)).mul(step(0.96, rp.y)).mul(step(rp.y, 1.45)).mul(eq(region, 1)).mul(isTorsoF);
   const clothPixel = fwidth(rp.y).add(fwidth(rp.x)).add(fwidth(rp.z));
@@ -654,7 +661,7 @@ function crowdMaterial(tex = null) {
     sel(region.lessThan(6.5), float(0.3), sel(region.lessThan(7.5), float(0.28), sel(region.lessThan(12.5), float(0.6), sel(region.lessThan(13.5), float(0.45), float(0.85)))))))));
   m.metalnessNode = eq(region, 11).mul(0.9);
   // faint subsurface warmth on skin; retro-reflective bands glow under headlights at night
-  m.emissiveNode = lightPool(positionWorld).mul(col).add(skinD.mul(eq(region, 0)).mul(vec3(0.04, 0.015, 0.01))).add(vec3(0.4).mul(bands.mul(hiVis).mul(eq(region, 1)).mul(U.night)));
+  m.emissiveNode = lightPool(positionWorld).mul(col).add(skinD.mul(eq(region, 0)).mul(vec3(0.04, 0.015, 0.01))).add(vec3(0.4).mul(max(bands.mul(hiVis.sub(fireKit)), fireBands.mul(fireKit)).mul(eq(region, 1)).mul(U.night)));
   return m;
 }
 
@@ -724,7 +731,7 @@ function packStyle(L, a, out, o) {
   const helmet = !!a.hat;
   let flags = (helmet ? 1 : 0) | (a.pose === 'umbrella' ? 2 : 0) | (L.bag && !a.hiVis && !L.backpack ? 4 : 0) | (a.hiVis ? 8 : 0) | (L.cap && !helmet ? 16 : 0) | (L.hood ? 32 : 0);
   flags += 2048 * (a.hiVis ? 0 : (L.outfit ?? 0));
-  flags += 64 * ((L.shoe ?? 0) & 3) + 256 * (L.umbIdx ?? 0);
+  flags += 64 * ((L.shoe ?? 0) & 3) + 256 * (a.hiVis ? (a.uniform ?? 0) : (L.umbIdx ?? 0));   // in uniform: which service
   const face = (L.female ? 4 : 0) + ((L.face ?? 0) & 3);
   out[o] = style + face * 0.05; out[o + 1] = flags; out[o + 2] = L.h || 1; out[o + 3] = Math.min(0.999, Math.max(0, L.build ?? 0.35)) + (L.female ? 2 : 0);
 }
@@ -733,7 +740,7 @@ function packExtras(L, a, reacting, out, o) {
   let acc = 0;
   if (a.hiVis) acc = L.glasses ? ACC.glasses : 0;     // on duty: uniform only
   else {
-    const covered = a.hat || L.cap, handsBusy = a.pose === 'umbrella' || a.pose === 'phone' || a.pose === 'wave' || a.pose === 'point' || a.pose === 'hands' || a.pose === 'seated' || a.pose === 'aim';
+    const covered = a.hat || L.cap, handsBusy = a.pose === 'umbrella' || a.pose === 'phone' || a.pose === 'wave' || a.pose === 'point' || a.pose === 'hands' || a.pose === 'seated' || a.pose === 'aim' || a.pose === 'hold';
     if (L.glasses) acc |= ACC.glasses;
     if (L.beanie && !covered) acc |= ACC.beanie;
     if (L.backpack) acc |= ACC.backpack;
@@ -932,6 +939,8 @@ export function writeCrowdMember(S, i, a, citizen = false) {
     // knocked down by a car: onto their back
     if (a.fall > 0) fall = Math.min(0.999, a.fall);
     if (brace) drop = legDrop(0.3 * brace, 0.67 * brace) * (1 - fall);
+    // down on one knee, leaning in (a paramedic at someone's side, a firefighter at a wrecked car: emergency.js)
+    if (a.kneel) { const k = Math.min(1, Math.abs(a.kneel)); kneel = a.kneel; drop = Math.max(drop, 0.45 * k); rF += 0.3 * k; rHd -= 0.1 * k; }
     if (W) {
       // getting away hurt: hunched over a body wound, an arm across it, or a limp on a bad leg
       const k = Math.min(1, W.t / 0.4) * Math.max(0, Math.min(1, (W.life - W.t) / 2));

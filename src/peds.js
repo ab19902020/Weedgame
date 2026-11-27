@@ -131,8 +131,8 @@ export class Peds {
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
         const d = Math.hypot(p.x - focus.x, p.z - focus.z);
-        if ((!p.officer && d > KILL && !info.visible(p.x, p.y + 1, p.z, 1)) || p.gone) { this.list.splice(i, 1); this.queueRemove(p);
-          if(!p.gone && p.job && !p.officer){
+        if ((!p.officer && !p.carried && !p.awaitingMedic && d > KILL && !info.visible(p.x, p.y + 1, p.z, 1)) || p.gone) { this.list.splice(i, 1); this.queueRemove(p);
+          if(!p.gone && !p.dead && p.job && !p.officer){
             p.awaySince=G.time;p.leader=null;p.partner=null;p.stopIdx=null;
             this.residents.set(p.id,p);
             if(this.residents.size>400)this.residents.delete(this.residents.keys().next().value);
@@ -144,8 +144,12 @@ export class Peds {
       p.lastStepX = p.x; p.lastStepZ = p.z;
       p.t += dt;
       if (p.alpha < 1) p.alpha = Math.min(1, p.alpha + dt);
+      if (p.carried) continue;   // on a stretcher: the paramedics move them (emergency.js)
       if (p.impact) { this.updateImpact(p, dt); continue; }
-      if (p.awaitingMedic) { p.pose="brace"; p.speedNow=0; continue; }
+      // hurt and waiting for the ambulance (a crash, knocked down): lying on the ground until the paramedics come;
+      // if none can, they get up again slowly in the end
+      if (p.awaitingMedic) { p.pose = 'brace'; p.brace = 0.5; p.speedNow = 0; p.medicFall = true; p.fall = Math.min(0.999, (p.fall || 0) + dt * 0.9); continue; }
+      if (p.medicFall) { p.fall = Math.max(0, p.fall - dt * 0.7); p.pose = 'brace'; p.speedNow = 0; if (p.fall > 0) continue; p.medicFall = false; p.brace = 0; }
       if (p.wound) { p.wound.t += dt; if (p.wound.t > p.wound.life) p.wound = null; }
       if (p.reactT > 0) {
         // running off (a wound to the leg makes it a limp, one to the body a hunched jog)
@@ -505,6 +509,7 @@ export class Peds {
   // knocks them out. hitReactions.js draws the reaction; here the body is pushed and the person stops what they
   // were doing, then (if they can) runs from whoever did it
   hurt(p, dir, kind, dmg = 0, o = {}) {
+    if (p.carried) return;
     if (p.dead) { if (p.react) p.react.jolt = 0.2; return; }
     p.hp = (p.hp ?? 100) - dmg;
     const lethal = p.hp <= 0 && (kind === 'shot' || o.lethal);
@@ -522,6 +527,7 @@ export class Peds {
     if (!lethal && type !== 'shot') p.heading = dir + Math.PI;
     p.fallT = dur;
     if (lethal) { p.dead = true; p.deadT = 0; this.G.events?.emit('pedKilled', { p, by: o.by || null, how: o.how || kind }); }
+    else if (type === 'down' && p.hp <= 0 && !p.officer) this.G.events?.emit('casualty', { p, label: 'Assault · one unconscious' });   // knocked out cold
   }
   // a round that doesn't kill: how they take it depends on where it hit (o.zone head/torso/arm/leg, o.fromBack,
   // o.sideHit +1 their right) and then they run, limp or hunch off, or go down and lie there hurt for a while
@@ -559,9 +565,11 @@ export class Peds {
   updateImpact(p, dt) {
     const k = p.impact;
     k.elapsed = Math.min(k.duration, k.elapsed + dt);
+    if (!k.react && k.knockdown && p.awaitingMedic) k.elapsed = Math.min(k.elapsed, Math.max(0.5, k.duration - 1));   // down, waiting for the ambulance
     const t = k.elapsed;
     if (k.react && p.react) {
       const R = p.react; R.t += dt;
+      if (p.awaitingMedic && !R.dead && R.type === 'down') { R.lie = Math.max(R.lie ?? 0, R.t + 1); k.duration = Math.max(k.duration, k.elapsed + 2); }
       const drift = (1 - Math.exp(-4 * dt)) / 4;
       const x = p.x + k.vx * drift, z = p.z + k.vz * drift;
       if (!this.G.tiles.insideBuilding(x, z) && this.G.tiles.ground(x, z, p.y) != null) { p.x = x; p.z = z; this.ground(p); }
@@ -576,7 +584,7 @@ export class Peds {
       if (R.dead) {
         // a pool of blood spreads out from under the body once it's down
         if (!R.pooled && R.t > 1.1) { R.pooled = true; const fd = R.dir + (R.back >= 0 ? 0 : Math.PI); this.G.combat?.fx?.stain?.(p.x + Math.cos(fd) * 0.55, (this.G.tiles.ground(p.x, p.z, p.y + 0.5) ?? p.y) + 0.02, p.z + Math.sin(fd) * 0.55, 1.1 + this.rand() * 0.5); }
-        p.deadT += dt; if (p.deadT > 70 && !(this.info?.visible?.(p.x, p.y + 0.5, p.z, 1))) p.gone = true; return;
+        p.deadT += dt; if (p.deadT > 70 && !p.awaitingMedic && !(this.info?.visible?.(p.x, p.y + 0.5, p.z, 1))) p.gone = true; return;
       }
       if (p.fallT <= 0 && R.then === 'drop') {
         // the wound takes them down: they lie there hurt, writhing, then get up and limp or hunch away
@@ -584,6 +592,7 @@ export class Peds {
         p.react = { type: 'down', t: 0.05, dir: R.dir, s: 1, side: R.side, dead: false, lie, back, writhe: 1, zone: R.zone };
         p.impact = { elapsed: 0, duration: lie + 1.3, knockdown: true, vx: 0, vz: 0, react: true, from: k.from };
         p.fallT = lie + 1.3; if (p.wound) p.wound.life += lie;
+        if (!p.officer) this.G.events?.emit('casualty', { p, label: 'Shooting · one injured' });   // a 999 call: an ambulance for them
         return;
       }
       if (p.fallT <= 0) {

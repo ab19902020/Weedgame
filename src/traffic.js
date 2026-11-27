@@ -381,11 +381,13 @@ export class Traffic {
       v.stuck += dt;
       if (v.stuck > (v.siren ? 1 : 4)) this.tryPass(v, occ);
     } else { v.stuck = Math.max(0, v.stuck - dt); if (v.passing) { v.passT = (v.passT || 0) + dt; if ((gap > 18 && v.s > (v.passUntil ?? -1e9)) || v.passT > 7) { v.passing = false; v.latT = 0; v.passT = 0; } } }
-    // responding police: pull up ~10 m short of the scene when it lies ahead on this road
-    if (v.target && v.status === 'responding') {
-      for (let k = 0; k <= 90; k += 6) {
+    // responding police: pull up ~10 m short of the scene when it lies ahead on this road; a taxi picking up or
+    // dropping off (taxis.js): right at its spot
+    if (v.target && (v.status === 'responding' || v.status === 'pickup')) {
+      const cab = v.status === 'pickup', step = cab ? 1.5 : 6, near = cab ? 2.6 : 16, short = cab ? 0.5 : 10;
+      for (let k = 0; k <= 90; k += step) {
         const t = this.net.at(v.h, Math.min(L, v.s + k), this.tmp2 || (this.tmp2 = [0, 0, 0, 0, 0]));
-        if (Math.hypot(t[0] - v.target.x, t[2] - v.target.z) < 16) { stopAt = Math.min(stopAt, Math.max(0.5, k - 10)); break; }
+        if (Math.hypot(t[0] - v.target.x, t[2] - v.target.z) < near) { stopAt = Math.min(stopAt, Math.max(0.5, k - short)); break; }
         if (v.s + k >= L) break;
       }
     }
@@ -569,6 +571,7 @@ export class Traffic {
       if (l && l.some(o => Math.abs(o.s - s) < 14)) continue;
       const v = this.spawnAt(h, s);
       if (this.rand() < 0.5) { v.dest = Math.floor(this.rand() * net.nNodes); }
+      this.onSpawn?.(v);   // (taxis.js: some of them are cabs)
       count++;
     }
   }

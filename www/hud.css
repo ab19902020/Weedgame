@@ -265,3 +265,40 @@ body:has(#homeTV) #btns, body:has(#homeTV) #stickRest, body:has(#homeTV) #stickB
 #bigText[hidden]{display:none}
 #bigText.wasted{color:#d6392f}#bigText.busted{color:#f4f4f4}
 @keyframes bigin{from{opacity:0;transform:scale(1.25)}}
+/* ---------------------------------------------------------------- the phone (phone.js): Kerb rides, the atlas, the bank */
+#phone{position:fixed;right:max(14px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));z-index:9;width:min(252px,46vw);height:min(470px,calc(100vh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)));pointer-events:auto;font:14px system-ui,sans-serif;color:#eef3ef;filter:drop-shadow(0 10px 26px #000b)}
+#phone[hidden]{display:none}
+#phone .phFrame{box-sizing:border-box;height:100%;display:flex;flex-direction:column;background:#0b0f0e;border:2px solid #3b4442;border-radius:30px;padding:8px 8px 6px;overflow:hidden}
+#phone .phStatus{display:flex;justify-content:space-between;align-items:center;padding:2px 12px 6px;font:700 12px system-ui;color:#dfe7e3}
+#phone .phSig{display:flex;align-items:flex-end;gap:2px;font-size:10px;font-weight:600}#phone .phSig i{width:3px;background:#dfe7e3;border-radius:1px}
+#phone .phSig i:nth-child(1){height:4px}#phone .phSig i:nth-child(2){height:6px}#phone .phSig i:nth-child(3){height:8px}#phone .phSig i:nth-child(4){height:10px;opacity:.4}
+#phone .phScreen{flex:1;min-height:0;overflow:auto;border-radius:20px;background:linear-gradient(165deg,#1d3a30,#122520 55%,#0e1a17);scrollbar-width:thin}
+#phone .phNav{display:flex;justify-content:space-around;padding-top:6px}
+#phone .phNav button{background:none;border:0;color:#cfd8d4;font:600 12px system-ui;padding:6px 10px;border-radius:12px;min-height:32px}
+#phone button:focus-visible,#phone .phNav button:focus{outline:2px solid #7ef0b8;outline-offset:1px}
+#phone .phHello{padding:18px 16px 6px}#phone .phHello small{display:block;color:#a9c4b8;font-size:11px;text-transform:uppercase;letter-spacing:.06em}#phone .phHello strong{font-size:17px}
+#phone .phApps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px 6px;padding:14px 10px}
+#phone .phApp{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;border:0;color:#eef3ef;font:600 11px system-ui;padding:4px;border-radius:14px}
+#phone .phApp i{display:grid;place-items:center;width:50px;height:50px;border-radius:14px;background:#2a3d37;box-shadow:inset 0 1px 0 #ffffff1c}
+#phone .phApp svg{width:28px;height:28px;fill:currentColor}
+#phone .phApp.kerb i{background:linear-gradient(160deg,#25c47d,#118a57);color:#06150e}#phone .phApp.atlas i{background:linear-gradient(160deg,#f3e3b0,#c9a85b);color:#2a2414}
+#phone .phApp.radio i{background:linear-gradient(160deg,#ff8a5c,#c4462b)}#phone .phApp.bank i{background:linear-gradient(160deg,#6aa2ff,#2e5fc4)}
+#phone .phApp-head{position:sticky;top:0;z-index:1;display:flex;align-items:baseline;gap:8px;padding:14px 14px 10px;background:#0f201bf2;border-bottom:1px solid #ffffff14}
+#phone .phApp-head b{font:800 18px system-ui;letter-spacing:-.01em}#phone .phApp-head.kerb b{color:#3fe29a}#phone .phApp-head.bank b{color:#8cb6ff}
+#phone .phApp-head span{color:#b7cdc3;font-size:12px}#phone .phApp-head small{color:#8aa79a}
+#phone .phList{display:flex;flex-direction:column;padding:6px 8px 10px;gap:3px}
+#phone .phRow{display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;background:#ffffff0d;border:0;border-radius:11px;color:#eef3ef;font:600 13px system-ui;padding:10px 11px;min-height:40px}
+#phone .phRow em{font-style:normal;color:#9fc0b1;font-size:11px;white-space:nowrap}#phone .phRow span{overflow:hidden;text-overflow:ellipsis}
+#phone .phRow.dim{background:none;color:#b8c9c1;font-weight:500}
+#phone .phQuote{display:flex;flex-direction:column;gap:9px;padding:16px 14px}
+#phone .phQuote>small{color:#9fc0b1;font-size:11px;text-transform:uppercase;letter-spacing:.06em}#phone .phQuote>strong{font-size:17px;line-height:1.2}
+#phone .phFacts{display:flex;gap:8px;flex-wrap:wrap}#phone .phFacts span{background:#ffffff12;border-radius:8px;padding:4px 8px;font-size:12px}
+#phone .phFare{font:800 30px system-ui;color:#3fe29a}#phone .phFare small{display:block;font:500 11px system-ui;color:#a9c4b8}
+#phone .phGo{background:#25c47d;color:#04140c;border:0;border-radius:14px;font:800 15px system-ui;padding:12px;min-height:46px}
+#phone .phGo.ghost{background:#ffffff14;color:#eef3ef}#phone .phGo:disabled{background:#3a4a44;color:#93a59d}
+#phone .phDriver{display:grid;grid-template-columns:1fr auto;gap:2px 8px;background:#ffffff10;border-radius:12px;padding:10px}
+#phone .phDriver b{font-size:16px}#phone .phDriver span{grid-column:1;color:#b7cdc3;font-size:12px}
+#phone .phDriver code{grid-column:2;grid-row:1/3;align-self:center;background:#f3d43d;color:#111;border-radius:4px;padding:4px 6px;font:800 12px ui-monospace,monospace}
+#phone .phLine{margin:2px 0;color:#dfe9e4;line-height:1.35}#phone .phNote{margin:6px 14px;color:#b7cdc3;font-size:12px;line-height:1.4}#phone .phNote.warn{margin:0;color:#ffcf8a}
+#phone .phStars{color:#f3d43d;font-size:20px;letter-spacing:4px}
+@media (max-height:420px){#phone{width:min(236px,44vw)}#phone .phApp i{width:42px;height:42px}#phone .phHello{padding:10px 14px 2px}}

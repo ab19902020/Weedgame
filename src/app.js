@@ -20,6 +20,9 @@ import { Neighbourhood } from './neighbourhood.js';
 import { Peds } from './peds.js';
 import { Police } from './police.js';
 import { Wanted } from './wanted.js';
+import { Emergency } from './emergency.js';
+import { Taxis } from './taxis.js';
+import { Phone } from './phone.js';
 import { Parking, Buses } from './services.js';
 import { Atmos } from './atmos.js';
 import { Landmarks } from './landmarks.js';
@@ -101,11 +104,15 @@ G.vehicleRenderer.heroCars = G.heroCars = new HeroCars(G.scene);   // the brothe
 G.people = new People(G.scene, G.renderer.shadowMap.enabled);
 G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
 G.peds = new Peds(G);
+// what the camera can see (filled in each frame; the police, taxis and wildlife keep out of view when they appear)
+const camInfo = { night: 0, rain: 0, hour: 12, visible: (x, y, z, r) => { sph.center.set(x,y,z); sph.radius = r+2; return frustum.intersectsSphere(sph); } };
 G.police = new Police(G);
 G.wanted = new Wanted(G, camInfo);   // coming after you, only for a killing (wanted.js; updated from police.update)
 G.cones = new Cones(G);              // traffic cones at police scenes (cones.js)
 G.haptics = new Haptics(G);          // controller rumble and DualSense triggers (haptics.js)
 G.neighbourhood=new Neighbourhood(G);
+G.emergency = new Emergency(G);      // ambulances and fire engines, all over the map (emergency.js)
+G.taxis = new Taxis(G, camInfo);      // cabs on the streets and Kerb rides (taxis.js)
 G.parking = new Parking(G);
 G.buses = new Buses(G);
 G.transit = new Transit(G);
@@ -128,7 +135,6 @@ G.districtAt = (x, z) => { let best = null, bd = 1e9; for (const d of districts)
 G.districtName = (x, z) => { const d = G.districtAt(x, z); if (!d) return 'Berkshire'; const k = Math.hypot(x - d.x, z - d.z) / d.r; return k < 1.25 ? d.name : k < 4 ? 'near ' + d.name : 'Berkshire'; };
 G.roadName = (x, z) => { const n = G.net.nearest(x, z, 30, e => !!G.net.roadName(e)); return n ? G.net.roadName(n.e) : ''; };
 const frustum = new THREE.Frustum(), pm = new THREE.Matrix4(), sph = new THREE.Sphere();
-const camInfo = { night: 0, rain: 0, hour: 12, visible: (x, y, z, r) => { sph.center.set(x,y,z); sph.radius = r+2; return frustum.intersectsSphere(sph); } };
 G.wildlife = new Wildlife(G, camInfo);   // wildlife, farm animals and pets: dogs out with their people, cats (wildlife.js)
 function kerbPlace(x, z, filter) {
   const n = G.net.nearest(x, z, 200, filter || (e => (G.net.flags[e] & 16) && !/primary|trunk|motorway/.test(G.net.classes[G.net.cls[e]])));
@@ -155,6 +161,7 @@ G.teleport = (x, z, heading) => {
 const init = G.save.initialBrothers(START);
 G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
+G.phone = new Phone(G);              // the phone: Kerb, the atlas, the radio (phone.js)
 G.controller=new Controller(G);
 G.radio = new GameRadio(G);
 G.combat = new Combat(G);                 // weapons, fists, the brothers' arms (combat.js)
@@ -255,7 +262,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
+  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt) && !G.taxis.ride(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
   G.focus.x = me.x; G.focus.z = me.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   // (four times a second, squared distances: it ran over every signal head in the loaded world every frame)
@@ -292,6 +299,8 @@ function step(dt, render) {
   G.haptics.update(dt);
   G.trains.update(dt);
   G.neighbourhood.update(dt);
+  G.emergency.update(dt);
+  G.taxis.update(dt);
   G.atmos.updateCover(me.x, me.z);
   G.atmos.updateLights(me.x, me.z);
   G.atmos.updateNearLights(G.camera.position);
@@ -308,10 +317,11 @@ function step(dt, render) {
   // draw dynamic actors
   G.transit.syncCabins(dt);
   if(G.transit.ride)G.transit.riderView(dt,G.transit.riderLook||{dx:0,dy:0});
+  if (G.taxis.riding) G.taxis.view(dt);   // in the back of a cab
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.budget.vehicleDist);
   G.trains.draw(cam, Math.max(600, G.budget.vehicleDist * 2));
-  const actors = [B.actor[B.active], ...G.transit.people, ...G.neighbourhood.actors, ...G.interiors.people]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
+  const actors = [B.actor[B.active], ...G.transit.people, ...G.neighbourhood.actors, ...G.emergency.actors, ...G.interiors.people]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
   const rigs = G.people.rigs;
   if (rigs.previewRole) {
     const heading = B.cam.yaw;
@@ -325,6 +335,7 @@ function step(dt, render) {
   G.signalRenderer.draw(cam, G._groundAt ||= (x, z) => G.tiles.ground(x, z), G.time);
   G.lampGlow.update();
   G.hud.update(dt);
+  G.phone.update(dt);
   G.audio.update(dt, G);
   G.updateLighting(); G.placeSun(me.x, me.y, me.z);
   G.U.t.value = G.time;
