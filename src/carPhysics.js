@@ -29,6 +29,7 @@
 // shader turns into crumpled panels, broken lights and cracked glass. Heavy front damage costs power
 // and pulls the steering.
 import { breaks } from './breakSpec.js';
+import { wheelPose } from './drivingSurface.js';
 import { MODELS } from './vehicles.js';
 import { pointInRing } from './tiles.js';
 
@@ -226,7 +227,9 @@ export class CarDynamics {
       // the grip allows, plus their working slip), so a full-lock swipe at speed turns as hard as the car can
       // instead of scrubbing the front or snapping the tail
       if (u > 6) { const dg = P.wb * muS * G0 * 0.95 / (u * u) + 0.09; maxSteer += (Math.min(maxSteer, dg) - maxSteer) * Math.min(1, A * 1.2); }
-      steerT = ctl.steer * maxSteer;
+      // Preserve parking lock while making small motorway corrections more progressive.
+      const precision = 0.26 * Math.min(1, speed / 18) * A;
+      steerT = ctl.steer * (1 - precision + precision * Math.abs(ctl.steer)) * maxSteer;
       // counter-steer assist: steer into a slide (not while the handbrake is held, so handbrake turns still work). The
       // slide is the rear tyres' own slip beyond their working angle, not the body's angle to its path (in a tight
       // turn at walking pace that is geometry, and steering into it wound the lock on past full)
@@ -236,9 +239,11 @@ export class CarDynamics {
       }
       steerT += ((dmg[3] - dmg[2]) * 0.05 + Math.max(dmg[0] - 0.5, 0) * 0.03) * Math.min(1, speed / 10);   // bent steering pulls
       // the wheel turns quickly at parking speeds and more calmly at speed, and comes back to centre faster
-      const back = Math.abs(steerT) < Math.abs(ph.steer) - 1e-3;
+      const crossingCentre = steerT * ph.steer < 0;
+      const back = crossingCentre || Math.abs(steerT) < Math.abs(ph.steer) - 1e-3;
       const rate = 3.2 / (1 + Math.max(0, u) / (16 + 14 * (1 - A))) * (back ? 1.7 : 1);
-      ph.steer += Math.max(-rate * h, Math.min(rate * h, steerT - ph.steer));
+      const target = crossingCentre ? 0 : steerT;
+      ph.steer += Math.max(-rate * h, Math.min(rate * h, target - ph.steer));
     } else {
       // driverless: parked cars sit on their handbrake and in gear, crashed traffic on the footbrake
       brk = v.parked ? 0.75 : 0.85; hb = !!v.parked; ph.steer *= 0.9;
@@ -325,6 +330,8 @@ export class CarDynamics {
     const Fy = FxF * sd + FyF * cd + FyR;
     let Mz = P.a * (FxF * sd + FyF * cd) - P.b * FyR;
     Fx -= P.kd * u * Math.abs(u) * (1 + (dmg[0] + dmg[1]) * 0.3) + (Math.abs(u) > 0.05 ? sgnU * ph.crr * mg : 0);
+    // Measured Berkshire slopes influence the car gently; keep the existing easy handling.
+    if(Math.abs(u)>0.5 || Math.abs(thr)>0.05)Fx -= mg * Math.max(-0.20,Math.min(0.20,ph.groundGrade || 0)) * 0.55;
     // stability control: the yaw rate the steering asks for (a steady turn of a car that understeers a little),
     // no faster than the grip allows; turning faster than that, or the wrong way, is pulled back as braking the
     // outside front wheel would, and the engine is eased (traction control reads ph.esc next step)
@@ -349,11 +356,15 @@ export class CarDynamics {
     if (speed < 0.6 && thr === 0) ph.w *= 0.85;
     if (speed < 0.12 && thr === 0 && (brk > 0 || hb || !ctl)) { ph.vx *= 0.5; ph.vz *= 0.5; }
     // move the centre of gravity, then the body centre with it
-    const cgx = P.cgx;
+    const cgx = P.cgx, oldX=v.x, oldZ=v.z, oldHeading=v.heading;
     let gx = v.x + fx * cgx, gz = v.z + fz * cgx;
     gx += ph.vx * h; gz += ph.vz * h;
     v.heading += ph.w * h;
     v.x = gx - Math.cos(v.heading) * cgx; v.z = gz - Math.sin(v.heading) * cgx;
+    // Do not drive into missing world geometry when streaming stalls or at the map edge.
+    if(this.G.tiles.vehicleGround && !this.G.tiles.tileAt(v.x,v.z)){
+      v.x=oldX;v.z=oldZ;v.heading=oldHeading;ph.vx=ph.vz=ph.w=0;
+    }
     // smoothed local accelerations (load transfer next step; body pitch and roll)
     ph.ax += (ax - ph.ax) * Math.min(1, h * 12);
     ph.ay += (ay - ph.ay) * Math.min(1, h * 12);
@@ -580,11 +591,20 @@ export class CarDynamics {
     const G = this.G, fx = Math.cos(v.heading), fz = Math.sin(v.heading), rx = -fz, rz = fx;
     const a = P.wb / 2, w = P.W / 2 - 0.1, o = P.d.wx || 0;
     const cx = v.x + fx * o, cz = v.z + fz * o;
-    const yf = G.tiles.ground(cx + fx * a, cz + fz * a, v.y + 0.5) ?? v.y, yb = G.tiles.ground(cx - fx * a, cz - fz * a, v.y + 0.5) ?? v.y;
-    const yl = G.tiles.ground(cx + rx * w, cz + rz * w, v.y + 0.5) ?? v.y, yr = G.tiles.ground(cx - rx * w, cz - rz * w, v.y + 0.5) ?? v.y;
-    const ty = (yf + yb + yl + yr) / 4;
-    v.y += (ty - v.y) * Math.min(1, dt * 14);
-    v.pitch = Math.atan2(yf - yb, 2 * a); v.roll = Math.atan2(yl - yr, 2 * w) * 0.6;
+    const sample=(x,z,ref)=>G.tiles.vehicleGround ? G.tiles.vehicleGround(x,z,ref) : G.tiles.ground(x,z,ref);
+    const contact=(f,r)=>{
+      // Predict this wheel's elevation from the previous pose: a ramp and a deck
+      // can overlap in plan, so all four wheels must stay on the correct level.
+      const ref=v.y+(o+f)*Math.tan(v.pitch||0)+r*Math.tan(v.roll||0);
+      return sample(cx+fx*f+rx*r,cz+fz*f+rz*r,ref) ?? ref;
+    };
+    const fl=contact(a,w),fr=contact(a,-w),rl=contact(-a,w),rr=contact(-a,-w);
+    const pose=wheelPose(fl,fr,rl,rr,sample(v.x,v.z,v.y),Math.max(0.2,a),Math.max(0.15,w),o);
+    const ty=pose.y;
+    if(ty>=v.y || v.y-ty<0.5){v.y=ty;ph.fallV=0;}
+    else {ph.fallV=Math.min(25,(ph.fallV||0)+9.81*dt);v.y=Math.max(ty,v.y-ph.fallV*dt);}
+    v.pitch=pose.pitch;v.roll=pose.roll;
+    ph.groundGrade=(ph.groundGrade||0)+(Math.max(-0.2,Math.min(0.2,pose.grade))-(ph.groundGrade||0))*Math.min(1,dt*8);
     const u = ph.vx * fx + ph.vz * fz;
     v.sp = u; v.v = Math.abs(u);
     v.spin = ((v.spin || 0) + (ph.hb ? 0 : u) * dt / P.wr) % (Math.PI * 2);

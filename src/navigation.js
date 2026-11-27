@@ -95,7 +95,7 @@ export class Navigation {
     const turn=this.route.turns.find(t=>t.d>this.progress+3) || this.route.turns.at(-1);
     return turn.cue+' in '+distanceLabel(Math.max(0,turn.d-this.progress))+(turn.name?' · '+turn.name:'');
   }
-  draw(c,X,Z,unit=1) {
+  draw(c,X,Z,unit=1,rotation=0) {
     if (!this.pin) return;
     c.save();
     if (this.route) {
@@ -110,8 +110,8 @@ export class Navigation {
       c.strokeStyle=this.colour || '#5df4c2';c.lineWidth=4*unit;c.stroke();
     }
     const x=X(this.pin.x),z=Z(this.pin.z);
-    c.translate(x,z);c.scale(unit,unit);c.fillStyle='#ff785d';c.strokeStyle='#31241e';c.lineWidth=2;
+    c.translate(x,z);c.rotate(rotation);c.scale(unit,unit);c.fillStyle='#30414f';c.strokeStyle='#fff4c6';c.lineWidth=2;
     c.beginPath();c.moveTo(0,0);c.bezierCurveTo(-2,-4,-9,-9,-9,-14);c.arc(0,-14,9,Math.PI,0);c.bezierCurveTo(9,-9,2,-4,0,0);c.fill();c.stroke();
-    c.fillStyle='#fff6dc';c.beginPath();c.arc(0,-14,3,0,Math.PI*2);c.fill();c.restore();
+    c.strokeStyle='#ffde88';c.lineWidth=2;c.strokeRect(-3.6,-17.6,7.2,7.2);c.fillStyle='#ffde88';c.fillRect(-3.6,-17.6,3.6,3.6);c.fillRect(0,-14,3.6,3.6);c.restore();
   }
 }

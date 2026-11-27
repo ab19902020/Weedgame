@@ -243,6 +243,14 @@ body:has(#homeTV) #btns, body:has(#homeTV) #stickRest, body:has(#homeTV) #stickB
 #homeTV.watchFull video { width:100%; height:calc(100% - 90px); object-fit:contain; }
 #homeTV video[hidden] { display:none; }
 
+#miniC{border:2px solid #e2e6d3;box-shadow:0 0 0 3px #19313c,0 0 0 4px #6d8b8c,0 4px 14px #061820aa}
+#road,#guidance{background:linear-gradient(110deg,#132e38f7,#233c43ec);border-left-color:#8be4cf;border-radius:3px 8px 8px 3px}
+#map .mapDirectory{background:linear-gradient(120deg,#19343df7,#10252ef7);border-color:#91aaa7;border-radius:12px;box-shadow:0 6px 22px #10282f55}
+#map #mKinds button{display:inline-flex;align-items:center;gap:7px;flex:none;padding:0 11px}
+#mKinds canvas{width:22px;height:22px}
+#map #mKinds button[aria-pressed=true]{background:#29494e;color:#fff1bc}
+#map .placeDetail #mGo{border-radius:7px;background:#ffdf92;color:#223335}
+
 /* wanted level and health (wanted.js): under the minimap */
 #lawBar{display:flex;align-items:center;gap:6px;margin-top:4px;width:var(--mini-size,150px)}
 #hpBar{flex:1;min-width:40px;height:6px;background:#0009;border-radius:3px;overflow:hidden;box-shadow:0 0 0 1px #000a}

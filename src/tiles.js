@@ -4,6 +4,7 @@ import * as THREE from 'three/webgpu';
 import { atlasData, atlasTex, ATLAS_N } from './env.js';
 import { terrainMaterial, groundMaterial, markingMaterial, structMaterial, buildingMaterial, treeMaterials, lampMaterial, waterMaterial } from './materials.js';
 import { crownGeometry, trunkGeometry } from './vegetation.js';
+import { buildSurfaceIndex, sampleSurfaces, chooseSurface, terrainMeshHeight } from './drivingSurface.js';
 
 const TILE = 256, NT = 65;
 
@@ -398,6 +399,21 @@ export class Tiles {
     const t = this.tileAt(x, z); if (!t) return 0;
     const lx = Math.floor((x - t.data.ox) / 2), lz = Math.floor((z - t.data.oz) / 2);
     return t.data.lc[Math.min(127, Math.max(0, lz)) * 128 + Math.min(127, Math.max(0, lx))];
+  }
+  // Exact vehicle contact with the streamed mesh, including decks owned by adjacent tiles.
+  vehicleGround(x,z,ref) {
+    const t=this.tileAt(x,z); if(!t)return null;
+    const candidates=this._vehicleSurfaces ||= []; candidates.length=0;
+    for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++){
+      const q=this.byNum?.get((t.ix+dx)*100003+t.iz+dz);if(!q)continue;
+      const index=q.driveSurface ||= buildSurfaceIndex(q.data);
+      sampleSurfaces(index,x-q.data.ox,z-q.data.oz,candidates);
+    }
+    const ground=terrainMeshHeight(t.data.terrain,x-t.data.ox,z-t.data.oz) ?? this.terrain(x,z);
+    // Distant low-LOD tiles omit the detailed road polygons. Use the network only
+    // as a fallback there, not over an actual kerb or rendered deck in the near ring.
+    if(t.lod!==0 && !candidates.length)return this.ground(x,z,ref);
+    return chooseSurface(ground,candidates,ref);
   }
   // walkable/drivable surface height near current y (handles bridges/flyovers)
   ground(x, z, curY = null) {

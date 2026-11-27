@@ -20,6 +20,7 @@ from shapely.ops import unary_union
 from PIL import Image, ImageDraw
 sys.path.insert(0, os.path.dirname(__file__))
 from geo import E0, N0, K, TILE, lls_to_world, ll_to_world, world_to_bng
+from building_finish import finish_code
 
 DATA, OUT = sys.argv[1], sys.argv[2]
 T0 = time.time()
@@ -886,7 +887,7 @@ for k, (oid, p, t) in enumerate(bpolys):
     shop = 1 if (t.get('shop') or t.get('amenity') in ('cafe', 'pub', 'restaurant', 'fast_food', 'bank')) else 0
     rec = dict(oid=oid, poly=p, base=base, low=low, wall=round(wall, 2), roof=roof, rh=round(rh, 2), rr=roofrect,
                cls=cls_code, lv=int(lv), shop=shop, name=t.get('name', ''), hsrc=hsrc,
-               colour=t.get('building:colour', ''), rcolour=t.get('roof:colour', ''), mat=t.get('building:material', ''),
+               colour=t.get('building:colour', ''), rcolour=t.get('roof:colour', ''), mat=t.get('building:material', ''), finish=finish_code(t),
                landmark=t.get('name', '') in landmark_names, dist=dist)
     bldg_records[(tx, tz)].append(rec)
 log('building records', sum(len(v) for v in bldg_records.values()))
@@ -1359,7 +1360,7 @@ def build_tile(ix, iz):
                 if recs[k]['poly'].distance(Point(x, z)) < 2.5:
                     recs[k]['shop'] = 1
                     break
-    bc, br, bp, bm, bnames = [], [], [], [], []
+    bc, br, bp, bm, bnames, bstyles = [], [], [], [], [], []
     for r in recs:
         rings = poly_rings(r['poly'].simplify(0.15))
         if not rings:
@@ -1375,10 +1376,11 @@ def build_tile(ix, iz):
         bm.append([r['base'] - hmin, r['low'] - hmin, r['wall'], r['roof'], r['rh'], rr[0] - ox, rr[1] - oz, rr[2], rr[3], rr[4],
                    r['cls'], r['lv'], r['shop'], h32(r['oid']) % 997, 1 if r['landmark'] else 0,
                    {'tag:height': 2, 'tag:levels': 1, 'inferred': 0}[r['hsrc']]])
-        bnames.append(r['name'])
+        bnames.append(r['name']); bstyles.append(r['finish'])
     A['bC'] = np.concatenate(bc).ravel() if bc else np.zeros(0, np.int16)
     A['bR'] = np.array(br, np.uint16); A['bP'] = np.array(bp, np.uint8)
     A['bM'] = np.array(bm, np.float32).ravel() if bm else np.zeros(0, np.float32)
+    A['bStyle'] = np.array(bstyles, np.uint16) # optional finish metadata, same order as bM
     # shop signs: attach named POIs to the nearest building edge facing a road
     signs, stext = [], []
     if poitree is not None and recs:

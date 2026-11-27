@@ -3,6 +3,7 @@ import './fastmath.js';   // first: a non-allocating Math.hypot for everything a
 import * as THREE from 'three/webgpu';
 import { boot } from './main.js';
 import { Controller } from './controller.js';
+import { GameRadio } from './radio.js';
 import { CarDynamics } from './carPhysics.js';
 import { TyreFx } from './skidmarks.js';
 import { Breakables } from './breakables.js';
@@ -155,6 +156,7 @@ const init = G.save.initialBrothers(START);
 G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
 G.controller=new Controller(G);
+G.radio = new GameRadio(G);
 G.combat = new Combat(G);                 // weapons, fists, the brothers' arms (combat.js)
 G.people.rigs.onHero = (slot, a, dt) => G.combat.pose(slot, a, dt);
 // the brothers' own cars are Range Rovers (older saves had a hatch and an estate under these ids)
@@ -224,8 +226,9 @@ function frame(time) {
   const elapsed = now-last;
   let dt = Math.min(.1,elapsed/1000); last = now;
   G._renderMs = elapsed;
+  G.radio.update();
   G.controller.poll(dt);
-  if (!G.hud.menu.el.hidden || document.hidden) { G._ema = 0; G._resT = 0; tuning.quiet = 0; return; }
+  if (G.radio.opened || !G.hud.menu.el.hidden || document.hidden) { G._ema = 0; G._resT = 0; tuning.quiet = 0; return; }
   // a pub game on screen: the world waits (and the phone gets all its time for the game)
   if (G.interiors?.games?.open) { last = now; return; }
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));

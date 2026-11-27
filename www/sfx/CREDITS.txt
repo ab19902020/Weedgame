@@ -268,3 +268,11 @@ fleet.ogg — recordings edited to mono, trimmed, level matched and encoded as V
 https://github.com/OpenTTD/OpenSFX/blob/master/src/opensfx.psfo
 https://creativecommons.org/licenses/by/3.0/
 https://creativecommons.org/publicdomain/zero/1.0/
+
+passing-engine.ogg — Racing car engine sound loops, loop_0.wav, OpenGameArt, CC0.
+https://opengameart.org/content/racing-car-engine-sound-loops
+room-tone.ogg — Residential kitchen roomtone, refrigerator fridge hum.wav, SpliceSound, CC0.
+https://freesound.org/people/SpliceSound/sounds/338115/
+Game edits: engine loop converted to mono Vorbis; room recording trimmed, filtered, levelled and faded for looping.
+garden-bird.ogg — blackbird-evening.wav, echobones, CC0. Llandudno garden recording, excerpted and faded.
+https://freesound.org/people/echobones/sounds/521558/

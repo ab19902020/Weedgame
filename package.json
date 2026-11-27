@@ -15,7 +15,8 @@
   "test:play": "node tools/test/playability.mjs",
   "test:wanted": "node tools/test/wanted.mjs /tmp",
   "rail": "node --no-warnings tools/rail/build_rail.mjs",
-  "stops": "node --no-warnings tools/roads/stops.mjs"
+  "stops": "node --no-warnings tools/roads/stops.mjs",
+  "audit:roads": "ROAD_SURFACE=1 ROAD_REPORT=road-audit.json node tools/test/workerAudit.mjs"
  },
  "devDependencies": {
   "esbuild": "0.25.10",

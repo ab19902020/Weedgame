@@ -341,12 +341,12 @@ function house(P, s) {
   const kind = s.kind, trap = kind === 'trap', nice = kind === 'nice', cottage = kind === 'cottage';
   const wide = W >= 8.5;
   const sw = 0.92, hw = W < 5.2 ? 1.7 : 1.85;
-  const hx0 = wide ? clamp(s.doorX - (sw + hw) / 2, 2.4, W - hw - 2.4) : 0;
-  P.site.doorX = hx0 + (sw + hw) / 2;
+  const hx0 = s.brothersHome ? W - hw - 3.0 : wide ? clamp(s.doorX - (sw + hw) / 2, 2.4, W - hw - 2.4) : 0;
+  if (!s.brothersHome) P.site.doorX = hx0 + (sw + hw) / 2;
   P.exit.x = P.site.doorX;
   // the back of the house needs 2.45 m upstairs (a landing and the bathroom): the flight starts 0.5-0.95 m in
   const st = stairsFit(P, fh, D - 2.45 - 0.2 - 0.5 + 0.2);
-  const ys0 = clamp(D - 2.45 - 0.2 - st.len, 0.5, 0.95);
+  const ys0 = s.brothersHome ? 1.85 : clamp(D - 2.45 - 0.2 - st.len, 0.5, 0.95);
   const ys1 = ys0 + st.len, yh = ys1 + 0.2;
   // party walls: terraces both sides, semis one (the side away from the hall)
   if (kind === 'terrace') { P.party.add('x0'); P.party.add('x1'); }
@@ -357,12 +357,12 @@ function house(P, s) {
   const feature = trap ? null : R() < 0.5 ? ['wallpaper', pick(R, [0xb7c4cf, 0xd9c7a7, 0x9cae9a, 0xc9a5a0, 0x6f7f95, 0xe6dccb])] : null;
   const carpet = trap ? pick(R, [0x6f6556, 0x6b5f60, 0x5f5c52]) : pick(R, CARPET);
   const woodFloor = !trap && (nice || cottage || R() < 0.45);
-  const wood = nice ? 0xf0dcc0 : pick(R, WOOD);
+  const wood = s.brothersHome ? 0xcfad84 : nice ? 0xf0dcc0 : pick(R, WOOD);
   const units = trap ? [0xe8e3d6, 'tired white'] : nice ? pick(R, [[0x2e3d55, 'navy'], [0x8fa38c, 'sage shaker'], [0xf4f4f1, 'white gloss']]) : pick(R, UNITS);
   const kitchenFloor = trap ? ['tile', 0xb8ab94] : nice ? ['tile', 0xd8d2c8] : pick(R, [['tile', 0xe4e0d8], ['tile', 0xc9c2b4], ['wood', 0xd9c09c], ['tile', 0x9a9a98]]);
   P.style = { paint, paint2, carpet, units: units[1], trap, nice };
   const living = woodFloor ? ['wood', wood] : ['carpet', carpet];
-  const wallL = feature && R() < 0.5 ? ['wallpaper', feature[1]] : ['plaster', paint];
+  const wallL = s.brothersHome ? ['plaster', 0xcbd6c9] : feature && R() < 0.5 ? ['wallpaper', feature[1]] : ['plaster', paint];
   // ---- ground floor
   const g = P.level(fh - 0.22);
   const hall = P.room(g, 'hall', hx0, 0, hx0 + hw, yh, { floor: trap ? ['carpet', 0x5f574b] : woodFloor ? living : ['tile', 0xb9b0a2], wall: ['plaster', paint2], windows: 0 });
@@ -376,7 +376,8 @@ function house(P, s) {
     P.room(g, 'dining', 0, yh, W, yh + back * 0.45, { group: openPlan ? 'kd' : 'dining', floor: living, wall: ['plaster', paint2] });
     P.room(g, 'kitchen', 0, yh + back * 0.45, W, D, { group: openPlan ? 'kd' : 'kitchen', floor: kitchenFloor, wall: ['plaster', paint2] });
   } else P.room(g, 'kitchen', 0, yh, W, D, { floor: kitchenFloor, wall: ['plaster', paint2], winW: 1.3 });
-  P.door(g, 'hall', 'living', { at: wide ? yh - 1.2 : clamp(1.7, 0.6, yh - 0.6) });
+  if (s.brothersHome) P.arch(g, 'living', 'kitchen', { at: s.doorX, w: 1.8 });
+  P.door(g, 'hall', 'living', { at: s.brothersHome ? 0.88 : wide ? yh - 1.2 : clamp(1.7, 0.6, yh - 0.6) });
   if (wide) P.door(g, 'hall', 'dining', { at: yh - 1.2 });
   const kitchenBehind = back >= 4.8 && !wide ? 'dining' : 'kitchen';
   P.door(g, 'hall', kitchenBehind, { at: hx0 + sw + (hw - sw) / 2 });
@@ -418,7 +419,7 @@ function furnishHouse(P, s) {
   const sofa = trap ? pick(R, [0x5b4a3e, 0x3d3a3a, 0x6a5b4c]) : pick(R, SOFA);
   // living room: the sofa facing the TV across the room, coffee table, armchair, rug, a lamp, plants
   if (L) {
-    const tvSide = L.x1 - L.x0 > L.y1 - L.y0 ? (R() < 0.5 ? 'x0' : 'x1') : 'y1';
+    const tvSide = s.brothersHome ? 'y1' : L.x1 - L.x0 > L.y1 - L.y0 ? (R() < 0.5 ? 'x0' : 'x1') : 'y1';
     const longW = tvSide[0] === 'x' ? L.y1 - L.y0 : L.x1 - L.x0;
     const sw = clamp(longW * 0.55, 1.6, nice ? 3.0 : 2.3);
     const layout = livingWalls(P, g, L, tvSide, sw, clamp(sw * 0.7, 1.0, 1.8));
@@ -426,6 +427,7 @@ function furnishHouse(P, s) {
     const tvU = wallItem(P, g, L, layout.side, 'tvunit', layout.tv, 0.42, 0.5, { col: trap ? 0x2c2a28 : pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58, 0x55585c]) });
     // (the brothers' own: a big 16:9 set, about 90 inches, black until it's switched on: homeTV.js)
     if (tvU) P.add(g, 'tv', tvU.x, tvU.y, s.brothersHome ? 2.0 : trap ? 1.45 : nice ? 1.6 : 1.15, 0.08, s.brothersHome ? 1.13 : 0.7, { rot: tvU.rot, base: 0.5, solid: false, dark: !!s.brothersHome });
+    if(tvU)P.add(g,'radio',tvU.x-.35*Math.cos(tvU.rot),tvU.y-.35*Math.sin(tvU.rot),.24,.16,.15,{base:.5,rot:tvU.rot,solid:false});
     if(s.brothersHome && tvU)P.add(g,'box',tvU.x+.55*Math.cos(tvU.rot),tvU.y+.55*Math.sin(tvU.rot),.26,.21,.065,{base:.5,col:0x21252c,rot:tvU.rot,solid:false});
     const so = wallItem(P, g, L, opp, nice ? 'sofaL' : 'sofa', layout.sofa, 0.92, 0.85, { col: sofa, col2: trap ? 0x4a3d32 : null, worn: trap });
     if (so && tvU) {
@@ -437,6 +439,10 @@ function furnishHouse(P, s) {
     if (!trap) { wallItem(P, g, L, pick(R, sides), 'plant', 0.45, 0.45, 1.1, { at: R(), solid: true }); wallItem(P, g, L, pick(R, sides), 'lamp', 0.35, 0.35, 1.55, { at: R() < 0.5 ? 0.05 : 0.95 }); }
     // the chimney breast: a fireplace with a mirror over it on one of the side walls, a clock
     if (!trap) { const fs = sides.filter(x => x !== tvSide && x !== opp && x !== 'y0'); wallItem(P, g, L, fs.length ? pick(R, fs) : pick(R, sides.filter(x => x !== tvSide && x !== opp)), 'homefire', 1.3, 0.38, 2.0, { tall: true, col: nice ? 0xf2f1ec : pick(R, [0xf2f1ec, 0x8a6a4a, 0x55585c, 0xd8c29a]), lit: R() < 0.5, at: 0.5 }); }
+    if (s.brothersHome) {
+      wallItem(P, g, L, 'x0', 'lamp', 0.48, 0.48, 1.55, { at: 0.2 });
+      wallItem(P, g, L, 'y1', 'shelves', 1.15, 0.32, 1.55, { at: 0.16, col: 0x856548 });
+    }
     if (!trap) wallItem(P, g, L, pick(R, sides), 'clock', 0.32, 0.04, 0.32, { base: 2.0, solid: false, tall: true });
     if (!trap && R() < 0.7) wallItem(P, g, L, pick(R, sides), 'shelves', 0.9, 0.32, 1.8, { tall: true, col: pick(R, [0xe9e4da, 0x8a6a4a, 0x2c2a28]) });
     if (trap) { wallItem(P, g, L, pick(R, sides), 'binbags', 0.8, 0.6, 0.6, { at: 0.95 }); P.add(g, 'cans', (L.x0 + L.x1) / 2 + 0.6, L.y1 - 0.5, 0.5, 0.4, 0.12, { solid: false }); wallItem(P, g, L, pick(R, sides), 'cctv', 0.5, 0.35, 1.0, { col: 0x222222, at: 0.9 }); }
@@ -528,7 +534,7 @@ function bungalow(P, s) {
   const sofaCol = pick(R, SOFA);
   const layout = livingWalls(P, g, L, 'x0', clamp((L.y1 - L.y0) * 0.55, 1.5, 2.2), 1.2);
   const tv = wallItem(P, g, L, layout.side, 'tvunit', layout.tv, 0.42, 0.5, { col: pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58]) });
-  if (tv) P.add(g, 'tv', tv.x, tv.y, 1.1, 0.08, 0.65, { rot: tv.rot, base: 0.5, solid: false });
+  if (tv) { P.add(g, 'tv', tv.x, tv.y, 1.1, 0.08, 0.65, { rot: tv.rot, base: 0.5, solid: false }); P.add(g,'radio',tv.x-.3*Math.cos(tv.rot),tv.y-.3*Math.sin(tv.rot),.24,.16,.15,{base:.5,rot:tv.rot,solid:false}); }
   const so = wallItem(P, g, L, layout.opposite, 'sofa', layout.sofa, 0.9, 0.85, { col: sofaCol });
   if (so && tv) { P.add(g, 'rug', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 1.8, 1.4, 0.01, { rot: so.rot, col: pick(R, [0xb8a68a, 0x7d8c9c, 0x9a5b4b, 0xd8cfc0]), solid: false }); P.add(g, 'coffeetable', (so.x + tv.x) / 2, (so.y + tv.y) / 2, 0.9, 0.5, 0.42, { rot: so.rot, col: 0x6b5236, clutter: 'books' }); }
   wallItem(P, g, L, 'y1', 'homefire', 1.3, 0.38, 2.0, { tall: true, col: pick(R, [0xf2f1ec, 0x8a6a4a, 0xd8c29a]), lit: R() < 0.5, at: 0.3 });

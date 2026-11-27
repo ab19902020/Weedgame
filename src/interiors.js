@@ -114,6 +114,7 @@ export class Interiors {
       if (IN) {
         const [lx, ly] = this.toLocal(IN.site, me.x, me.z), P = IN.plan;
         if (Math.hypot(lx - P.exit.x, ly - P.exit.y) < 1.3 && me.y - IN.floor0 < 0.8) this.prompt = { text: 'Leave', act: 'leave', site: IN.site };
+        else if(me.y-IN.floor0<.9 && P.items.some(i=>i.type==='radio'&&Math.hypot(lx-i.x,ly-i.y)<1.45))this.prompt={text:'Use radio',act:'radio',site:IN.site};
         else if(P.levels[0].rooms.some(r=>r.name==='living') && !this.homeTV.seated && me.y-IN.floor0<.9 && (()=>{const sofa=P.items.find(it=>it.type.startsWith('sofa'));return sofa && Math.hypot(lx-sofa.x,ly-sofa.y)<2.2;})())this.prompt={text:'Sit on sofa',act:'sit',site:IN.site};
         else if (IN.site.kind === 'food' || IN.site.kind === 'pub') {
           const till = this.food.tillAt(IN, me);
@@ -194,7 +195,7 @@ export class Interiors {
     const p = this.prompt; if (!p || this.fade.dir) return false;
     if (p.act === 'none') return false;
     if (p.act === 'rob') { this.rob.start(this.at(this.G.brothers.me)); return true; }
-    if (p.act === 'sit') this.homeTV.sit(this.ensure(p.site)); else if (p.act === 'enter') this.enter(p.site); else if (p.act === 'order') this.food.open(p.site, p.till); else if (p.act === 'game') this.games.start(p.game.type, p.site); else this.leave(p.site);
+    if (p.act === 'radio') this.G.radio?.toggle(); else if (p.act === 'sit') this.homeTV.sit(this.ensure(p.site)); else if (p.act === 'enter') this.enter(p.site); else if (p.act === 'order') this.food.open(p.site, p.till); else if (p.act === 'game') this.games.start(p.game.type, p.site); else this.leave(p.site);
     return true;
   }
   // trees and shrubs whose leaves reach into the building (the shell hides them from outside; inside it doesn't)
