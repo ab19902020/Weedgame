@@ -1,4 +1,5 @@
 import {quietDrive} from './propulsion.js';
+import { MODELS } from './vehicles.js';
 import fleet from './fleetCues.json';
 import cues from './soundCues.json';
 import world from './worldCues.json';
@@ -22,7 +23,7 @@ const ENGINES = { dirtbike:{url:"sfx/dirtbike.ogg",bank:dirtBank}, motorcycle:{u
 const ALIAS = { Car_Door_Open: ['doorOpen', 1.3], Car_Door_Close: ['doorClose', 1.3], Car_Engine_Start_Up: ['start', 1.4], Car_Engine_Turning_Off: ['stop', 1.3], Car_Parking_Brake: ['handbrake', 1] };
 const isMotorbike = model => model === 'motorcycle' || model === 'dirtbike';
 const heavyDiesel = model => model === 'bus' || model === 'busS' || model === 'fire';
-const engineOf = model => isMotorbike(model) ? model : model === 'rangerover' || model === 'sports' || model === 'coupe' ? 'v8' : 'i4';
+const engineOf = model => { model = MODELS[model]?.like || model; return isMotorbike(model) ? model : model === 'rangerover' || model === 'sports' || model === 'coupe' ? 'v8' : 'i4'; };
 
 export class Audio {
   constructor(G) {

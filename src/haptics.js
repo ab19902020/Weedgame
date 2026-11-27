@@ -59,7 +59,7 @@ export class Haptics {
     const ds = this.ds; if (!ds) return;
     // triggers: what the hands are on
     let R = 'off', L = 'off';
-    const w = G.combat?.status?.(), aiming = !car && w && !w.melee && (G.input?.held?.has('aim') || G.controller?.padAim);
+    const w = G.combat?.status?.(), aiming = !car && w && !w.melee && (G.input?.held?.has('aim') || G.input?.aimLatch || G.controller?.padAim);
     if (aiming) { L = 'aim'; R = w.pellets || w.bolt ? 'heavy' : w.hold === 'rifle' ? 'rifle' : 'pistol'; }
     else if (car) {
       const sp = Math.abs(car.sp ?? car.v ?? 0);

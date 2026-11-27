@@ -117,12 +117,15 @@ export class Combat {
     }
     this.fx.update(dt, G.camera);
   }
-  // ---------------------------------------------------------------- targeting (GTA-style)
-  // Aim held (the Aim button, Q or the right mouse button, the pad's left trigger): lock on to the best person in
-  // front (nearest the middle of the view, then the nearest, those already hurt or running at you first), the gun
-  // comes up, the camera goes over the shoulder and follows them. A sideways swipe (or Next, T) moves the lock to the
-  // next person that side; up aims at the head, down back at the body. When they drop, the lock moves on to the
-  // next. Without Aim, firing still pulls on to whoever is near the line of the camera (aim()).
+  // ---------------------------------------------------------------- targeting
+  // Free aim (the default; Settings → Aiming): Aim held (the Aim button held or tapped, the right mouse button, K,
+  // the pad's left trigger) brings the gun up and the camera in over the shoulder, and the rounds go exactly where
+  // the crosshair in the middle of the view is (it turns red over a person). Nothing snaps or locks on.
+  // Lock-on (Settings → Aiming, GTA's assisted aim): Aim locks on to the best person in front (nearest the middle of
+  // the view, then the nearest, those already hurt or running at you first), and the camera follows them. A sideways
+  // swipe (or Next, T) moves the lock to the next person that side; up aims at the head, down back at the body. When
+  // they drop, the lock moves on to the next. Without Aim, firing still pulls on to whoever is near the line of the
+  // camera (aim()).
   aiming(i = this.G.brothers.active) { const s = this.s[i]; return !!s.aimHeld; }
   candidates(i, range) {
     const G = this.G, B = G.brothers, me = B.b[i], yaw = B.cam.yaw + Math.PI, fx = Math.cos(yaw), fz = Math.sin(yaw), out = [];
@@ -163,8 +166,11 @@ export class Combat {
   }
   targeting(i, dt, busy) {
     const G = this.G, I = G.input, s = this.s[i], w = this.weapon(i), B = G.brothers, me = B.b[i];
-    const held = !busy && !!w && !w.melee && (I.held.has('aim') || !!G.controller?.padAim);
+    if (busy || !w || w.melee) I.aimLatch = false;   // (a tapped Aim lasts until tapped again or the gun goes away)
+    const held = !busy && !!w && !w.melee && (I.held.has('aim') || !!I.aimLatch || !!G.controller?.padAim);
     const was = s.aimHeld; s.aimHeld = held;
+    // free aim: no lock, no snapping on to people, Next and swipes do nothing
+    if (!G.aimAssist) { s.lock = null; s.hover = null; this.swipe = null; I.consume('nextTarget'); if (held) s.aimT = Math.max(s.aimT, 0.35); return; }
     if (!held) { s.lock = null; s.hover = this.hoverTarget(i, w, dt); return; }
     s.hover = null;
     s.aimT = Math.max(s.aimT, 0.35);                 // the gun stays up while Aim is held
@@ -201,6 +207,8 @@ export class Combat {
   // crosshair, or where the camera's line meets the world 30 m out
   reticle(i = this.G.brothers.active) {
     const s = this.s[i], w = this.weapon(i); if (!w || w.melee) return null;
+    // free aim: always the middle of the view, red while it is over someone standing
+    if (!this.G.aimAssist) { const h = s.cross?.hit; return { center: true, on: h?.kind === 'ped' && !h.ped.dead }; }
     const P = s.lock || s.hover;
     if (P) return { x: P.x, y: P.y + (P.dead ? 0.3 : s.lock && s.lockHead ? 1.62 : 1.25), z: P.z, lock: !!s.lock, on: true, head: !!s.lockHead };
     return null;
@@ -250,9 +258,9 @@ export class Combat {
   aim(i, w, fresh = false) {
     const G = this.G, B = G.brothers, me = B.b[i], s = this.s[i];
     const o = s.posed ? s.muzzle : _a.set(me.x, me.y + 1.4, me.z);
-    // locked on (the Aim button): straight at them, the chest or (swiped up) the head
-    // the one the crosshair has snapped to and marked (hoverTarget): at them
-    const L = s.lock || (s.hover && !s.hover.dead ? s.hover : null);
+    // lock-on aiming only (Settings): locked on (the Aim button), straight at them, the chest or (swiped up) the
+    // head; or the one the crosshair has snapped to and marked (hoverTarget): at them
+    const L = G.aimAssist ? s.lock || (s.hover && !s.hover.dead ? s.hover : null) : null;
     if (L) {
       const ty = L.y + (L.dead ? 0.3 : s.lock && s.lockHead ? 1.62 : 1.25);
       s.target = { kind: 'ped', p: L, x: L.x, y: ty, z: L.z };
@@ -268,24 +276,38 @@ export class Combat {
     s.aimDir.set(P.x - o.x, P.y - o.y, P.z - o.z).normalize();
     s.aimYaw = Math.atan2(P.z - me.z, P.x - me.x);
   }
+  // the crosshair's line: the camera's, from just past the brother (nothing between the camera and him counts)
+  camLine(me) {
+    const cam = this.G.camera, d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize(), c = cam.position;
+    const t0 = Math.max(0.5, (me.x - c.x) * d.x + (me.y + 1.4 - c.y) * d.y + (me.z - c.z) * d.z) + 0.7;
+    return { o: c.clone().addScaledVector(d, t0), d };
+  }
   // the point under the crosshair: { p, hit }
   crossPoint(i, w) {
-    const G = this.G, cam = G.camera, me = G.brothers.b[i];
-    const d = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion).normalize(), c = cam.position;
-    const t0 = Math.max(0.5, (me.x - c.x) * d.x + (me.y + 1.4 - c.y) * d.y + (me.z - c.z) * d.z) + 0.7;
-    const hit = this.trace(c.clone().addScaledVector(d, t0), d, Math.max(30, w.range), i);
+    const L = this.camLine(this.G.brothers.b[i]), hit = this.trace(L.o, L.d, Math.max(30, w.range), i);
     return { p: hit.p.clone(), hit };
   }
   shoot(i, w) {
     const G = this.G, B = G.brothers, b = B.b[i], s = this.s[i];
     const o = s.posed ? s.muzzle.clone() : new THREE.Vector3(b.x + s.aimDir.x * 0.6, b.y + 1.4, b.z + s.aimDir.z * 0.6);
-    const dirs = spreadDirs(w, [s.aimDir.x, s.aimDir.y, s.aimDir.z], s.aim > 0.9);
+    // free aim: the rounds go down the crosshair's line, so what's under the crosshair is what's hit. (Fired from
+    // the muzzle, a hand's width off that line, a round aimed just past someone clipped them.) The tracer still
+    // leaves the muzzle, and anything in the first couple of metres in front of the gun stops the round: no
+    // shooting through a wall you're pressed against.
+    const line = !G.aimAssist && i === B.active ? this.camLine(b) : null;
+    const from = line ? line.o : o, base = line ? line.d : s.aimDir;
+    const dirs = spreadDirs(w, [base.x, base.y, base.z], s.aim > 0.9);
     let hitSomeone = false;
     for (const d of dirs) {
-      const dir = new THREE.Vector3(...d), hit = this.trace(o, dir, w.range, i);
+      let dir = new THREE.Vector3(...d), hit = this.trace(from, dir, w.range, i), td = dir, tt = hit.t;
+      if (line) {
+        td = _e.copy(hit.p).sub(o); tt = td.length(); td = td.divideScalar(tt || 1).clone();
+        const near = this.trace(o, td, Math.min(2.5, tt - 0.35), i);
+        if (near.kind !== 'none') { hit = near; dir = td; tt = near.t; }
+      }
       this.impact(hit, dir, w);
       if (hit.kind === 'ped') hitSomeone = true;
-      if (dirs.length === 1 || Math.random() < 0.35) this.fx.tracer(o, dir, hit.t);
+      if (dirs.length === 1 || Math.random() < 0.35) this.fx.tracer(o, td, tt);
     }
     // muzzle flash and smoke, the report, brass out of the port, the gun kicking
     const big = w.hold === 'rifle' ? 0.3 : 0.2;

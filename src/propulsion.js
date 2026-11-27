@@ -1,6 +1,6 @@
 // Full-tank fractions use elapsed driving seconds. A full store lasts at least an hour
 // under sustained maximum load, and several hours in slower traffic.
-export const batteryCapacity = {evsaloon:74,evsuv:82,ebike:.65,escooter:.5};
+export const batteryCapacity = {evsaloon:74,evsuv:82,mercedeseqc:80,ebike:.65,escooter:.5};
 export const isElectric = model => Object.hasOwn(batteryCapacity,model);
 export const isCycle = model => model==='bicycle' || model==='ebike';
 export const quietDrive = model => model==='bicycle' || isElectric(model);

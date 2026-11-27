@@ -1,8 +1,9 @@
 // PlayStation controller (DualShock 4 / DualSense, or any pad with the standard mapping), laid out as GTA V:
 //   on foot   left stick move (L3 —), right stick camera (R3 camera behind), Cross sprint, Square jump,
 //             Triangle enter / exit a vehicle and every interaction, Circle reload (melee with no gun), R2 fire /
-//             attack, L2 aim (flick the right stick to switch target), L1 weapon wheel (hold, point a stick,
-//             let go), R1 pick up, D-pad down switch brother, D-pad up map, touchpad map, Options pause
+//             attack, L2 aim (free aim; with Lock-on aiming in Settings, flick the right stick to switch target),
+//             L1 weapon wheel (hold, point a stick, let go), R1 pick up, D-pad down switch brother, D-pad up map,
+//             touchpad map, Options pause
 //   driving   R2 accelerate, L2 brake / reverse, R1 handbrake (Cross too), L3 horn, Triangle get out,
 //             D-pad right headlights / full beam, touchpad camera, D-pad down switch brother
 //   menus     D-pad or left stick move between buttons (any direction), Cross choose, Circle back, Options close;
@@ -49,7 +50,13 @@ export class Controller {
     if (H.wheelOpen) { this.wheel(tap, up, axis, buttons); this.previous = buttons; return; }
     // ---- playing
     I.padX = axis(0);
-    I.look.dx += axis(2) * dt * 260; I.look.dy += axis(3) * dt * 200;
+    // the right stick turns the view on a curve: fine near the middle, full speed at the edge; aiming (L2), a steeper
+    // curve so the crosshair can be laid on someone precisely (player.js slows it further while aiming)
+    // Held hard over for a moment, the turn speeds up (by up to 60%), so swinging round to someone behind is quick.
+    const ex = !car && buttons[L2] ? 2.2 : 1.5, cv = x => Math.sign(x) * Math.pow(Math.abs(x), ex);
+    this.edgeT = Math.abs(axis(2)) > 0.92 ? (this.edgeT || 0) + dt : 0;
+    const boost = 1 + Math.min(0.6, Math.max(0, this.edgeT - 0.25) * 2);
+    I.look.dx += cv(axis(2)) * dt * 260 * boost; I.look.dy += cv(axis(3)) * dt * 200;
     if (tap(TRI)) I.pressed.add('use');
     if (tap(DOWN)) I.pressed.add('swap');
     if (tap(UP) || tap(SHARE)) H.toggleMap(true);
@@ -73,10 +80,11 @@ export class Controller {
       this.padAim = !!buttons[L2];
       if (tap(L1)) { I.pressed.add('wheel'); this.wheelPick = null; }
       if (tap(R1)) I.pressed.add('pickup');
-      // aiming: a flick of the right stick (or R3) moves the lock to the next target
-      const rx = axis(2), flick = this.padAim && Math.abs(rx) > 0.85 && !this.flicked;
+      // lock-on aiming (Settings): a flick of the right stick (or R3) moves the lock to the next target. Free aim:
+      // the stick just aims
+      const rx = axis(2), lockOn = !!G.aimAssist, flick = lockOn && this.padAim && Math.abs(rx) > 0.85 && !this.flicked;
       this.flicked = this.padAim && Math.abs(rx) > 0.5;
-      if (flick || (this.padAim && tap(R3))) I.pressed.add('nextTarget');
+      if (flick || (lockOn && this.padAim && tap(R3))) I.pressed.add('nextTarget');
       else if (tap(R3)) G.brothers.cam.yaw = G.brothers.me.heading + Math.PI;
       if (tap(LEFT) || tap(RIGHT)) G.brothers.cam.yaw += (tap(LEFT) ? -1 : 1) * Math.PI / 2;
     }

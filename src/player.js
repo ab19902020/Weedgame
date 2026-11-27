@@ -44,8 +44,9 @@ export class Brothers {
       sw.dx += look.dx; sw.dy += look.dy;
     } else if (look.dx || look.dy) {
       // aiming (not locked): finer, so the crosshair can be put on someone
-      const k = G.combat?.aiming?.(this.active) ? (G.combat.weapon(this.active)?.zoom ? 0.3 : 0.6) : 1;
-      this.cam.yaw += look.dx * 0.0062 * k; this.cam.pitch = Math.max(-0.25, Math.min(1.1, this.cam.pitch + look.dy * 0.0045 * k)); this.cam.lastUser = G.time;
+      const aimNow = G.combat?.aiming?.(this.active), k = aimNow ? (G.combat.weapon(this.active)?.zoom ? 0.3 : 0.6) : 1;
+      // (aiming, the view can tip further up: at people on a bridge or up a bank)
+      this.cam.yaw += look.dx * 0.0062 * k; this.cam.pitch = Math.max(aimNow ? -0.55 : -0.25, Math.min(1.1, this.cam.pitch + look.dy * 0.0045 * k)); this.cam.lastUser = G.time;
     }
     const veh = this.vehicleOf(me);
     if(G.interiors?.homeTV?.seated){G.interiors.homeTV.updateSeat(dt);return;}
@@ -245,7 +246,7 @@ export class Brothers {
     const bus = v.model.startsWith('bus'), S = CAR_SPECS[v.model], Hd = HERO_CARS[v.model]?.driver;
     // seat position from the car's own windscreen and belt line (hand-made models give their own)
     const bike = v.def.wheels === 2;
-    const eye = bike ? (v.model === "dirtbike" ? 1.64 : 1.46) : Hd ? Hd.eye : bus ? 2.3 : v.model === 'van' ? 1.8 : S ? (S.belt[0] + S.belt[1]) / 2 + 0.26 : 1.2;
+    const eye = bike ? (v.model === "dirtbike" ? 1.64 : 1.46) : Hd ? Hd.eye : bus ? 2.3 : v.model === 'van' ? 1.8 : S ? (S.belt[0] + S.belt[1]) / 2 + 0.26 : v.def.pack ? v.def.H - 0.3 : 1.2;   // (the new cars: a hand below the roof)
     const fwd = Hd ? Hd.fwd : bus ? v.def.L / 2 - 1.2 : S ? Math.max(S.ws0 - 1.4, S.rr0 + 0.3) : 0, side = bike ? 0 : Hd ? Hd.side : bus ? 0.6 : 0.37;
     c.x = v.x + fx * fwd + rx * side; c.y = v.y + eye; c.z = v.z + fz * fwd + rz * side;
     const look = (G.time - c.lastUser < 2.5) ? c.yaw + Math.PI - h : 0;     // drag to look around, eases back

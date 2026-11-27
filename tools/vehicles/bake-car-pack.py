@@ -4,8 +4,8 @@
 Ten cars (compact, coupe, hatchback, minivan, off-roader, pickup, saloon, sports, SUV, estate), each a textured
 body, black glass and a lamp part ("Optics"), with separate wheels. For each car this script:
   - finds its four wheels (the nearest wheel nodes), and from them the wheelbase, track, wheel radius and axle centre;
-  - turns it to the traffic renderer's frame: +x forward (the end whose lamps aren't red), y up from the ground under
-    the tyres, z across, centred on its length;
+  - turns it to the traffic renderer's frame: +x forward (the end whose lamps aren't red, or the lower end when that
+    is clear), y up from the ground under the tyres, z across, centred on its length;
   - keeps the body, glass and lamps (the renderer draws its own rolling, steering wheels in the measured places);
   - records the paint colour (the commonest saturated colour on the body), so traffic can repaint it per car.
 Output (www/vehicles/): carpack.bin (positions, normals, uvs, part per vertex, indices), carpack.json (layout and
@@ -104,14 +104,20 @@ def main():
         col = arr[py, px]; red = (col[:, 0] > 0.35) & (col[:, 0] > col[:, 1] * 1.8)
         along = (o['P'][:, [0, 2]] - ctr[[0, 2]]) @ fwd
         if red.any() and along[red].mean() > 0: fwd = -fwd
-        right = np.array([-fwd[1], fwd[0]])
         ground = min(w['c'][1] - w['r'] for w in ws)
         def to_local(P):
             d = P[:, [0, 2]] - ctr[[0, 2]]
             return np.c_[d @ fwd, P[:, 1] - ground, d @ right]
         def dir_local(N):
             return np.c_[N[:, [0, 2]] @ fwd, N[:, 1], N[:, [0, 2]] @ right]
-        Ls = [to_local(p['P']) for p in parts]
+        right = np.array([-fwd[1], fwd[0]]); Ls = [to_local(p['P']) for p in parts]
+        # second opinion, which wins when it is clear: the bonnet end is the low one. The red-lamp test alone turned
+        # the people carrier back to front, so in game it drove along tail first.
+        allL = np.concatenate(Ls); x0, x1 = allL[:, 0].min(), allL[:, 0].max(); end = 0.12 * (x1 - x0)
+        hf, hr = allL[allL[:, 0] > x1 - end, 1].max(), allL[allL[:, 0] < x0 + end, 1].max()
+        if hf - hr > 0.25:
+            fwd = -fwd; right = np.array([-fwd[1], fwd[0]]); Ls = [to_local(p['P']) for p in parts]
+            print('%-9s turned round: its tall end (%.2f m against %.2f m) is the back' % (name, hf, hr))
         allL = np.concatenate(Ls); xc = (allL[:, 0].min() + allL[:, 0].max()) / 2
         axles = sorted([to_local(ax1[None])[0], to_local(ax2[None])[0]], key=lambda v: v[0])
         wb = float(axles[1][0] - axles[0][0]); wx = float((axles[1][0] + axles[0][0]) / 2 - xc)

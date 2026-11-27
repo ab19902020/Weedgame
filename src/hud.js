@@ -87,8 +87,8 @@ export class Hud {
     this.el = id => root.querySelector('#' + id);
     const I = G.input;
     for(const [id,action] of [['bJump','jump'],['bPickup','pickup']])I.bindButton(this.el(id),action);
-    I.bindButton(this.el('bHit'), 'hit', true);     // held: an automatic keeps firing
-    I.bindButton(this.el('bAim'), 'aim', true);     // held: locked on (combat.js targeting)
+    I.bindButton(this.el('bHit'), 'hit', true, true);   // held: an automatic keeps firing; dragged: aims as you fire
+    I.bindAim(this.el('bAim'));                         // held, or tapped to stay up (combat.js targeting)
     I.bindButton(this.el('bNext'), 'nextTarget');
     // the reticle: free-aim crosshair, red on someone, brackets when locked on
     this.reticleEl = document.createElement('div'); this.reticleEl.id = 'reticle'; this.reticleEl.hidden = true;
@@ -174,6 +174,13 @@ export class Hud {
     this.el('bWeapon').innerHTML = `${st ? ICON[BY_KEY[st.key].icon] || ICON.gun : ICON.gun}<b>${st ? st.name.split(' ').pop() : 'Weapons'}</b>`;
     this._ammo = null; this.updateAmmo();
     if (st) this.toast(st.name + (st.melee ? '' : ' · unlimited ammo'), 1.5);
+    // the first gun out since aiming changed (v0.38): how it works now, once
+    if (st && !st.melee) {
+      let seen = true; try { seen = !!localStorage.getItem('greenCounty.freeAimTip'); localStorage.setItem('greenCounty.freeAimTip', '1'); } catch { /* storage blocked */ }
+      if (!seen) setTimeout(() => this.toast(this.G.aimAssist ? 'Lock-on aiming: hold Aim to lock on to someone · Settings → Aiming for free aim'
+        : this.G.padActive ? 'Free aim: hold L2, put the crosshair on them with the right stick, R2 to fire · lock-on is in Settings → Aiming'
+        : 'Free aim: tap or hold Aim, drag to put the crosshair on them, then Fire · lock-on is in Settings → Aiming', 6), 1600);
+    }
   }
   updateAmmo() {
     const st = this.G.combat?.status(), el = this.el('ammo');
@@ -181,17 +188,20 @@ export class Hud {
     if (t === this._ammo) return; this._ammo = t;
     el.hidden = !t; el.textContent = t; el.classList.toggle('empty', !!st && !st.melee && st.mag === 0);
   }
-  // where the reticle goes this frame: on the locked person (brackets), on whoever's under the crosshair (red), or
-  // in the middle of the view (white) while a gun is up
+  // where the reticle goes this frame. Free aim: the middle of the view, red while it's over someone. Lock-on
+  // aiming: on the locked person (brackets), on whoever the crosshair has snapped to (red), or the middle (white)
   updateReticle() {
     const G = this.G, C = G.combat, el = this.reticleEl; if (!C || !el) return;
     const i = G.brothers.active, s = C.s[i], w = C.weapon(i), me = G.brothers.me;
     const gun = !!w && !w.melee && !me.vehicle && !this.wheelOpen, aiming = gun && C.aiming(i);
     const R = gun && C.reticle(i);
+    // the Aim button stays lit while a tapped aim is on (input.js bindAim)
+    const ab = this.el('bAim'), lit = !!(G.input.aimLatch || G.input.held.has('aim')); if (ab && ab.classList.contains('on') !== lit) ab.classList.toggle('on', lit);
     // whenever the gun is up (Aim held, or firing): the crosshair where the rounds go (combat.js aim())
     const show = aiming || (gun && s.aim > 0.2);
     let x = innerWidth / 2, y = innerHeight / 2, cls = 'free';
-    if (R) {
+    if (R?.center) cls = R.on ? 'on' : 'free';
+    else if (R) {
       const v = (this._rv ||= new G.THREE.Vector3()).set(R.x, R.y, R.z).project(G.camera);
       if (v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2) { x = (v.x + 1) / 2 * innerWidth; y = (1 - v.y) / 2 * innerHeight; cls = R.lock ? 'lock' + (R.head ? ' head' : '') : 'on'; }
     }

@@ -83,6 +83,11 @@ export class Input {
       e.preventDefault();
       this.look.dx += e.clientX - this.lx; this.look.dy += e.clientY - this.ly;
       this.lx = e.clientX; this.ly = e.clientY; this.lastLook = performance.now();
+    } else if (this.btnLook && e.pointerId === this.btnLook.id) {
+      // a thumb sliding on Fire or Aim (bindButton, bindAim): past 9 px it turns the view
+      const L = this.btnLook;
+      if (!L.live && Math.hypot(e.clientX - L.x0, e.clientY - L.y0) > 9) { L.live = true; L.x = e.clientX; L.y = e.clientY; }
+      if (L.live) { this.look.dx += e.clientX - L.x; this.look.dy += e.clientY - L.y; L.x = e.clientX; L.y = e.clientY; this.lastLook = performance.now(); }
     }
   }
   up(e) {
@@ -92,7 +97,7 @@ export class Input {
     if (e.pointerId === this.lookId) this.lookId = null;
   }
   release() {
-    this.stick.id = null; this.lookId = null; this.move.x = this.move.y = 0; this.base.style.display = 'none'; this.rest.style.opacity = '';
+    this.stick.id = null; this.lookId = null; this.btnLook = null; this.aimLatch = false; this.move.x = this.move.y = 0; this.base.style.display = 'none'; this.rest.style.opacity = '';
     this.wheel.id = null; this.wheel.x = 0; this.setPedal(null); this.arrows.l = this.arrows.r = false; this.placeWheel();
   }
   // the wheel sits where the thumb lands, or at rest in the corner
@@ -199,9 +204,33 @@ export class Input {
   takeLook() { const d = { dx: this.look.dx, dy: this.look.dy }; this.look.dx = this.look.dy = 0; if (this.keys.has('KeyQ')) d.dx -= 6; if (this.keys.has('KeyE')) d.dx += 6; return d; }
   consume(name) { const has = this.pressed.has(name); this.pressed.delete(name); return has; }
   // on-screen button wiring
-  bindButton(btn, name, hold = false) {
-    btn.addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); this.pressed.add(name); if (hold) this.held.add(name); btn.classList.add('on'); btn.setPointerCapture?.(e.pointerId); try { navigator.vibrate?.(6); } catch { /* no haptics */ } });
-    const off = () => { if (hold) this.held.delete(name); btn.classList.remove('on'); };
+  // look: a thumb kept on the button and slid turns the view (and the crosshair) as on a mobile shooter's fire
+  // button, once it has moved a little (so a tap never nudges the aim)
+  bindButton(btn, name, hold = false, look = false) {
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation(); this.pressed.add(name); if (hold) this.held.add(name); btn.classList.add('on'); try { btn.setPointerCapture?.(e.pointerId); } catch { /* not a live pointer */ }
+      if (look) this.btnLook = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, live: false };
+      try { navigator.vibrate?.(6); } catch { /* no haptics */ }
+    });
+    const off = e => { if (hold) this.held.delete(name); btn.classList.remove('on'); if (this.btnLook?.id === e.pointerId) this.btnLook = null; };
+    btn.addEventListener('pointerup', off); btn.addEventListener('pointercancel', off); btn.addEventListener('lostpointercapture', off);
+  }
+  // Aim (touch): held, the gun is up while the thumb stays on it (and sliding it aims); a quick tap keeps it up
+  // until the next tap (aimLatch), leaving the thumb free to drag the view and fire. combat.js clears the latch
+  // when the gun is put away or you get in a car.
+  bindAim(btn) {
+    let downT = 0, was = false;
+    btn.addEventListener('pointerdown', e => {
+      e.preventDefault(); e.stopPropagation(); downT = performance.now(); was = !!this.aimLatch; this.aimLatch = false;
+      this.pressed.add('aim'); this.held.add('aim'); try { btn.setPointerCapture?.(e.pointerId); } catch { /* not a live pointer */ }
+      this.btnLook = { id: e.pointerId, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, live: false };
+      try { navigator.vibrate?.(6); } catch { /* no haptics */ }
+    });
+    const off = e => {
+      if (!this.held.has('aim')) return;
+      this.held.delete('aim'); if (this.btnLook?.id === e.pointerId) this.btnLook = null;
+      if (e.type === 'pointerup' && performance.now() - downT < 260 && !was) this.aimLatch = true;
+    };
     btn.addEventListener('pointerup', off); btn.addEventListener('pointercancel', off); btn.addEventListener('lostpointercapture', off);
   }
 }

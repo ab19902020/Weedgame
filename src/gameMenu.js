@@ -7,7 +7,9 @@ const choices={
   handling:['Handling','Easy (assists on)','Realistic (fewer assists)'],
   wildlife:['Wildlife','Plenty','Realistic'],
   buttons:['Touch button size','Standard','Large','Compact'],
-  rumble:['Controller vibration','On','Off']
+  rumble:['Controller vibration','On','Off'],
+  // free aim: the rounds go where the crosshair is; lock-on: aiming locks on to people (combat.js targeting)
+  aim:['Aiming','Free aim','Lock-on (auto aim)']
 };
 export class GameMenu {
   constructor(hud) {
@@ -61,6 +63,7 @@ export class GameMenu {
     document.documentElement.style.setProperty('--u',({Large:'1.18',Compact:'.84'})[this.settings.buttons] || '1');
     if(this.settings.steering==='Tilt'){try{this.hud.G.input.calibrateTilt();}catch{}}
     if(this.hud.G.haptics)this.hud.G.haptics.on=this.settings.rumble!=='Off';
+    this.hud.G.aimAssist=this.settings.aim==='Lock-on (auto aim)';
   }
   resetInput(){const i=this.hud.G.input;i.release();i.keys.clear();i.pressed.clear();i.held.clear();}
   open(){this.resetInput();this.el.hidden=false;this.el.querySelector('nav button').focus();}

@@ -35,23 +35,24 @@ export const MODELS = {
   moped: { L: 1.85, W: 0.72, H: 1.15, wb: 1.25, wr: 0.28, prof: 'moped', max: 70, mass: 180, wheels: 2, tyre: 0.07 },
   escooter: { L: 1.15, W: 0.55, H: 1.2, wb: 0.85, wr: 0.15, prof: 'scooter', max: 50, mass: 30, wheels: 2, tyre: 0.045 },
   // the supplied car pack ("Generic passenger car pack" by Comrade1280, CC-BY-4.0; tools/vehicles/bake-car-pack.py):
-  // textured bodies drawn by their own material, our wheels at the measured axles and track
-  compact: { L: 3.26, W: 1.61, H: 1.32, wb: 2.08, wr: 0.24, wx: -0.07, track: 1.13, prof: 'hatch', max: 30, mass: 1050, pack: 'compact' },
-  coupe2: { L: 4.24, W: 1.88, H: 1.28, wb: 2.41, wr: 0.3, wx: -0.02, track: 1.33, prof: 'saloon', max: 30, mass: 1400, pack: 'coupe2' },
-  hatch2: { L: 3.96, W: 1.74, H: 1.35, wb: 2.4, wr: 0.3, wx: -0.04, track: 1.38, prof: 'hatch', max: 30, mass: 1150, pack: 'hatch2' },
-  minivan: { L: 4.61, W: 1.87, H: 1.76, wb: 2.84, wr: 0.32, wx: -0.07, track: 1.41, prof: 'van', max: 30, mass: 1800, pack: 'minivan' },
-  offroad: { L: 3.94, W: 1.96, H: 1.57, wb: 2.32, wr: 0.36, wx: 0.06, track: 1.47, prof: 'suv', max: 20, mass: 1900, pack: 'offroad' },
-  pickup: { L: 5.18, W: 2.07, H: 1.7, wb: 3.19, wr: 0.38, wx: 0.12, track: 1.46, prof: 'suv', max: 20, mass: 2100, pack: 'pickup' },
-  sedan: { L: 4.36, W: 1.94, H: 1.34, wb: 2.62, wr: 0.3, wx: 0.01, track: 1.4, prof: 'saloon', max: 30, mass: 1450, pack: 'sedan' },
-  sport2: { L: 3.91, W: 1.77, H: 1.04, wb: 2.45, wr: 0.31, wx: -0.12, track: 1.37, prof: 'saloon', max: 12, mass: 1300, pack: 'sport2' },
-  suv2: { L: 4.61, W: 2.07, H: 1.73, wb: 2.73, wr: 0.38, wx: 0.07, track: 1.46, prof: 'suv', max: 30, mass: 1900, pack: 'suv2' },
-  wagon: { L: 4.38, W: 1.95, H: 1.38, wb: 2.63, wr: 0.3, wx: 0.02, track: 1.4, prof: 'estate', max: 30, mass: 1500, pack: 'wagon' },
+  // textured bodies drawn by their own material, our wheels at the measured axles and track. `like`: the fleet car
+  // each one drives, sounds and fills up like (carPhysics.js HANDLING, audio.js engines, fuel.js tanks)
+  compact: { L: 3.26, W: 1.61, H: 1.32, wb: 2.08, wr: 0.24, wx: -0.07, track: 1.13, prof: 'hatch', max: 30, mass: 1050, pack: 'compact', like: 'hatch' },
+  coupe2: { L: 4.24, W: 1.88, H: 1.28, wb: 2.41, wr: 0.3, wx: -0.02, track: 1.33, prof: 'saloon', max: 30, mass: 1400, pack: 'coupe2', like: 'hothatch' },
+  hatch2: { L: 3.96, W: 1.74, H: 1.35, wb: 2.4, wr: 0.3, wx: -0.04, track: 1.38, prof: 'hatch', max: 30, mass: 1150, pack: 'hatch2', like: 'hatch' },
+  minivan: { L: 4.61, W: 1.87, H: 1.76, wb: 2.84, wr: 0.32, wx: 0.07, track: 1.41, prof: 'van', max: 30, mass: 1800, pack: 'minivan', like: 'estate' },
+  offroad: { L: 3.94, W: 1.96, H: 1.57, wb: 2.32, wr: 0.36, wx: 0.06, track: 1.47, prof: 'suv', max: 20, mass: 1900, pack: 'offroad', like: 'suv' },
+  pickup: { L: 5.18, W: 2.07, H: 1.7, wb: 3.19, wr: 0.38, wx: 0.12, track: 1.46, prof: 'suv', max: 20, mass: 2100, pack: 'pickup', like: 'suv' },
+  sedan: { L: 4.36, W: 1.94, H: 1.34, wb: 2.62, wr: 0.3, wx: 0.01, track: 1.4, prof: 'saloon', max: 30, mass: 1450, pack: 'sedan', like: 'saloon' },
+  sport2: { L: 3.91, W: 1.77, H: 1.04, wb: 2.45, wr: 0.31, wx: -0.12, track: 1.37, prof: 'saloon', max: 12, mass: 1300, pack: 'sport2', like: 'sports' },
+  suv2: { L: 4.61, W: 2.07, H: 1.73, wb: 2.73, wr: 0.38, wx: 0.07, track: 1.46, prof: 'suv', max: 30, mass: 1900, pack: 'suv2', like: 'suv' },
+  wagon: { L: 4.38, W: 1.95, H: 1.38, wb: 2.63, wr: 0.3, wx: 0.02, track: 1.4, prof: 'estate', max: 30, mass: 1500, pack: 'wagon', like: 'estate' },
   // the supplied real cars (ActsOfDoge, Sketchfab Standard licence; tools/vehicles/bake-real-cars.py, simplified with
   // gltfpack to about 11,000 triangles): drawn in full near you, as the matching fleet body beyond 45 m (`far`)
-  bmwx3: { L: 4.64, W: 2.11, H: 1.7, wb: 2.82, wr: 0.36, wx: 0.06, track: 1.6, prof: 'suv', max: 12, mass: 1850, pack: 'bmwx3', set: 'realcars', far: 'suv' },
-  bmwm3: { L: 4.62, W: 2.0, H: 1.46, wb: 2.78, wr: 0.34, wx: 0.12, track: 1.5, prof: 'saloon', max: 10, mass: 1600, pack: 'bmwm3', set: 'realcars', far: 'saloon' },
-  volvos60: { L: 4.77, W: 2.05, H: 1.47, wb: 2.88, wr: 0.34, wx: 0.07, track: 1.56, prof: 'saloon', max: 12, mass: 1700, pack: 'volvos60', set: 'realcars', far: 'saloon' },
-  mercedeseqc: { L: 4.76, W: 2.15, H: 1.65, wb: 2.88, wr: 0.4, wx: 0.03, track: 1.55, prof: 'suv', max: 10, mass: 2400, pack: 'mercedeseqc', set: 'realcars', far: 'suv' },
+  bmwx3: { L: 4.64, W: 2.11, H: 1.7, wb: 2.82, wr: 0.36, wx: 0.06, track: 1.6, prof: 'suv', max: 12, mass: 1850, pack: 'bmwx3', like: 'suv', set: 'realcars', far: 'suv' },
+  bmwm3: { L: 4.62, W: 2.0, H: 1.46, wb: 2.78, wr: 0.34, wx: 0.12, track: 1.5, prof: 'saloon', max: 10, mass: 1600, pack: 'bmwm3', like: 'coupe', set: 'realcars', far: 'saloon' },
+  volvos60: { L: 4.77, W: 2.05, H: 1.47, wb: 2.88, wr: 0.34, wx: 0.07, track: 1.56, prof: 'saloon', max: 12, mass: 1700, pack: 'volvos60', like: 'saloon', set: 'realcars', far: 'saloon' },
+  mercedeseqc: { L: 4.76, W: 2.15, H: 1.65, wb: 2.88, wr: 0.4, wx: 0.03, track: 1.55, prof: 'suv', max: 10, mass: 2400, pack: 'mercedeseqc', like: 'evsuv', set: 'realcars', far: 'suv' },
 };
 // the car pack joins the traffic mix once it has loaded (VehicleRenderer.loadPack)
 export const PACK = { ready: false, names: Object.keys(MODELS).filter(k => MODELS[k].pack), weights: { compact: 1, coupe2: 0.5, hatch2: 1.4, minivan: 0.8, offroad: 0.4, pickup: 0.35, sedan: 1.2, sport2: 0.15, suv2: 1, wagon: 1, bmwx3: 0.6, bmwm3: 0.35, volvos60: 0.5, mercedeseqc: 0.4 }, loaded: new Set() };
@@ -356,7 +357,7 @@ export class VehicleRenderer {
       if (md.glb && mk !== v.model) this.heroCars?.hide(v);   // (kept, hidden: rebuilding it on the way back would stall a frame)
       const def = MODELS[mk], farM = this.far[mk], isFar = d2 > FAR2 && farM !== this.meshes[mk];
       const mesh = isFar ? farM : this.meshes[mk], C = isFar ? countsFar : counts, i = C[mk];
-      if (!mesh || i >= def.max) continue;
+      if ((!mesh && !def.glb) || i >= def.max) continue;   // (the hand-made models have no instanced body: heroCars.js draws them below)
       if (d2 < 160 * 160) this.suspension(v, dt);
       const S = v._sus;
       // ground pose (wheels), then the sprung body on top of it

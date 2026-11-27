@@ -11,7 +11,7 @@ const TANK = { rangerover: 90, sports: 65, coupe: 60, hothatch: 50, hatch: 45, s
 const price = v => isElectric(v.model) ? .55 : 1.45;
 const unit = v => isElectric(v.model) ? 'kWh' : 'L';
 const FILL_RATE = 0.14;   // tank fractions a second at the pump
-export const tankOf = v => TANK[v.model] ?? 55;
+export const tankOf = v => TANK[v.model] ?? TANK[v.def?.like] ?? 55;   // (the new cars: their fleet twin's, vehicles.js `like`)
 const hash = s => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) | 0; return ((h >>> 0) % 1000) / 1000; };
 
 export class Fuel {
