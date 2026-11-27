@@ -139,7 +139,8 @@ for (const [k, test] of Object.entries(KINDS)) {
   }
 }
 let rnd = 12345; const rand = () => (rnd = (rnd * 1103515245 + 12345) % 2147483648) / 2147483648;
-for (const [k, n] of Object.entries(WANT)) {
+function selectSites(targets) {
+for (const [k, n] of Object.entries(targets)) {
   const byD = new Map();
   for (const b of pool[k]) { const d = district(...b.c).name; if (!byD.has(d)) byD.set(d, []); byD.get(d).push(b); }
   let got = 0, guard = 0;
@@ -162,6 +163,8 @@ for (const [k, n] of Object.entries(WANT)) {
   }
   console.error(k, got, 'from', pool[k].length);
 }
+}
+selectSites(WANT);
 // ------------------------------------------------------------------ fast food: the real places on the map
 // names from the tiles' building names and point signs (the sign carries its building's index)
 import zlibM from 'node:zlib';
@@ -275,6 +278,9 @@ for (const cap of [2, 6]) for (const c of scand) {
   stores.push({ name: c.name, x: cx, z: cz, district: site.district, b: c.b });
 }
 console.error('stores', stores.length, stores.map(s => s.name + ' (' + s.district + ')').join('; '));
+
+// and the extra homes and shops (appended after the corner shops, so every earlier site keeps its id)
+selectSites({ terrace: 40, semi: 40, detached: 35, bungalow: 28, cottage: 12, shop: 25 });
 fs.writeFileSync(W + 'interiors.json', JSON.stringify({ version: 2, sites, fuel }));
 console.error('sites', sites.length);
 for (const s of sites) console.error(s.id, s.kind, s.name || '-', '|', s.street, '|', s.district, s.W.toFixed(1) + 'x' + s.D.toFixed(1), 'lv' + s.lv, 'fh' + s.floorH);
