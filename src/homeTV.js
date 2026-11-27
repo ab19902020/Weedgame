@@ -65,7 +65,7 @@ export class HomeTV {
     if (this.video) { this.video.pause(); this.video.removeAttribute('src'); this.video.load(); this.video = null; }
     this.screenOff();
     this.channel = null;
-    this.panel.replaceChildren(); this.panel.classList.remove('playing');
+    this.panel.replaceChildren(); this.panel.classList.remove('playing','watchFull');
   }
   button(label, fn) {
     const b = document.createElement('button'); b.textContent = label; b.onclick = fn; this.panel.append(b); return b;
@@ -117,6 +117,12 @@ export class HomeTV {
     this.screenOn(tex);
     const pause = this.button('Pause', () => { if (v.paused) v.play().catch(() => {}); else v.pause(); });
     v.onpause = () => pause.textContent = 'Play'; v.onplay = () => pause.textContent = 'Pause';
+    v.hidden = true; this.panel.append(v);
+    const full = this.button('Full screen', () => {
+      const expanded = this.panel.classList.toggle('watchFull');
+      v.hidden = !expanded;
+      full.textContent = expanded ? 'Back to sofa' : 'Full screen';
+    });
     const next = () => this.play((i + 1) % episodes.length);
     v.onended = next; v.onerror = () => { if (this.video === v) pause.textContent = title + ' unavailable'; };
     this.button('Previous episode', () => this.play((i + episodes.length - 1) % episodes.length)); this.button('Next episode', next); this.button('Episode list', () => this.channels(this.seriesName)); this.button('TV menu', () => this.menu()); v.play().catch(() => { pause.textContent = 'Play'; });

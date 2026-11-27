@@ -109,7 +109,7 @@ export class Hud {
     const categories = {
       Houses: () => sites(s => homes.has(s.kind) || s.brothersHome), 'Brothers’ home': () => sites(s => s.brothersHome), Shops: () => sites(s => s.kind==='shop' || s.kind==='mall'),
       Food: () => sites(s => s.kind==='food'), Pubs: () => sites(s => s.kind==='pub'),
-      Fuel: () => G.fuel?.stations || [], Stations: () => G.transit.stations.map(s => ({...s,name:s.name+' station'})),
+      'Petrol stations': () => G.fuel?.stations || [], Stations: () => G.transit.stations.map(s => ({...s,name:s.name+' station'})),
       Buildings: () => sites(s => !homes.has(s.kind) && !['shop','mall','food','pub'].includes(s.kind)),
       Districts: () => G.manifest.districts, Landmarks: () => TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))
     };
@@ -134,10 +134,14 @@ export class Hud {
     };
     for(const key of Object.keys(categories)){
       const button=document.createElement('button'); button.textContent=key;
-      button.onclick=()=>this.selectPlaces(key); this.el('mKinds').append(button);
+      button.onclick=()=>{this.selectPlaces(key);this.el('mGo').focus({preventScroll:true});}; this.el('mKinds').append(button);
     }
     const cycle=step=>{if(results.length){index=(index+step+results.length)%results.length;showPlace();}};
     this.el('mPrev').onclick=()=>cycle(-1); this.el('mNext').onclick=()=>cycle(1);
+    this.el('map').addEventListener('keydown', e=>{
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      e.preventDefault(); e.stopPropagation(); cycle(e.key === 'ArrowLeft' ? -1 : 1);
+    });
     this.el('mGo').onclick=()=>{if(this.mapPlace)this.nav.set({...this.mapPlace});};
     G.events?.on('interiors',()=>{if(!this.el('map').hidden)this.selectPlaces();});
     this.el('mClear').onclick=()=>this.nav.set(null);

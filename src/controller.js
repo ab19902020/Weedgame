@@ -108,6 +108,10 @@ export class Controller {
       this.rep -= dt;
       if (key !== this.lastDir || this.rep <= 0) { dir = d; this.rep = key !== this.lastDir ? 0.38 : 0.12; this.lastDir = key; }
     } else if (!dir) { this.lastDir = null; }
+    if (isMap && dir?.[0] && (!el || el.closest('.placeDetail'))) {
+      H.el(dir[0] < 0 ? 'mPrev' : 'mNext').click();
+      dir = null;
+    }
     if (el?.tagName === 'SELECT' && dir && dir[1] === 0) {
       el.selectedIndex = (el.selectedIndex + dir[0] + el.length) % el.length; el.dispatchEvent(new Event('change')); dir = null;
     }

@@ -114,7 +114,7 @@ export class Interiors {
       if (IN) {
         const [lx, ly] = this.toLocal(IN.site, me.x, me.z), P = IN.plan;
         if (Math.hypot(lx - P.exit.x, ly - P.exit.y) < 1.3 && me.y - IN.floor0 < 0.8) this.prompt = { text: 'Leave', act: 'leave', site: IN.site };
-        else if(IN.site.brothersHome && !this.homeTV.seated && me.y-IN.floor0<.9 && (()=>{const sofa=P.items.find(it=>it.type.startsWith('sofa'));return sofa && Math.hypot(lx-sofa.x,ly-sofa.y)<2.2;})())this.prompt={text:'Sit on sofa',act:'sit',site:IN.site};
+        else if(P.levels[0].rooms.some(r=>r.name==='living') && !this.homeTV.seated && me.y-IN.floor0<.9 && (()=>{const sofa=P.items.find(it=>it.type.startsWith('sofa'));return sofa && Math.hypot(lx-sofa.x,ly-sofa.y)<2.2;})())this.prompt={text:'Sit on sofa',act:'sit',site:IN.site};
         else if (IN.site.kind === 'food' || IN.site.kind === 'pub') {
           const till = this.food.tillAt(IN, me);
           if (till != null) this.prompt = { text: IN.site.kind === 'pub' ? 'Buy a drink' : 'Order', act: 'order', site: IN.site, till };

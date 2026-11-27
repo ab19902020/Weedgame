@@ -236,3 +236,7 @@ body:has(#homeTV) #hud {pointer-events:none;}
 #countyMenu nav [data-go=play]{grid-column:1/-1;background:#efd189;color:#172720;padding:13px 16px;font-size:17px}
 #countyMenu nav button:focus-visible,#countyMenu nav button.pad-focus{outline:2px solid white;outline-offset:-3px}
 #countyMenu nav button:hover{background:#385043;color:#fff}
+
+#homeTV.watchFull { inset:0; width:auto; max-width:none; max-height:none; transform:none; border:0; border-radius:0; background:black; align-content:center; }
+#homeTV.watchFull video { width:100%; height:calc(100% - 90px); object-fit:contain; }
+#homeTV video[hidden] { display:none; }
