@@ -141,10 +141,10 @@ export class Tiles {
       const wm = this.addMesh(t, wg, this.mats.water, { receive: true });
       wm.renderOrder = 1;
     }
+    const gg = geoFrom(d.ground, 'surf', 1); if (gg) this.addMesh(t, gg, this.mats.ground, { receive: true });
+    const sg = geoFrom(d.struct, 'surf', 1); if (sg) t.structMesh = this.addMesh(t, sg, this.mats.struct, { cast: d.lod === 0, receive: true });
     if (d.lod === 0) {
-      const gg = geoFrom(d.ground, 'surf', 1); if (gg) this.addMesh(t, gg, this.mats.ground, { receive: true });
       const mg = geoFrom(d.markings, 'surf', 1); if (mg) this.addMesh(t, mg, this.mats.mark, { receive: true });
-      const sg = geoFrom(d.struct, 'surf', 1); if (sg) t.structMesh = this.addMesh(t, sg, this.mats.struct, { cast: true, receive: true });
       this.addTrees(t, d.trees);
 
       if (d.bushes && d.bushes.length) this.addBushes(t, d.bushes);

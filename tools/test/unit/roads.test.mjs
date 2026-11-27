@@ -170,3 +170,13 @@ test('bus stop flags and shelters stand clear of the road surface the tiles draw
   });
   assert.ok(shelters > 150, `${shelters} shelters checked`);
 });
+
+test('Warren Road crosses the railway with a connected two-way deck', async () => {
+  const { net } = await roads();
+  const span = net.addedBridges.find(e => net.names[net.name[e]] === 'Warren Road');
+  assert.ok(span !== undefined);
+  assert.ok(net.flags[span] & F_BRIDGE);
+  assert.equal(net.flags[span] & F_ONEWAY, 0);
+  assert.ok(net.len[span] > 70 && net.len[span] < 80);
+  assert.ok(net.lanesF[span] && net.lanesB[span]);
+});

@@ -71,6 +71,31 @@ export function repairGaps(raw) {
     }
     if (best && !joins.some(j => j.b === best)) joins.push({ a, b: best, d: bd });
   }
+  // Warren Road, on the Woodley–Sonning boundary. The source tile ends
+  // at both abutments. Match dead ends by position so a newer survey
+  // containing the span takes precedence.
+  const warren = names.indexOf('Warren Road');
+  const abutments = [[-3381.61, -3251.15], [-3362.14, -3183.28]];
+  const tips = [];
+  const driveDegree = new Uint16Array(nN);
+  for (let e=0;e<nE;e++) if (A.flags[e] & F_DRIVE) {
+    driveDegree[A.ea[e]]++; driveDegree[A.eb[e]]++;
+  }
+  for (let e=0;e<nE;e++) {
+    if (A.name[e] !== warren || !(A.flags[e] & F_DRIVE)) continue;
+    const first=A.pstart[e], last=first+A.pcount[e]-1;
+    for (const [n,k,j] of [[A.ea[e],first,first+1],[A.eb[e],last,last-1]]) {
+      if (driveDegree[n] !== 1) continue;
+      const side=abutments.findIndex(([x,z])=>Math.hypot(P[k*3]-x,P[k*3+2]-z)<2);
+      if (side<0) continue;
+      const dx=P[k*3]-P[j*3], dz=P[k*3+2]-P[j*3+2], length=Math.hypot(dx,dz);
+      if (length>0) tips[side]={e,n,k,dir:[dx/length,dz/length].map(v=>side?-v:v)};
+    }
+  }
+  if (tips[0] && tips[1]) {
+    const [a,b]=tips;
+    joins.push({a,b,d:Math.hypot(P[a.k*3]-P[b.k*3],P[a.k*3+2]-P[b.k*3+2]),twoWay:true});
+  }
   if (!joins.length) return [];
   // grow every per-edge array and the point array
   const grow = (arr, n) => { const out = new arr.constructor(arr.length + n); out.set(arr); return out; };
@@ -87,9 +112,9 @@ export function repairGaps(raw) {
     const e = nE + i, src = j.a.e, n = segs[i];
     const ax = P[j.a.k * 3], ay = P[j.a.k * 3 + 1], az = P[j.a.k * 3 + 2], bx = P[j.b.k * 3], by = P[j.b.k * 3 + 1], bz = P[j.b.k * 3 + 2];
     A.ea[e] = j.a.n; A.eb[e] = j.b.n; A.cls[e] = A.cls[src];
-    A.flags[e] = (A.flags[src] & ~F_TUNNEL) | F_BRIDGE | F_ONEWAY | F_DRIVE;
-    A.lanesF[e] = A.lanesF[src]; A.lanesB[e] = 0; A.width[e] = A.width[src]; A.speed[e] = A.speed[src];
-    A.layer[e] = 1; A.pav[e] = 0; A.name[e] = A.name[src]; A.ref[e] = A.ref[src];
+    A.flags[e] = (A.flags[src] & ~F_TUNNEL) | F_BRIDGE | F_DRIVE;
+    A.lanesF[e] = A.lanesF[src]; A.lanesB[e] = j.twoWay ? A.lanesB[src] : 0; A.width[e] = A.width[src]; A.speed[e] = A.speed[src];
+    A.layer[e] = 1; A.pav[e] = j.twoWay ? A.pav[src] : 0; A.name[e] = A.name[src]; A.ref[e] = A.ref[src];
     if (A.sigA) { A.sigA[e] = -1; A.sigB[e] = -1; }
     A.pstart[e] = pi; A.pcount[e] = n + 1;
     // cubic Hermite between the two carriageway ends, leaving and arriving along each one
@@ -98,6 +123,7 @@ export function repairGaps(raw) {
       Q[pi * 3] = h00 * ax + h10 * j.d * j.a.dir[0] + h01 * bx + h11 * j.d * j.b.dir[0];
       Q[pi * 3 + 1] = ay + (by - ay) * t;
       Q[pi * 3 + 2] = h00 * az + h10 * j.d * j.a.dir[1] + h01 * bz + h11 * j.d * j.b.dir[1];
+      if (q) A.len[e] += Math.hypot(Q[pi*3]-Q[pi*3-3], Q[pi*3+2]-Q[pi*3-1]);
       pi++;
     }
     added.push(e);

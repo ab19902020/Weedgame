@@ -524,6 +524,10 @@ function build(header, A, lod) {
   // ...nor on a railway or in water (2 m landcover)
   const blocked = (x, z, r = 0.5) => inRoad(x, z, r) || [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r]].some(([a, b]) => { const c = lcAt(x + a, z + b); return c === 9 || c === 4; });
 
+  function onTransportDeck(x, z, radius) {
+    const bridge = profileAt(x + ox, z + oz)?.bridge;
+    return (bridge && bridge.d <= bridge.hw + radius) || railY(x + ox, z + oz, 2 + radius) !== null;
+  }
   // ---------------- terrain
   const tstep = lod ? 4 : 1; // grid stride in samples
   const tn = (NT - 1) / tstep + 1;
@@ -563,11 +567,12 @@ function build(header, A, lod) {
       a = Math.atan2(z - q[1], x - q[0]);          // the arm still reaches out over the road
       x = q[0]; z = q[1];
     }
+    if (blocked(x, z, 0.35) || onTransportDeck(x, z, 0.35)) continue;
     lampL.push(x, hAt(x, z) + 0.17, z, a);
   }
   const lamps = new Float32Array(lampL);
   out.lamps = lamps;
-  if (lod) return out;
+
 
   // ---------------- surfaces
   const G = new Buf(1);
@@ -608,10 +613,12 @@ function build(header, A, lod) {
       }
     }
   };
+  if (!lod) {
   surf('road', 0, 0.05, false);
   surf('plaza', 4, 0.09, false);
   surf('path', 3, 0.07, false);
   surf('pave', 1, 0.17, true);
+  }
 
   // ---------------- bridges (decks in ground mesh, structure in struct mesh)
   const S = new Buf(1);
@@ -767,6 +774,11 @@ function build(header, A, lod) {
     const m = at((lo + hi) / 2); if (m[0] < 0 || m[0] >= TILE || m[2] < 0 || m[2] >= TILE) continue;
     const pts = [at(lo)]; for (let q = 0; q < n; q++) { const sv = cum[st + q]; if (sv > lo + 0.3 && sv < hi - 0.3) pts.push(at(sv)); } pts.push(at(hi));
     ribbonDeck(G, S, pts, NET.width[e], 0, hAt, false, 3, site, NET.width[e] >= 6.5 && !(NET.flags[e] & 1));
+  }
+  if (lod) {
+    out.ground = G.pack();
+    out.struct = S.pack();
+    return out;
   }
   // a road standing clear of the ground drawn under it (a raised road the ground couldn't be built up under,
   // a slip road climbing beside a cutting the terrain grid can't hold) rides on a deck instead of hanging over
@@ -1019,14 +1031,15 @@ function build(header, A, lod) {
   // ---------------- instances: trees, lamps, slots
   const tr = A.tr, trL = [];
   for (let k = 0; k < tr.length; k += 4) {
-    if (!lod && blocked(tr[k], tr[k + 1], 0.9)) continue;     // never a trunk in the road (or on the line)
+    if (blocked(tr[k], tr[k + 1], 0.9) || onTransportDeck(tr[k], tr[k + 1], 0.9)) continue;     // never a trunk in the road (or on the line)
     trL.push(tr[k], hAt(tr[k], tr[k + 1]), tr[k + 1], tr[k + 2] + (tr[k + 3] || 0) * 10);
   }
   const trees = new Float32Array(trL);
   out.trees = trees;
   // ---------------- planting (inferred): leafy hedges, shrubs and extra trees in open green space
   if (!lod) {
-    const P = plantings(header, lcAt, hAt, trees, hedgeSegs);
+    const plantBlocked = (x,z,r) => blocked(x,z,r) || onTransportDeck(x,z,r);
+    const P = plantings(header, lcAt, hAt, trees, hedgeSegs, plantBlocked);
     out.bushes = P.bushes;
     if (P.trees.length) { const t2 = new Float32Array(trees.length + P.trees.length); t2.set(trees); t2.set(P.trees, trees.length); out.trees = t2; }
   }
@@ -1104,7 +1117,7 @@ function strip(B, pts, offset, width, yfn, id, dashOn = 0, dashOff = 0) {
 // within 2.5 m of a road, pavement, path, car park, building, pitch or water.
 const PLANT = { 0: [0.011, 0.0024], 5: [0.03, 0], 6: [0.0015, 0.0004], 7: [0.022, 0.0042], 11: [0.022, 0.0014], 14: [0.012, 0], 15: [0.05, 0.0012], 16: [0.012, 0.002], 18: [0.012, 0.0008] };
 const HARD = new Set([1, 2, 3, 4, 8, 9, 10, 12, 13, 17]);
-function plantings(header, lcAt, hAt, trees, hedgeSegs) {
+function plantings(header, lcAt, hAt, trees, hedgeSegs, plantBlocked) {
   let seed = (header.ix * 73856093 ^ header.iz * 19349663) >>> 0;
   const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
   const bushes = [], extra = [];
@@ -1148,7 +1161,7 @@ function plantings(header, lcAt, hAt, trees, hedgeSegs) {
         bushes.push(bx, hAt(bx, bz) + hy * 0.72, bz, w * (0.85 + rnd() * 0.3), hy, w * (0.85 + rnd() * 0.3), rnd() * 6.28, tint);
       }
     } else if (r < d[0] * 9 + d[1] * 9) {
-      if (!clear(x, z, 4.5) || nearTree(x, z, 7)) continue;
+      if (!clear(x, z, 4.5) || plantBlocked(x,z,1.5) || nearTree(x, z, 7)) continue;
       // tree code as in the pipeline: kind (0 broadleaf, 1 tall, 2 small/ornamental, 3 conifer) + 10 x height tag
       const kind = c === 16 ? 3 : c === 11 ? 2 : rnd() < 0.2 ? 1 : rnd() < 0.35 ? 2 : 0;
       extra.push(x, hAt(x, z), z, kind);
@@ -1465,7 +1478,8 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       for (const [x, z] of outer) colPts.push(x + ox, z + oz);
       continue;
     }
-    const pitched = roof > 0 && rL > 0 && !lod;
+    const fit = roof > 0 && rL > 0 && rW > 0 && !lod ? roofFit(rings, rcx, rcz, rang, rL, rW) : 0;
+    const pitched = fit * rW > 0.5;
     const top = base + wallH + (lod && roof ? rh * 0.45 : 0);
     const parapet = !pitched && !lod && (cls === 3 || cls === 6 || cls === 7 || cls === 11) ? 0.6 : 0;
     // public faces. Sample landcover OUTSIDE the footprint (rings are not always CCW).
@@ -1588,7 +1602,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
         tri(B, v[0], v[1], v[2], [0, 1, 0], v.map(p => [p[0], p[2]]), [floorH, seedEnc, clsCode, 3]);
       }
     }
-    if (pitched) addRoof(B, rcx, rcz, rang, rL, rW, base + wallH, rh, roof, [floorH, seedEnc, clsCode], cls, seed, base);
+    if (pitched) addRoof(B, rcx, rcz, rang, rL * fit, rW * fit, base + wallH, rh * fit, roof, [floorH, seedEnc, clsCode], cls, seed, base);
     if (frontInfo) addFrontage(B, frontInfo, base, low, wallH, floorH, [floorH, seedEnc, clsCode], seed);
     // collision ring (world coords)
     col.push(colPts.length / 2, outer.length, base + wallH + (roof ? rh : 0), base);
@@ -1613,8 +1627,31 @@ function beam(B, a, b, wid, hgt, ex, up = [0, 1, 0]) {
     quad(B, off(a, i0, j0), off(b, i0, j0), off(b, i1, j1), off(a, i1, j1), nm, [[0, 0], [L, 0], [L, 1], [0, 1]], ex);
   }
 }
+// Fit the pitch to the measured outline. A boundary entering the open rectangle
+// catches concave extensions and courtyard holes as well as neighbouring terraces.
+function roofFit(rings, cx, cz, angle, length, width) {
+  if (!insideRing(rings[0], cx, cz) || rings.slice(1).some(r => insideRing(r,cx,cz))) return 0;
+  const c = Math.cos(angle), s = Math.sin(angle);
+  const local = rings.map(r => r.map(([x,z]) => [
+    ((x-cx)*c + (z-cz)*s) / (length/2), ((z-cz)*c - (x-cx)*s) / (width/2)
+  ]));
+  const fits = scale => local.every(r => r.every(([x,z],i) => {
+    const [u,v] = r[(i+1)%r.length];
+    let lo=0, hi=1;
+    for (const [a,b] of [[x,u],[z,v]]) {
+      if (Math.abs(b-a)<1e-9) { if (Math.abs(a)>=scale) return true; continue; }
+      const t=(-scale-a)/(b-a), k=(scale-a)/(b-a);
+      lo=Math.max(lo,Math.min(t,k)); hi=Math.min(hi,Math.max(t,k));
+    }
+    return lo>=hi;
+  }));
+  if (fits(1)) return 1;
+  let lo=0, hi=1;
+  for (let i=0;i<9;i++) { const mid=(lo+hi)/2; if (fits(mid)) lo=mid; else hi=mid; }
+  return lo;
+}
 function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed, base = 0) {
-  const ca = Math.cos(ang), sa = Math.sin(ang), o = 0.3;
+  const ca = Math.cos(ang), sa = Math.sin(ang), o = 0;
   const part = k => [...ex.slice(0, 3), k];
   const P = (u, v, y) => [cx + u * ca - v * sa, y, cz + u * sa + v * ca];
   const l = L / 2, w = W / 2, slope = rh / w;
