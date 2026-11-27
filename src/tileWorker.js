@@ -3,6 +3,7 @@
 import earcut from '../node_modules/three/src/extras/lib/earcut.js';
 import { inflate, decode } from './data.js';
 import { fasciaBrand, signBox, normName } from './brands.js';
+import { frontageScore, buildingStyle, nearestFrontage } from './buildingFidelity.js';
 
 const TILE = 256, NT = 65, STEP = 4;
 let NET = null;
@@ -1479,9 +1480,10 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   // nearby drive-edge segments for frontage detection
   const segs = [];
   const walkSegs = [];
-  if (!lod && NET) for (const e of header.edges) {
+  if (NET) for (const e of header.edges) {
     const drive = NET.driveCls.has(NET.cls[e]);
     const cn = NET.classes[NET.cls[e]];
+    if (NET.flags[e] & 12) continue; // a tunnel or flyover is not the frontage of a house
     if (!drive && !/pedestrian|footway/.test(cn)) continue;
     const s = NET.pstart[e], n = NET.pcount[e], dst = drive ? segs : walkSegs;
     for (let i = 0; i < n - 1; i++) { const a = (s + i) * 3, b = a + 3; dst.push(NET.pts[a] - ox, NET.pts[a + 2] - oz, NET.pts[b] - ox, NET.pts[b + 2] - oz, NET.width[e] / 2); }
@@ -1510,7 +1512,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
   }
   let ci = 0, ri = 0;
   for (let bi = 0; bi < P.length; bi++) {
-    const m = M.subarray(bi * NM, bi * NM + NM);
+    const m = M.subarray(bi * NM, bi * NM + NM), firstAttribute = B.x.length;
     const base = m[0] + hmin, low = m[1] + hmin - 0.6, wallH = m[2], roof = m[3], rh = m[4];
     const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], seed = m[13];
     const bname = (header.bn && header.bn[bi]) || '';
@@ -1542,32 +1544,34 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       for (const [x, z] of outer) colPts.push(x + ox, z + oz);
       continue;
     }
-    const fit = roof > 0 && rL > 0 && rW > 0 && !lod ? roofFit(rings, rcx, rcz, rang, rL, rW) : 0;
+    const fit = roof > 0 && rL > 0 && rW > 0 ? roofFit(rings, rcx, rcz, rang, rL, rW) : 0;
     const pitched = fit * rW > 0.5;
-    const top = base + wallH + (lod && roof ? rh * 0.45 : 0);
+    const top = base + wallH;
     const parapet = !pitched && !lod && (cls === 3 || cls === 6 || cls === 7 || cls === 11) ? 0.6 : 0;
     // public faces. Sample landcover OUTSIDE the footprint (rings are not always CCW).
     let front = -1;
     const street = [];
-    if (!lod && outer && outer.length > 2) {
+    let streetPoint = null;
+    if (outer && outer.length > 2) {
       const scored = [];
       for (let q = 0; q < outer.length; q++) {
         const fr = edgeFrame(outer, q);
         if (!fr || fr.L < 2.4) continue;
         const px = fr.mx + fr.nx * 2.4, pz = fr.mz + fr.nz * 2.4;
         const c = lcAt(Math.floor(px), Math.floor(pz));
-        let d = segs.length ? segDist(fr.mx, fr.mz) : 36;
-        if (shop && walkSegs.length) d = Math.min(d, segDist(fr.mx, fr.mz, walkSegs) - 6);
-        if (shop && (c === 12 || c === 2 || c === 17 || c === 8)) d -= 16;
-        if (c === 3) d += 50;
-        scored.push({ q, d, L: fr.L, c });
+        const near=nearestFrontage(fr.mx,fr.mz,fr.nx,fr.nz,segs);
+        const walk=shop?nearestFrontage(fr.mx,fr.mz,fr.nx,fr.nz,walkSegs):null;
+        const target=walk&&(!near||walk.d<near.d+6)?walk:near;
+        const blocked=px>=0&&px<256&&pz>=0&&pz<256&&c===3;
+        const d=frontageScore(target?.d??36,target?.alignment??0,fr.L,blocked,shop&&(c===12||c===2||c===17||c===8));
+        scored.push({q,d,L:fr.L,c,target});
       }
       if (scored.length) {
         const net = segs.length || walkSegs.length;
         if (!net) scored.sort((a, b) => b.L - a.L);
         else scored.sort((a, b) => a.d - b.d);
         const best = scored[0];
-        if (!net || best.d < 42) front = best.q;
+        if (!net || best.d < 42) { front = best.q; streetPoint=best.target; }
         if (shop && front >= 0) {
           const primary = edgeFrame(outer, front);
           const pool = scored.filter(s => s.c !== 3 && s.L >= 3.4 && (!net || s.d < Math.min(24, best.d + 8)));
@@ -1594,6 +1598,7 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
       }
       if (bl >= 2.4) { front = bq; if (shop && !street.length) street.push(bq); }
     }
+    const style=buildingStyle({cls,wallH,roof,seed,streetX:ox+(streetPoint?.x??outer[0][0]),streetZ:oz+(streetPoint?.z??outer[0][1]),tagged:A.bStyle?.[bi]||0});
     const clsCode = cls + (shop ? 32 : 0) + (brand ? brand.id * 64 : 0);
     // front door and bay window positions are chosen here (so the door hood and bay line up with the
     // painted door); the door's u coordinate along the wall rides in the seed attribute
@@ -1650,8 +1655,15 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
         }
         const nrm = [nx, 0, nz];
         const part = k === 0 && (q === front || streetSet.has(q)) ? 1 : 0;
+        // No windows on party walls: confirm a long portion of the outward face is inside another footprint.
+        let shared=0;
+        if(k===0 && !part && (cls===1||cls===2)) for(const t of [0.2,0.5,0.8]) {
+          const px=x0+dx*t+nx*0.75,pz=z0+dz*t+nz*0.75;
+          if(px>=0&&px<256&&pz>=0&&pz<256&&lcAt(px,pz)===3)shared++;
+        }
+        const faceStyle=style.code+(shared===3?256:0);
         const t = top + parapet;
-        quad(B, [x0, low, z0], [x1, low, z1], [x1, t, z1], [x0, t, z0], nrm, [[u, low - base], [u + l, low - base], [u + l, t - base], [u, t - base]], [floorH, seedEnc, clsCode, part]);
+        quad(B, [x0, low, z0], [x1, low, z1], [x1, t, z1], [x0, t, z0], nrm, [[u, low - base], [u + l, low - base], [u + l, t - base], [u, t - base]], [floorH, seedEnc, clsCode, part + faceStyle*32]);
         if (parapet) quad(B, [x0, top, z0], [x1, top, z1], [x1, t, z1], [x0, t, z0], nrm.map(v => -v), [[u, 0], [u + l, 0], [u + l, 1], [u, 1]], [floorH, seedEnc, clsCode, 6]);
         u += l;
       }
@@ -1666,8 +1678,10 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
         tri(B, v[0], v[1], v[2], [0, 1, 0], v.map(p => [p[0], p[2]]), [floorH, seedEnc, clsCode, 3]);
       }
     }
-    if (pitched) addRoof(B, rcx, rcz, rang, rL * fit, rW * fit, base + wallH, rh * fit, roof, [floorH, seedEnc, clsCode], cls, seed, base);
-    if (frontInfo) addFrontage(B, frontInfo, base, low, wallH, floorH, [floorH, seedEnc, clsCode], seed);
+    if (pitched) addRoof(B, rcx, rcz, rang, rL * fit, rW * fit, base + wallH, rh, roof, [floorH, seedEnc, clsCode], cls, seed, base, !!lod);
+    if (frontInfo && (style.bay || style.hood)) addFrontage(B, frontInfo, base, low, wallH, floorH, [floorH, seedEnc, clsCode], seed,style);
+    // Keep the same material on the gables, roof and added geometry. Walls already carry party-wall flags.
+    for(let i=firstAttribute+3;i<B.x.length;i+=4) if(B.x[i]<32) B.x[i]+=style.code*32;
     // collision ring (world coords)
     col.push(colPts.length / 2, outer.length, base + wallH + (roof ? rh : 0), base);
     for (const [x, z] of outer) colPts.push(x + ox, z + oz);
@@ -1714,7 +1728,7 @@ function roofFit(rings, cx, cz, angle, length, width) {
   for (let i=0;i<9;i++) { const mid=(lo+hi)/2; if (fits(mid)) lo=mid; else hi=mid; }
   return lo;
 }
-function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed, base = 0) {
+function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed, base = 0, coarse = false) {
   const ca = Math.cos(ang), sa = Math.sin(ang), o = 0;
   const part = k => [...ex.slice(0, 3), k];
   const P = (u, v, y) => [cx + u * ca - v * sa, y, cz + u * sa + v * ca];
@@ -1738,6 +1752,7 @@ function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed, base = 0) 
     for (const s of [-1, 1]) quad(B, P(-l - o, s * (w + o), ye), P(l + o, s * (w + o), ye), P(ridge, 0, top), P(-ridge, 0, top), [-sa * s, 1, ca * s], [[0, 0], [L, 0], [L - 1, sl], [1, sl]], R);
     for (const s of [-1, 1]) tri(B, P(s * (l + o), -w - o, ye), P(s * (l + o), w + o, ye), P(s * ridge, 0, top), [ca * s, 1, sa * s], [[0, 0], [W, 0], [W / 2, sl]], R);
   }
+  if (coarse) return; // retain the measured silhouette at distance without detail geometry
   // eaves: fascia boards, white soffits under the overhang, gutters with downpipes at the corners
   {
     const fh = 0.2, edges = type === 1 ? [[-1, 1], [1, 1]] : [[-1, 1], [1, 1], [-1, 0], [1, 0]];
@@ -1791,11 +1806,11 @@ function addRoof(B, cx, cz, ang, L, W, eave, rh, type, ex, cls, seed, base = 0) 
 }
 
 // canted bay window (ground floor, or both floors on some houses) and a hood over the front door
-function addFrontage(B, F, base, low, wallH, floorH, ex, seed) {
+function addFrontage(B, F, base, low, wallH, floorH, ex, seed, style) {
   const part = k => [...ex.slice(0, 3), k];
   const tx = (F.x1 - F.x0) / F.fl, tz = (F.z1 - F.z0) / F.fl, nx = tz, nz = -tx;          // along the wall, outward
   const at = (t, d) => [F.x0 + tx * t + nx * d, F.z0 + tz * t + nz * d];
-  if (F.fl >= 4.7 && seed % 5 !== 0) {
+  if (F.fl >= 4.7 && style.bay) {
     const bt = (F.dT < 0.5 ? 0.7 : 0.3) * F.fl, back = 1.15, frontW = 0.72, dep = 0.62;
     const twoStorey = wallH > 4.6 && seed % 3 === 0;
     const yTop = base + (twoStorey ? Math.min(wallH - 0.25, floorH * 2 - 0.1) : Math.min(floorH - 0.1, 2.62));
@@ -1813,6 +1828,7 @@ function addFrontage(B, F, base, low, wallH, floorH, ex, seed) {
     quad(B, [R[1][0], rF - 0.16, R[1][1]], [R[2][0], rF - 0.16, R[2][1]], [R[2][0], rF, R[2][1]], [R[1][0], rF, R[1][1]], [nx, 0, nz], null, part(7));
     quad(B, [C[1][0], yTop, C[1][1]], [C[2][0], yTop, C[2][1]], [R[2][0], rF - 0.16, R[2][1]], [R[1][0], rF - 0.16, R[1][1]], [0, -1, 0], null, part(11));
   }
+  if (!style.hood) return;
   // door hood on brackets
   const dt = F.dT * F.fl, hw = 0.78, dep = 0.75, y = base + 2.38;
   const A0 = at(dt - hw, 0), A1 = at(dt + hw, 0), B0 = at(dt - hw, dep), B1 = at(dt + hw, dep);

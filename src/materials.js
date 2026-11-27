@@ -368,11 +368,13 @@ export function buildingMaterial() {
   const A = attribute('bA', 'vec4');
   // the tile worker places front doors and passes their position along the wall in the seed: seed + 1000 * (u * 4)
   const seedRaw = floor(A.y.add(0.5)), doorU = floor(seedRaw.div(1000)).mul(0.25);
-  const floorH = A.x, seed = seedRaw.sub(floor(seedRaw.div(1000)).mul(1000)), code = floor(A.z.add(0.5)), part = floor(A.w.add(0.5));
+  const floorH = A.x, seed = seedRaw.sub(floor(seedRaw.div(1000)).mul(1000)), code = floor(A.z.add(0.5)), packedPart = floor(A.w.add(0.5));
+  const style = floor(packedPart.div(32)), part = packedPart.sub(style.mul(32));
+  const party = floor(style.div(256)), finish = style.sub(party.mul(256)), roofFinish = floor(finish.div(32)), wallFinish = finish.sub(roofFinish.mul(32));
   const pEq = k => step(k - 0.5, part).mul(step(part, k + 0.5));
   const front = step(0.5, part).mul(step(part, 1.5));
   const cls = code.sub(floor(code.div(32)).mul(32));
-  const shop = step(31.5, code);
+  const shop = step(31.5, code.sub(floor(code.div(64)).mul(64)));
   const brand = floor(code.div(64.0));
   const hasBrand = step(0.5, brand);
   const fasciaCol = texture(brandTex, vec2(brand.add(0.5).div(BRAND_N), float(0.5))).rgb;
@@ -398,8 +400,10 @@ export function buildingMaterial() {
     sel(r0.lessThan(0.8), int(L.render), sel(r0.lessThan(0.92), int(L.pebbledash), int(L.brick_buff)))));
   const otherLayer = sel(isInd.greaterThan(0.5), int(L.cladding), sel(isOffice.greaterThan(0.5), sel(r0.lessThan(0.45), int(L.concrete_wall), sel(r0.lessThan(0.75), int(L.brick_red), int(L.render))),
     sel(cls.equal(9), int(L.stone), sel(r0.lessThan(0.4), int(L.brick_red), sel(r0.lessThan(0.6), int(L.brick_dark), int(L.render))))));
-  const wallLayer = sel(isHouse.greaterThan(0.5), houseLayer, otherLayer);
-  const roofLayer = sel(isFlat.greaterThan(0.5), int(L.felt), sel(r3.lessThan(mix(float(0.45), float(0.85), isTerrace)), int(L.roof_slate), int(L.roof_clay)));
+  const defaultWall = sel(isHouse.greaterThan(0.5), houseLayer, otherLayer);
+  const wallLayer = sel(wallFinish.equal(1), int(L.brick_red), sel(wallFinish.equal(2), int(L.brick_dark), sel(wallFinish.equal(3), int(L.render), sel(wallFinish.equal(4), int(L.pebbledash), sel(wallFinish.equal(5), int(L.brick_buff), sel(wallFinish.equal(6), int(L.stone), sel(wallFinish.equal(7), int(L.concrete_wall), sel(wallFinish.equal(8), int(L.cladding), defaultWall))))))));
+  const defaultRoof = sel(r3.lessThan(mix(float(0.45), float(0.85), isTerrace)), int(L.roof_slate), int(L.roof_clay));
+  const roofLayer = sel(isFlat.greaterThan(0.5), int(L.felt), sel(roofFinish.equal(1), int(L.roof_slate), sel(roofFinish.equal(2), int(L.roof_clay), sel(roofFinish.equal(3), int(L.felt), defaultRoof))));
   const layer = sel(isWall.add(isBay).greaterThan(0.5), wallLayer, sel(isChim.greaterThan(0.5), int(L.brick_red), roofLayer));
   const uvm = vec2(u.x, u.y);
   const wallTex = sAlbedo(layer, uvm);
@@ -463,7 +467,7 @@ export function buildingMaterial() {
   const vIn = normalize(positionWorld.sub(cameraPosition));             // ray into the building
   const rx = dot(vIn, tU), ry = vIn.y, rz = max(dot(vIn, nW.negate()), 0.05);
   const rearShop = shop.mul(float(1).sub(front)).mul(step(fi, 0.5));
-  const blankSide = big.mul(float(1).sub(front));
+  const blankSide = big.mul(float(1).sub(front)).max(party);
   const inWin = insideU(cu, wwS.mul(0.5), fcu).mul(between(fv, botS, topS, ffv)).mul(step(0.0, u.y)).mul(isWall).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5)))).mul(float(1).sub(rearShop.max(blankSide)));
   // frames and glass sit 11 cm back in the opening: shift their coordinates by parallax and show the
   // reveal (shaded brick) where the shifted opening no longer covers the pixel
