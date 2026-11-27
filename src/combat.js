@@ -323,17 +323,9 @@ export class Combat {
     if (w.pump || w.bolt) { s.pump = w.pump ? 0.55 : 0.9; setTimeout(() => { this.sample(w.pump ? 'rack' : 'boltIn', b.x, b.y + 1.3, b.z, 0.5); if (w.pump && s.gun) { _b.set(-1, 0.4, 0).applyQuaternion(s.gunQ); this.fx.casing(s.gun.position.clone(), _b.multiplyScalar(2)); } }, w.pump ? 260 : 420); }
     s.recoil += w.recoil; s.shake += w.recoil * (i === B.active ? 1 : 0);
     s.aimT = Math.max(s.aimT, 1.6);
-    // everyone near runs; the police take an interest
+    // everyone near runs (the police only come for a killing: wanted.js)
     G.peds.disturb(b.x, b.z, w.fire?.muffle ? 14 : 55, 'gun');
-    this.lastShotAt = G.time;
-    this.report(hitSomeone ? 'shooting someone' : 'shots fired', b.x, b.z, 2);
-  }
-  report(what, x, z, level) {
-    const G = this.G; if (G.time - this.reported < 6 || !G.police) return;
-    this.reported = G.time;
-    // seen by an officer: they act on it; otherwise somebody rings 999
-    if (G.police.witnessed(x, z)) G.police.onOffence(what, x, z, level);
-    else G.police.callIn?.(what, x, z, level);
+    this.lastShotAt = G.time; void hitSomeone;
   }
   // the first thing along o + t*d (t up to range): { kind: 'ped'|'car'|'wall'|'ground'|'none', t, p, n, ... }
   trace(o, d, range, shooter) {
@@ -458,7 +450,8 @@ export class Combat {
         fx.puff(p, _b.copy(d).multiplyScalar(1.2), [0.32, 0.02, 0.02], 0.85, 0.06, zone === 'head' ? 0.45 : 0.32, 0.5);
         D?.burst('drop', zone === 'head' ? 6 : 3, p.x, p.y, p.z, d.x * 2, 0.6, d.z * 2, 0.8, [0.3, 0.01, 0.01]);
         G.audio?.play?.('punch', p.x, p.y, p.z, 0.22);
-        G.peds.hurt?.(ped, Math.atan2(d.z, d.x), 'shot', w.damage * mul, { s: Math.min(1.4, w.damage / 30), head: zone === 'head', zone, fromBack: along > 0.3, sideHit: lat > 0 ? 1 : -1 });
+        G.peds.hurt?.(ped, Math.atan2(d.z, d.x), 'shot', w.damage * mul, { s: Math.min(1.4, w.damage / 30), head: zone === 'head', zone, fromBack: along > 0.3, sideHit: lat > 0 ? 1 : -1, by: 'player', how: 'shot' });
+        if (ped.officer) G.events.emit('copShot', { p: ped });   // shooting at the police brings in the armed units (wanted.js)
         break;
       }
       case 'prop': this.shootProp(hit, d, w); break;
@@ -509,12 +502,11 @@ export class Combat {
       const p = m.target && !m.target.dead && Math.hypot(m.target.x - me.x, m.target.z - me.z) < (m.kick ? 2.0 : 1.75) ? m.target : null;
       if (p) {
         const dir = Math.atan2(p.z - me.z, p.x - me.x);
-        G.peds.hurt?.(p, dir, m.reaction, m.dmg, { s: 1, side: m.hand === 'L' ? -1 : 1 });
+        G.peds.hurt?.(p, dir, m.reaction, m.dmg, { s: 1, side: m.hand === 'L' ? -1 : 1, by: 'player' });
         G.audio?.play?.(m.kick ? 'kick' : 'punch', p.x, p.y + 1.4, p.z, m.kick ? 0.7 : 0.6);
         if (i === G.brothers.active) G.haptics?.hit(m.kick);
         G.slowmo = Math.max(G.slowmo || 0, m.kick ? 0.12 : 0.07);
         s.shake += m.kick ? 0.5 : 0.3;
-        this.report(m.reaction === 'down' ? 'assault' : 'assault', me.x, me.z, m.reaction === 'down' ? 2 : 1);
       }
     }
     if (m && s.queuedHit && m.t > m.dur * 0.6) { s.queuedHit = false; s.move = null; this.punch(i); }
@@ -525,11 +517,10 @@ export class Combat {
       const p = G.peds.list.find(q => !q.dead && Math.hypot(q.x - me.x, q.z - me.z) < 1.8 && ((q.x - me.x) * fx + (q.z - me.z) * fz) / (Math.hypot(q.x - me.x, q.z - me.z) || 1) > 0.4);
       if (p) {
         const dir = Math.atan2(p.z - me.z, p.x - me.x);
-        G.peds.hurt?.(p, dir, 'shot', BY_KEY.knife.damage, { s: 0.8, side: k.side });
+        G.peds.hurt?.(p, dir, 'shot', BY_KEY.knife.damage, { s: 0.8, side: k.side, by: 'player', how: 'stabbed' });
         this.fx.puff(new THREE.Vector3(p.x, p.y + 1.2, p.z), new THREE.Vector3(Math.cos(dir), 0.4, Math.sin(dir)), [0.32, 0.02, 0.02], 0.8, 0.06, 0.3, 0.5);
         G.audio?.play?.('punch', p.x, p.y + 1.2, p.z, 0.5);
         G.slowmo = Math.max(G.slowmo || 0, 0.06); s.shake += 0.25;
-        this.report('a stabbing', me.x, me.z, 2);
       }
     }
   }

@@ -69,7 +69,7 @@ export class Haptics {
     if (key !== this.lastTrig || ds.kickT > 0) { this.lastTrig = key; ds.triggers(R, L); }
     ds.kickT = Math.max(0, ds.kickT - dt);
     // lightbar: the brother's colour; red and blue in a pursuit
-    const P = G.police?.player, chase = P && (P.state === 'pursuit' || P.state === 'footchase');
+    const P = G.police?.player, chase = P && P.state && P.state !== 'none';   // wanted (wanted.js): seen or searched for
     const col = chase ? ((this.t * 4) % 2 < 1 ? [255, 0, 20] : [0, 40, 255]) : B.active === 0 ? [20, 200, 60] : [230, 230, 230];
     ds.light(col);
     ds.flush();

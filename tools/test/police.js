@@ -1,9 +1,9 @@
 // Police checks (scripted through the game API, for development): long-route dispatch, broken-down car
-// with recovery, foot chase, off-road pursuit. Every case must resolve with control returned.
-// Usage: xvfb-run -a node tools/test/police.js [cases=dispatch,breakdown,foot,offroad]   (needs `npm run serve`)
+// with recovery. Every case must resolve with control returned. (The police coming after you: tools/test/wanted.mjs.)
+// Usage: xvfb-run -a node tools/test/police.js [cases=dispatch,breakdown]   (needs `npm run serve`)
 const { chromium } = require('playwright');
 const BASE = process.env.BASE || 'http://localhost:8080/index.html';
-const cases = (process.argv[2] || 'dispatch,breakdown,foot,offroad').split(',');
+const cases = (process.argv[2] || 'dispatch,breakdown').split(',');
 (async () => {
   const b = await chromium.launch({ headless: false });
   const p = await (await b.newContext({ viewport: { width: 640, height: 300 }, deviceScaleFactor: 1 })).newPage();
@@ -42,47 +42,6 @@ const cases = (process.argv[2] || 'dispatch,breakdown,foot,offroad').split(',');
       const info = await p.evaluate(([id, car]) => { const i = GC.police.incidents.find(i => i.id === id); return { how: i?.resolvedHow, carStillThere: GC.traffic.byId.has(car) && GC.traffic.byId.get(car).brokenDown, unitStatus: i?.unit?.status }; }, [inc.id, inc.car]);
       res.breakdown = { ok: on >= 0 && done >= 0 && !info.carStillThere, onsceneAfter: on, truckAfter: truck, clearedAfter: done, ...info };
     }
-  }
-  if (cases.includes('foot')) {
-    const o = await p.evaluate(() => { const o = GC.police.officers.find(o => !o.leader); return { x: o.x, z: o.z, id: o.id }; });
-    await go(o.x, o.z); await simWait(3, 'false');
-    // an offence in sight of the officer, then walk away: scripted state, movement by driving the brother's position
-    const r = await p.evaluate(async () => {
-      const P = GC.police, o = P.officers.find(o => !o.leader), me = GC.brothers.me;
-      me.x = o.x + 6; me.z = o.z; P.onOffence('a disturbance (test)', me.x, me.z, 1);
-      const states = [P.player.state];
-      // run away (real input: stick forward + Run, camera turned so forward points away from the officer)
-      const dir = Math.atan2(me.z - o.z, me.x - o.x), I = GC.input, ax = I.axis.bind(I);
-      I.axis = () => ({ x: 0, y: -1 }); I.held.add('run'); GC.brothers.cam.yaw = dir + Math.PI; GC.brothers.cam.lastUser = GC.time;
-      let t0 = GC.time;
-      while (GC.time - t0 < 8) { GC.brothers.cam.yaw = dir + Math.PI; await new Promise(r => requestAnimationFrame(r)); if (states.at(-1) !== P.player.state) states.push(P.player.state); }
-      // stop and wait to be caught
-      I.axis = () => ({ x: 0, y: 0 }); I.held.delete('run');
-      t0 = GC.time; while (GC.time - t0 < 90 && P.player.state !== 'none') { await new Promise(r => requestAnimationFrame(r)); if (states.at(-1) !== P.player.state) states.push(P.player.state); }
-      I.axis = ax;
-      return { states, final: P.player.state };
-    });
-    res.foot = { ok: r.states.includes('footchase') && r.final === 'none', ...r };
-  }
-  if (cases.includes('offroad')) {
-    const r = await p.evaluate(async () => {
-      const G = GC, P = G.police, u = P.units[0], net = G.net;
-      // find a spot well away from drivable roads (a park / field) near this unit
-      let spot = null;
-      for (let k = 0; k < 400 && !spot; k++) { const a = k * 0.7, rr = 60 + k * 3; const x = u.x + Math.cos(a) * rr, z = u.z + Math.sin(a) * rr; if (!net.nearest(x, z, 40, e => net.flags[e] & 16) && net.nearest(x, z, 140, e => net.flags[e] & 16) && !G.tiles.insideBuilding(x, z)) spot = [x, z]; }
-      if (!spot) return { ok: false, why: 'no off-road spot' };
-      // put the player there in a car with the unit in pursuit
-      const me = G.brothers.me; me.x = spot[0]; me.z = spot[1];
-      const road = net.nearest(spot[0], spot[1], 140, e => net.flags[e] & 16);
-      u.h = road.e * 2; u.s = road.s; u.route = [u.h]; u.ri = 0; G.traffic.place(u);
-      P.player.state = 'pursuit'; P.player.unit = u; P.player.t = 0; u.status = 'pursuit'; u.siren = true;
-      const states = []; let off = false, minD = 1e9; const t0 = G.time;
-      while (G.time - t0 < 90) { G.brothers.speedNow = 0; await new Promise(r => requestAnimationFrame(r)); off = off || !!u.offroad; minD = Math.min(minD, Math.hypot(u.x - me.x, u.z - me.z)); if (states.at(-1) !== P.player.state) states.push(P.player.state); if (P.player.state === 'none' && G.time - t0 > 5) break; }
-      // make sure it is back on the graph after resolution
-      const t1 = G.time; while (G.time - t1 < 50 && u.offroad) await new Promise(r => requestAnimationFrame(r));
-      return { wentOffroad: off, closestM: Math.round(minD), states, final: P.player.state, unitBackOnRoad: !u.offroad };
-    });
-    res.offroad = { ok: r.wentOffroad && r.final === 'none' && r.unitBackOnRoad, ...r };
   }
   console.log(JSON.stringify({ ...res, errors }, null, 1));
   await b.close();

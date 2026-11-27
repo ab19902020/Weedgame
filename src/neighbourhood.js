@@ -106,12 +106,33 @@ export class Neighbourhood {
     if(this.calls.some(c=>c.service==='fire'))return false;
     const G=this.G;
     for(const car of G.traffic.list){
-      if(car.kind!=='parked'||car.owner||car.free||car.player||Math.hypot(car.x-G.focus.x,car.z-G.focus.z)>160)continue;
-      if(!this.sendCrew('fire',car.x,car.z,'vehicle fire',null))continue;
-      this.fire.position.set(car.x,car.y+.65,car.z);this.fire.scale.setScalar(1);this.fire.visible=true;
-      return true;
+      if(car.kind!=='parked'||car.owner||car.free||car.player||car.burnt||Math.hypot(car.x-G.focus.x,car.z-G.focus.z)>160)continue;
+      if(this.ignite(car))return true;
     }
     return false;
+  }
+  // a car on fire: the flames on it until the fire brigade (sent now) has put it out; it's left a burnt-out shell
+  ignite(car){
+    if(!this.sendCrew('fire',car.x,car.z,'vehicle fire',null))return false;
+    Object.assign(car,{burning:true,v:0,crashed:!car.parked,hazard:true,smoking:true});
+    this.fireCar=car;this.fire.position.set(car.x,car.y+.65,car.z);this.fire.scale.setScalar(1);this.fire.visible=true;
+    this.G.hud.feed('999 call: a car on fire · '+(this.G.roadName(car.x,car.z)||'nearby'));
+    return true;
+  }
+  // a car smashed up badly enough (crashes, gunfire: carPhysics.js / combat.js damage) smokes for a few seconds, then
+  // goes up (not one you're sitting in)
+  checkFires(dt){
+    if((this.fireScan=(this.fireScan||0)-dt)>0)return;
+    this.fireScan=1;
+    if(this.calls.some(c=>c.service==='fire'))return;
+    const G=this.G,f=G.focus;
+    for(const v of G.traffic.list){
+      if(v.player||v.burning||v.burnt||!v.dmg||v.def?.wheels===2||v.law||Math.hypot(v.x-f.x,v.z-f.z)>220)continue;
+      const d=v.dmg,total=d[0]+d[1]+d[2]+d[3];
+      if(d[0]<.8&&d[1]<.9&&total<2.2){v.smokeT=0;continue;}
+      v.smoking=true;v.smokeT=(v.smokeT||0)+1;
+      if(v.smokeT>=8&&this.ignite(v))return;
+    }
   }
   dispatchInjuries(dt){
     for(const inc of this.G.police.incidents){
@@ -135,6 +156,7 @@ export class Neighbourhood {
     const G=this.G;
     for(let i=this.calls.length-1;i>=0;i--){
       const s=this.calls[i],v=s.unit,medic=s.service==='ambulance',fire=s.reason==='vehicle fire';
+      if(fire&&this.fireCar)this.fire.position.set(this.fireCar.x,this.fireCar.y+.65,this.fireCar.z);
       const patient=medic?s.incident?.patient:null;
       const x=patient?.x??s.x,z=patient?.z??s.z;
       s.time+=dt;
@@ -167,7 +189,9 @@ export class Neighbourhood {
       }
       if(s.finished||v.player||v.dead||s.time>420){
         if(patient)patient.awaitingMedic=false;
-        if(fire)this.fire.visible=false;
+        // someone who died: the paramedics take them away in the ambulance
+        if(patient?.dead&&s.finished)patient.gone=true;
+        if(fire){this.fire.visible=false;const c=this.fireCar;if(c){c.burning=false;c.burnt=true;c.smoking=false;c.paint=0x231f1c;this.fireCar=null;}}
         Object.assign(v,{parked:false,target:null,siren:false,lightsOnly:false,occupied:false,status:'returning',retiredCrew:true});
         this.calls.splice(i,1);
       }
@@ -232,7 +256,7 @@ export class Neighbourhood {
       this.nextFire=this.elapsed+1200+Math.random()*1200;
       if(!this.G.police.incidents.some(i=>i.status!=='cleared'))this.startFire();
     }
-    this.dispatchInjuries(dt);this.response(dt);
+    this.checkFires(dt);this.dispatchInjuries(dt);this.response(dt);
     this.commuter();
     this.actors=[...(this.team||[]),...this.calls.flatMap(c=>c.crew||[])];
   }

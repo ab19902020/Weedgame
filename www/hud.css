@@ -242,3 +242,18 @@ body:has(#homeTV) #btns, body:has(#homeTV) #stickRest, body:has(#homeTV) #stickB
 #homeTV.watchFull { inset:0; width:auto; max-width:none; max-height:none; transform:none; border:0; border-radius:0; background:black; align-content:center; }
 #homeTV.watchFull video { width:100%; height:calc(100% - 90px); object-fit:contain; }
 #homeTV video[hidden] { display:none; }
+
+/* wanted level and health (wanted.js): under the minimap */
+#lawBar{display:flex;align-items:center;gap:6px;margin-top:4px;width:var(--mini-size,150px)}
+#hpBar{flex:1;min-width:40px;height:6px;background:#0009;border-radius:3px;overflow:hidden;box-shadow:0 0 0 1px #000a}
+#hpBar i{display:block;height:100%;width:100%;background:#5bd16b;transition:width .25s}
+#hpBar.low i{background:#e0453a;animation:pulse .5s infinite alternate}
+#stars{font-size:15px;line-height:1;letter-spacing:1px;white-space:nowrap;text-shadow:0 1px 3px #000,0 0 6px #000}
+#stars b{color:#ffd34d;font-weight:400}#stars s{color:#ffffff40;text-decoration:none}
+#stars.flash b{animation:starflash .55s steps(2) infinite}
+@keyframes starflash{50%{color:#ffffff40}}
+#hurt{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse at center,transparent 45%,#a8000099 100%)}
+#bigText{position:absolute;left:0;right:0;top:38%;text-align:center;font:800 clamp(40px,9vw,76px)/1 Georgia,'Times New Roman',serif;letter-spacing:.06em;text-shadow:0 3px 0 #000,0 0 24px #000;pointer-events:none;animation:bigin .6s ease-out}
+#bigText[hidden]{display:none}
+#bigText.wasted{color:#d6392f}#bigText.busted{color:#f4f4f4}
+@keyframes bigin{from{opacity:0;transform:scale(1.25)}}

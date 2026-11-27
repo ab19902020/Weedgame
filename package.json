@@ -1,6 +1,6 @@
 {
  "name": "green-county-berkshire",
- "version": "0.39.0",
+ "version": "0.40.0",
  "private": true,
  "scripts": {
   "build": "node tools/build.mjs",
@@ -13,6 +13,7 @@
   "acceptance:quick": "ONLY=${ONLY:-collision,signal,flythrough,traffic persists,mission} xvfb-run -a node tools/test/acceptance.js ${QUICK_OUT:-/tmp/acceptance-quick}",
   "test:police": "xvfb-run -a node tools/test/police.js",
   "test:play": "node tools/test/playability.mjs",
+  "test:wanted": "node tools/test/wanted.mjs /tmp",
   "rail": "node --no-warnings tools/rail/build_rail.mjs",
   "stops": "node --no-warnings tools/roads/stops.mjs"
  },

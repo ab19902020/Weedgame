@@ -131,8 +131,10 @@ export class RiggedPeople {
       }
       if (a.previewClip && R.once.includes(pick.clip) && !action.isRunning()) action.reset().play();
       action.timeScale = slot.scale = pick.scale;
-      slot.root.position.set(a.x,a.y,a.z);
+      slot.root.position.set(a.x,a.y+(a.down||0)*0.14,a.z);
+      slot.root.rotation.order = 'YXZ';
       slot.root.rotation.y = Math.PI/2-a.heading+(a.pose === 'flee' ? Math.PI : 0);
+      slot.root.rotation.x = -(a.down || 0) * Math.PI / 2 * 0.95;   // down (wanted.js: Tasered, or wasted): flat on his back
       const swim = pick.clip === R.swim;
       slot.body.rotation.x = swim && R.swimTilt ? Math.PI*.46 : -(a.fall || 0)*Math.PI/2;
       slot.body.position.y = swim && R.swimTilt ? .5 : .15*(a.fall || 0);

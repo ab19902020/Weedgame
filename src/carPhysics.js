@@ -210,7 +210,10 @@ export class CarDynamics {
     let thr = 0, brk = 0, hb = false, steerT = 0;
     // assists: 1 Easy .. 0 Realistic. Easy gives every car near-full help (the sports cars too); Realistic leaves the
     // light stability and traction control a road car of that sort has (less on the sports cars)
-    const A = ctl ? Math.max(0, Math.min(1, ctl.assists ?? 1)) : 0, AS = A * Math.max(0.9, P.assist) + (1 - A) * 0.6 * P.assist;
+    // knocked by a police car (a PIT or a ram, wanted.js): for a second the stability control can't hold it, so the
+    // back of the car comes round as it does in a real PIT
+    const kn = v.knockT > 0 ? 0.12 : 1;
+    const A = ctl ? Math.max(0, Math.min(1, ctl.assists ?? 1)) : 0, AS = (A * Math.max(0.9, P.assist) + (1 - A) * 0.6 * P.assist) * kn;
     const muS = P.mu * ph.surf * (ctl ? 1.07 : 1);   // a touch more grip for the player than the tyres would give: fun before simulation
     if (ctl) {
       if (ctl.throttle > 0.05) { if (u < -0.8) brk = ctl.throttle; else { thr = ctl.throttle; if (ph.gear < 1) ph.gear = 1; } }
@@ -229,7 +232,7 @@ export class CarDynamics {
       // turn at walking pace that is geometry, and steering into it wound the lock on past full)
       if (!hb && speed > 4) {
         const arN = Math.atan2(vl - ph.w * P.b, Math.max(Math.abs(u), 0.8)), ex = Math.sign(arN) * Math.max(0, Math.abs(arN) - 0.04);
-        steerT += Math.max(-0.35, Math.min(0.35, ex * (0.5 + 0.5 * A) * P.assist * Math.min(1, (speed - 4) / 4))) * Math.sign(u || 1);
+        steerT += Math.max(-0.35, Math.min(0.35, ex * (0.5 + 0.5 * A) * P.assist * kn * Math.min(1, (speed - 4) / 4))) * Math.sign(u || 1);
       }
       steerT += ((dmg[3] - dmg[2]) * 0.05 + Math.max(dmg[0] - 0.5, 0) * 0.03) * Math.min(1, speed / 10);   // bent steering pulls
       // the wheel turns quickly at parking speeds and more calmly at speed, and comes back to centre faster
@@ -337,7 +340,7 @@ export class CarDynamics {
     // yaw limiter (ESP): stops a spin building beyond what the tyres can hold, unless on the handbrake
     if (ctl && !hb && speed > 6) {
       const wMax = mu * G0 / speed * 1.15 + 0.15;
-      if (Math.abs(ph.w) > wMax) Mz -= Math.sign(ph.w) * (Math.abs(ph.w) - wMax) * P.Iz * 6 * P.assist;
+      if (Math.abs(ph.w) > wMax) Mz -= Math.sign(ph.w) * (Math.abs(ph.w) - wMax) * P.Iz * 6 * P.assist * kn;
     }
     // ---- integrate in the world frame
     const ax = Fx / P.m, ay = Fy / P.m;
@@ -456,9 +459,13 @@ export class CarDynamics {
       const [nx, nz, depth, cx, cz] = hit;      // n points from o towards v
       const Po = params(o.model), oph = this.ph(o);
       const oLoose = this.loose.has(o);
-      // velocity of o: loose bodies carry their own; traffic moves along its heading; parked cars stand still
-      const ovx = oLoose ? oph.vx : o.parked ? 0 : Math.cos(o.heading) * (o.v || 0), ovz = oLoose ? oph.vz : o.parked ? 0 : Math.sin(o.heading) * (o.v || 0);
-      const ow = oLoose ? oph.w : 0;
+      // two cars that are both driven through this physics (the player's and a police car in a pursuit, wanted.js,
+      // or two police cars): a real two-body hit, each pushed by the other, neither turned into a crashed wreck
+      const pair = (o.driven || o.player) && (v.driven || v.player);
+      // velocity of o: loose and driven bodies carry their own; traffic moves along its heading; parked cars stand still
+      const own = oLoose || pair;
+      const ovx = own ? oph.vx : o.parked ? 0 : Math.cos(o.heading) * (o.v || 0), ovz = own ? oph.vz : o.parked ? 0 : Math.sin(o.heading) * (o.v || 0);
+      const ow = own ? oph.w : 0;
       const ocx = o.x + Math.cos(o.heading) * Po.cgx, ocz = o.z + Math.sin(o.heading) * Po.cgx;
       const ra = [cx - (v.x + fx * cgx), cz - (v.z + fz * cgx)], rb = [cx - ocx, cz - ocz];
       const va = [ph.vx - ph.w * ra[1], ph.vz + ph.w * ra[0]], vb = [ovx - ow * rb[1], ovz + ow * rb[0]];
@@ -471,7 +478,7 @@ export class CarDynamics {
         let invB = 1 / Po.m + rnb * rnb / Po.Iz;
         const jTry = -(1 + e) * vn / (1 / P.m + rna * rna / P.Iz + invB);
         const dvB = jTry / Po.m;
-        const kinematic = !oLoose && !o.parked && dvB < 1.6 && !o.player;
+        const kinematic = !oLoose && !o.parked && dvB < 1.6 && !o.player && !pair;
         if (kinematic) invB = 0;
         const j = -(1 + e) * vn / (1 / P.m + rna * rna / P.Iz + invB);
         ph.vx += j * nx / P.m; ph.vz += j * nz / P.m; ph.w += rna * j / P.Iz;
@@ -484,7 +491,15 @@ export class CarDynamics {
         this.kick(v, (j * nx + jt * tx) / P.m, (j * nz + jt * tz) / P.m, fx, fz, rx, rz);
         if (-vn > 3) this.G.breakables?.crash(v, cx, cz, -vn, nx, nz, o);
         if (Math.abs(vt) > 4) this.G.breakables?.scrape(cx, v.y || 0, cz, ph.vx, ph.vz, Math.abs(vt));
-        if (!kinematic && !o.player) {
+        if (pair) {
+          oph.vx -= (j * nx + jt * tx) / Po.m; oph.vz -= (j * nz + jt * tz) / Po.m; oph.w -= (rnb * j + rtb * jt) / Po.Iz;
+          const pc = v.player && o.driven ? v : o.player && v.driven ? o : null;
+          if (pc && -vn > 1.2) pc.knockT = Math.max(pc.knockT || 0, 1.1);
+          if (Math.abs(vn) > 1.5) this.G.events.emit('vehicleHit', { by: v, other: o, speed: Math.abs(vn) });
+          this.damage(o, Po, cx, cz, j / Po.m);
+          const ofx = Math.cos(o.heading), ofz = Math.sin(o.heading);
+          this.kick(o, -(j * nx + jt * tx) / Po.m, -(j * nz + jt * tz) / Po.m, ofx, ofz, -ofz, ofx);
+        } else if (!kinematic && !o.player) {
           const ophL = this.makeLoose(o);
           ophL.vx -= (j * nx + jt * tx) / Po.m; ophL.vz -= (j * nz + jt * tz) / Po.m; ophL.w -= (rnb * j + rtb * jt) / Po.Iz;
           if (!o.parked && !o.crashed && Math.abs(vn) > 2.5) this.G.events.emit('vehicleHit', { by: v, other: o, speed: Math.abs(vn) });
@@ -498,7 +513,7 @@ export class CarDynamics {
         if (-vn > 1) this.events.push({ x: cx, z: cz, speed: -vn });
       }
       // separate: loose and parked cars share the correction by mass, moving traffic does not budge
-      const share = this.loose.has(o) || (o.parked && !o.player) ? pushShare : 1;
+      const share = this.loose.has(o) || (o.parked && !o.player) || pair ? pushShare : 1;
       v.x += nx * depth * share; v.z += nz * depth * share;
       if (share < 1) { o.x -= nx * depth * (1 - share); o.z -= nz * depth * (1 - share); }
     }
@@ -576,6 +591,7 @@ export class CarDynamics {
     v.steer = ph.steer;
     v.rpm = ph.rpm; v.gear = ph.gear;
     ph.scrape *= Math.max(0, 1 - dt * 4);
+    if (v.knockT > 0) v.knockT -= dt;
     if (G.tyreFx) G.tyreFx.track(v, P, ph, G.world?.s?.wet || 0);
   }
 }

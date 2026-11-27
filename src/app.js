@@ -18,6 +18,7 @@ import { People } from './characters.js';
 import { Neighbourhood } from './neighbourhood.js';
 import { Peds } from './peds.js';
 import { Police } from './police.js';
+import { Wanted } from './wanted.js';
 import { Parking, Buses } from './services.js';
 import { Atmos } from './atmos.js';
 import { Landmarks } from './landmarks.js';
@@ -100,6 +101,7 @@ G.people = new People(G.scene, G.renderer.shadowMap.enabled);
 G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
 G.peds = new Peds(G);
 G.police = new Police(G);
+G.wanted = new Wanted(G, camInfo);   // coming after you, only for a killing (wanted.js; updated from police.update)
 G.cones = new Cones(G);              // traffic cones at police scenes (cones.js)
 G.haptics = new Haptics(G);          // controller rumble and DualSense triggers (haptics.js)
 G.neighbourhood=new Neighbourhood(G);

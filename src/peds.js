@@ -51,9 +51,9 @@ export class Peds {
     const core = d && d.core ? Math.max(0, 1 - Math.hypot(x - d.x, z - d.z) / d.coreR) : 0;
     const dow = new Date(G.world.time * 1000).getDay();
     const wet = 1 - G.world.cur.rain * 0.55;
-    // e.g. Broad Street on a Saturday at 14:00 -> ~200 (the preset caps it: 45 / 80 / 140); a Woodley street at 13:00 on
-    // a weekday -> ~19, at 16:00 ~33; at 06:00 ~2
-    return (55 * footfall('local', dow, hr) + core * 200 * footfall('centre', dow, hr)) * wet;
+    // e.g. Broad Street on a Saturday at 14:00 -> ~300 (the preset caps it: 75 / 130 / 200); a Woodley street at 13:00 on
+    // a weekday -> ~38, at 16:00 ~66; at 06:00 ~4 (v0.40: twice as many on the ordinary streets as before)
+    return (110 * footfall('local', dow, hr) + core * 300 * footfall('centre', dow, hr)) * wet;
   }
   pickWalkEdge(focus) {
     // collect walkable edges in range
@@ -492,7 +492,7 @@ export class Peds {
   }
   disturb(x, z, r, kind) {
     for (const p of this.list) {
-      const d = Math.hypot(p.x - x, p.z - z); if (d > r || p.fallT > 0) continue;
+      const d = Math.hypot(p.x - x, p.z - z); if (d > r || p.fallT > 0 || p.mode === 'chase') continue;
       // gunfire: everyone in earshot runs, for longer; anything else, only those close by
       const gun = kind === 'gun';
       p.reactT = gun ? 5 + this.rand() * 4 : 2 + this.rand() * 2; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = d < 8 || gun ? 'flee' : this.rand() < 0.3 ? 'phone' : 'point';
@@ -521,7 +521,7 @@ export class Peds {
     p.impact = { elapsed: 0, duration: dur, knockdown: type === 'down' || lethal, vx: Math.cos(dir) * push * pushK, vz: Math.sin(dir) * push * pushK, react: true, from: dir + Math.PI };
     if (!lethal && type !== 'shot') p.heading = dir + Math.PI;
     p.fallT = dur;
-    if (lethal) { p.dead = true; p.deadT = 0; }
+    if (lethal) { p.dead = true; p.deadT = 0; this.G.events?.emit('pedKilled', { p, by: o.by || null, how: o.how || kind }); }
   }
   // a round that doesn't kill: how they take it depends on where it hit (o.zone head/torso/arm/leg, o.fromBack,
   // o.sideHit +1 their right) and then they run, limp or hunch off, or go down and lie there hurt for a while
@@ -615,8 +615,12 @@ export class Peds {
       const c = Math.cos(v.heading), s = Math.sin(v.heading);
       const lx = dx * c + dz * s, lz = -dx * s + dz * c;
       if (Math.abs(lx) < v.def.L / 2 + 0.3 && Math.abs(lz) < v.def.W / 2 + 0.3 && !(p.fallT > 0)) {
-        this.strike(p, Math.atan2(dz,dx), speed);
-        this.G.events.emit('pedHit', { p, v, speed });
+        // your car hard (36 mph and up) kills; slower, or a police car in a pursuit (they'd brake), they're knocked down
+        // and hurt (paramedics come)
+        const fatal = speed >= 16 && !!v.player;
+        if (fatal) this.hurt(p, Math.atan2(dz, dx), 'down', 1000, { lethal: true, push: Math.min(3, speed / 6), by: 'player', how: 'car' });
+        else this.strike(p, Math.atan2(dz,dx), speed);
+        this.G.events.emit('pedHit', { p, v, speed, fatal });
         this.disturb(p.x, p.z, 35, 'hit');
       }
     }

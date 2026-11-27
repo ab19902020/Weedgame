@@ -50,15 +50,25 @@ export class Brothers {
     }
     const veh = this.vehicleOf(me);
     if(G.interiors?.homeTV?.seated){G.interiors.homeTV.updateSeat(dt);return;}
-    const law=G.police?.player;
-    if(law?.state==='detained'||law?.stun>0||law?.surrendered){
-      this.speedNow=0;const a=this.actor[this.active];a.speed=0;a.running=false;a.pose='hands';a.t+=dt;
+    // held by the police (wanted.js): Tasered and down, hands up, being arrested, or wasted. No moving; in a car it
+    // rolls to a stop under you
+    if (G.wanted?.holding()) {
+      const a = this.actor[this.active], H = G.wanted.hold;
+      this.speedNow = 0; a.speed = 0; a.running = false; a.t += dt;
+      if (veh) {
+        G.carDyn.drive(veh, dt, { throttle: 0, brake: 0.6, steer: 0, handbrake: false, assists: 1 });
+        me.x = veh.x; me.y = veh.y; me.z = veh.z; me.heading = veh.heading;
+        this.followCam(dt, veh.x, veh.y + 1.5, veh.z, 8.5, null, 1, 0.3);
+      } else {
+        a.x = me.x; a.y = me.y; a.z = me.z; a.heading = me.heading; a.pose = H.kind === 'surrender' ? 'hands' : 'idle';
+        this.followCam(dt, me.x, me.y + 1.55 - (a.down || 0) * 1.15, me.z, 4.8, null, 1, 0.45);
+      }
       return;
     }
     if (veh) this.drive(dt, input, veh); else this.walk(dt, input);
     if (input.consume('camera')) this.cycleCamera(!!veh);
     if (input.consume('use')) {
-      if(law?.state==='footchase' && !veh)law.surrendered=true;
+      if (!veh && G.wanted?.canGiveUp() && !this.nearestVehicle()) G.wanted.giveUp();
       else if(!G.interiors?.use())this.toggleVehicle();
     }
     if (input.consume('swap')) this.swap();
@@ -344,6 +354,7 @@ export class Brothers {
   }
   swap() {
     const G = this.G;
+    if (G.wanted?.level || G.wanted?.hold) { G.hud.toast('Not while the police are after you'); return; }   // (as in GTA V)
     const from = this.me;
     const fv = this.vehicleOf(from);
     if (fv && Math.abs(fv.sp || 0) > 1.5) { G.hud.toast('Stop the vehicle before switching'); return; }

@@ -1,8 +1,8 @@
 // The corner shops and the petrol stations' shops (interiors.json kind 'shop'; interiorPlan.js shop()): someone
 // behind the counter, and the till to rob. Walk up to the counter and Rob: with a weapon out the shopkeeper's
 // hands go up and the till's emptied in a couple of seconds; with bare fists it takes a lot longer of shouting.
-// The alarm goes the moment you start, a 999 call brings the nearest police cars on blue lights (police.js
-// callIn) and the cash goes in the brother's pocket. A shop that's been done is wary for a while.
+// The alarm goes the moment you start and people outside scatter; the cash goes in the brother's pocket. (The police
+// only come for a killing: wanted.js.) A shop that's been done is wary for a while.
 import { People } from './characters.js';
 import { cash } from './food.js';
 import { shopColour } from './interiorPlan.js';
@@ -56,7 +56,6 @@ export class Robbery {
   }
   alarm(s) {
     const G = this.G, [x, z] = this.I.toWorld(s, s.W / 2, 0);
-    G.police?.callIn?.(`armed robbery at ${s.name || 'a shop'}`, x, z, 2, 3);
     G.peds?.disturb?.(x, z, 40, 'gun');
   }
   update(dt, b, me) {
@@ -87,7 +86,7 @@ export class Robbery {
       const take = Math.round(base * (wary ? 0.25 : 1) * (j.armed ? 1 : 0.7));
       const bro = G.brothers.me; bro.cash = Math.round((cash(bro) + take) * 100) / 100;
       this.robbed.set(b.site.id, G.time);
-      G.hud?.banner?.(`+£${take} from the till · ${bro.short} has £${bro.cash.toFixed(0)} · get out before the police arrive`, 'pursuit', 5);
+      G.hud?.banner?.(`+£${take} from the till · ${bro.short} has £${bro.cash.toFixed(0)}`, 'clear', 5);
       G.audio?.play?.('Car_Trunk_Open', me.x, me.y + 1, me.z, 0.3);
       this.job = null;
     }

@@ -47,7 +47,8 @@ export class Hud {
     this.G = G;
     const root = document.getElementById('hud');
     root.innerHTML = `
-      <div id="mini"><canvas id="miniC" width="220" height="220"></canvas><div id="road"></div><div id="guidance" hidden><small></small><strong></strong></div></div>
+      <div id="mini"><canvas id="miniC" width="220" height="220"></canvas><div id="lawBar"><span id="hpBar" aria-label="Health"><i></i></span><span id="stars" aria-label="Wanted level"></span></div><div id="road"></div><div id="guidance" hidden><small></small><strong></strong></div></div>
+      <div id="hurt"></div><div id="bigText" hidden></div>
       <div id="clock"></div>
       <div id="banner" hidden></div>
       <div id="toast" hidden></div>
@@ -234,8 +235,19 @@ export class Hud {
     el.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
     this.el('bNext').hidden = !s.lock;
   }
+  // wanted stars (flashing while they search), health, the red edge when you're hit (wanted.js)
+  updateLaw() {
+    const W = this.G.wanted, me = this.G.brothers.me; if (!W) return;
+    const lv = W.level, key = lv + W.phase;
+    if (key !== this._lawKey) { this._lawKey = key; const st = this.el('stars'); st.innerHTML = lv ? '<b>★</b>'.repeat(lv) + '<s>★</s>'.repeat(5 - lv) : ''; st.classList.toggle('flash', W.phase === 'search'); }
+    const hp = Math.round(me.hp ?? 100);
+    if (hp !== this._hp) { this._hp = hp; const b = this.el('hpBar'); b.firstChild.style.width = hp + '%'; b.classList.toggle('low', hp < 30); }
+    const o = W.hitFlash.toFixed(2), hurt = this.el('hurt'); if (hurt._o !== o) { hurt._o = o; hurt.style.opacity = o; }
+  }
+  bigText(t, cls) { const e = this.el('bigText'); e.textContent = t; e.className = cls || ''; e.hidden = false; clearTimeout(this._bigT); this._bigT = setTimeout(() => { e.hidden = true; }, 4200); }
   update(dt) {
     this.updateReticle();
+    this.updateLaw();
     if (!this.el('btns').querySelector('.foot').hidden) this.updateAmmo();
     const G = this.G, me = G.brothers.me, I = G.input;
     if (I.consume('map')) this.toggleMap();
@@ -246,11 +258,12 @@ export class Hud {
     const door=!inCar&&!G.transit.ride?G.interiors?.prompt:null;   // a building's front door (interiors.js)
     const boardable=!door&&!me.inside&&G.transit.nearby(me);
     const waiting=!inCar && !near && !boardable && !door && !me.inside && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
-    const useText=G.police?.player.state==='footchase'&&!inCar?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
+    const giveUp=!inCar&&!near&&!!G.wanted?.canGiveUp();
+    const useText=giveUp?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
     const use=this.el('bUse');
     if(use.lastChild.textContent!==useText){use.lastChild.textContent=useText;use.firstChild.innerHTML=inCar||G.transit.ride&&G.transit.currentStop()?ICON.exit:boardable||G.transit.ride?ICON.bus:ICON.door;}
     use.disabled=!!waiting;
-    const ready=G.police?.player.state==='footchase'||inCar||near||G.transit.ride||boardable||door;
+    const ready=giveUp||inCar||near||G.transit.ride||boardable||door;
     use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable||door)&&!inCar);
     // on foot: stick and actions; driving: wheel (or arrows) and pedals; riding a bus or train: just the stop button
     const ride=!!G.transit.ride, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Steering wheel';
@@ -303,6 +316,11 @@ export class Hud {
       this.nav.draw(c, x => x, z => z, 1 / scale);
       if (G.interiors?.ready) { const reach = (S / 2) / scale; for (const site of G.interiors.sites) { if (site.kiosk || Math.abs(site.dx - me.x) > reach || Math.abs(site.dz - me.z) > reach) continue; siteDot(c, site.dx, site.dz, site.kind, 1 / scale); } }
       if (G.fuel?.ready) { const reach = (S / 2) / scale; for (const st of G.fuel.stations) { if (Math.abs(st.x - me.x) > reach || Math.abs(st.z - me.z) > reach) continue; siteDot(c, st.x, st.z, 'fuel', 1 / scale); } }
+      const W = G.wanted;
+      if (W?.level && W.phase === 'search') {
+        const f = Math.floor(performance.now() / 320) % 2; c.beginPath(); c.arc(W.last.x, W.last.z, W.searchR(), 0, 7);
+        c.fillStyle = f ? 'rgba(255,45,45,0.14)' : 'rgba(45,95,255,0.14)'; c.fill(); c.lineWidth = 2 / scale; c.strokeStyle = f ? '#ff5050' : '#5080ff'; c.stroke();
+      }
       const reach = R / scale;
       for (const v of G.traffic.list) {
         if (Math.abs(v.x - me.x) > reach || Math.abs(v.z - me.z) > reach) continue;
@@ -560,6 +578,8 @@ export class Hud {
       btn('Vehicle fire',()=>this.toast(G.neighbourhood.startFire()?'Vehicle fire reported':'No available crew or suitable location')),
       btn('Stage breakdown nearby', () => { const i = G.police.stageBreakdown(); this.toast(i ? 'A car has broken down · watch for the patrol and recovery truck' : 'No suitable traffic nearby'); }),
     ]);
+    row('Police', [btn('Wanted ★ +1', () => { const W = G.wanted; W.setLevel(W.level ? W.level + 1 : 2, 'Dev: police on to you'); W.spotted(G.brothers.me); }),
+      btn('Clear wanted', () => G.wanted.clear('Dev: wanted level cleared')), btn('Heal', () => { G.brothers.me.hp = 100; this.toast('Health restored'); })]);
     section('Performance & simulation');
     row('Renderer', [btn('Perf overlay', () => { this.perfOn = !this.perfOn; this.el('perf').hidden = !this.perfOn; }), btn('Save perf log', () => G.perf.export()),
       btn(() => G.perf.fly.active ? 'Stop flythrough' : 'Perf flythrough', () => G.perf.fly.active ? G.perf.fly.finish(false) : G.perf.fly.start(), 'perf-flythrough'),

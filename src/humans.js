@@ -24,9 +24,9 @@ import { length as tslLength, uv as tslUv, vec3 as tslVec3, float as tslFloat, s
 
 // instance capacity and range of each level of detail: near (fingers, full faces), mid, far
 const CAP = [28, 120, 300], LOD_NEAR = 11, LOD_MID = 36;   // metres
-const POSE = { walk: 0, idle: 0, flee: 0, talk: 1, phone: 2, umbrella: 3, wave: 4, point: 5, hands: 6, shelter: 7, brace: 8, seated: 9 };
+const POSE = { walk: 0, idle: 0, flee: 0, talk: 1, phone: 2, umbrella: 3, wave: 4, point: 5, hands: 6, shelter: 7, brace: 8, seated: 9, aim: 10 };
 const TAG = { always: 0, hairShort: 1, hairLong: 2, hairBun: 3, hairCurly: 4, hairPony: 5, hairBuzz: 6, helmet: 10, umbrella: 11, bag: 12, cap: 13, hood: 14,
-  glasses: 15, beanie: 16, backpack: 17, carrier: 18, headphones: 19, scarf: 20, coat: 21, skirt: 22, phone: 23 };
+  glasses: 15, beanie: 16, backpack: 17, carrier: 18, headphones: 19, scarf: 20, coat: 21, skirt: 22, phone: 23, gun: 24 };
 // regions: 0 skin, 1 top, 2 trousers, 3 shoes, 4 hair, 6 helmet, 7 umbrella canopy, 8 bag, 9 dark trim, 10 cap, 11 metal,
 // 12 accent (second colour: beanie, scarf, backpack, the T-shirt under an open jacket), 13 carrier bag, 14 skirt
 // accessory bits (iExt.x)
@@ -300,6 +300,12 @@ function bodyGeometry(q) {
     const g = new THREE.BoxGeometry(0.011, 0.14, 0.07); g.translate(-0.226, 0.84, 0.03);
     B.add(g, () => [4, 2.6, 9, TAG.phone]);
   }
+  { // an officer's pistol in the right hand, only while aiming (pose 'aim'): in the rest pose the barrel points down
+    // the arm (it comes up level as the arms come up) with the slide on the back of the hand and the grip in the palm
+    const slide = new THREE.BoxGeometry(0.028, 0.17, 0.03); slide.translate(-0.229, 0.8, 0.045);
+    const grip = new THREE.BoxGeometry(0.026, 0.035, 0.085); grip.translate(-0.229, 0.865, 0.0);
+    B.add(slide, () => [4, 2.6, 9, TAG.gun]); B.add(grip, () => [4, 2.6, 9, TAG.gun]);
+  }
   { // long coat: from the waist to the knees, swinging with the thighs; a skirt or dress to just above the knee
     const ring = (y, rx, rf, rb) => ({ c: [0, y, -0.004], rx, rf, rb, s: 0 });
     const coat = tube([ring(0.99, 0.176, 0.114, 0.128), ring(0.9, 0.202, 0.128, 0.14), ring(0.72, 0.21, 0.138, 0.15), ring(0.5, 0.216, 0.146, 0.156)], seg, 'y', [false, false]);
@@ -388,12 +394,12 @@ function crowdMaterial(tex = null) {
     const rHips = iR3.x, kneelS = iR3.y, fall = iR3.z, fallYaw = iR3.w, drop = iExt.w;
     // ---- accessory / hair-style visibility
     const hairOn = step(0.5, tag).mul(step(tag, 6.5)).mul(step(abs(tag.sub(style)), 0.5));
-    const phoneOn = eq(pose, 2).add(eq(istyle, 3)).min(1);
+    const phoneOn = eq(pose, 2).add(eq(istyle, 3)).min(1), gunOn = eq(pose, 10);
     const keep = eq(tag, 0).add(hairOn).add(eq(tag, 10).mul(bit(flags, 0))).add(eq(tag, 11).mul(bit(flags, 1))).add(eq(tag, 12).mul(bit(flags, 2)))
       .add(eq(tag, 13).mul(bit(flags, 4))).add(eq(tag, 14).mul(bit(flags, 5)))
       .add(eq(tag, 15).mul(bit(acc, 0))).add(eq(tag, 16).mul(bit(acc, 1))).add(eq(tag, 17).mul(bit(acc, 2))).add(eq(tag, 18).mul(bit(acc, 3)))
       .add(eq(tag, 19).mul(bit(acc, 4))).add(eq(tag, 20).mul(bit(acc, 5))).add(eq(tag, 21).mul(bit(acc, 6))).add(eq(tag, 22).mul(bit(acc, 7)))
-      .add(eq(tag, 23).mul(phoneOn)).min(1);
+      .add(eq(tag, 23).mul(phoneOn)).add(eq(tag, 24).mul(gunOn)).min(1);
     // ---- body shape in the rest pose
     let p = positionGeometry, n = normalGeometry;
     const y = p.y;
@@ -451,14 +457,15 @@ function crowdMaterial(tex = null) {
     const sElb = pockets.mul(0.62).add(folded.mul(1.28)).add(texting.mul(1.6));
     const sTw = pockets.mul(0.32).add(folded.mul(1.05)).add(texting.mul(0.5));
     const armPose = isArm.mul(sel(pose.greaterThan(5.5), float(1), isR.mul(step(0.5, pose)))).mul(mix(float(1),brace,eq(pose,8)));
+    const aimP = eq(pose, 10);
     const pFlex = sel(eq(pose, 1).greaterThan(0.5), sin(t.mul(3.1)).mul(0.25).add(0.5), sel(eq(pose, 2).greaterThan(0.5), float(0.35), sel(eq(pose, 3).greaterThan(0.5), float(1.0),
-      sel(eq(pose, 4).greaterThan(0.5), float(0.2), sel(eq(pose, 5).greaterThan(0.5), float(1.45), sel(eq(pose, 6).greaterThan(0.5), float(0.3), float(0.55)))))));
+      sel(eq(pose, 4).greaterThan(0.5), float(0.2), sel(eq(pose, 5).greaterThan(0.5), float(1.45), sel(eq(pose, 6).greaterThan(0.5), float(0.3), sel(aimP.greaterThan(0.5), float(1.5), float(0.55))))))));
     const pAbd = sel(eq(pose, 1).greaterThan(0.5), float(0.15), sel(eq(pose, 2).greaterThan(0.5), float(0.45), sel(eq(pose, 3).greaterThan(0.5), float(0.05),
-      sel(eq(pose, 4).greaterThan(0.5), float(2.5), sel(eq(pose, 5).greaterThan(0.5), float(0.1), sel(eq(pose, 6).greaterThan(0.5), float(2.7), float(-0.32)))))));
+      sel(eq(pose, 4).greaterThan(0.5), float(2.5), sel(eq(pose, 5).greaterThan(0.5), float(0.1), sel(eq(pose, 6).greaterThan(0.5), float(2.7), sel(aimP.greaterThan(0.5), float(0.05), float(-0.32))))))));
     const pElb = sel(eq(pose, 1).greaterThan(0.5), sin(t.mul(2.3)).mul(0.2).add(1.3), sel(eq(pose, 2).greaterThan(0.5), float(2.55), sel(eq(pose, 3).greaterThan(0.5), float(1.05),
-      sel(eq(pose, 4).greaterThan(0.5), sin(t.mul(8)).mul(0.35).add(0.6), sel(eq(pose, 5).greaterThan(0.5), float(0.05), sel(eq(pose, 6).greaterThan(0.5), float(0.25), float(1.7)))))));
+      sel(eq(pose, 4).greaterThan(0.5), sin(t.mul(8)).mul(0.35).add(0.6), sel(eq(pose, 5).greaterThan(0.5), float(0.05), sel(eq(pose, 6).greaterThan(0.5), float(0.25), sel(aimP.greaterThan(0.5), float(0.12), float(1.7))))))));
     let aFlex = mix(mix(gFlex, sFlex, st), pFlex, armPose), aAbd = mix(mix(gAbd, sAbd, st), pAbd, armPose), aElb = mix(mix(gElb, sElb, st), pElb, armPose);
-    let aTw = mix(sTw.mul(st), float(0), armPose);
+    let aTw = mix(sTw.mul(st), aimP.mul(0.3), armPose);
     // reactions: both hands to the stomach, arms flung out (or thrown back), one arm flung by a round or holding a wound
     aFlex = mix(aFlex, float(0.36), clutch); aAbd = mix(aAbd, float(0.02), clutch); aElb = mix(aElb, float(1.4), clutch); aTw = mix(aTw, float(0.85), clutch);
     const flOut = max(flail, 0), flBack = max(flail.negate(), 0);
@@ -726,7 +733,7 @@ function packExtras(L, a, reacting, out, o) {
   let acc = 0;
   if (a.hiVis) acc = L.glasses ? ACC.glasses : 0;     // on duty: uniform only
   else {
-    const covered = a.hat || L.cap, handsBusy = a.pose === 'umbrella' || a.pose === 'phone' || a.pose === 'wave' || a.pose === 'point' || a.pose === 'hands' || a.pose === 'seated';
+    const covered = a.hat || L.cap, handsBusy = a.pose === 'umbrella' || a.pose === 'phone' || a.pose === 'wave' || a.pose === 'point' || a.pose === 'hands' || a.pose === 'seated' || a.pose === 'aim';
     if (L.glasses) acc |= ACC.glasses;
     if (L.beanie && !covered) acc |= ACC.beanie;
     if (L.backpack) acc |= ACC.backpack;

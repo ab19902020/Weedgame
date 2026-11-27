@@ -262,7 +262,7 @@ export class Traffic {
     for (const l of occ.values()) { l.length = 0; spare.push(l); }
     occ.clear();
     for (const v of this.list) {
-      if (v.parked || v.h == null || v.player) continue;
+      if (v.parked || v.h == null || v.player || v.driven) continue;
       let l = occ.get(v.h); if (!l) occ.set(v.h, l = spare.pop() || []); l.push(v);
     }
     for (const l of occ.values()) if (l.length > 1) l.sort(byS);
@@ -273,7 +273,7 @@ export class Traffic {
       v.near = d2 < R2;
       // traffic around the inactive brother waits where it is until he is played again
       v.frozen = v.kind !== 'police' && d2 > BUBBLE_R * BUBBLE_R && this.nearAnchor(v);
-      if (v.frozen || v.offroad) continue;     // off-road police are moved by police.js
+      if (v.frozen || v.offroad || v.driven) continue;     // off-road police are moved by police.js, pursuit cars by wanted.js
       if (v.crashed || v.brokenDown) { v.v = 0; v.brake = true; v.hazard = true; continue; }
       v.tick=(v.tick||0)+dt;
       if(v.near || v.tick>=.4 || v.s+v.v*dt>=net.len[v.h>>1]){
