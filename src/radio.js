@@ -16,7 +16,7 @@ export class GameRadio {
     this.G=G;this.devices=new Map();this.resume={music:{index:0,time:0},podcast:{index:0,time:0}};
     this.context=null;this.current='off';this.selected='off';this.volume=.55;this.opened=false;
     this.audio=new Audio();this.audio.preload='metadata';this.audio.volume=this.volume;
-    this.audio.addEventListener('ended',()=>this.skip(1));
+    this.audio.addEventListener('ended',()=>{if(this.current!=='off')this.skip(1);});
     this.audio.addEventListener('error',()=>{this.status='Audio unavailable — install the radio asset pack';this.refresh();});
     this.audio.addEventListener('timeupdate',()=>this.refreshProgress());
     this.audio.addEventListener('loadedmetadata',()=>{const p=this.resume[this.current];if(p&&p.time>0)this.audio.currentTime=Math.min(p.time,Math.max(0,this.audio.duration-.2));this.refreshProgress();});
@@ -51,23 +51,23 @@ export class GameRadio {
     const IN=this.G.interiors?.at(me);return IN?.plan?.items?.some(i=>i.type==='radio')?'home:'+IN.site.id:null;}
   savePosition(){const p=this.resume[this.current];if(p&&Number.isFinite(this.audio.currentTime)&&!this.audio.error&&this.audio.readyState>0)p.time=this.audio.currentTime;}
   setContext(key){if(key===this.context)return;this.savePosition();this.audio.pause();this.close();this.context=key;this.manualPause=false;this.current='off';if(key){const id=this.devices.get(key)||'off';this.tune(id);}else this.refresh();}
-  update(){this.setContext(this.device());const blocked=!this.G.hud.menu.el.hidden||!this.G.hud.el('map').hidden||this.G.interiors?.homeTV?.seated||document.hidden;
-    this.button.hidden=!this.context||blocked;if(blocked&&this.opened)this.close();
+  update(){this.setContext(this.device());const blocked=!this.G.hud.menu.el.hidden||!this.G.hud.el('map').hidden||!this.G.hud.el('dev').hidden||this.G.hud.wheelOpen||this.G.interiors?.homeTV?.seated||this.G.interiors?.games?.open||document.hidden;
+    this.blocked=blocked;this.button.hidden=!this.context||blocked;if(blocked&&this.opened)this.close();
     if(this.context?.startsWith('home:')){const me=this.G.brothers.me,IN=this.G.interiors.at(me),it=IN?.plan.items.find(i=>i.type==='radio');if(it){const [x,z]=this.G.interiors.toLocal(IN.site,me.x,me.z);this.attenuation=Math.max(.12,1-Math.hypot(x-it.x,z-it.y)/13);}}else this.attenuation=1;
     this.setVolume();
   }
   setVolume(){this.audio.volume=Math.max(0,Math.min(1,this.volume*(this.attenuation??1)));}
-  toggle(){if(this.opened)this.close();else if(this.device()){this.setContext(this.device());this.opened=true;this.selected=this.current;this.el.hidden=false;this.G.input.release();this.refresh();}}
-  close(){this.opened=false;this.el.hidden=true;}
+  toggle(){if(this.opened)this.close();else if(!this.blocked&&this.device()){this.setContext(this.device());this.opened=true;this.selected=this.current;this.el.hidden=false;this.G.input.release();this.G.input.keys.clear();this.G.input.held.clear();this.G.input.pressed.clear();this.refresh();}}
+  close(){if(this.opened){this.G.input.release();this.G.input.pressed.clear();this.G.input.keys.clear();this.G.input.held.clear();}this.opened=false;this.el.hidden=true;}
   select(id){if(STATIONS.some(s=>s.id===id)){this.selected=id;this.refresh();}}
   step(dir){const i=STATIONS.findIndex(s=>s.id===this.selected);this.select(STATIONS[nextTrack(i,STATIONS.length,dir)].id);}
-  tune(id){if(!this.context||!STATIONS.some(s=>s.id===id))return;this.savePosition();this.audio.pause();this.current=id;this.selected=id;this.devices.set(this.context,id);this.manualPause=false;this.status='';if(id!=='off')this.load();this.refresh();}
+  tune(id){if(!this.context||!STATIONS.some(s=>s.id===id))return;if(id===this.current&&id!=='off'){this.manualPause=false;this.play();this.refresh();return;}this.savePosition();this.audio.pause();this.current=id;this.selected=id;this.devices.set(this.context,id);this.manualPause=false;this.status='';if(id!=='off')this.load();this.refresh();}
   load(){const s=STATIONS.find(s=>s.id===this.current),p=this.resume[this.current];if(!s?.tracks.length||!p)return;
     this.audio.src='radio/'+s.tracks[p.index][1]+'.m4a';this.setVolume();this.play();}
   play(){if(this.current==='off'||!this.context||this.manualPause||document.hidden)return;this.audio.play().catch(()=>{this.status='Press Play to start audio';this.refresh();});}
   pauseToggle(){if(this.current==='off')return;if(this.audio.paused){this.manualPause=false;this.play();}else{this.manualPause=true;this.audio.pause();}this.refresh();}
   skip(dir){const s=STATIONS.find(s=>s.id===this.current),p=this.resume[this.current];if(!s?.tracks.length||!p)return;
-    if(s.id==='podcast'&&dir<0){this.audio.currentTime=Math.max(0,this.audio.currentTime-30);return;}
+    if(s.id==='podcast'&&dir<0&&this.audio.readyState>0){this.audio.currentTime=Math.max(0,this.audio.currentTime-30);return;}
     p.index=nextTrack(p.index,s.tracks.length,dir);p.time=0;this.manualPause=false;this.status='';this.load();this.refresh();}
   refresh(){const s=STATIONS.find(s=>s.id===this.current),p=this.resume[this.current];this.button.textContent=s.id==='off'?'♫ Radio':'♫ '+s.name;
     this.el.querySelectorAll('.station').forEach(b=>{b.classList.toggle('on',b.dataset.id===this.selected);b.setAttribute('aria-pressed',String(b.dataset.id===this.current));});

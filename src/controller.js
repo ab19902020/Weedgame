@@ -39,6 +39,7 @@ export class Controller {
     this.showCursor(false);
     // ---- Options: the pause menu (it closes any other panel first)
     if (tap(OPT) || tap(PS)) {
+      if(G.radio?.opened){G.radio.close();this.previous=buttons;return;}
       if (!M.el.hidden) M.close(); else if (!H.el('map').hidden) H.toggleMap(false); else M.open();
       this.previous = buttons; return;
     }

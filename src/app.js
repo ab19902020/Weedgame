@@ -226,7 +226,7 @@ function frame(time) {
   G._renderMs = elapsed;
   G.radio.update();
   G.controller.poll(dt);
-  if (!G.hud.menu.el.hidden || document.hidden) { G._ema = 0; G._resT = 0; tuning.quiet = 0; return; }
+  if (G.radio.opened || !G.hud.menu.el.hidden || document.hidden) { G._ema = 0; G._resT = 0; tuning.quiet = 0; return; }
   // a pub game on screen: the world waits (and the phone gets all its time for the game)
   if (G.interiors?.games?.open) { last = now; return; }
   if (G.Q.get('fixeddt')) dt = Number(G.Q.get('fixeddt'));
