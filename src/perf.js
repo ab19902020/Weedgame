@@ -31,21 +31,21 @@ export const BUDGETS = {
   // 30 with everything. Real lights (each paid for by every lit pixel) stay High only. vehicles: moving cars;
   // parkedMax: parked cars, kept to a handful (the moving traffic is what fills the streets); people: pedestrians
   // (the crowd is one instanced draw per level of detail, so these are cheap to draw; v0.40 raised them by about
-  // two-thirds, 75 / 130 / 200, so the streets aren't empty).
+  // two-thirds, to 75 / 130 / 200, and v0.41.1 by half again, 110 / 190 / 280, so the streets look lived in).
   low: {
-    r0: 220, r1: 480, tiles: 26, drawCalls: 110, tris: 250e3, people: 75, vehicles: 16, parkedMax: 3, bubble: 360, parkFill: 0.08, cloudSteps: 6,
+    r0: 220, r1: 480, tiles: 26, drawCalls: 110, tris: 250e3, people: 110, vehicles: 16, parkedMax: 3, bubble: 360, parkFill: 0.08, cloudSteps: 6,
     outH: 720, pixelRatio: [0.8, 1.0, 1.25], shadow: { size: 1024, extent: 24, far: 400, every: 2, buildings: false, trees: false, props: false, traffic: false }, antialias: false,
     treeDist: 160, lampDist: 140, signDist: 100, markDist: 200, vehicleDist: 300, peopleDist: 90,
     post: false, ao: { scale: 0, samples: 0 }, bloom: 0, ibl: 16, iblEvery: 30, grass: false, ssr: null, targetFps: 120, bushes: 0.25,
   },
   medium: {
-    r0: 260, r1: 650, tiles: 38, drawCalls: 170, tris: 450e3, people: 130, vehicles: 30, parkedMax: 6, bubble: 420, parkFill: 0.1, cloudSteps: 8,
+    r0: 260, r1: 650, tiles: 38, drawCalls: 170, tris: 450e3, people: 190, vehicles: 30, parkedMax: 6, bubble: 420, parkFill: 0.1, cloudSteps: 8,
     outH: 1080, pixelRatio: [0.7, 1.15, 1.35], shadow: { size: 1024, extent: 40, far: 450, every: 2, trees: false, props: false, traffic: false }, antialias: true, fsr: true, outPr: 2.0, scale: [0.5, 0.62, 0.85],
     treeDist: 220, lampDist: 200, signDist: 150, markDist: 300, vehicleDist: 380, peopleDist: 120,
     post: true, ao: { scale: 0, samples: 0 }, bloom: 0.18, ibl: 32, iblEvery: 20, grass: false, ssr: null, targetFps: 60, bushes: 0.45,
   },
   high: {
-    r0: 380, r1: 950, tiles: 70, drawCalls: 320, tris: 900e3, people: 200, vehicles: 50, parkedMax: 12, bubble: 540, parkFill: 0.15, cloudSteps: 16,
+    r0: 380, r1: 950, tiles: 70, drawCalls: 320, tris: 900e3, people: 280, vehicles: 50, parkedMax: 12, bubble: 540, parkFill: 0.15, cloudSteps: 16,
     outH: 2160, pixelRatio: [0.8, 1.5, 1.5], shadow: { size: 2048, extent: 100, far: 600 }, antialias: true, fsr: true, outPr: 2.0, scale: [0.55, 0.8, 1.0],
     treeDist: 480, lampDist: 360, signDist: 260, markDist: 480, vehicleDist: 650, peopleDist: 170,
     post: true, ao: { scale: 0.5, samples: 10 }, bloom: 0.3, ibl: 64, iblEvery: 8, grass: true, ssr: { scale: 0.4, quality: 0.35 }, targetFps: 30, bushes: 1,

@@ -10,6 +10,7 @@
 import * as THREE from 'three/webgpu';
 import { cash, spend } from './food.js';
 import { makeRoute, distanceLabel } from './navigation.js';
+import { coreAt } from './peds.js';
 
 const DRIVERS = ['Amir', 'Priya', 'Tomasz', 'Dave', 'Kwame', 'Sarah', 'Imran', 'Chloe', 'Marek', 'Gary', 'Aisha', 'Ravi', 'Jo', 'Femi', 'Lukas', 'Bev', 'Sunil', 'Ola'];
 const KERB_CARS = [['evsaloon', 'electric saloon'], ['evsaloon', 'electric saloon'], ['saloon', 'saloon'], ['estate', 'estate'], ['evsuv', 'electric SUV']];
@@ -43,7 +44,7 @@ export class Taxis {
   // a car just added to the traffic: about one in forty is a cab, one in six in a town centre
   maybeCab(v) {
     if (v.kind !== 'traffic' || !CAB_MODELS.test(v.model)) return;
-    const d = this.G.districtAt?.(v.x, v.z), core = d?.core ? Math.max(0, 1 - Math.hypot(v.x - d.x, v.z - d.z) / d.coreR) : 0;
+    const core = coreAt(v.x, v.z);
     if (Math.random() > 0.025 + core * 0.15) return;
     v.cab = true; v.paint = CAB_PAINTS[Math.floor(Math.random() * CAB_PAINTS.length)];
   }

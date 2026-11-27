@@ -707,7 +707,7 @@ export const CITIZENS = [
   { f: 0, h: 1.0 }, { f: 1, h: 0.93 }, { f: 0, h: 0.99 }, { f: 0, h: 1.01 }, { f: 1, h: 0.94 }, { f: 0, h: 0.98 }, { f: 1, h: 0.92 },
   { f: 0, h: 1.0 }, { f: 1, h: 0.93 }, { f: 0, h: 0.99 }, { f: 0, h: 1.02 }, { f: 0, h: 0.98 }, { f: 1, h: 0.94 }, { f: 1, h: 0.95 },
 ];
-const CIT_CAP = 24;   // instances of each citizen drawn at once
+const CIT_CAP = 36;   // instances of each citizen drawn at once
 let citizenData = null;
 // fetch and build the fourteen geometries and the shared textured material (once)
 function loadCitizens() {
@@ -846,7 +846,7 @@ export class People {
       const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
       const r = tslLength(tslUv().sub(0.5)).mul(2);
       m.colorNode = tslVec3(0, 0, 0); m.opacityNode = tslFloat(1).sub(tslSmooth(0.25, 1.0, r)).mul(0.42);
-      this.blobs = new THREE.InstancedMesh(g, m, 200); this.blobs.count = 0; this.blobs.frustumCulled = false; this.blobs.renderOrder = 1;
+      this.blobs = new THREE.InstancedMesh(g, m, 300); this.blobs.count = 0; this.blobs.frustumCulled = false; this.blobs.renderOrder = 1;
       this.blobs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       scene.add(this.blobs); this._bm = new THREE.Matrix4();
     }
@@ -912,7 +912,7 @@ export class People {
     if (this.blobs) {
       let n = 0; const B = this.blobs, m = this._bm;
       for (const a of actors) {
-        if (!a.visible || n >= 200 || (a.fall || 0) > 0.5 || a.react?.dead) continue;
+        if (!a.visible || n >= 300 || (a.fall || 0) > 0.5 || a.react?.dead) continue;
         const dx = a.x - camPos.x, dz = a.z - camPos.z; if (dx * dx + dz * dz > 70 * 70) continue;
         m.makeScale(0.85, 1, 0.85); m.elements[12] = a.x; m.elements[13] = (a.y || 0) + 0.03; m.elements[14] = a.z;
         B.setMatrixAt(n++, m);

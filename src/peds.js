@@ -27,7 +27,10 @@ export function footfall(kind, dow, hour) {
 // people are kept within R of you and dropped (out of sight) past KILL: R follows the preset's draw distance for
 // people (peopleDist), so the pedestrians a preset can afford are the ones you can actually see
 let R = 190, KILL = 240;
-const CORES = []; // filled from manifest districts (town centres are busier)
+// the town centres, busier towards the middle: where the shops are (the world build's core discs, tools/pipeline/
+// build_world.py, in game coordinates; Woodley's drawn over the precinct on Crockhamwell Road), [x, z, radius]
+const CORES = [[-7425, -2449, 820], [7990, 1707, 560], [2051, 2361, 430], [-2790, -2215, 330]];
+export function coreAt(x, z) { let k = 0; for (const [cx, cz, r] of CORES) k = Math.max(k, 1 - Math.hypot(x - cx, z - cz) / r); return k; }
 
 export class Peds {
   constructor(G) {
@@ -47,13 +50,13 @@ export class Peds {
   // density by place / time / weather
   density(x, z) {
     const G = this.G, hr = G.world.hours();
-    const d = G.districtAt(x, z);
-    const core = d && d.core ? Math.max(0, 1 - Math.hypot(x - d.x, z - d.z) / d.coreR) : 0;
+    const core = coreAt(x, z);
     const dow = new Date(G.world.time * 1000).getDay();
     const wet = 1 - G.world.cur.rain * 0.55;
-    // e.g. Broad Street on a Saturday at 14:00 -> ~300 (the preset caps it: 75 / 130 / 200); a Woodley street at 13:00 on
-    // a weekday -> ~38, at 16:00 ~66; at 06:00 ~4 (v0.40: twice as many on the ordinary streets as before)
-    return (110 * footfall('local', dow, hr) + core * 300 * footfall('centre', dow, hr)) * wet;
+    // e.g. Broad Street on a Saturday at 14:00 -> ~500 (the preset caps it: 110 / 190 / 280); a Woodley street at 13:00
+    // on a weekday -> ~80, at 16:00 ~140; and never fewer than a couple of dozen about, even in the small hours (v0.41:
+    // about twice as many again: a town should feel lived in)
+    return Math.max(22, (230 * footfall('local', dow, hr) + core * 520 * footfall('centre', dow, hr)) * wet);
   }
   pickWalkEdge(focus) {
     // collect walkable edges in range
@@ -81,8 +84,12 @@ export class Peds {
   }
   spawn(focus, info, near) {
     const edges = this._edges; if (!edges || !edges.length) return;
-    const e = edges[Math.floor(this.rand() * edges.length)];
     const net = this.net;
+    // (of two streets picked at random, the nearer: people come out where you'll see them, not spread thin to the
+    // edge of the circle)
+    const e1 = edges[Math.floor(this.rand() * edges.length)], e2 = edges[Math.floor(this.rand() * edges.length)];
+    const dE = e => { const a = net.ea[e], N = net.nodes; return Math.hypot(N[a * 3] - focus.x, N[a * 3 + 2] - focus.z); };
+    const e = dE(e1) <= dE(e2) ? e1 : e2;
     if (!net.walkable(e)) return;
     const h = e * 2 + (this.rand() < 0.5 ? 1 : 0);
     const s = this.rand() * net.len[e];
@@ -101,7 +108,7 @@ export class Peds {
     const r = this.rand();
     if (r > 0.86) this.toDoor(p);
     if (r < 0.12) this.toBusStop(p);
-    else if (r < 0.2 && this.list.length < 120) {
+    else if (r < 0.2 && this.list.length < 260) {
       const q = { ...p, id: 'p' + this.nextId++, look: People.randomLook(this.rand), lane: p.lane + 0.5, leader: p, phase: p.phase + 1 };
       this.list.push(q);
     } else if (r < 0.27) { p.mode = 'talk'; p.timer = 15 + this.rand() * 40; const q = { ...p, id: 'p' + this.nextId++, look: People.randomLook(this.rand), mode: 'talk', partner: p, timer: p.timer }; q.x += Math.cos(p.heading) * 1.1; this.list.push(q); p.partner = q; }
@@ -127,7 +134,8 @@ export class Peds {
         this.list.push(p);this.residents.delete(id);
       }
       const target = Math.min(G.budget?.people || 170, this.density(focus.x, focus.z));
-      if (this.list.length < target) for (let i = 0; i < 3; i++) { if (this.rand() < 0.18) this.spawnAtDoor(focus, info); else this.spawn(focus, info, this.list.length < target * 0.3); }
+      const tries = this.list.length < target * 0.6 ? 7 : 3;
+      if (this.list.length < target) for (let i = 0; i < tries; i++) { if (this.rand() < 0.18) this.spawnAtDoor(focus, info); else this.spawn(focus, info, this.list.length < target * 0.3); }
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
         const d = Math.hypot(p.x - focus.x, p.z - focus.z);
