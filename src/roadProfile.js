@@ -298,7 +298,7 @@ export function alignRoads(net, rail = null) {
   chains.forEach((ch, ci) => {
     const own = new Set(ch.nodes);
     for (const e of ch.edges) {
-      if (!isBr(e)) continue;
+      // A short link between bridge spans also needs clearance over crossings.
       const s = ps[e], c = pc[e];
       for (let k = 0; k + 1 < c; k++) {
         const ax = P[(s + k) * 3], az = P[(s + k) * 3 + 2], bx = P[(s + k + 1) * 3], bz = P[(s + k + 1) * 3 + 2];
@@ -333,7 +333,18 @@ export function alignRoads(net, rail = null) {
   const req = new Float64Array(nN), reqW = new Float64Array(nN);   // 64-bit: the queue compares against them
   const nodeDrive = new Uint8Array(nN);
   for (let e = 0; e < nE; e++) if (!inCh(e) && (fl[e] & F_DRIVE)) { nodeDrive[ea[e]] = 1; nodeDrive[eb[e]] = 1; }
-  const lowAround = (e, a) => { const s = ps[e], c = pc[e]; let m = Infinity; for (let k = 0; k < c; k++) if (Math.abs(arc[s + k] - a) <= 10) m = Math.min(m, ynew[s + k]); return m; };
+  // Use the actual interpolated height at the crossing, not the lowest point within 10m.
+  // The latter underestimated clearance on sloping IDR slip roads and returned Infinity
+  // if a sparsely sampled segment crossed between vertices.
+  const lowAround = (e, a) => {
+    const s = ps[e], c = pc[e]; if (!c) return 0;
+    if (a <= 0 || c === 1) return ynew[s];
+    for (let k = 1; k < c; k++) if (arc[s+k] >= a) {
+      const d = arc[s+k] - arc[s+k-1], t = d > 0 ? (a-arc[s+k-1])/d : 0;
+      return ynew[s+k-1] + (ynew[s+k]-ynew[s+k-1])*t;
+    }
+    return ynew[s+c-1];
+  };
   const chEdges = new Map();   // node -> its chain edges (each node belongs to one chain)
   const chainEdges = (ci, n) => { let l = chEdges.get(n); if (!l) chEdges.set(n, l = inc[n].filter(e => chainOf[e] === ci)); return l; };
   let lifted = 0, iters = 0;

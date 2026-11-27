@@ -46,11 +46,11 @@ const pip = (poly, x, z) => { let c = false; for (const ring of poly) for (let i
 const depthIn = (polys, x, z) => { for (const poly of polys) if (pip(poly, x, z)) { let d = 1e9; for (const ring of poly) for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const [ax, az] = ring[j], [bx, bz] = ring[i]; if ((Math.abs(ax - bx) < 1e-3 && Math.abs(ax / 32 - Math.round(ax / 32)) < 1e-4) || (Math.abs(az - bz) < 1e-3 && Math.abs(az / 32 - Math.round(az / 32)) < 1e-4)) continue; const ex = bx - ax, ez = bz - az, L2 = ex * ex + ez * ez || 1; let t = ((x - ax) * ex + (z - az) * ez) / L2; t = Math.max(0, Math.min(1, t)); d = Math.min(d, Math.hypot(x - ax - ex * t, z - az - ez * t)); } return d; } return 0; };
 const man = JSON.parse(fs.readFileSync(path.join(root, 'www/world/manifest.json'), 'utf8'));
 const keys = process.env.TILES ? process.env.TILES.split(',') : man.tiles.slice(0, Number(process.argv[2]) || man.tiles.length);
-const S = { tiles: 0, lamps: 0, lampsInRoad: 0, trees: 0, treesInRoad: 0, props: 0, propsInRoad: 0, piers: 0, piersInRoad: 0 }, ex = [];
+const S = { tiles: 0, tileErrors: 0, lamps: 0, lampsInRoad: 0, trees: 0, treesInRoad: 0, props: 0, propsInRoad: 0, piers: 0, piersInRoad: 0 }, ex = [];
 for (const key of keys) {
   results.length = 0;
   await self.onmessage({ data: { type: 'tile', url: 'world/tiles/' + key + '.bin', key, lod: 0 } });
-  const out = results[0]; if (!out || out.error) { console.log('error', key, out?.error?.slice(0, 200)); continue; }
+  const out = results[0]; if (!out || out.error) { S.tileErrors++; console.log('error', key, out?.error?.slice(0, 200)); continue; }
   const { arrays: A } = await load('www/world/tiles/' + key + '.bin');
   const polys = roadPolys(A); S.tiles++;
   const chk = (kind, x, z, r, sub = '') => { S[kind]++; const d = depthIn(polys, x, z); if (d > r) { S[kind + 'InRoad']++; if (ex.length < 20) ex.push([kind + sub, key, Math.round(x + out.ox), Math.round(z + out.oz), +d.toFixed(2)]); } };
@@ -58,7 +58,20 @@ for (const key of keys) {
   for (let k = 0; k < out.trees.length; k += 4) chk('trees', out.trees[k], out.trees[k + 2], 0.25);
   const B = out.brk, BR = 14;
   for (let k = 0; k < B.length; k += BR) { if ([1, 2, 3, 5].includes(B[k])) chk('props', B[k + 3], B[k + 4], 0.2, ':' + B[k]); else if (B[k] === 4) chk('props', (B[k + 3] + B[k + 5]) / 2, (B[k + 4] + B[k + 6]) / 2, 0.2, ':4'); }
-  const PR = out.piers || []; for (let k = 0; k < PR.length; k += 8) chk('piers', PR[k], PR[k + 1], 0.1);
+  const PR = out.piers || []; for (let k = 0; k < PR.length; k += 8) {
+    S.piers++;
+    const [x,z,ux,uz,al,ac] = PR.subarray(k,k+6);
+    let hit = null;
+    for (let i = 0; i <= Math.ceil(al*8); i++) for (let j = 0; j <= Math.ceil(ac*8); j++) {
+      const u = -al + 2*al*i/Math.max(1,Math.ceil(al*8)), v = -ac + 2*ac*j/Math.max(1,Math.ceil(ac*8));
+      const px = x+ux*u-uz*v, pz = z+uz*u+ux*v;
+      if (px < 0 || pz < 0 || px >= 256 || pz >= 256) continue;
+      const d = depthIn(polys,px,pz); if (d > 0.1) hit = [px,pz,d];
+    }
+    if (hit) { S.piersInRoad++; if (ex.length < 20) ex.push(['pierFootprint',key,Math.round(hit[0]+out.ox),Math.round(hit[1]+out.oz),+hit[2].toFixed(2)]); }
+  }
   if (S.tiles % 500 === 0) console.log(S.tiles, JSON.stringify(S));
 }
 console.log(JSON.stringify(S)); for (const e of ex) console.log(JSON.stringify(e));
+
+if (S.tileErrors || S.tiles !== keys.length || S.piersInRoad || S.lampsInRoad || S.treesInRoad || S.propsInRoad) process.exitCode = 1;
