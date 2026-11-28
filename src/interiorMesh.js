@@ -1026,6 +1026,56 @@ const ITEM = {
   font: (gb, it, f) => { gb.cyl('plain', f, 0, 0, 0.16, 0, it.h - 0.3, it.col, 8); gb.cyl('plain', f, 0, 0, it.w / 2, it.h - 0.3, it.h, it.col, 10); },
   pew: (gb, it, f) => { gb.box('wood', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.42, 0.47, it.col); gb.box('wood', f, -it.w / 2, it.w / 2, -it.d / 2, -it.d / 2 + 0.05, 0.47, it.h, it.col); for (const u of [-it.w / 2, it.w / 2 - 0.05]) gb.box('wood', f, u, u + 0.05, -it.d / 2, it.d / 2, 0, 0.9, shadeK(it.col, 0.85)); },
   runner: (gb, it, f) => gb.box('carpet', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.002, 0.01, it.col, { skip: 'd' }),
+  // ------------------------------------------------ TechZone (interiorPlan.js gadget(), techFit())
+  // the service counter: white, a black top, an orange stripe along the front, two till screens and card readers
+  techcounter: (gb, it, f) => {
+    gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h - 0.04, it.col);
+    gb.box('plain', f, -it.w / 2 - 0.03, it.w / 2 + 0.03, -it.d / 2 - 0.03, it.d / 2 + 0.03, it.h - 0.04, it.h, 0x1b1e23);
+    gb.box('glow', f, -it.w / 2, it.w / 2, -it.d / 2 - 0.006, -it.d / 2 - 0.002, 0.62, 0.7, 0xff7a1a, { flat: 1.15 });
+    for (const u of it.w > 3.4 ? [-0.9, 0.9] : [0]) {
+      gb.box('plain', f, u - 0.04, u + 0.04, 0.05, 0.12, it.h, it.h + 0.24, 0x2a2d33);
+      gb.box('plain', f, u - 0.24, u + 0.24, 0.02, 0.06, it.h + 0.2, it.h + 0.52, 0x15171b);
+      gb.box('glow', f, u - 0.22, u + 0.22, -0.002, 0.02, it.h + 0.22, it.h + 0.5, 0x8fc3ff, { flat: 1.05 });
+      gb.box('plain', f, u + 0.32, u + 0.42, -0.2, -0.05, it.h, it.h + 0.04, 0x202227);
+    }
+  },
+  // the back wall: white shelving of boxed stock (drones, headphones, consoles) in their packaging colours
+  techshelf: (gb, it, f) => {
+    gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col, { skip: 'f' });
+    const cols = [0xf2f2f0, 0x111418, 0xff7a1a, 0x2b6cff, 0xe9e4da, 0x1b1e23, 0xd8d8dc];
+    for (let r = 0; r < 4; r++) {
+      const h0 = 0.12 + r * 0.5;
+      gb.box('plain', f, -it.w / 2 + 0.03, it.w / 2 - 0.03, -it.d / 2, it.d / 2 - 0.02, h0 - 0.03, h0, 0xe6e7ea);
+      for (let u = -it.w / 2 + 0.12, k = 0; u < it.w / 2 - 0.3; k++) {
+        const bw = 0.22 + ((k * 37 + r * 11) % 5) * 0.06, bh = 0.18 + ((k * 13 + r * 7) % 4) * 0.06;
+        gb.box('plain', f, u, u + bw, -it.d / 2 + 0.05, it.d / 2 - 0.08, h0, h0 + bh, cols[(k * 3 + r) % cols.length]);
+        u += bw + 0.04;
+      }
+    }
+  },
+  // the promo screen over the shelves: a big lit panel (techShop.js draws the picture on its own mesh in front)
+  promo: (gb, it, f) => { gb.box('plain', f, -it.w / 2 - 0.05, it.w / 2 + 0.05, -0.04, 0.0, 2.15, 2.15 + it.w * 0.3 + 0.1, 0x0c0d10); },
+  // an accessory wall: white slatwall, hooks of boxed accessories, a lit orange header
+  techwall: (gb, it, f) => {
+    gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col, { skip: 'b' });
+    gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2 + 0.04, 0, 0.12, 0xdedfe2);
+    gb.box('glow', f, -it.w / 2, it.w / 2, it.d / 2 - 0.002, it.d / 2 + 0.004, it.h - 0.16, it.h - 0.04, 0xff7a1a, { flat: 1.1 });
+    const cols = [0x111418, 0xf2f2f0, 0x2b6cff, 0xff4d6d, 0x1b1e23, 0x3cc48a, 0xffc21a, 0x8a8f99];
+    const seed = it.seed || 0;
+    for (let r = 0; r < 5; r++) for (let u = -it.w / 2 + 0.18, k = 0; u < it.w / 2 - 0.25; k++) {
+      const bw = 0.12 + ((k * 7 + r * 3 + seed) % 4) * 0.04, bh = 0.16 + ((k * 5 + r + seed) % 3) * 0.06, h0 = 0.35 + r * 0.36;
+      gb.box('plain', f, u, u + bw, it.d / 2, it.d / 2 + 0.05, h0, h0 + bh, cols[(k + r * 3 + seed) % cols.length]);
+      gb.box('plain', f, u + bw / 2 - 0.006, u + bw / 2 + 0.006, it.d / 2, it.d / 2 + 0.09, h0 + bh + 0.02, h0 + bh + 0.03, 0x9a9da3);
+      u += bw + 0.08;
+    }
+  },
+  // the demo drone's plinth: white, a lit ring round the top (the drone itself: techShop.js)
+  plinth: (gb, it, f) => { gb.cyl('plain', f, 0, 0, it.w / 2, 0, it.h - 0.03, it.col, 24); gb.cyl('glow', f, 0, 0, it.w / 2 + 0.01, it.h - 0.05, it.h - 0.02, 0xff7a1a, 24, { flat: 1.2 }); gb.cyl('plain', f, 0, 0, it.w / 2 - 0.05, it.h - 0.02, it.h, 0x1b1e23, 24); },
+  // a display table: light oak top on a white base (techShop.js lays the devices out on it)
+  techtable: (gb, it, f) => {
+    gb.box('plain', f, -it.w / 2 + 0.12, it.w / 2 - 0.12, -it.d / 2 + 0.12, it.d / 2 - 0.12, 0, it.h - 0.05, 0xf4f5f7);
+    gb.box('wood', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, it.h - 0.05, it.h, it.col);
+  },
   // ------------------------------------------------ mall
   planter: (gb, it, f) => { gb.box('plain', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0, it.h, it.col); gb.box('plain', f, -it.w / 2 + 0.1, it.w / 2 - 0.1, -it.d / 2 + 0.1, it.d / 2 - 0.1, it.h, it.h + 0.02, 0x4a3a2a); gb.cyl('plain', f, 0, 0, 0.1, it.h, it.h + 2.4, 0x6a4a2a, 6); for (let k = 0; k < 6; k++) { const a = k * 1.05; gb.box('plain', f, Math.cos(a) * 0.5 - 0.5, Math.cos(a) * 0.5 + 0.5, Math.sin(a) * 0.5 - 0.5, Math.sin(a) * 0.5 + 0.5, it.h + 2.0 + (k % 2) * 0.4, it.h + 3.0 + (k % 3) * 0.3, [0x3f6b35, 0x4f7f3f, 0x2f5a2a][k % 3]); } },
   bench: (gb, it, f) => { gb.box('wood', f, -it.w / 2, it.w / 2, -it.d / 2, it.d / 2, 0.4, it.h, it.col); for (const u of [-it.w / 2 + 0.1, it.w / 2 - 0.15]) gb.box('plain', f, u, u + 0.05, -it.d / 2 + 0.05, it.d / 2 - 0.05, 0, 0.4, 0x55585c); },

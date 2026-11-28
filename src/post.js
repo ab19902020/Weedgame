@@ -12,6 +12,7 @@ import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';
 import { bloom } from 'three/examples/jsm/tsl/display/BloomNode.js';
 import { fxaa } from 'three/examples/jsm/tsl/display/FXAANode.js';
 import { fsr1 } from 'three/examples/jsm/tsl/display/FSR1Node.js';
+import { thermalView } from './thermal.js';
 import { createSky } from './sky.js';
 import { U } from './env.js';
 
@@ -93,7 +94,9 @@ export function createPost(G) {
   let g = mix(vec3(lum), disp, 1.2);
   g = g.add(g.sub(0.5).mul(0.11));
   g = g.mul(mix(vec3(0.97, 1.0, 1.05), vec3(1.035, 1.0, 0.955), smoothstep(0.2, 0.8, lum))).clamp(0, 1);
-  const graded = vec4(g.mul(vig), 1);
+  // the drone's thermal camera (thermal.js): the scene's light as temperature, white-hot or ironbow, when it's on
+  const th = thermalView(c, depth.r, G.U.t);
+  const graded = vec4(mix(g.mul(vig), th.node, th.on), 1);
   let lowA = null, lowB = null;
   if (useFSR) {
     // grade + FXAA at the internal resolution, then FSR 1 (edge-adaptive upsampling + contrast-adaptive
@@ -103,7 +106,7 @@ export function createPost(G) {
     pipe.outputNode = fsr1(lowB, 0.3);
   } else pipe.outputNode = fxaa(graded);
   return {
-    pipe, aoPass, ssrPass, strength, fsr: useFSR,
+    pipe, aoPass, ssrPass, strength, fsr: useFSR, thermal: th,
     get scale() { return s; },
     setScale(v) {
       if (!useFSR || Math.abs(v - s) < 0.005) return;

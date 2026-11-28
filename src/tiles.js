@@ -284,7 +284,8 @@ export class Tiles {
       const x0 = S[i * 7], z0 = S[i * 7 + 1], x1 = S[i * 7 + 2], z1 = S[i * 7 + 3];
       const base = S[i * 7 + 4], dy = S[i * 7 + 5], h = S[i * 7 + 6];
       if (!(h > 0.15)) continue;
-      const uvr = this.signAtlas.alloc(signs.text[i]);
+      // (a TechZone's frontage reads TechZone whatever the map called the unit: techShop.js sets signText)
+      const uvr = this.signAtlas.alloc(this.signText ? this.signText(signs.text[i], x0 + t.data.ox, z0 + t.data.oz, x1 + t.data.ox, z1 + t.data.oz) : signs.text[i]);
       if (!uvr) continue;
       t.signs.push(uvr.slot);
       const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz); if (l < 0.4) continue;
@@ -324,6 +325,14 @@ export class Tiles {
     g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     const m = new THREE.Mesh(g, this.signAtlas.material);
     t.group.add(m);
+  }
+  // rebuild a tile's shop signs (after signText changes)
+  refreshSigns(t) {
+    if (!t?.data?.signs || !this.signAtlas) return;
+    for (const m of [...t.group.children]) if (m.isMesh && m.material === this.signAtlas.material) { t.group.remove(m); m.geometry.dispose(); }
+    if (t.signs) for (const sl of t.signs) this.signAtlas.free(sl);
+    t.signs = null;
+    this.addSigns(t, t.data.signs);
   }
   registerCollision(t) {
     const b = t.data.buildings; const col = b.col, P = b.colPts;

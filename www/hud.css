@@ -302,3 +302,97 @@ body:has(#homeTV) #btns, body:has(#homeTV) #stickRest, body:has(#homeTV) #stickB
 #phone .phLine{margin:2px 0;color:#dfe9e4;line-height:1.35}#phone .phNote{margin:6px 14px;color:#b7cdc3;font-size:12px;line-height:1.4}#phone .phNote.warn{margin:0;color:#ffcf8a}
 #phone .phStars{color:#f3d43d;font-size:20px;letter-spacing:4px}
 @media (max-height:420px){#phone{width:min(236px,44vw)}#phone .phApp i{width:42px;height:42px}#phone .phHello{padding:10px 14px 2px}}
+
+/* ---------------------------------------------------------------- drone (droneHud.js) */
+body.drone-on #btns, body.drone-on #touch, body.drone-on #mini, body.drone-on #speedo, body.drone-on #clock, body.drone-on #ammo, body.drone-on #droneLaunch, body.drone-on #road, body.drone-on #guidance { display: none !important; }
+#droneHud { position: fixed; inset: 0; z-index: 6; pointer-events: none; touch-action: none; -webkit-user-select: none; user-select: none; }
+#droneHud[hidden] { display: none; }
+#dOSD { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+#droneHud .dZone { position: absolute; bottom: 0; top: 32%; pointer-events: auto; touch-action: none; }
+#droneHud .dZone.l { left: 0; width: 42%; } #droneHud .dZone.r { right: 0; width: 42%; }
+#droneHud .dStick { position: fixed; width: 140px; height: 140px; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(circle, #ffffff10 0 30%, #ffffff06 60%, #0000 71%); border: 2px solid #ffffff59; box-shadow: 0 0 0 1px #0004, inset 0 0 18px #0005; }
+#droneHud .dStick i { position: absolute; left: 44px; top: 44px; width: 52px; height: 52px; border-radius: 50%; background: radial-gradient(circle at 50% 35%, #fffffff0, #c7d0d8d0 70%); box-shadow: 0 2px 8px #0009; }
+#droneHud .dStick::before, #droneHud .dStick::after { content: ''; position: absolute; background: #ffffff38; }
+#droneHud .dStick::before { left: 69px; top: 12px; width: 2px; height: 116px; } #droneHud .dStick::after { top: 69px; left: 12px; height: 2px; width: 116px; }
+#droneHud .dStick.rest { opacity: .55; bottom: 26px; }
+#droneHud .dStick.l.rest { left: calc(max(14px, env(safe-area-inset-left)) + 30px); } #droneHud .dStick.r.rest { right: calc(max(14px, env(safe-area-inset-right)) + 30px); }
+#droneHud button { pointer-events: auto; touch-action: none; color: #fff; border: 1.5px solid #ffffff59; background: radial-gradient(circle at 50% 32%, #3d464ed0, #13181cd8 72%); box-shadow: 0 3px 10px #0008; }
+#droneHud button svg { width: 52%; height: 52%; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#droneHud .dTop { position: absolute; top: 48px; right: max(12px, env(safe-area-inset-right)); display: flex; gap: 10px; }
+#droneHud .dTop button { position: relative; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; padding: 0; }
+#droneHud .dTop button b { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 2px; font: 700 8.5px system-ui; letter-spacing: .08em; text-transform: uppercase; color: #ffffffd0; text-shadow: 0 1px 3px #000; white-space: nowrap; }
+#droneHud .dTop button:active, #droneHud .dTO:active { transform: scale(.93); background: radial-gradient(circle at 50% 32%, #8eb4ffb3, #24467fe6 72%); }
+#droneHud .dTO { position: absolute; left: max(14px, env(safe-area-inset-left)); top: 160px; height: 46px; border-radius: 24px; padding: 0 16px 0 10px; display: flex; gap: 6px; align-items: center; font: 700 13px system-ui; }
+#droneHud .dTO svg { width: 24px; height: 24px; }
+#droneHud .dTO.dim { opacity: .45; }
+#droneHud .dGimbal { position: absolute; right: max(10px, env(safe-area-inset-right)); top: 150px; height: max(90px, calc(100% - 340px)); width: 34px; pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+#droneHud .dGimbal[hidden] { display: none; }
+#droneHud .dGimbal .track { position: relative; flex: 1; width: 8px; border-radius: 4px; background: linear-gradient(#ffffff55, #ffffff22); box-shadow: 0 0 0 10px #0000; touch-action: none; }
+#droneHud .dGimbal .track i { position: absolute; left: 50%; width: 24px; height: 24px; margin: -12px 0 0 -12px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px #000a; }
+#droneHud .dGimbal b { font: 700 8.5px system-ui; letter-spacing: .08em; text-transform: uppercase; color: #ffffffd0; text-shadow: 0 1px 3px #000; }
+#droneHud .dStatic { position: absolute; inset: 0; opacity: 0; pointer-events: none; mix-blend-mode: screen;
+  background: repeating-linear-gradient(0deg, #ffffff22 0 1px, #0000 1px 3px), repeating-radial-gradient(circle at 37% 61%, #fff3 0 1px, #0000 1px 4px); animation: dSnow .12s steps(3) infinite; }
+@keyframes dSnow { 0% { background-position: 0 0, 0 0 } 33% { background-position: 0 2px, 7px 3px } 66% { background-position: 0 1px, -5px 6px } }
+#droneLaunch { position: absolute; left: max(10px, env(safe-area-inset-left)); top: calc(var(--mini-size, 150px) + 56px); pointer-events: auto; touch-action: none; display: flex; align-items: center; gap: 7px; height: 42px; padding: 0 15px 0 9px; border-radius: 22px;
+  color: #fff; font: 700 13px system-ui; border: 1.5px solid #ffb86a; background: radial-gradient(circle at 50% 30%, #6b4a1ee6, #2c1d0ce6 75%); box-shadow: 0 0 0 3px #ffb86a22, 0 3px 10px #0008; }
+#droneLaunch[hidden] { display: none; }
+#droneLaunch svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+
+/* ---------------------------------------------------------------- the phone: an Honor Magic7 Pro (phone.js) */
+#phone.magic { width: min(262px, 46vw); filter: drop-shadow(0 14px 30px #000c); }
+#phone.magic .phFrame { position: relative; background: #050607; border: 0; border-radius: 38px; padding: 7px 6px 6px;
+  box-shadow: inset 0 0 0 1.5px #2b2f36, inset 0 0 0 3px #0a0b0d, 0 0 0 1px #6d7480, 0 0 0 2.5px #1b1e23; }
+#phone.magic .phFrame::before { content: ''; position: absolute; inset: 0; border-radius: 38px; pointer-events: none; background: linear-gradient(90deg, #ffffff14, #0000 6%, #0000 94%, #ffffff14); }
+#phone.magic .phPunch { position: absolute; top: 13px; left: 50%; width: 46px; height: 14px; margin-left: -23px; border-radius: 8px; background: #000; box-shadow: inset 0 0 0 1px #15181c; z-index: 2; }
+#phone.magic .phPunch::after { content: ''; position: absolute; right: 9px; top: 4px; width: 6px; height: 6px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #3a4a6a, #05070c 70%); }
+#phone.magic .phStatus { position: absolute; top: 10px; left: 22px; right: 20px; padding: 0; font: 600 11px system-ui; z-index: 3; color: #f1f3f8; }
+#phone.magic .phSig { gap: 2px; align-items: center; }
+#phone.magic .phBatt { position: relative; display: inline-block; width: 20px; height: 10px; margin-left: 5px; border: 1.3px solid #e8ebf1; border-radius: 3px; font-style: normal; }
+#phone.magic .phBatt u { position: absolute; left: 1px; top: 1px; bottom: 1px; width: 74%; background: #e8ebf1; border-radius: 1px; text-decoration: none; }
+#phone.magic .phBatt::after { content: ''; position: absolute; right: -3.5px; top: 2.5px; width: 2px; height: 3px; background: #e8ebf1; border-radius: 0 1px 1px 0; }
+#phone.magic .phScreen { border-radius: 32px; padding-top: 30px; background:
+  radial-gradient(120% 70% at 85% 10%, #8a6bff66, #0000 60%), radial-gradient(110% 80% at 10% 90%, #20c3d466, #0000 60%),
+  linear-gradient(160deg, #1a1d3a 0%, #2b1e52 38%, #12304a 72%, #0b1a2a 100%); }
+#phone.magic .phNav { padding: 6px 30px 2px; justify-content: space-between; }
+#phone.magic .phNav button { color: #e4e8f2; font: 600 11.5px system-ui; }
+#phone.magic .phWidget { display: flex; align-items: center; gap: 10px; margin: 10px 12px 2px; padding: 10px 12px; border-radius: 20px; background: #ffffff1a; box-shadow: inset 0 0 0 1px #ffffff22; backdrop-filter: blur(6px); }
+#phone.magic .phWidget b { font: 300 30px system-ui; letter-spacing: -.02em; color: #fff; }
+#phone.magic .phWidget div { display: flex; flex-direction: column; font: 600 11px system-ui; color: #dfe6ff; }
+#phone.magic .phWidget div span + span { color: #b9c4e8; font-weight: 500; }
+#phone.magic .phHello { padding: 8px 16px 2px; }
+#phone.magic .phHello small { color: #b7c0e6; letter-spacing: .1em; }
+#phone.magic .phApps { grid-template-columns: repeat(4, 1fr); gap: 14px 4px; padding: 14px 8px; }
+#phone.magic .phApp { background: none; border: 0; color: #fff; display: flex; flex-direction: column; align-items: center; gap: 5px; font: 500 10.5px system-ui; padding: 0; }
+#phone.magic .phApp i { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 15px; box-shadow: 0 3px 8px #0006, inset 0 1px 0 #ffffff40; }
+#phone.magic .phApp i svg { width: 26px; height: 26px; fill: currentColor; }
+#phone.magic .phApp.kerb i { background: linear-gradient(145deg, #2fd08a, #0f8a57); }
+#phone.magic .phApp.atlas i { background: linear-gradient(145deg, #4aa8ff, #1b5fd6); color: #fff; }
+#phone.magic .phApp.drone i { background: linear-gradient(145deg, #ff9a3c, #d24f12); color: #fff; }
+#phone.magic .phApp.drone i svg, #phone.magic .phApp.tech i svg, #phone.magic .phApp.atlas i svg { fill: none; }
+#phone.magic .phApp.tech i { background: linear-gradient(145deg, #7a5cff, #3b1fb8); color: #fff; }
+#phone.magic .phApp.radio i { background: linear-gradient(145deg, #ff5a8a, #b21d4f); color: #fff; }
+#phone.magic .phApp.bank i { background: linear-gradient(145deg, #3bd0d6, #137a8a); }
+#phone.magic .phApp-head.drone { background: linear-gradient(135deg, #ff8a2a, #b83c0c); }
+#phone.magic .phApp-head.tech { background: linear-gradient(135deg, #6b4cff, #2c138f); }
+#phone.magic .phSeg { display: flex; gap: 4px; margin: 4px 0 10px; }
+#phone.magic .phSeg button { flex: 1; min-height: 30px; border-radius: 10px; border: 1px solid #ffffff33; background: #ffffff12; color: #e9edf7; font: 600 11px system-ui; padding: 0 2px; }
+#phone.magic .phSeg button.on { background: #ff8a2a; border-color: #ffc08a; color: #1a0b00; }
+
+/* ---------------------------------------------------------------- TechZone's till (techShop.js) */
+#techPanel { position: fixed; right: max(14px, env(safe-area-inset-right)); top: max(12px, env(safe-area-inset-top)); bottom: max(12px, env(safe-area-inset-bottom)); z-index: 9; width: min(430px, 60vw);
+  display: flex; flex-direction: column; pointer-events: auto; color: #eef1f6; font: 14px system-ui, sans-serif; background: #0f1216f2; border: 1px solid #2b3038; border-radius: 16px; box-shadow: 0 12px 34px #000b; overflow: hidden; }
+#techPanel .tzHead { display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: linear-gradient(90deg, #15181d, #1d2128); border-bottom: 3px solid #ff7a1a; }
+#techPanel .tzHead canvas { width: 150px; height: 28px; }
+#techPanel .tzHead span { flex: 1; text-align: right; font: 700 13px system-ui; color: #ffd2a8; }
+#techPanel .tzHead button { background: #2a2f37; color: #fff; border: 1px solid #454c57; border-radius: 10px; padding: 6px 12px; font: 600 13px system-ui; min-height: 34px; }
+#techPanel .tzBody { overflow: auto; padding: 4px 12px 14px; }
+#techPanel h3 { margin: 14px 0 6px; font: 700 11px system-ui; letter-spacing: .14em; text-transform: uppercase; color: #ff9a4a; }
+#techPanel .tzItem { display: flex; align-items: center; gap: 10px; padding: 10px; margin-bottom: 8px; border-radius: 12px; background: #181c22; border: 1px solid #262b33; }
+#techPanel .tzItem.hero { background: linear-gradient(135deg, #1e2633, #2a1a10); border-color: #ff7a1a66; }
+#techPanel .tzItem div { flex: 1; display: flex; flex-direction: column; gap: 3px; }
+#techPanel .tzItem b { font: 700 14px system-ui; } #techPanel .tzItem small { color: #aab3c0; font-size: 12px; line-height: 1.35; } #techPanel .tzItem em { color: #7fe0a8; font: 600 11px system-ui; font-style: normal; }
+#techPanel .tzItem button { min-width: 112px; min-height: 40px; border-radius: 11px; border: 0; background: #ff7a1a; color: #1a0b00; font: 800 13px system-ui; }
+#techPanel .tzItem button:disabled { background: #2a2f37; color: #8b93a0; }
+#techPanel button:focus-visible, #techPanel button:focus { outline: 2px solid #ffd2a8; outline-offset: 2px; }
+#techPanel .tzNote { color: #7d8693; font-size: 12px; text-align: center; margin-top: 10px; }

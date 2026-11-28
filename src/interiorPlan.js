@@ -823,6 +823,9 @@ function mall(P, s) {
       for (let i = 0; i < m; i++) {
         const x0 = a + (b - a) * i / m, x1 = a + (b - a) * (i + 1) / m, name = MALL_SHOPS[k++ % MALL_SHOPS.length];
         const r = P.room(g, 'unit' + k, x0, y0, x1, y1, { floor: ['tile', pick(R, [0xe9e4da, 0xd8d2c8, 0xc9c2b4, 0xf2efe9])], wall: ['plaster', pick(R, [0xffffff, 0xf2efe9, 0xe8eef2, 0xf4ece4])], windows: 0, ceil: 0xf6f6f2, kind: 'unit', shopName: name, brand: pick(R, [0x2f6fb0, 0xd84a3a, 0x3a8a6a, 0x7d3c98, 0x222222, 0xe67e22, 0xc0392b, 0x16a085]) });
+        // (room() keeps only its own options: the unit's name and colour for its sign over the door, and TechZone's
+        // fit-out; the names go round twice, and there is one TechZone)
+        r.shopName = name === 'TechZone' && units.some(u => u.shopName === 'TechZone') ? 'Phone Point' : name; r.brand = name === 'TechZone' ? 0x15181d : [0x2f6fb0, 0xd84a3a, 0x3a8a6a, 0x7d3c98, 0x222222, 0xe67e22, 0xc0392b, 0x16a085][(k * 5) % 8];
         units.push(r);
         P.door(g, 'concourse', r.name, { w: Math.min(4.5, (x1 - x0) * 0.55), top: 3.0, kind: 'shopfront', leaf: 'none' });
       }
@@ -845,6 +848,8 @@ function mall(P, s) {
   // a few things in each unit
   for (const u of units) {
     const [cx, cy] = mid(u);
+    // the TechZone unit is fitted out like every TechZone (techFit: same counter, walls, tables and drone plinth)
+    if (u.shopName === 'TechZone') { const T = techFit(P, g, u.x0, u.y0, u.x1, u.y1, u.y0 < 1 ? 'y1' : 'y0'); P.techTills = T.tills; P.techStaff = T.staff; P.techPlinth = T.plinth; P.techUnit = u; continue; }
     for (let q = 0; q < 3; q++) P.add(g, 'display', u.x0 + (u.x1 - u.x0) * (q + 1) / 4, cy + (u.y0 < 1 ? -0.8 : 0.8), 1.2, 0.8, 0.9, { col: u.brand, seed: q, rot: 0 });
     void cx;
   }
@@ -920,7 +925,54 @@ function food(P, s) {
   if (cat === 'chippy' || cat === 'kebab') wallItem(P, g, r, P.site.doorX < W / 2 ? 'x1' : 'x0', 'fridge2', 0.9, 0.7, 1.9, { tall: true, at: 0.9, cat });
 }
 
-const LAYOUT = { food, trap: house, nice: house, terrace: house, semi: house, detached: house, cottage: house, bungalow, warehouse, office, shop, pub, church, mall };
+
+// ------------------------------------------------------------------ TechZone: the gadget, tech and accessory chain
+// (tools/interiors/gadget.mjs puts one in every town; The Oracle has a unit). Every branch is fitted out the same:
+// the demo drone on its plinth by the window, accessory walls down the sides (headphones, cases, chargers,
+// controllers), display tables down the middle, the white service counter across the back with its tills and the
+// boxed stock and a promo screen behind. techShop.js puts the products on them, staff behind the counter and the
+// catalogue on the till.
+export const TECH = { white: 0xf4f5f7, ink: 0x15181d, orange: 0xff7a1a, floor: 0xd9dbdf, wall: 0xf1f2f4, wood: 0xc8a57a };
+function gadget(P, s) {
+  const { W, D, fh } = P;
+  P.site.doorX = clamp(s.doorX, 1.4, W - 1.4); P.exit.x = P.site.doorX; P.frontW = Math.min(1.6, W * 0.3); P.frontTop = 2.4;
+  const g = P.level(Math.min(fh - 0.25, 3.4));
+  P.room(g, 'shop', 0, 0, W, D, { floor: ['tile', TECH.floor], wall: ['plaster', TECH.wall], windows: 'many', sill: 0.15, head: 2.6, ceil: 0xf7f7f8, kind: 'shop', winW: 2.2 });
+  P.style = { shop: true, gadget: true, brand: TECH.orange };
+  P.finish();
+  const T = techFit(P, g, 0, 0, W, D, 'y0');
+  P.tills = T.tills; P.staffSpots = T.staff; P.techPlinth = T.plinth; P.seats = []; P.games = [];
+  P.add(g, 'doormat', P.site.doorX, 0.45, 1.4, 0.6, 0.01, { solid: false, col: 0x22252a });
+}
+// fit out a TechZone in the rectangle x0..x1, y0..y1, the shop door on side 'y0' (front at low y) or 'y1'
+function techFit(P, g, x0, y0, x1, y1, door) {
+  const W = x1 - x0, D = y1 - y0, inY = door === 'y0' ? 1 : -1, front = door === 'y0' ? y0 : y1, back = door === 'y0' ? y1 : y0;
+  const Y = d => front + inY * d;                   // d metres in from the door
+  const rot = inY > 0 ? 0 : Math.PI;                // things face the door
+  const out = { tills: [], staff: [], plinth: null };
+  // the counter across the back, the staff behind it, the boxed stock and the promo screen on the back wall
+  const cw = clamp(W * 0.62, 2.2, 5.2), cx = x0 + W / 2, cyD = D - 2.5;
+  P.add(g, 'techcounter', cx, Y(cyD), cw, 0.7, 1.02, { rot, col: TECH.white });
+  P.add(g, 'techshelf', cx, Y(D - 0.3), Math.min(W - 0.6, cw + 1.2), 0.42, 2.1, { rot, col: TECH.white });
+  P.add(g, 'promo', cx, Y(D - 0.06), Math.min(W - 1.0, 3.2), 0.05, 2.75, { rot, solid: false, col: TECH.orange });
+  // the counter's ends meet the side walls so behind it is staff only
+  for (const sx of [-1, 1]) { const ex = cx + sx * (cw / 2 + (W / 2 - cw / 2) / 2); if (W / 2 - cw / 2 > 0.3) P.add(g, 'box', ex, Y(cyD), W / 2 - cw / 2, 0.12, 1.0, { col: 0xdedfe2 }); }
+  const tills = cw > 3.4 ? [-0.9, 0.9] : [0];
+  for (const t of tills) { out.tills.push({ x: cx + t, y: Y(cyD - 0.95) }); out.staff.push({ x: cx + t, y: Y(cyD + 0.85), dx: 0, dy: -inY, till: out.tills.length - 1 }); }
+  // accessory walls down both sides (one in a narrow unit), from the window to the counter
+  const wl = Math.max(0, cyD - 2.6);
+  if (wl > 1) for (const [side, wx] of W >= 5.4 ? [[-1, x0 + 0.22], [1, x1 - 0.22]] : [[1, x1 - 0.22]]) {
+    P.add(g, 'techwall', wx, Y(1.6 + wl / 2), wl, 0.4, 2.2, { rot: side < 0 ? -Math.PI / 2 : Math.PI / 2, col: TECH.white, seed: Math.round(wx * 7) });   // (its stock faces into the shop)
+  }
+  // the demo drone's plinth by the window, and display tables down the middle
+  const px = W >= 7 ? x0 + W * 0.68 : x0 + W * 0.42, py = Y(1.7);
+  P.add(g, 'plinth', px, py, 0.9, 0.9, 0.95, { col: TECH.white });
+  out.plinth = { x: px, y: py, h: 0.95 };
+  if (W >= 5.4) for (let d = 3.4; d < cyD - 1.4; d += 2.4) P.add(g, 'techtable', x0 + W / 2, Y(d), Math.min(2.0, W - 2.6), 0.95, 0.9, { rot, col: TECH.wood, seed: Math.round(d * 3) });
+  return out;
+}
+
+const LAYOUT = { gadget, food, trap: house, nice: house, terrace: house, semi: house, detached: house, cottage: house, bungalow, warehouse, office, shop, pub, church, mall };
 export function makePlan(site) {
   const P = new Plan({ ...site });
   (LAYOUT[site.kind] || house)(P, P.site);

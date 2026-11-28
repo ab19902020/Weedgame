@@ -12,8 +12,8 @@ import { PubGames } from './pubGames.js';
 import { Robbery } from './robbery.js';
 
 export const KIND_LABEL = { trap: 'Trap house', nice: 'House', terrace: 'Terraced house', semi: 'Semi-detached house', detached: 'Detached house', bungalow: 'Bungalow',
-  cottage: 'Cottage', warehouse: 'Warehouse', office: 'Offices', shop: 'Shop', pub: 'Pub', church: 'Church', mall: 'Shopping centre', food: 'Takeaway' };
-export const KIND_COLOUR = { trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', food: '#f08a24' };
+  cottage: 'Cottage', warehouse: 'Warehouse', office: 'Offices', shop: 'Shop', pub: 'Pub', church: 'Church', mall: 'Shopping centre', food: 'Takeaway', gadget: 'TechZone' };
+export const KIND_COLOUR = { gadget: '#ff7a1a', trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', food: '#f08a24' };
 const HOME = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage']);
 
 export class Interiors {
@@ -55,6 +55,7 @@ export class Interiors {
     if (s.kind === 'trap') return `Trap house, ${s.street}`;
     if (s.kind === 'nice') return `The nicer house, ${s.street}`;
     if (s.kind === 'mall') return 'The Oracle';
+    if (s.kind === 'gadget') return `TechZone, ${s.town || s.district}`;
     if (s.kind === 'food') return s.name + (s.street && !/^A\d|^M\d/.test(s.street) ? ', ' + s.street : ', ' + s.district);
     if (s.name && !HOME.has(s.kind)) return s.name;
     return `${KIND_LABEL[s.kind] || 'Building'}${s.street ? ', ' + s.street : ''}`;
@@ -122,6 +123,8 @@ export class Interiors {
           else for (const gm of IN.plan.games || []) if (Math.hypot(lx - gm.x, ly - gm.y) < 1.1) { this.prompt = { text: { darts: 'Play darts', pool: 'Play pool', fruit: 'Fruit machine' }[gm.type], act: 'game', site: IN.site, game: gm }; break; }
         }
         else if (IN.site.kind === 'shop') { const pr = this.rob.prompt(IN, me); if (pr) this.prompt = pr; }
+        // TechZone (techShop.js): the till and the demo drone, in its own stores and The Oracle's unit
+        else if (IN.site.kind === 'gadget' || IN.site.kind === 'mall') { const pr = this.G.techShop?.prompt(IN, me); if (pr) this.prompt = pr; }
       } else {
         let best = null, bd = 2.3;
         for (const s of this.sites) { const d = Math.hypot(s.dx - me.x, s.dz - me.z); if (d < bd) { bd = d; best = s; } }
@@ -146,7 +149,7 @@ export class Interiors {
     });
   }
   // the people inside the place you're in (staff, diners), drawn with the street's crowd
-  get people() { const b = this.at(this.G.brothers.me); return !b ? [] : b.site.kind === 'food' || b.site.kind === 'pub' ? this.food.people(b) : b.site.kind === 'shop' ? this.rob.people(b) : []; }
+  get people() { const b = this.at(this.G.brothers.me); return !b ? [] : b.site.kind === 'food' || b.site.kind === 'pub' ? this.food.people(b) : b.site.kind === 'shop' ? this.rob.people(b) : b.site.kind === 'gadget' || b.site.kind === 'mall' ? (this.G.techShop?.people(b) || []) : []; }
   refreshNear(me) {
     const R = 140;
     for (const s of this.sites) {
@@ -167,7 +170,7 @@ export class Interiors {
     // the door: a panel, its frame and a step, flat to the front wall, facing the street
     const w = s.plan.frontW ? s.plan.frontW * 2 : 0.94, h = s.plan.frontTop || 2.05;
     const doorCol = { trap: 0xe9e6dc, nice: 0x2e3d55, mall: 0x3b3b3b, office: 0x3b3b3b, shop: 0x3b3b3b, warehouse: 0x5f7d95, church: 0x5b3a22, pub: 0x2f4a3a }[s.kind] ?? [0x2e3d55, 0x7d1f2a, 0x3a5a3a, 0x2c2c2c, 0xe9e6dc][s.id % 5];
-    const glassy = s.kind === 'mall' || s.kind === 'office' || s.kind === 'shop';
+    const glassy = s.kind === 'mall' || s.kind === 'office' || s.kind === 'shop' || s.kind === 'gadget';
     const m = new THREE.MeshStandardNodeMaterial({ color: doorCol, roughness: 0.5, metalness: glassy ? 0.4 : 0.05 });
     const fm = new THREE.MeshStandardNodeMaterial({ color: 0xf2f1ec, roughness: 0.6 });
     const door = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.06), m);
@@ -195,6 +198,7 @@ export class Interiors {
     const p = this.prompt; if (!p || this.fade.dir) return false;
     if (p.act === 'none') return false;
     if (p.act === 'rob') { this.rob.start(this.at(this.G.brothers.me)); return true; }
+    if (p.act === 'tech') { this.G.techShop?.open(); return true; }
     if (p.act === 'radio') this.G.radio?.toggle(); else if (p.act === 'sit') this.homeTV.sit(this.ensure(p.site)); else if (p.act === 'enter') this.enter(p.site); else if (p.act === 'order') this.food.open(p.site, p.till); else if (p.act === 'game') this.games.start(p.game.type, p.site); else this.leave(p.site);
     return true;
   }
