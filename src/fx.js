@@ -6,7 +6,7 @@
 //  - holes: a dark pock with a chipped rim, pressed onto the wall or ground where a round hit
 //  - casings: brass thrown out of the ejection port, bouncing and rolling to a stop
 import * as THREE from 'three/webgpu';
-import { attribute, uv, vec3, vec4, float, smoothstep, length, mix, sin, atan, step, positionLocal } from 'three/tsl';
+import { attribute, uv, vec3, vec4, float, smoothstep, length, mix, sin, atan, step } from 'three/tsl';
 
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _v = new THREE.Vector3(), _u = new THREE.Vector3();
 const Z0 = new THREE.Matrix4().makeScale(0, 0, 0);

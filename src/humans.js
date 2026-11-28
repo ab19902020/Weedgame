@@ -11,8 +11,9 @@
 // loose, hands in pockets, arms folded, texting), their arm swing and an older person's stoop.
 import * as THREE from 'three/webgpu';
 import {
-  Fn, float, vec2, vec3, vec4, int, attribute, positionGeometry, normalGeometry, positionWorld, varyingProperty,
-  sin, cos, atan, abs, max, min, mix, step, smoothstep, clamp, floor, fract, pow, length, normalize, select, texture, fwidth, modelWorldMatrix,
+  Fn, float, vec2, vec3, vec4, attribute, positionGeometry, normalGeometry, positionWorld, varyingProperty, sin, cos,
+  atan, abs, max, min, mix, step, smoothstep, clamp, floor, fract, pow, length, normalize, select, texture, fwidth,
+  modelWorldMatrix,
 } from 'three/tsl';
 import { bakeFaceAtlas, bakeHairTexture, FACE_ATLAS as FA } from './faceBake.js';
 import { U, cloudShadow } from './env.js';

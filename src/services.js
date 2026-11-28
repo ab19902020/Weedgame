@@ -1,6 +1,6 @@
 // Parked cars from tile parking slots (stable ids), Cal's own cars, and bus services
 // that run the OSM bus-route relations with stops and dwell times.
-import { MODELS, PAINTS, randomModel, paintFor } from './vehicles.js';
+import { randomModel, paintFor } from './vehicles.js';
 import { mulberry } from './traffic.js';
 
 export class Parking {

@@ -3,8 +3,8 @@ import {isCycle} from './propulsion.js';
 // Near the focus they run full car-following (IDM) with lanes, signals and give-way rules;
 // further away they keep moving along their routes at reduced cost, so nothing pops or U-turns
 // at a streaming boundary.
-import { MODELS, PAINTS, randomModel, paintFor } from './vehicles.js';
-import { F_ONEWAY, F_ROUNDABOUT, F_BRIDGE, F_DRIVE } from './network.js';
+import { MODELS, randomModel, paintFor } from './vehicles.js';
+import { F_ONEWAY, F_ROUNDABOUT, F_DRIVE } from './network.js';
 
 // the simulation bubble round the focus (the player, or the drone in flight): full simulation inside FULL_R, cars kept
 // up to BUBBLE_R (frozen beyond it near an anchor: Cal himself while the drone is away), removed past KILL_R. Set per quality preset (perf.js `bubble`, setRadius).

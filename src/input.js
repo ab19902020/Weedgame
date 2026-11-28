@@ -199,8 +199,6 @@ export class Input {
     steer += this.move.x;
     return { steer: Math.max(-1, Math.min(1, steer)), gas: Math.min(1, gas), brake: Math.min(1, brake) };
   }
-  // older callers: throttle on -y
-  driveAxis() { const c = this.driveControls(); return { x: c.steer, y: c.brake - c.gas }; }
   takeLook() { const d = { dx: this.look.dx, dy: this.look.dy }; this.look.dx = this.look.dy = 0; if (this.keys.has('KeyQ')) d.dx -= 6; if (this.keys.has('KeyE')) d.dx += 6; return d; }
   consume(name) { const has = this.pressed.has(name); this.pressed.delete(name); return has; }
   // on-screen button wiring

@@ -3,8 +3,6 @@ import {quietDrive} from './propulsion.js';
 // fuller set of animations, his own standing idle and the better hold on a gun). Walking, running, driving,
 // parking, and the third-person orbit camera. (`b` and `actor` stay arrays of one, `active` is always 0, so
 // everything that asks for B.b[B.active] or B.actor[B.active] still works.)
-import * as THREE from 'three/webgpu';
-import { MODELS } from './vehicles.js';
 import { lerpAngle } from './traffic.js';
 import { pointInRing } from './tiles.js';
 import { CAL } from './save.js';
@@ -173,7 +171,7 @@ export class Brothers {
   }
   drive(dt, input, v) {
     const G = this.G, me = this.me;
-    const c = input.driveControls ? input.driveControls(dt) : (a => ({ steer: a.x, gas: Math.max(0, -a.y), brake: Math.max(0, a.y) }))(input.axis());
+    const c = input.driveControls(dt);
     // brake pedal: brakes while moving; held at a standstill it holds the car, then after a moment engages reverse
     // (so stopping at a junction never lurches backwards). The accelerator brakes a car that is rolling backwards.
     const u = v.ph ? v.ph.vx * Math.cos(v.heading) + v.ph.vz * Math.sin(v.heading) : (v.sp || 0);

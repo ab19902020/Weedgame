@@ -189,7 +189,7 @@ G.radio = new GameRadio(G);
 G.combat = new Combat(G);                 // weapons, fists, Cal's arms (combat.js)
 G.gore = new Gore(G);                     // blood: spray, spatter, wounds, pools (gore.js)
 G.people.rigs.onHero = (slot, a, dt) => { const r = G.combat.pose(slot, a, dt); if (G.fishing?.active) G.fishing.poseArms(slot, a, slot.arms); return r; };
-// Cal's own car is a Range Rover (older saves had a hatch under this id). A save from the two-brother game keeps
+// Cal's own car is a Range Rover (very old saves had a hatch under this id). A save from the two-brother game keeps
 // Leon's white one and his road bike, now Cal's too
 const OWN = { 'cal-car': 'rangerover', 'leon-car': 'rangerover' };
 for (const sv of G.save.vehicles) {

@@ -22,7 +22,6 @@ const UP = new THREE.Vector3(0, 1, 0);
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _e = new THREE.Vector3();
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion();
 const clamp = (x, a, b) => x < a ? a : x > b ? b : x;
-const lerpAngle = (a, b, t) => a + Math.atan2(Math.sin(b - a), Math.cos(b - a)) * t;
 const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 const TWIST = 1.2;   // how far (radians) the shoulders turn from the hips towards the aim before the body turns
 // the punches of a combo, then a kick: [name, which hand, reach, swing in from the side, reaction, damage]

@@ -1,6 +1,6 @@
 // Procedural, instanced vehicles. Simulation owns vehicle state; this module only draws.
 import * as THREE from 'three/webgpu';
-import { Fn, attribute, vec2, vec3, float, int, mix, step, sin, fract, floor, positionLocal, positionGeometry, instanceIndex, select, abs, length, smoothstep, uniformArray } from 'three/tsl';
+import { attribute, vec2, vec3, float, mix, step, sin, fract, floor, positionGeometry, abs, length, smoothstep } from 'three/tsl';
 import { motorcycleMesh } from './motorcycles.js';
 import { U, cloudShadow } from './env.js';
 import { mergeGeos } from './tiles.js';

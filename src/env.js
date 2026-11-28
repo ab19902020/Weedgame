@@ -1,6 +1,6 @@
 // Shared lighting / weather uniforms and procedural textures used by every material.
 import * as THREE from 'three/webgpu';
-import { uniform, uniformArray, vec2, vec3, vec4, float, texture, Fn, positionWorld, cameraPosition, normalize, dot, max, mix, smoothstep, clamp, pow, exp, abs, fract, sin, sqrt, length } from 'three/tsl';
+import { uniform, uniformArray, vec3, vec4, float, texture, Fn, dot, max, mix, smoothstep, clamp, pow, sqrt, length } from 'three/tsl';
 import { msTexture } from './atmosphere.js';
 import { starCells, STAR_G } from './astro.js';
 
@@ -139,7 +139,6 @@ export const atlasTex = new THREE.DataTexture(atlasData, ATLAS_N, ATLAS_N, THREE
 atlasTex.magFilter = atlasTex.minFilter = THREE.NearestFilter; atlasTex.needsUpdate = true;
 
 // ------------------------------------------------------------------ shared TSL helpers
-export const nTex = (uvNode) => texture(noiseTex, uvNode);
 
 // ------------------------------------------------------------------ cloud volumes (tools/sky/cloud_noise.py)
 // 128^3 base shape, 32^3 detail and a 256^2 weather map (cumulus cells, Perlin-Worley, regional, cirrus).

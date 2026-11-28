@@ -53,7 +53,6 @@ const FORAGE_GROUND = new Set(['woodpigeon', 'blackbird', 'robin', 'starling', '
 const RANGE = 130, NS = 96, CELL = 96;
 // how many more of each to bring out on 'Plenty' (the rest: x1.8 birds, x2.5 mammals); the town fox above all
 const PLENTY = { fox: 3.5, hedgehog: 2.5, badger: 3, muntjac: 3, roe: 2.5, hare: 3, squirrel: 3, rabbit: 1.5, swift: 1, gull: 1.2, pigeon: 1.2, rat: 1.2, mouse: 1.5 };
-const BIRDS = new Set(Object.keys(SPECIES).filter(k => SPECIES[k].plan === 'bird'));
 
 export class WildSim {
   constructor(W, opts = {}) {

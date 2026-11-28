@@ -129,7 +129,7 @@ export class RiggedPeople {
     for (const [id,slot] of this.active) if (!visible.has(id)) this.remove(id,slot);
     return visible;
   }
-  // a brother out of range (one left far behind) is hidden and kept for when he's near again (building a rig clones
+  // Cal out of range (the drone flown far off) is hidden and kept for when he's near again (building a rig clones
   // a 78-bone skeleton: a hitch); the preview figure is thrown away
   remove(id,slot) {
     this.active.delete(id);

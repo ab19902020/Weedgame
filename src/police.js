@@ -349,21 +349,4 @@ export class Police {
       G.traffic.remove(v); this.units.splice(i, 1);
     }
   }
-  // a police car on a road 250-450 m from (x, z), heading in to it
-  respond(x, z, k = 0) {
-    const G = this.G, net = G.net;
-    for (let tries = 0; tries < 8; tries++) {
-      const a = this.rand() * Math.PI * 2, r = 260 + this.rand() * 220;
-      const n = net.nearest(x + Math.cos(a) * r, z + Math.sin(a) * r, 150, e => (net.flags[e] & 16) && !/motorway|service|track/.test(net.classes[net.cls[e]]));
-      if (!n) continue;
-      const h = n.e * 2 + (net.flags[n.e] & 1 ? 0 : (this.rand() < 0.5 ? 0 : 1));
-      const v = G.traffic.spawnAt(h, Math.min(n.s, net.len[n.e] - 1), { kind: 'police', model: 'police', paint: 0xf2f2f2 });
-      if (!v) continue;
-      v.id = 'police-r' + (this._resp = (this._resp || 0) + 1); G.traffic.byId.set(v.id, v);
-      v.beat = { x, z, r: 600 }; v.persistent = true; v.status = 'patrol'; v.dest = this.beatNode(v);
-      this.units.push(v);
-      return v;
-    }
-    return null;
-  }
 }

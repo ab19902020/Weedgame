@@ -97,7 +97,6 @@ export class Signals {
     return 'wait';
   }
   press(ci) { const c = this.ctl[ci]; if (c) c.demand = true; }
-  timeTo(ci) { const c = this.ctl[ci]; return c ? c.timer : 0; }
 }
 
 // Instanced signal heads, pedestrian heads and Belisha beacons near the camera.

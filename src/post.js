@@ -5,7 +5,7 @@
 //         prefiltered (PMREM) as scene.environment, so every PBR surface picks up sky light
 //         and glossy reflections that follow the weather.
 import * as THREE from 'three/webgpu';
-import { pass, mrt, output, normalView, vec2, vec3, vec4, float, uniform, mix, renderOutput, screenUV, normalWorld, positionWorld, Fn, smoothstep, max, metalness, roughness, rtt, textureSize, cameraViewMatrix, dot } from 'three/tsl';
+import { pass, mrt, output, normalView, vec2, vec3, vec4, float, uniform, mix, renderOutput, screenUV, positionWorld, Fn, smoothstep, max, metalness, roughness, rtt, textureSize, cameraViewMatrix, dot } from 'three/tsl';
 import { depthAwareBlur } from 'three/examples/jsm/tsl/display/depthAwareBlur.js';
 import { ssr } from 'three/examples/jsm/tsl/display/SSRNode.js';
 import { ao } from 'three/examples/jsm/tsl/display/GTAONode.js';

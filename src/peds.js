@@ -774,7 +774,6 @@ export class Peds {
     }
     return true;
   }
-  slowTraffic(p, c) { for (const v of this.G.traffic.list) { const d = Math.hypot(v.x - c.x, v.z - c.z); if (d < 10 && (v.v || 0) > 2) return false; } return true; }
   atScene(p, dt) { p.speedNow = 0; p.pose = p.scenePose || 'idle'; p.heading = Math.atan2(p.sceneZ - p.z, p.sceneX - p.x); p.sceneT -= dt; if (p.sceneT <= 0) p.mode = 'walk'; }
   // ---------------- reactions
   horn({ x, z, v }) {
