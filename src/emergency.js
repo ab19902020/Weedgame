@@ -29,6 +29,38 @@ const smooth = k => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
 const uniformLook = (top, legs) => ({ ...People.randomLook(Math.random, { work: true }), citizen: null, top, legs, bag: false, backpack: false, headphones: false, carrier: false,
   coat: false, skirt: false, tights: false, shorts: false, denim: false, hood: false, cap: false, beanie: false, scarf: false, stoop: false, outfit: 0, idle: 0, shoe: 0 });
 
+// flames and smoke: camera-facing sprites with soft painted textures (canvas, made on the first fire): tongues of
+// flame, white-hot at the root to orange to a deep red at the ragged tip, glowing where they overlap; lumpy puffs of
+// smoke. (They were solid cones and balls, which read as orange crystals.)
+let FIRE_TEX = null;
+function fireTextures() {
+  if (FIRE_TEX) return FIRE_TEX;
+  const flame = k => {
+    const c = document.createElement('canvas'); c.width = 64; c.height = 128; const g = c.getContext('2d'), lean = (k - 1) * 7;
+    g.filter = 'blur(2.5px)';
+    const grad = g.createLinearGradient(0, 128, 0, 0);
+    grad.addColorStop(0, 'rgba(255,236,190,1)'); grad.addColorStop(0.28, 'rgba(255,190,70,1)'); grad.addColorStop(0.58, 'rgba(255,112,18,0.92)');
+    grad.addColorStop(0.86, 'rgba(196,38,0,0.45)'); grad.addColorStop(1, 'rgba(120,10,0,0)');
+    g.fillStyle = grad; g.beginPath(); g.moveTo(32, 123);
+    g.bezierCurveTo(5, 118, 9, 72, 21 + lean * 0.3, 46); g.bezierCurveTo(27 + lean, 26, 30 + lean, 15, 34 + lean, 4);
+    g.bezierCurveTo(40 + lean, 24, 58, 60, 56, 92); g.bezierCurveTo(54, 116, 45, 123, 32, 123); g.fill();
+    const core = g.createRadialGradient(32, 102, 2, 32, 96, 24); core.addColorStop(0, 'rgba(255,255,228,0.9)'); core.addColorStop(1, 'rgba(255,214,110,0)');
+    g.fillStyle = core; g.fillRect(0, 0, 64, 128);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  };
+  const puff = () => {
+    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    g.filter = 'blur(5px)';
+    for (let i = 0; i < 14; i++) {
+      const a = i * 2.4, r = 20 + (i * 7) % 16, x = 64 + Math.cos(a) * (10 + (i % 4) * 6), y = 64 + Math.sin(a) * (10 + (i % 3) * 7);
+      const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    }
+    return new THREE.CanvasTexture(c);
+  };
+  return (FIRE_TEX = { flames: [flame(0), flame(1), flame(2)], puff: puff() });
+}
+
 const HOMES = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage', 'nice']);   // (never the trap house or the brothers' own)
 const BURNABLE = new Set([...HOMES, 'shop', 'pub', 'food', 'gadget', 'office', 'warehouse']);
 
@@ -45,9 +77,8 @@ export class Emergency {
       hose: M(0x7c1812, { side: THREE.DoubleSide, roughness: 0.75 }), branch: M(0x2a2a2c, { metalness: 0.7, roughness: 0.3 }),
       water: new THREE.MeshBasicMaterial({ color: 0xdcecff, transparent: true, opacity: 0.55, depthWrite: false }),
       steam: new THREE.MeshBasicMaterial({ color: 0xe4e7ea, transparent: true, opacity: 0.22, depthWrite: false }),
-      soot: new THREE.MeshBasicMaterial({ color: 0x0d0b0a, transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
-      blackSmoke: M(0x1f1d1c, { transparent: true, opacity: 0.8, depthWrite: false }),
-      glow: new THREE.MeshBasicMaterial({ color: 0xff7a1e }),
+      soot: null,   // (made on the first fire out: sootMaterial())
+      glow: new THREE.MeshBasicMaterial({ color: 0xff6a18, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }),
     };
     this.geos = { box: new THREE.BoxGeometry(1, 1, 1), wheel: new THREE.CylinderGeometry(0.065, 0.065, 0.045, 10).rotateX(Math.PI / 2), drop: new THREE.IcosahedronGeometry(1, 0), puff: new THREE.IcosahedronGeometry(1, 1), cone: new THREE.ConeGeometry(1, 1, 7) };
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3(); this._v = new THREE.Vector3();
@@ -79,8 +110,14 @@ export class Emergency {
   // a crew on its way: the vehicle starts round the corner, a couple of hundred metres back along the roads
   sendCrew(service, x, z, reason, incident) {
     const G = this.G, net = G.net;
-    const snap = net.nearest(x, z, 90, e => net.flags[e] & 16);
-    if (!snap) return false;
+    // the nearest drivable road; if there's no way in along it (a forecourt's or a car park's dead-end service road),
+    // the nearest proper road
+    const snaps = [net.nearest(x, z, 90, e => net.flags[e] & 16), net.nearest(x, z, 160, e => (net.flags[e] & 16) && !/service|track/.test(net.classes[net.cls[e]]))].filter(Boolean);
+    for (const snap of snaps) if (this.sendFrom(snap, service, x, z, reason, incident)) return true;
+    return false;
+  }
+  sendFrom(snap, service, x, z, reason, incident) {
+    const G = this.G, net = G.net;
     for (const last of [snap.e * 2, snap.e * 2 + 1]) {
       if (!net.outD[net.startNode(last)].includes(last)) continue;
       const route = [last], seen = new Set([snap.e]); let length = 0;
@@ -134,10 +171,18 @@ export class Emergency {
       if (v.smokeT >= 8 && this.ignite(v)) return;
     }
   }
+  sprites() {
+    if (this._sm) return this._sm;
+    const T = fireTextures();
+    return (this._sm = {
+      flame: T.flames.map(map => new THREE.SpriteNodeMaterial({ map, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })),
+      smoke: [0x262321, 0x34312e, 0x4a4743].map(color => new THREE.SpriteNodeMaterial({ map: T.puff, color, transparent: true, depthWrite: false, opacity: 0.9 })),
+    });
+  }
   fireMesh() {
-    const g = new THREE.Group(), M = this.mats;
-    for (let k = 0; k < 7; k++) { const f = new THREE.Mesh(this.geos.cone, k % 2 ? M.flameA : M.flameB); f.position.set(Math.sin(k * 2.1) * 0.7, 0.55, Math.cos(k * 1.7) * 0.45); f.userData.k = k; g.add(f); }
-    for (let k = 0; k < 7; k++) { const s = new THREE.Mesh(this.geos.puff, M.smoke); s.userData.smoke = k; g.add(s); }
+    const g = new THREE.Group(), S = this.sprites();
+    for (let k = 0; k < 9; k++) { const f = new THREE.Sprite(S.flame[k % 3]); f.position.set(Math.sin(k * 2.1) * 0.7, 0.55, Math.cos(k * 1.7) * 0.45); f.userData.k = k; g.add(f); }
+    for (let k = 0; k < 8; k++) { const s = new THREE.Sprite(S.smoke[k % 3]); s.userData.smoke = k; g.add(s); }
     return g;
   }
   // ---------------------------------------------------------------- per frame
@@ -522,11 +567,12 @@ export class Emergency {
     for (const o of g.children) {
       if (o.userData.smoke != null) {
         // (rising from above the flames, so the fire itself shows; spreading as it climbs and drifts)
-        const j = o.userData.smoke, u = (t * 0.25 + j / 7) % 1, sc = (0.25 + u * 1.25) * (0.35 + 0.65 * smoke);
-        o.position.set(Math.sin(j * 1.9) * 0.4 + u * 1.1, 1.7 + u * 5.5, Math.cos(j * 2.3) * 0.4); o.scale.setScalar(sc); o.visible = smoke > 0.02;
+        const j = o.userData.smoke, u = (t * 0.25 + j / 8) % 1, sc = (0.25 + u * 1.25) * (0.35 + 0.65 * smoke) * 2.3;
+        o.position.set(Math.sin(j * 1.9) * 0.4 + u * 1.1, 1.7 + u * 5.5, Math.cos(j * 2.3) * 0.4); o.scale.set(sc, sc, 1); o.visible = smoke > 0.02;
       } else {
-        const j = o.userData.k, f = 1 + 0.3 * Math.sin(t * 9 + j * 1.3) + 0.15 * Math.sin(t * 23 + j), r = (0.34 + j * 0.05) * (0.4 + 0.6 * k);
-        o.visible = k > 0.03; o.scale.set(r, (1.0 + 0.3 * (j % 3)) * f * k * 1.4, r); o.position.y = 0.55 * k * f;
+        const j = o.userData.k, f = 1 + 0.3 * Math.sin(t * 9 + j * 1.3) + 0.15 * Math.sin(t * 23 + j), r = (0.3 + j * 0.04) * (0.4 + 0.6 * k);
+        const h = (1.0 + 0.3 * (j % 3)) * f * k * 1.5;
+        o.visible = k > 0.03; o.scale.set(r * 2.3, h, 1); o.position.y = h * 0.42;
       }
     }
   }
@@ -570,7 +616,7 @@ export class Emergency {
   // the windows it shows at (the ground floor's along the front, and upstairs on a house of two floors), each a fire
   // behind the glass and flames licking out and up the wall; the smoke off the roof
   buildingFireMesh(s, gy) {
-    const I = this.G.interiors, M = this.mats, g = new THREE.Group();
+    const I = this.G.interiors, M = this.mats, S = this.sprites(), g = new THREE.Group();
     const fh = s.floorH || 2.7, lv = Math.max(1, s.lv || 1), wall = s.wall || fh * lv, face = -(s.door?.wall || 0.2) - 0.04;
     const xs = s.W > 8 ? [0.2, 0.5, 0.8] : s.W > 5 ? [0.27, 0.73] : [0.5];
     const spots = xs.map(fr => [s.W * fr, gy + 0.95]);
@@ -579,14 +625,14 @@ export class Emergency {
     g.userData.windows = spots.map(([lx, y], w) => {
       const [x, z] = I.toWorld(s, lx, face);
       const win = new THREE.Group(); win.position.set(x, y, z); win.rotation.y = yaw;
-      const glow = new THREE.Mesh(this.geos.box, M.glow); glow.scale.set(0.95, 1.15, 0.02); glow.position.set(0, 0.45, -0.06); win.add(glow);
-      for (let k = 0; k < 6; k++) { const fl = new THREE.Mesh(this.geos.cone, k % 2 ? M.flameA : M.flameB); fl.userData.k = k; win.add(fl); }
+      const glow = new THREE.Mesh(this.geos.box, M.glow); glow.scale.set(0.95, 1.15, 0.01); glow.position.set(0, 0.45, 0.01); win.add(glow);
+      for (let k = 0; k < 7; k++) { const fl = new THREE.Sprite(S.flame[k % 3]); fl.userData.k = k; win.add(fl); }
       win.userData.w = w; win.userData.glow = glow;
       g.add(win); return win;
     });
     const [rx, rz] = I.toWorld(s, s.W / 2, s.D * 0.45);
     const col = new THREE.Group(); col.position.set(rx, gy + wall + 0.6, rz); g.add(col); g.userData.smoke = col;
-    for (let k = 0; k < 12; k++) { const p = new THREE.Mesh(this.geos.puff, k % 3 ? M.blackSmoke : M.smoke); p.userData.j = k; col.add(p); }
+    for (let k = 0; k < 14; k++) { const p = new THREE.Sprite(S.smoke[k % 3]); p.userData.j = k; col.add(p); }
     return g;
   }
   burnBuilding(c, dt) {
@@ -600,10 +646,10 @@ export class Emergency {
       for (const fl of win.children) {
         if (fl.userData.k == null) continue;
         const j = fl.userData.k, f = 1 + 0.3 * Math.sin(t * 8 + j * 1.7 + win.userData.w) + 0.15 * Math.sin(t * 21 + j);
-        const r = (0.2 + j * 0.035) * (0.4 + 0.6 * kw), hgt = (0.9 + 0.35 * (j % 3)) * f * kw * 1.5;
-        fl.visible = kw > 0.03; fl.scale.set(r, hgt, r);
-        // out of the top of the window and up the wall, leaning out from it
-        fl.position.set((j - 2.5) * 0.16, 0.85 + hgt * 0.45, 0.18 + 0.1 * (j % 2)); fl.rotation.x = 0.28;
+        const r = (0.18 + j * 0.03) * (0.4 + 0.6 * kw), hgt = (0.9 + 0.35 * (j % 3)) * f * kw * 1.6;
+        fl.visible = kw > 0.03; fl.scale.set(r * 2.4, hgt, 1);
+        // out of the window and up the wall above it, out from it a little
+        fl.position.set((j - 3) * 0.14, 0.35 + hgt * 0.45, 0.15 + 0.08 * (j % 2));
       }
       if (kw > wk) { wk = kw; worst = win; }
     }
@@ -611,17 +657,29 @@ export class Emergency {
     // black smoke while it's burning, thinning to a grey haze once it's out
     const sm = Math.max(k, damp ? Math.max(0, 0.6 - (c.t || 0) / 30) : 0), col = g.userData.smoke;
     for (const o of col.children) {
-      const j = o.userData.j, u = (t * 0.09 + j / 12) % 1, sc = (0.9 + u * 3.6) * (0.35 + 0.65 * sm);
-      o.position.set(Math.sin(j * 1.9) * 1.1 + u * 4, u * 17, Math.cos(j * 2.3) * 1.1 + u * 1.5); o.scale.setScalar(sc); o.visible = sm > 0.02;
+      const j = o.userData.j, u = (t * 0.09 + j / 14) % 1, sc = (0.9 + u * 3.6) * (0.35 + 0.65 * sm) * 2.3;
+      o.position.set(Math.sin(j * 1.9) * 1.1 + u * 4, u * 17, Math.cos(j * 2.3) * 1.1 + u * 1.5); o.scale.set(sc, sc, 1); o.visible = sm > 0.02;
     }
+  }
+  sootMaterial() {
+    if (this.mats.soot) return this.mats.soot;
+    const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128; const g = cv.getContext('2d');
+    g.filter = 'blur(4px)';
+    for (let i = 0; i < 9; i++) {   // smoke-stained plumes rising from the window's head, ragged at the top
+      const x = 14 + i * 4.5 + Math.sin(i * 2.3) * 3, w = 10 + (i % 3) * 5, top = 18 + ((i * 37) % 30);
+      const gr = g.createLinearGradient(0, 118, 0, top); gr.addColorStop(0, 'rgba(10,8,7,0.95)'); gr.addColorStop(0.55, 'rgba(18,15,13,0.55)'); gr.addColorStop(1, 'rgba(25,22,20,0)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(x, (118 + top) / 2, w, (118 - top) / 2, 0, 0, Math.PI * 2); g.fill();
+    }
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace;
+    return (this.mats.soot = new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   }
   buildingOut(c) {
     const G = this.G, s = c.building; if (!s || s.burntAt) return;
     s.burning = false; s.burntAt = G.time;
     // soot over each window that burned, up the wall from its head
     for (const win of c.fire?.userData.windows || []) {
-      const m = new THREE.Mesh(this.geos.box, this.mats.soot); m.scale.set(1.3, 1.6, 0.01);
-      m.position.copy(win.position); m.position.y += 1.05; m.rotation.y = win.rotation.y;
+      const m = new THREE.Mesh(this.geos.plane ??= new THREE.PlaneGeometry(1, 1), this.sootMaterial()); m.scale.set(1.5, 2.0, 1);
+      m.position.copy(win.position); m.position.y += 1.25; m.rotation.y = win.rotation.y;
       m.position.x += Math.sin(win.rotation.y) * 0.02; m.position.z += Math.cos(win.rotation.y) * 0.02;
       G.scene.add(m); this.scorch.push(m);
     }
