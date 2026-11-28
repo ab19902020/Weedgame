@@ -1,4 +1,4 @@
-// One streamed media element, no decoded album in memory. Independent per-device tuning,
+// One media element, no decoded album in memory (the playing track is held compressed, see load()). Independent per-device tuning,
 // shared resume points for the stations. Assets are local to www/radio in the APK.
 export const STATIONS=[
   {id:'music',name:'United Road FM',icon:'♫',kind:'MUSIC',tracks:[
@@ -62,8 +62,14 @@ export class GameRadio {
   select(id){if(STATIONS.some(s=>s.id===id)){this.selected=id;this.refresh();}}
   step(dir){const i=STATIONS.findIndex(s=>s.id===this.selected);this.select(STATIONS[nextTrack(i,STATIONS.length,dir)].id);}
   tune(id){if(!this.context||!STATIONS.some(s=>s.id===id))return;if(id===this.current&&id!=='off'){this.manualPause=false;this.play();this.refresh();return;}this.savePosition();this.audio.pause();this.current=id;this.selected=id;this.devices.set(this.context,id);this.manualPause=false;this.status='';if(id!=='off')this.load();this.refresh();}
+  // The phone's asset server (Main.java) can't serve part of a file, and a media element can't seek in a file served
+  // whole: each track is read into memory first (a few MB; compressed, not decoded) and played from there, so
+  // resuming part-way through and the podcast's back-30-seconds work. Missing files fall back to the plain URL, which
+  // fails into the "install the radio asset pack" message.
   load(){const s=STATIONS.find(s=>s.id===this.current),p=this.resume[this.current];if(!s?.tracks.length||!p)return;
-    this.audio.src='radio/'+s.tracks[p.index][1]+'.m4a';this.setVolume();this.play();}
+    const url='radio/'+s.tracks[p.index][1]+'.m4a',tok=this.loadTok=(this.loadTok||0)+1;
+    const start=src=>{if(tok!==this.loadTok)return;this.audio.src=src;this.setVolume();this.play();};
+    fetch(url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.blob();}).then(b=>{if(tok!==this.loadTok)return;if(this.blobUrl)URL.revokeObjectURL(this.blobUrl);this.blobUrl=URL.createObjectURL(b.type?b:new Blob([b],{type:'audio/mp4'}));start(this.blobUrl);}).catch(()=>start(url));}
   play(){if(this.current==='off'||!this.context||this.manualPause||document.hidden)return;this.audio.play().catch(()=>{this.status='Press Play to start audio';this.refresh();});}
   pauseToggle(){if(this.current==='off')return;if(this.audio.paused){this.manualPause=false;this.play();}else{this.manualPause=true;this.audio.pause();}this.refresh();}
   skip(dir){const s=STATIONS.find(s=>s.id===this.current),p=this.resume[this.current];if(!s?.tracks.length||!p)return;

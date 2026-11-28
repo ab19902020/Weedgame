@@ -115,7 +115,7 @@ def patch_manifest(data, vname, vcode):
 zin = zipfile.ZipInfo
 src = zipfile.ZipFile(tpl)
 stored_ext = {os.path.splitext(i.filename)[1].lower() for i in src.infolist() if i.compress_type == zipfile.ZIP_STORED and i.filename.startswith('assets/www/')}
-stored_ext.add('.mp4')  # Keep Android media assets seekable.
+stored_ext.update({'.mp4', '.m4a'})  # Keep Android media assets (TV episodes, radio tracks) seekable.
 print('stored in the template:', sorted(stored_ext))
 fh = open(out, 'wb'); zout = zipfile.ZipFile(fh, 'w', allowZip64=False)
 def add(name, data, stored):
