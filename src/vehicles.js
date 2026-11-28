@@ -6,7 +6,7 @@ import { U, cloudShadow } from './env.js';
 import { mergeGeos } from './tiles.js';
 import { lightPool } from './materials.js';
 import { buildCar, vehicleMaterial, wheelGeometry, wheelMaterial, CAR_SPECS } from './carModel.js';
-import { positionWorld, texture, uv } from 'three/tsl';
+import { positionWorld, texture, uv, dot } from 'three/tsl';
 
 const FAR_LOD = 70;   // metres: beyond this cars use the light body
 export const MODELS = {
@@ -82,15 +82,21 @@ function packMaterial(tex, ref, full = false) {
     const w = smoothstep(0.82, 0.94, same).mul(smoothstep(0.2, 0.45, satT.div(satP.max(0.01)))).mul(body);
     paint = mix(t, ip.mul(lum(t).div(lum(P).max(0.004)).clamp(0.35, 1.8)), w);
   }
-  const col = mix(mix(paint, vec3(0.012, 0.015, 0.02), glass), t, lamp);
+  // burnt out (iState flag 32: fireFx.js): soot black, blistered rust on the panels, the glass gone, the lamps dead;
+  // on fire (64): the flames inside light the windows from within
+  const fl = floor(st.x.add(0.5)), burnt = step(0.5, fract(floor(fl.div(32)).mul(0.5))), burning = step(0.5, fract(floor(fl.div(64)).mul(0.5)));
+  const pw = positionGeometry, rust = fract(sin(dot(floor(pw.mul(14)), vec3(12.9898, 78.233, 37.719))).mul(43758.5453));
+  const charCol = mix(vec3(0.022, 0.02, 0.019), vec3(0.13, 0.065, 0.03), step(0.82, rust).mul(float(1).sub(glass)).mul(float(1).sub(lamp)));
+  const col = mix(mix(mix(paint, vec3(0.012, 0.015, 0.02), glass), t, lamp), mix(charCol, vec3(0.006), glass), burnt);
   m.colorNode = col.mul(cloudShadow(positionWorld));
-  m.roughnessNode = mix(mix(mix(float(0.55), float(0.38), paintPart), float(0.08), glass), float(0.25), lamp);
+  m.roughnessNode = mix(mix(mix(mix(float(0.55), float(0.38), paintPart), float(0.08), glass), float(0.25), lamp), float(0.93), burnt);
   // headlamps (not red) at the front with the lights on; tail lamps (red) at the back, brighter on the brakes
   const brake = step(0.5, fract(st.x.mul(0.5))), lights = st.y, front = step(0, positionGeometry.x);
   const red = step(t.g.mul(1.6), t.r).mul(step(0.22, t.r));
   const head = lamp.mul(front).mul(float(1).sub(red)).mul(lights).mul(2.6);
   const tail = lamp.mul(float(1).sub(front)).mul(red).mul(lights.mul(0.9).add(brake.mul(2.6)));
-  m.emissiveNode = t.mul(head.add(tail)).add(lightPool(positionWorld).mul(col));
+  const flick = float(0.72).add(sin(U.t.mul(23).add(pw.x.mul(3.1))).mul(0.16)).add(sin(U.t.mul(41).add(pw.z.mul(5.3))).mul(0.12));
+  m.emissiveNode = t.mul(head.add(tail)).mul(float(1).sub(burnt)).add(vec3(1, 0.42, 0.09).mul(glass).mul(burning).mul(flick).mul(2.2)).add(lightPool(positionWorld).mul(col));
   return m;
 }
 
@@ -416,7 +422,7 @@ export class VehicleRenderer {
       const dmg = v.dmg, dga = mesh.geometry.attributes.iDmg.array;
       if (dmg) { dga[i * 4] = dmg[0]; dga[i * 4 + 1] = dmg[1]; dga[i * 4 + 2] = dmg[2]; dga[i * 4 + 3] = dmg[3]; } else dga.fill(0, i * 4, i * 4 + 4);
       const st = mesh.geometry.attributes.iState;
-      const flags = (v.brake ? 1 : 0) | (v.reversing ? 2 : 0) | (v.ind === 1 ? 4 : 0) | (v.ind === 2 ? 8 : 0) | (v.hazard || v.alarmT > 0 ? 16 : 0);
+      const flags = (v.brake ? 1 : 0) | (v.reversing ? 2 : 0) | (v.ind === 1 ? 4 : 0) | (v.ind === 2 ? 8 : 0) | (v.hazard || v.alarmT > 0 ? 16 : 0) | (v.burnt ? 32 : 0) | (v.burning ? 64 : 0);
       st.array[i * 4] = flags; st.array[i * 4 + 1] = v.fullBeam && v.lights ? 1.35 : v.lights ? 1 : 0; st.array[i * 4 + 2] = v.siren || v.lightsOnly ? 1 : 0; st.array[i * 4 + 3] = v.heading;
       if (d2 < 90 * 90 && sn < 400) {
         this._sm.makeScale(def.L * 1.06, 1, def.W * 1.18).premultiply(this._g);
@@ -435,7 +441,7 @@ export class VehicleRenderer {
         const W = WHEELS[mk] ||= wheelsOf(mk, def), r = def.wr, posts = W.posts, tyre = def.tyre || 0.22, spin = v.spin || 0, iw = this.iWheel.array;
         for (let k = 0; k < posts.length; k += 3) {
           const wx = posts[k], wz = posts[k + 1], steer = posts[k + 2];
-          iw[wn * 4] = W.sty[0]; iw[wn * 4 + 1] = W.sty[1]; iw[wn * 4 + 2] = spin; iw[wn * 4 + 3] = W.sty[3];
+          iw[wn * 4] = W.sty[0]; iw[wn * 4 + 1] = W.sty[1]; iw[wn * 4 + 2] = spin; iw[wn * 4 + 3] = v.burnt ? 2 : W.sty[3];
           this._w.makeRotationZ(-(v.spin || 0));
           const sa = v.player ? v.steer : v.steerVis;
           if (steer && sa) this._w.premultiply(this._steer.makeRotationY(-sa));

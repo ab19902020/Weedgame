@@ -6,7 +6,7 @@ import {
   mix, smoothstep, step, clamp, fract, floor, abs, max, min, pow, exp, sin, cos, dot, normalize, length, reflect, select, If, Loop, fwidth,
   int, cross, dFdx, dFdy,
 } from 'three/tsl';
-import { U, noiseTex, cloudTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL } from './env.js';
+import { U, noiseTex, cloudTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL, NF } from './env.js';
 import { L, sAlbedo, sDetail, sAlbedoAT, perturb, perturbW, groundUV, worldToView } from './surfaces.js';
 import { BRAND_N, paletteBytes } from './brands.js';
 // branch-free select: plain select() compiles to if/else blocks, which breaks texture sampling
@@ -38,7 +38,17 @@ export const lightPool = Fn(([p]) => {
   const inside = step(0.0, q.x).mul(step(q.x, 1.0)).mul(step(0.0, q.y)).mul(step(q.y, 1.0));
   // Keep the lit area anchored in world space; the raster can move in 48 m steps.
   const fade = float(1).sub(smoothstep(98,140,length(p.xz.sub(cameraPosition.xz))));
-  return texture(lightTex, q).rgb.mul(U.night).mul(inside).mul(fade).mul(2.2);
+  const pool = texture(lightTex, q).rgb.mul(U.night).mul(inside).mul(fade).mul(2.2);
+  // firelight: a burning car or house, an explosion's flash (fireFx.js; skipped while nothing's alight)
+  const fire = vec3(0).toVar();
+  If(U.fireN.greaterThan(0.5), () => {
+    for (let i = 0; i < NF; i++) {
+      const Lf = U['fireL' + i], Cf = U['fireC' + i];
+      const f = max(float(1).sub(length(p.sub(Lf.xyz)).div(Lf.w.max(0.1))), 0);
+      fire.addAssign(Cf.xyz.mul(f.mul(f)));
+    }
+  });
+  return pool.add(fire);
 });
 // wet reflection: fresnel-weighted sky + vertical light streaks from nearby lamps/vehicles
 export const skyReflection = Fn(([p, n, amount]) => {

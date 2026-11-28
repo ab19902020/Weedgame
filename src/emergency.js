@@ -29,37 +29,7 @@ const smooth = k => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
 const uniformLook = (top, legs) => ({ ...People.randomLook(Math.random, { work: true }), citizen: null, top, legs, bag: false, backpack: false, headphones: false, carrier: false,
   coat: false, skirt: false, tights: false, shorts: false, denim: false, hood: false, cap: false, beanie: false, scarf: false, stoop: false, outfit: 0, idle: 0, shoe: 0 });
 
-// flames and smoke: camera-facing sprites with soft painted textures (canvas, made on the first fire): tongues of
-// flame, white-hot at the root to orange to a deep red at the ragged tip, glowing where they overlap; lumpy puffs of
-// smoke. (They were solid cones and balls, which read as orange crystals.)
-let FIRE_TEX = null;
-function fireTextures() {
-  if (FIRE_TEX) return FIRE_TEX;
-  const flame = k => {
-    const c = document.createElement('canvas'); c.width = 64; c.height = 128; const g = c.getContext('2d'), lean = (k - 1) * 7;
-    g.filter = 'blur(2.5px)';
-    const grad = g.createLinearGradient(0, 128, 0, 0);
-    grad.addColorStop(0, 'rgba(255,236,190,1)'); grad.addColorStop(0.28, 'rgba(255,190,70,1)'); grad.addColorStop(0.58, 'rgba(255,112,18,0.92)');
-    grad.addColorStop(0.86, 'rgba(196,38,0,0.45)'); grad.addColorStop(1, 'rgba(120,10,0,0)');
-    g.fillStyle = grad; g.beginPath(); g.moveTo(32, 123);
-    g.bezierCurveTo(5, 118, 9, 72, 21 + lean * 0.3, 46); g.bezierCurveTo(27 + lean, 26, 30 + lean, 15, 34 + lean, 4);
-    g.bezierCurveTo(40 + lean, 24, 58, 60, 56, 92); g.bezierCurveTo(54, 116, 45, 123, 32, 123); g.fill();
-    const core = g.createRadialGradient(32, 102, 2, 32, 96, 24); core.addColorStop(0, 'rgba(255,255,228,0.9)'); core.addColorStop(1, 'rgba(255,214,110,0)');
-    g.fillStyle = core; g.fillRect(0, 0, 64, 128);
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
-  };
-  const puff = () => {
-    const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
-    g.filter = 'blur(5px)';
-    for (let i = 0; i < 14; i++) {
-      const a = i * 2.4, r = 20 + (i * 7) % 16, x = 64 + Math.cos(a) * (10 + (i % 4) * 6), y = 64 + Math.sin(a) * (10 + (i % 3) * 7);
-      const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,0.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
-    }
-    return new THREE.CanvasTexture(c);
-  };
-  return (FIRE_TEX = { flames: [flame(0), flame(1), flame(2)], puff: puff() });
-}
+// (flames, smoke and their light: fireFx.js; vehicles alight and blowing up: vehicleFire.js)
 
 const HOMES = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage', 'nice']);   // (never the trap house or the brothers' own)
 const BURNABLE = new Set([...HOMES, 'shop', 'pub', 'food', 'gadget', 'office', 'warehouse']);
@@ -143,47 +113,22 @@ export class Emergency {
     if (this.calls.some(c => c.service === 'fire')) return false;
     const G = this.G;
     for (const car of G.traffic.list) {
-      if (car.kind !== 'parked' || car.owner || car.free || car.player || car.burnt || Math.hypot(car.x - G.focus.x, car.z - G.focus.z) > 160) continue;
-      if (this.ignite(car)) return true;
+      if (car.kind !== 'parked' || car.owner || car.free || car.player || car.burnt || car.burning || Math.hypot(car.x - G.focus.x, car.z - G.focus.z) > 160) continue;
+      // (a crew on its way first, then the fire: an electrical fire, not one that will go up)
+      if (!this.vehicleFire(car)) continue;
+      G.vfire?.ignite(car, { fuse: Infinity, quiet: true });
+      return true;
     }
     return false;
   }
-  ignite(car) {
+  // a vehicle alight (vehicleFire.js): a 999 call and the fire brigade, unless they're out already
+  vehicleFire(car) {
+    if (this.calls.some(c => c.service === 'fire')) return false;
     if (!this.sendCrew('fire', car.x, car.z, 'vehicle fire', null)) return false;
     const call = this.calls[this.calls.length - 1];
-    Object.assign(car, { burning: true, v: 0, crashed: !car.parked, hazard: true, smoking: true });
-    call.car = car; call.heat = 1; call.fire = this.fireMesh(); this.G.scene.add(call.fire);
-    this.G.hud.feed('999 call: a car on fire · ' + (this.G.roadName(car.x, car.z) || 'nearby'));
+    call.car = car; call.heat = 1; call.fire = new THREE.Group(); this.G.scene.add(call.fire);
+    this.G.hud.feed('999 call: a ' + (car.def?.wheels === 2 ? 'motorbike' : 'car') + ' on fire · ' + (this.G.roadName(car.x, car.z) || 'nearby'));
     return true;
-  }
-  // a car smashed up badly enough smokes for a few seconds, then goes up (not one you're in)
-  checkFires(dt) {
-    if ((this.fireScan = (this.fireScan || 0) - dt) > 0) return;
-    this.fireScan = 1;
-    if (this.calls.some(c => c.service === 'fire')) return;
-    const G = this.G, f = G.focus;
-    for (const v of G.traffic.list) {
-      if (v.player || v.owner || v.burning || v.burnt || !v.dmg || v.def?.wheels === 2 || v.law || v.kind === 'fire' || v.kind === 'ambulance' || v.kind === 'taxi' || Math.hypot(v.x - f.x, v.z - f.z) > 220) continue;
-      // the engine wrecked (carPhysics.js v.eng), or the whole car smashed in
-      const d = v.dmg, total = d[0] + d[1] + d[2] + d[3];
-      if ((v.eng || 0) < 1 && total < 3.2) { v.smokeT = 0; continue; }
-      v.smoking = true; v.smokeT = (v.smokeT || 0) + 1;
-      if (v.smokeT >= 8 && this.ignite(v)) return;
-    }
-  }
-  sprites() {
-    if (this._sm) return this._sm;
-    const T = fireTextures();
-    return (this._sm = {
-      flame: T.flames.map(map => new THREE.SpriteNodeMaterial({ map, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })),
-      smoke: [0x262321, 0x34312e, 0x4a4743].map(color => new THREE.SpriteNodeMaterial({ map: T.puff, color, transparent: true, depthWrite: false, opacity: 0.9 })),
-    });
-  }
-  fireMesh() {
-    const g = new THREE.Group(), S = this.sprites();
-    for (let k = 0; k < 9; k++) { const f = new THREE.Sprite(S.flame[k % 3]); f.position.set(Math.sin(k * 2.1) * 0.7, 0.55, Math.cos(k * 1.7) * 0.45); f.userData.k = k; g.add(f); }
-    for (let k = 0; k < 8; k++) { const s = new THREE.Sprite(S.smoke[k % 3]); s.userData.smoke = k; g.add(s); }
-    return g;
   }
   // ---------------------------------------------------------------- per frame
   update(dt) {
@@ -198,13 +143,13 @@ export class Emergency {
     }
     // the soot over a burnt-out house's windows stays while you're about, and goes once you're well away
     for (let i = this.scorch.length - 1; i >= 0; i--) { const o = this.scorch[i]; if (Math.hypot(o.position.x - G.focus.x, o.position.z - G.focus.z) > 450) { G.scene.remove(o); this.scorch.splice(i, 1); } }
-    this.checkFires(dt); this.dispatchInjuries(dt);
+    this.dispatchInjuries(dt);
     for (let i = this.calls.length - 1; i >= 0; i--) {
       const c = this.calls[i]; c.time += dt; c.t += dt;
       const v = c.unit;
       // the vehicle's been taken (by you) or wrecked, the patient's gone, or it's all taken far too long: stand down
       if (v.player || v.dead || c.time > 600 || (c.patient && c.patient.gone && c.stage !== 'board' && c.stage !== 'done')) { this.end(c, true); this.calls.splice(i, 1); continue; }
-      if (c.fire) { if (c.building) this.burnBuilding(c, dt); else this.burn(c, dt); }
+      if (c.fire) { if (c.building) this.burnBuilding(c, dt); else if (c.forecourt) this.burn(c, dt); }
       if (c.stage === 'drive') this.arrive(c, dt);
       else if (c.service === 'ambulance') this.ambulance(c, dt);
       else this.firefight(c, dt);
@@ -518,7 +463,10 @@ export class Emergency {
         this.spray(c, dt, ax, ay, az, on);
         // (a car in a quarter of a minute; a house or a shop, or a forecourt, takes a good deal longer)
         const takes = c.building ? 45 : c.forecourt ? 32 : 14;
-        if (c.stage === 'spray') { c.heat = Math.max(0, c.heat - dt / takes); if (c.heat <= 0) { c.stage = 'damp'; c.t = 0; if (c.building) this.buildingOut(c); else if (c.forecourt) this.forecourtOut(c); else this.burnOut(c); } }
+        if (c.stage === 'spray') {
+          c.heat = c.car ? Math.min(c.heat, G.vfire?.douse?.(c.car, dt, takes) ?? 0) : Math.max(0, c.heat - dt / takes);
+          if (c.heat <= 0) { c.stage = 'damp'; c.t = 0; if (c.building) this.buildingOut(c); else if (c.forecourt) this.forecourtOut(c); else this.burnOut(c); }
+        }
         else if (c.t > 6) { c.stage = 'makeUp'; c.t = 0; c.water.jet.visible = false; }
         break;
       }
@@ -558,29 +506,16 @@ export class Emergency {
       case 'board': if (this.board(c, dt, F)) c.stage = 'done'; break;
     }
   }
-  // the flames on the car, their size with the heat; smoke rolling up off it (thinning as it's put out)
+  // the forecourt: a pool of burning petrol round the pumps, black smoke rolling out under the canopy
   burn(c, dt) {
-    const g = c.fire, car = c.car; if (!g) return;
-    if (car) { g.position.set(car.x, (car.y || 0) + 0.65, car.z); g.rotation.y = -(car.heading || 0); }
-    const k = c.heat ?? 1, t = c.time, damp = c.stage === 'damp' || c.stage === 'makeUp';
-    const smoke = Math.max(k, damp ? Math.max(0, 0.6 - (c.t || 0) / 20) : 0);
-    for (const o of g.children) {
-      if (o.userData.smoke != null) {
-        // (rising from above the flames, so the fire itself shows; spreading as it climbs and drifts)
-        const j = o.userData.smoke, u = (t * 0.25 + j / 8) % 1, sc = (0.25 + u * 1.25) * (0.35 + 0.65 * smoke) * 2.3;
-        o.position.set(Math.sin(j * 1.9) * 0.4 + u * 1.1, 1.7 + u * 5.5, Math.cos(j * 2.3) * 0.4); o.scale.set(sc, sc, 1); o.visible = smoke > 0.02;
-      } else {
-        const j = o.userData.k, f = 1 + 0.3 * Math.sin(t * 9 + j * 1.3) + 0.15 * Math.sin(t * 23 + j), r = (0.3 + j * 0.04) * (0.4 + 0.6 * k);
-        const h = (1.0 + 0.3 * (j % 3)) * f * k * 1.5;
-        o.visible = k > 0.03; o.scale.set(r * 2.3, h, 1); o.position.y = h * 0.42;
-      }
-    }
+    const S = c.src; if (!S) return;
+    const damp = c.stage === 'damp' || c.stage === 'makeUp';
+    S.heat = c.heat ?? 1; S.smoke = Math.max(S.heat * 1.4, damp ? Math.max(0, 0.7 - (c.t || 0) / 20) : 0); S.dark = damp ? 0.55 : 0.03;
+    this.G.fireFx?.burn(S, dt);
   }
   burnOut(c) {
-    const car = c.car; if (!car || car.burnt) return;
-    Object.assign(car, { burning: false, burnt: true, smoking: false, paint: 0x231f1c });
-    car.dmg = [Math.max(car.dmg?.[0] || 0, 0.7), Math.max(car.dmg?.[1] || 0, 0.5), Math.max(car.dmg?.[2] || 0, 0.5), Math.max(car.dmg?.[3] || 0, 0.5)];
-    this.wrecks.push(car);
+    const car = c.car; if (!car) return;
+    if (car.burning) this.G.vfire?.out?.(car);
     this.G.hud.feed('Fire out · ' + (this.G.roadName(car.x, car.z) || 'the vehicle fire'));
   }
   // ---------------------------------------------------------------- building fires
@@ -616,50 +551,48 @@ export class Emergency {
   // the windows it shows at (the ground floor's along the front, and upstairs on a house of two floors), each a fire
   // behind the glass and flames licking out and up the wall; the smoke off the roof
   buildingFireMesh(s, gy) {
-    const I = this.G.interiors, M = this.mats, S = this.sprites(), g = new THREE.Group();
+    const I = this.G.interiors, M = this.mats, g = new THREE.Group();
     const fh = s.floorH || 2.7, lv = Math.max(1, s.lv || 1), wall = s.wall || fh * lv, face = -(s.door?.wall || 0.2) - 0.04;
     const xs = s.W > 8 ? [0.2, 0.5, 0.8] : s.W > 5 ? [0.27, 0.73] : [0.5];
     const spots = xs.map(fr => [s.W * fr, gy + 0.95]);
     if (lv >= 2) for (const fr of xs.slice(0, 2)) spots.push([s.W * Math.min(0.85, fr + 0.06), gy + fh + 0.95]);
     const yaw = Math.atan2(-s.ay[0], -s.ay[1]);   // facing out to the street
+    const ox = Math.sin(yaw), oz = Math.cos(yaw);
     g.userData.windows = spots.map(([lx, y], w) => {
       const [x, z] = I.toWorld(s, lx, face);
       const win = new THREE.Group(); win.position.set(x, y, z); win.rotation.y = yaw;
       const glow = new THREE.Mesh(this.geos.box, M.glow); glow.scale.set(0.95, 1.15, 0.01); glow.position.set(0, 0.45, 0.01); win.add(glow);
-      for (let k = 0; k < 7; k++) { const fl = new THREE.Sprite(S.flame[k % 3]); fl.userData.k = k; win.add(fl); }
+      // (the flames: just outside the opening, along the wall)
+      win.userData.src = { x: x + ox * 0.22, y: y + 0.2, z: z + oz * 0.22, heading: -yaw, hx: 0.42, hz: 0.1, h: 1.5, embers: 1.2, rate: 1.1, size: 0.9, smokeRate: 0.8, density: 0.85 };
       win.userData.w = w; win.userData.glow = glow;
       g.add(win); return win;
     });
     const [rx, rz] = I.toWorld(s, s.W / 2, s.D * 0.45);
-    const col = new THREE.Group(); col.position.set(rx, gy + wall + 0.6, rz); g.add(col); g.userData.smoke = col;
-    for (let k = 0; k < 14; k++) { const p = new THREE.Sprite(S.smoke[k % 3]); p.userData.j = k; col.add(p); }
+    g.userData.roof = { x: rx, y: gy + wall + 0.3, z: rz, heading: -yaw, hx: Math.min(4, s.W * 0.3), hz: Math.min(3, s.D * 0.25), h: 1.2, heat: 0, embers: 0.6, smokeRate: 2.4, density: 0.9 };
+    const [fx, fz] = I.toWorld(s, s.W / 2, face - 2.5);
+    g.userData.front = [fx, gy + 2.2, fz];
     return g;
   }
   burnBuilding(c, dt) {
-    const g = c.fire, t = c.time, k = c.heat ?? 1, W = g.userData.windows, n = W.length;
+    const G = this.G, g = c.fire, t = c.time, k = c.heat ?? 1, W = g.userData.windows, n = W.length;
     const damp = c.stage === 'damp' || c.stage === 'makeUp' || c.stage === 'stow' || c.stage === 'board';
     let worst = null, wk = 0;
     for (const win of W) {
       // they go out one after another as the jet works along them (the last to catch, first out)
       const th = win.userData.w / (n + 1), kw = clamp((k - th) / (1 - th), 0, 1);
-      win.userData.glow.visible = kw > 0.04; win.userData.glow.scale.y = 1.15 * (0.5 + 0.5 * kw);
-      for (const fl of win.children) {
-        if (fl.userData.k == null) continue;
-        const j = fl.userData.k, f = 1 + 0.3 * Math.sin(t * 8 + j * 1.7 + win.userData.w) + 0.15 * Math.sin(t * 21 + j);
-        const r = (0.18 + j * 0.03) * (0.4 + 0.6 * kw), hgt = (0.9 + 0.35 * (j % 3)) * f * kw * 1.6;
-        fl.visible = kw > 0.03; fl.scale.set(r * 2.4, hgt, 1);
-        // out of the window and up the wall above it, out from it a little
-        fl.position.set((j - 3) * 0.14, 0.35 + hgt * 0.45, 0.15 + 0.08 * (j % 2));
-      }
+      const fl = 0.85 + 0.15 * Math.sin(t * 9 + win.userData.w * 2.1);
+      win.userData.glow.visible = kw > 0.04; win.userData.glow.scale.y = 1.15 * (0.5 + 0.5 * kw) * fl;
+      const S = win.userData.src;
+      S.heat = kw; S.smoke = kw * 0.9 + (damp && kw < 0.05 ? Math.max(0, 0.35 - (c.t || 0) / 40) : 0); S.dark = damp || kw < 0.3 ? 0.5 : 0.04;
+      if (S.heat > 0.01 || S.smoke > 0.01) G.fireFx?.burn(S, dt);
       if (kw > wk) { wk = kw; worst = win; }
     }
     if (worst) { const p = worst.position; c.aimAt = [p.x, p.y + 0.6, p.z]; }
-    // black smoke while it's burning, thinning to a grey haze once it's out
-    const sm = Math.max(k, damp ? Math.max(0, 0.6 - (c.t || 0) / 30) : 0), col = g.userData.smoke;
-    for (const o of col.children) {
-      const j = o.userData.j, u = (t * 0.09 + j / 14) % 1, sc = (0.9 + u * 3.6) * (0.35 + 0.65 * sm) * 2.3;
-      o.position.set(Math.sin(j * 1.9) * 1.1 + u * 4, u * 17, Math.cos(j * 2.3) * 1.1 + u * 1.5); o.scale.set(sc, sc, 1); o.visible = sm > 0.02;
-    }
+    // black smoke pouring off the roof while it's burning, thinning to a grey haze once it's out
+    const R = g.userData.roof, sm = Math.max(k, damp ? Math.max(0, 0.6 - (c.t || 0) / 30) : 0);
+    R.smoke = sm * 1.3; R.dark = damp ? 0.5 : 0.03; R.heat = k > 0.75 ? (k - 0.75) * 2.4 : 0;
+    if (sm > 0.02) G.fireFx?.burn(R, dt);
+    if (k > 0.02) { const [lx, ly, lz] = g.userData.front, f = 0.82 + 0.12 * Math.sin(t * 11) + 0.06 * Math.sin(t * 27); G.fireFx?.light(lx, ly, lz, 1, 0.48, 0.14, 2.6 * k * f, 16); }
   }
   sootMaterial() {
     if (this.mats.soot) return this.mats.soot;
@@ -712,7 +645,10 @@ export class Emergency {
     if (!this.sendCrew('fire', isl.x, isl.z, 'petrol station fire', null)) { isl.burning = false; return false; }
     const call = this.calls[this.calls.length - 1], gy = G.tiles.ground(isl.x, isl.z) ?? st.base ?? 0;
     Object.assign(call, { forecourt: { st, isl }, heat: 1, fy: gy + 0.8 });
-    call.fire = this.fireMesh(); call.fire.scale.setScalar(2.1); call.fire.position.set(isl.x, gy + 0.2, isl.z); G.scene.add(call.fire);
+    call.fire = new THREE.Group(); G.scene.add(call.fire);
+    call.src = { x: isl.x, y: gy + 0.05, z: isl.z, heading: isl.heading ?? 0, hx: 2.6, hz: 1.4, h: 2.4, embers: 1.5, rate: 1.3, size: 1.2, smokeRate: 1.6, density: 0.9, light: 3, reach: 20 };
+    // the pump goes up: a fireball rolling out under the canopy
+    G.vfire?.boom?.(isl.x, gy + 0.9, isl.z, 1.2, 'player');
     G.hud.feed('999 call: a fire at the pumps · ' + (st.name || 'the petrol station'));
     return true;
   }
@@ -804,7 +740,7 @@ export class Emergency {
     if (c.bed) G.scene.remove(c.bed);
     if (c.hose) { G.scene.remove(c.hose.mesh, c.hose.branch); c.hose.mesh.geometry.dispose(); }
     if (c.water) { G.scene.remove(c.water.jet, c.water.steam); c.water.jet.dispose?.(); c.water.steam.dispose?.(); }
-    if (c.fire) { G.scene.remove(c.fire); if (abandoned && c.car) this.burnOut(c); if (c.building && !c.building.burntAt) this.buildingOut(c); if (c.forecourt) c.forecourt.isl.burning = false; }
+    if (c.fire) { G.scene.remove(c.fire); if (c.building && !c.building.burntAt) this.buildingOut(c); if (c.forecourt) c.forecourt.isl.burning = false; }
     if (c.incident && c.service === 'ambulance') c.incident.medicalBusy = false;
     const P = c.patient;
     if (P && abandoned && !P.gone) {

@@ -292,3 +292,11 @@ fishing.ogg — the fishing sounds (tools/audio/build_fishing.py), all CC0 on Fr
 “big_cast_or_snap”, canberries4, CC0, https://freesound.org/s/866245/
 “Piezo Buzzer Alarm”, D31V228, CC0, https://freesound.org/s/723998/
 Game edits: excerpts, mono, high-pass, levelled, faded; the reel and clutch made into seamless loops; one bleep cut from the piezo buzzer for the bite alarm.
+explosion.ogg — single blasts (tools/audio/build_explosion.py) from Fg2's field recordings of the explosions at the
+Toshogu Spring Festival, Nikko, on Wikimedia Commons, all public domain:
+“Explosion-LS100155.ogg”, Fg2, public domain, https://commons.wikimedia.org/wiki/File:Explosion-LS100155.ogg
+“Explosions-LS100150.ogg”, Fg2, public domain, https://commons.wikimedia.org/wiki/File:Explosions-LS100150.ogg
+“Explosions-LS100152.ogg”, Fg2, public domain, https://commons.wikimedia.org/wiki/File:Explosions-LS100152.ogg
+“Explosions-LS100155.ogg”, Fg2, public domain, https://commons.wikimedia.org/wiki/File:Explosions-LS100155.ogg
+Game edits: six blasts excerpted with their echoes, mono, high-passed at 25 Hz, levelled and faded. In the game they're
+pitched down and layered with a low-passed copy of themselves (a fuel tank's deep whump), delayed and dulled with distance.

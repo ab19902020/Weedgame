@@ -436,9 +436,8 @@ export class Combat {
         }
         // a parked car's alarm goes off
         if ((v.parked || v.kind === 'parked') && !v.player && !(v.alarmT > 0)) { v.alarmT = 14; this.alarms.add(v); }
-        // rounds into the front wear the engine (it smokes once it's had a lot: breakables.js)
-        if (zone === 0) v.eng = Math.min(1.2, (v.eng || 0) + 0.025 * w.damage / 30);
-        if ((v.eng || 0) > 0.6) v.smoking = true;
+        // rounds into the bonnet wreck the engine: it smokes, catches and in the end the tank goes (vehicleFire.js)
+        G.vfire?.shot?.(v, zone, w, w.by ?? 'player');
         break;
       }
       case 'ped': {

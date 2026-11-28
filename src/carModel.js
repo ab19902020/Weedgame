@@ -490,6 +490,8 @@ export function vehicleMaterial(models) {
   const brake = bitf(flags, 0), reversing = bitf(flags, 1), hazard = bitf(flags, 4);
   const blink = step(0.5, fract(U.t.mul(1.5)));
   const indOn = mix(bitf(flags, 3), bitf(flags, 2), step(z, 0)).add(hazard).min(1).mul(blink);
+  // fireFx.js: 32 burnt out, 64 on fire
+  const burnt = bitf(flags, 5), burning = bitf(flags, 6);
   const hlBroken = smoothstep(0.38, 0.6, dm4.x.add(mix(dm4.w, dm4.z, step(z, 0)).mul(0.5)));
   const tlBroken = smoothstep(0.38, 0.6, dm4.y.add(mix(dm4.w, dm4.z, step(z, 0)).mul(0.5)));
   // ---------------- colour
@@ -533,6 +535,11 @@ export function vehicleMaterial(models) {
   // Reflected sky on upward-facing clearcoat and a soft rocker-panel shadow anchor the body.
   const rocker=smoothstep(.26,.88,y).mul(.12).add(.88);
   base=base.mul(mix(float(1),rocker,paintArea));
+  // burnt out: the paint burnt off to soot black, blistered rust-brown on the panels, the glass gone (a dark empty
+  // cabin), the lamps, plates and trim all black
+  const rustN = vnoise(lp.mul(9.5).add(2.3)), ashN = vnoise(lp.mul(23.7).add(8.1));
+  const charCol = mix(vec3(0.022, 0.02, 0.019).mul(float(0.65).add(ashN.mul(0.7))), mix(vec3(0.12, 0.055, 0.025), vec3(0.2, 0.12, 0.07), ashN), smoothstep(0.66, 0.86, rustN).mul(paint).mul(0.85));
+  base = mix(base, mix(charCol, vec3(0.006), glassPart), burnt);
   mat.colorNode = base;
   // ---------------- surface response
   const lens = clamp01n(inHL.add(inTL).add(glassPart));
@@ -547,9 +554,10 @@ export function vehicleMaterial(models) {
   rough = mix(rough, float(0.055), lens);
   rough = mix(rough, float(0.7), scratch.add(grime.mul(1.5)).min(1));
   rough = mix(rough, float(0.12), U.wet.mul(paintE).mul(0.6));
+  rough = mix(rough, float(0.93), burnt);
   mat.roughnessNode = rough;
-  mat.metalnessNode = paintE.mul(0.45).mul(float(1).sub(dmg.mul(0.5))).add(chromeM.mul(0.95)).add(scratch.mul(step(0.5, dn2)).mul(0.6)).min(1);
-  mat.clearcoatNode = paintE.mul(float(1).sub(dmg.mul(0.8))).add(lens.mul(0.8)).add(dloTrim.mul(0.7)).min(1);
+  mat.metalnessNode = paintE.mul(0.45).mul(float(1).sub(dmg.mul(0.5))).add(chromeM.mul(0.95)).add(scratch.mul(step(0.5, dn2)).mul(0.6)).min(1).mul(float(1).sub(burnt.mul(0.8)));
+  mat.clearcoatNode = paintE.mul(float(1).sub(dmg.mul(0.8))).add(lens.mul(0.8)).add(dloTrim.mul(0.7)).min(1).mul(float(1).sub(burnt));
   mat.clearcoatRoughnessNode = mix(float(0.04), float(0.5), dmg.add(grime).min(1));
   // dents and crumples bend the reflections
   const dg = vec3(vnoise(lp.mul(3.6)).sub(0.5), vnoise(lp.mul(3.3).add(3.3)).sub(0.5), vnoise(lp.mul(3.9).add(7.7)).sub(0.5));
@@ -563,12 +571,18 @@ export function vehicleMaterial(models) {
   const tailE = inTL.mul(float(1).sub(revL)).mul(float(1).sub(indR)).mul(st.y.mul(0.9).add(brake.mul(5.0)).add(0.06)).mul(ledBars.mul(0.5).add(0.5)).mul(tlOK);
   const revE = inTL.mul(revL).mul(reversing).mul(2.5).mul(tlOK);
   const indE = clamp01n(inHL.mul(indF).add(inTL.mul(indR)).add(repeater)).mul(indOn).mul(4);
+  // on fire: the flames inside light the windows (and the grille and arches) from within, flickering
+  const flick = float(0.72).add(sin(U.t.mul(23).add(x.mul(3.1))).mul(0.16)).add(sin(U.t.mul(41).add(z.mul(5.3)).add(y.mul(7))).mul(0.12));
+  const inner = clamp01n(glassPart.add(grille).add(intake).add(archM)).mul(smoothstep(-0.2, 0.6, x.add(l.mul(0.3))).mul(0.6).add(0.4));
+  const fireE = vec3(1, 0.42, 0.09).mul(inner).mul(burning).mul(flick).mul(2.2);
+  const dead = float(1).sub(burnt);
   mat.emissiveNode = vec3(1, 0.95, 0.85).mul(head).mul(st.y).mul(4)
     .add(vec3(1, 0.05, 0.02).mul(tail).mul(st.y.mul(0.8).add(brake.mul(4.8)).add(0.12)))
     .add(vec3(1, 0.96, 0.9).mul(beam)).add(vec3(0.85, 0.9, 1).mul(drlE))
     .add(vec3(1, 0.04, 0.02).mul(tailE)).add(vec3(1, 0.98, 0.95).mul(revE)).add(vec3(1, 0.5, 0.05).mul(indE))
     .add(vec3(0.05, 0.2, 1).mul(bar).mul(st.z).mul(flash).mul(8))
-    .add(vec3(1, 0.65, 0.05).mul(blind).mul(1.5))
+    .add(vec3(1, 0.65, 0.05).mul(blind).mul(1.5)).mul(dead)
+    .add(fireE)
     .add(lightPool(positionWorld).mul(base));
   return mat;
 }
@@ -605,14 +619,18 @@ export function wheelMaterial() {
   const cal = disc.mul(step(abs(aw.sub(0.62)), 0.06)).mul(step(rim.mul(0.52), r));
   const steel = eqf(design, 2);
   const alloy = mix(vec3(0.6, 0.61, 0.63), vec3(0.42), steel).mul(float(1).sub(step(r, rim.mul(0.12)).mul(0.5)));
-  const gapCol = mix(mix(vec3(0.015), vec3(0.18), disc), mix(vec3(0.03), vec3(0.45, 0.02, 0.02), step(0.5, iw.w)), cal);
+  const burntW = step(1.5, iw.w);   // (a burnt-out car: vehicles.js)
+  const gapCol = mix(mix(vec3(0.015), vec3(0.18), disc), mix(vec3(0.03), vec3(0.45, 0.02, 0.02), step(0.5, iw.w).mul(float(1).sub(burntW))), cal);
   const lip = step(rim.mul(0.93), r).mul(inRim);
   const tyre = vec3(0.022).mul(float(1).add(eqf(design,4).mul(step(.85,r)).mul(step(.52,fract(a.mul(42)))).mul(.40))).mul(float(1).add(step(0.86, r).mul(step(r, 0.9)).mul(step(0.5, fract(a.mul(36)))).mul(0.6)));
-  m.colorNode = mix(tyre, mix(mix(alloy, gapCol, gap), vec3(0.7), lip), inRim);
+  const wheelCol = mix(tyre, mix(mix(alloy, gapCol, gap), vec3(0.7), lip), inRim);
+  // burnt: the rubber gone to grey ash and wire, the rim blackened and rusting
+  const ash = mix(vec3(0.03, 0.028, 0.026), vec3(0.085, 0.08, 0.075), step(0.72, fract(a.mul(53).add(r.mul(7)))));
+  m.colorNode = mix(wheelCol, mix(ash, mix(vec3(0.035, 0.032, 0.03), vec3(0.13, 0.07, 0.035), step(0.6, fract(a.mul(9)))), inRim), burntW);
   // Open spoke gaps on cycles and dirt bikes, retaining the brake rotor near the axle.
   m.opacityNode = float(1).sub(step(3.5,design).mul(gap).mul(step(.31,r)));
   m.alphaTest=.45;
-  m.metalnessNode = inRim.mul(float(1).sub(gap.mul(0.6))).mul(0.85);
-  m.roughnessNode = mix(float(0.92), mix(float(0.28), float(0.5), gap), inRim);
+  m.metalnessNode = inRim.mul(float(1).sub(gap.mul(0.6))).mul(0.85).mul(float(1).sub(burntW.mul(0.8)));
+  m.roughnessNode = mix(mix(float(0.92), mix(float(0.28), float(0.5), gap), inRim), float(0.95), burntW);
   return m;
 }

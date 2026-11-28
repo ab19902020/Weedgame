@@ -381,19 +381,7 @@ export class Breakables {
       }
     }
     this.debris.update(dt);
-    // a badly damaged engine smokes from under the bonnet (carPhysics.js wears v.eng; from 0.6, thickening)
-    this.smokeT += dt;
-    if (this.smokeT > 0.09) {
-      this.smokeT = 0;
-      const cam = G.camera.position;
-      for (const v of G.traffic.list) {
-        const e = v.eng || 0; if (e < 0.6 || v.hidden) continue;
-        if ((v.x - cam.x) ** 2 + (v.z - cam.z) ** 2 > 80 * 80) continue;
-        if (Math.random() > (e - 0.5) * 1.5) continue;
-        const L = v.def.L / 2 - 0.5, c = Math.cos(v.heading), s = Math.sin(v.heading);
-        G.tyreFx?.puff(v.x + c * L, (v.y || 0) + 1.0, v.z + s * L, (v.ph?.vx || 0) * 0.5, (v.ph?.vz || 0) * 0.5, 0);
-      }
-    }
+    // (a badly damaged engine's smoke, and its fire: vehicleFire.js)
   }
   stepTopple(o, dt) {
     const g = 9.81, H = o.h;

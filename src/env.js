@@ -55,7 +55,15 @@ export const U = {
   starRot: uniform(new THREE.Matrix3()),          // world -> equatorial (sidereal time, latitude)
   starVis: uniform(0),         // 0 daylight .. 1 dark sky (twilight, moonlight, haze)
   celNorth: uniform(new THREE.Vector3(0, 0.78, -0.62)),
+  // ---- firelight (fireFx.js): the nearest fires and explosion flashes light the ground, walls, cars and people
+  // around them (materials.js lightPool). fireL: x, y, z, reach (m); fireC: colour times intensity. fireN: how many
+  fireN: uniform(0),
+  fireL0: uniform(new THREE.Vector4(0, -1000, 0, 1)), fireL1: uniform(new THREE.Vector4(0, -1000, 0, 1)),
+  fireL2: uniform(new THREE.Vector4(0, -1000, 0, 1)), fireL3: uniform(new THREE.Vector4(0, -1000, 0, 1)),
+  fireC0: uniform(new THREE.Vector4(0, 0, 0, 0)), fireC1: uniform(new THREE.Vector4(0, 0, 0, 0)),
+  fireC2: uniform(new THREE.Vector4(0, 0, 0, 0)), fireC3: uniform(new THREE.Vector4(0, 0, 0, 0)),
 };
+export const NF = 4;   // firelights
 // nearby point lights for wet reflections: xyz + intensity, rgb + radius
 export const NL = 16;
 export const lightPos = uniformArray(new Array(NL).fill(0).map(() => new THREE.Vector4(0, -1000, 0, 0)), 'vec4');
