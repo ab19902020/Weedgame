@@ -7,6 +7,7 @@
 import * as THREE from 'three/webgpu';
 import { TransitSign } from './transitSign.js';
 import { People } from './characters.js';
+import { CAR_L } from './trains.js';
 
 const EDGE = 1.55;     // track centre to platform edge (a car is 2.7 m wide)
 const WIDTH = 3.2, TOP = 0.86, SEG = 5, RAMP = 0.083, CELL = 32;
@@ -203,8 +204,15 @@ export class Stations {
       const near = Math.hypot(p.mid[0] - focus.x, p.mid[2] - focus.z) < 260;
       p.people = p.people || [];
       const tr = this.trainAt(p);
-      if (tr && p.people.length && (p.boardT = (p.boardT || 0) + dt) > 4) { p.people = []; p.respawn = 45 + Math.random() * 60; }
-      if (!tr) p.boardT = 0;
+      // a train in: a few get off and make for the ramps, and those waiting walk to the nearest door and get on
+      if (tr && !p.served) {
+        p.served = true; p.doors = this.doorsOf(p, tr);
+        for (const q of p.people) if (!q.path) { q.board = this.nearestDoor(p, q.x, q.z); q.delay = Math.random() * 2.2; }
+        if (near && p.doors.length) this.alight(p);
+      }
+      if (!tr && p.served) { p.served = false; p.doors = null; p.respawn = 45 + Math.random() * 60; for (const q of p.people) q.board = null; }
+      for (const q of p.people) if (q.board || q.path) this.walkOn(p, q, dt);
+      if (p.people.some(q => q.gone)) p.people = p.people.filter(q => !q.gone);
       if (p.respawn > 0) p.respawn -= dt;
       if (near && !p.people.length && !(p.respawn > 0) && !tr) {
         const n = 1 + Math.floor(Math.random() * 4), mid = Math.floor(p.pts.length / 2);
@@ -215,6 +223,52 @@ export class Stations {
       }
       if (!near && p.people.length) p.people = [];
     }
+  }
+  // door positions along a standing train, at the platform's edge (two doors a car, at its quarter points)
+  doorsOf(p, tr) {
+    const T = this.G.trains, L = tr.line, out = [], t = new Float64Array(6);
+    for (let k = 0; k < L.cars; k++) for (const f of [-0.25, 0.25]) {
+      const sc = T.carCentre(tr, k) + f * CAR_L * tr.dir, c = T.track(L, sc, tr.dir, t);
+      let best = p.pts[0], bd = Infinity;
+      for (const q of p.pts) { const d = (q.x - c[0]) ** 2 + (q.z - c[2]) ** 2; if (d < bd) { bd = d; best = q; } }
+      if (bd > 40 * 40) continue;
+      out.push([c[0] + best.nx * p.side * (EDGE - 0.1), best.y, c[2] + best.nz * p.side * (EDGE - 0.1)]);
+    }
+    return out;
+  }
+  nearestDoor(p, x, z) {
+    let best = null, bd = Infinity;
+    for (const d of p.doors || []) { const e = Math.hypot(d[0] - x, d[2] - z); if (e < bd) { bd = e; best = d; } }
+    return best;
+  }
+  // passengers off the train: out at a door, along the platform and down the nearer ramp, then into the street
+  alight(p) {
+    const n = Math.floor(Math.random() * 4);
+    for (let k = 0; k < n; k++) {
+      const d = p.doors[Math.floor(Math.random() * p.doors.length)];
+      let ramp = null, rd = Infinity;
+      for (const r of p.ramps || []) { const top = r.ya >= r.yb ? r.a : r.b, e = Math.hypot(top[0] - d[0], top[1] - d[2]); if (e < rd) { rd = e; ramp = r; } }
+      if (!ramp) return;
+      const top = ramp.ya >= ramp.yb ? ramp.a : ramp.b, foot = ramp.ya >= ramp.yb ? ramp.b : ramp.a;
+      p.people.push({ id: 'rail-passenger-' + this.seq++, x: d[0], y: d[1], z: d[2], heading: 0, look: People.randomLook(), visible: true, speed: 0, t: 0, phase: Math.random() * 6, pose: 'walk',
+        delay: 0.4 + k * 0.9, path: [[top[0], top[1]], [foot[0], foot[1]]] });
+    }
+  }
+  // someone on the platform on the move: to a door (and aboard), or off along it and down to the street
+  walkOn(p, q, dt) {
+    if ((q.delay -= dt) > 0) { q.speedNow = 0; q.pose = 'idle'; return; }
+    const tgt = q.board ? [q.board[0], q.board[2]] : q.path[0];
+    const dx = tgt[0] - q.x, dz = tgt[1] - q.z, d = Math.hypot(dx, dz), sp = 1.35;
+    if (d < 0.4) {
+      if (q.board) { q.gone = true; return; }
+      q.path.shift();
+      if (!q.path.length) { q.gone = true; this.G.peds?.adopt?.(q); }
+      return;
+    }
+    const st = Math.min(d, sp * dt); q.x += dx / d * st; q.z += dz / d * st;
+    q.heading = Math.atan2(dz, dx); q.speedNow = sp; q.speed = sp; q.pose = 'walk'; q.phase = (q.phase + sp * dt * 3.6) % 6.283;
+    q.gaitPhase = q.phase; q.gaitSpeed = sp;
+    const g = this.G.tiles?.ground?.(q.x, q.z, q.y + 0.5); if (g != null) q.y += (g - q.y) * 0.5;
   }
   people() { const out = []; for (const p of this.platforms) if (p.people) out.push(...p.people); return out; }
 }

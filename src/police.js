@@ -74,10 +74,20 @@ export class Police {
     inc.injury = !!opts.injury; inc.trapped = !!opts.trapped; inc.patient = opts.patient; inc.medical = !!opts.medical;   // medical: an ambulance only (someone hurt, nobody killed)
     inc.patients = opts.patient ? [opts.patient] : [];
     this.incidents.push(inc);
-    // witnesses: nearby pedestrians react; one of them phones it in
-    const w = this.G.peds.near(x, z, 55);
-    for (const p of w) { p.reactT = 3 + this.rand() * 3; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = 'point'; }
-    if (w.length) { const caller = w[Math.floor(this.rand() * w.length)]; caller.reactT = 0; caller.phoneT = 9; inc.witnesses = w.map(p => p.id); inc.caller = caller; inc.callAt = 6 + this.rand() * 6; }
+    // witnesses: nearby pedestrians react; one of them phones it in. At a killing they run (and the one calling it in
+    // does so once they're clear); anything else draws a crowd that points and stares
+    const violent = type === 'fatal', w = this.G.peds.near(x, z, 55).filter(p => !p.dead && !p.officer && !p.carried && !p.awaitingMedic && !p.impact && !p.hiVis);
+    for (const p of w) {
+      if (p.reactPose === 'flee' && p.reactT > 0) continue;           // already running from the gunfire
+      p.reactHeading = Math.atan2(z - p.z, x - p.x);
+      if (violent) { p.reactT = 7 + this.rand() * 5; p.reactHeading += (this.rand() - 0.5) * 0.9; p.reactPose = 'flee'; }
+      else { p.reactT = 3 + this.rand() * 3; p.reactPose = 'point'; }
+    }
+    if (w.length) {
+      const caller = w[Math.floor(this.rand() * w.length)];
+      if (violent) caller.callAfter = true; else { caller.reactT = 0; caller.phoneT = 9; }
+      inc.witnesses = w.map(p => p.id); inc.caller = caller; inc.callAt = (violent ? 12 : 6) + this.rand() * 6;
+    }
     else inc.callAt = 20 + this.rand() * 25; // a driver phones it in
     this.G.events.emit('noise', { x, z, r: 40, kind: type });
     return inc;

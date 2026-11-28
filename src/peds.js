@@ -1,4 +1,10 @@
 // Pedestrians: pavement navigation, crossings, routines, groups, queues and reactions.
+// People spread across the whole pavement (or a footway's or pedestrian street's own width), drifting as they go
+// and stepping aside to pass; each sets out for somewhere of their own (a shop, work, home, a park, a bus stop,
+// the station, or just a walk) by a route of their own; in a park they wander the grass, sit on the benches or
+// jog; at a bus stop they queue along the kerb and walk to the bus's door; at the station they climb to the
+// platform and wait for the train. Gunfire sends everyone in earshot running, and they don't come back to the
+// spot they ran from: they carry on from wherever they got to, often straight indoors.
 import { People } from './characters.js';
 import { mulberry, lerpAngle } from './traffic.js';
 import { F_DRIVE } from './network.js';
@@ -65,14 +71,15 @@ export class Peds {
     return Math.max(22 * streets, (230 * streets * footfall('local', dow, hr) + coreAt(x, z) * 520 * footfall('centre', dow, hr)) * wet);
   }
   pickWalkEdge(focus) {
-    // collect walkable edges in range
-    const net = this.net, out = [];
+    // collect walkable edges in range (and, among them, the paths through parks, pitches and churchyards)
+    const net = this.net, out = [], park = this._parkEdges = [], seenE = new Set();
     for (let cx = Math.floor((focus.x - R) / 50); cx <= Math.floor((focus.x + R) / 50); cx++)
       for (let cz = Math.floor((focus.z - R) / 50); cz <= Math.floor((focus.z + R) / 50); cz++) {
         const l = net.grid.get(cx * 65536 + cz); if (!l) continue;
         for (let k = 0; k < l.length; k += 2) {
           const e = l[k]; if (!net.walkable(e)) continue;
           if (this.graph && this.graph.hasMappedSidewalk(e)) continue;     // the mapped footway alongside is used instead
+          if (!seenE.has(e)) { seenE.add(e); if (net.walkCls.has(net.cls[e])) { const t = net.at(e * 2, net.len[e] / 2, this.tmp), c = this.G.tiles.landcover(t[0], t[2]); if (c === 7 || c === 13 || c === 16) park.push(e); } }
           out.push(e); if (net.cls[e] === this._pedCls) out.push(e, e);     // pedestrianised streets are busier
         }
       }
@@ -104,9 +111,21 @@ export class Peds {
   seen(p, focus) { return Math.hypot(p.x - focus.x, p.z - focus.z) < (this.G.budget?.peopleDist || 170) + 10 && this.info.visible(p.x, p.y + 1, p.z, 1); }
   side(e) { return this.net.walkCls.has(this.net.cls[e]) ? 0 : 1; }
   get _pedCls() { return this.__pc ?? (this.__pc = this.net.classes.indexOf('pedestrian')); }
+  // how far from the street's centre line someone walks: anywhere across the pavement (2 m, 2.6 m beside an A or
+  // B road, as the world build draws them) or across a footway's or pedestrian street's own width, at p.lat01
+  // (0 the kerb side or one edge .. 1 the wall side or the other), which drifts as they go
+  latOff(p, e) {
+    const net = this.net, f = p.lat01 ?? (p.lane + 0.5);
+    if (this.side(e)) return net.width[e] / 2 + 0.35 + f * (this.paveW(e) - 0.7);
+    return (f - 0.5) * Math.max(0.3, net.width[e] - 0.9);
+  }
+  latSpan(e) { return this.side(e) ? this.paveW(e) - 0.7 : Math.max(0.3, this.net.width[e] - 0.9); }
+  paveW(e) { const W = this._pw ||= this.net.classes.map(c => /^(primary|secondary|trunk)$/.test(c) ? 2.6 : 2.0); return W[this.net.cls[e]]; }
+  // a walking pace: most 1.15-1.55 m/s, some slower (the elderly, a stroll), some brisk
+  walkSpeed() { const r = this.rand(); return r < 0.1 ? 0.85 + this.rand() * 0.2 : r < 0.88 ? 1.15 + this.rand() * 0.4 : 1.55 + this.rand() * 0.3; }
   pos(p) {
     const net = this.net, t = net.at(p.h, p.s, this.tmp), e = p.h >> 1;
-    const off = this.side(e) ? (net.width[e] / 2 + 1.05 + p.lane * 0.6) : p.lane * 0.5;
+    const off = this.latOff(p, e);
     const ox = t[4] * off * p.sideSign, oz = -t[3] * off * p.sideSign;
     // (one scratch array: every caller unpacks it at once; a new one per person per frame was garbage)
     const o = this._pa ||= [0, 0, 0, 0]; o[0] = t[0] + ox; o[1] = t[2] + oz; o[2] = t[3]; o[3] = t[4];
@@ -123,8 +142,8 @@ export class Peds {
     if (!net.walkable(e)) return;
     const h = e * 2 + (this.rand() < 0.5 ? 1 : 0);
     const s = this.rand() * net.len[e];
-    const p = { id: 'p' + this.nextId++, h, s, sideSign: this.rand() < 0.5 ? 1 : -1, lane: this.rand() * 0.8 - 0.4, look: People.randomLook(this.rand),
-      speed: 1.15 + this.rand() * 0.45, mode: 'walk', t: 0, phase: this.rand() * 6, heading: 0, y: 0, visible: true, alpha: 0 };
+    const p = { id: 'p' + this.nextId++, h, s, sideSign: this.rand() < 0.5 ? 1 : -1, lane: this.rand() * 0.8 - 0.4, lat01: 0.1 + this.rand() * 0.8, look: People.randomLook(this.rand),
+      speed: this.walkSpeed(), mode: 'walk', t: 0, phase: this.rand() * 6, heading: 0, y: 0, visible: true, alpha: 0 };
     if (!net.pav[e] && !net.walkCls.has(net.cls[e])) return;
     const [x, z] = this.pos(p);
     if (Math.hypot(x - focus.x, z - focus.z) > R) return;
@@ -134,6 +153,8 @@ export class Peds {
     const gy = this.G.tiles.ground(x, z); if (gy == null) return;
     p.y = gy;
     this.list.push(p);
+    // in a park, some are already out on the grass (or on a bench)
+    if (net.walkCls.has(net.cls[e]) && this._parkEdges?.includes(e) && this.rand() < 0.45) { p.activity = this.rand() < 0.15 ? 'Out for a run' : 'In the park'; this.startPark(p); return p; }
     // routines: some go to the bus stop, some chat, some walk in pairs
     const r = this.rand();
     if (r > 0.86) this.toDoor(p);
@@ -149,7 +170,138 @@ export class Peds {
     let best = -1, bd = 160;
     for (let i = 0; i < stops.length; i++) { if(!this.G.transit?.services.has(i))continue; const d = Math.hypot(stops[i][0] - p.x, stops[i][1] - p.z); if (d < bd) { bd = d; best = i; } }
     if (best < 0) return;
-    p.goal = { kind: 'stop', i: best, x: stops[best][0], z: stops[best][1] };
+    if (!this.routeTo(p, stops[best][0], stops[best][1], { kind: 'stop', i: best }, 40)) p.goal = { kind: 'stop', i: best, x: stops[best][0], z: stops[best][1] };
+  }
+  // a walking route from where p is to the pavement nearest (x, z): p.dayPath, and p.goal there
+  routeTo(p, x, z, goal, snapR = 65) {
+    const snap = this.net.nearest(x, z, snapR, e => this.net.walkable(e)); if (!snap) return false;
+    const h = snap.e * 2, path = this.net.route(this.net.endNode(p.h), this.net.startNode(h), { walk: true, limit: 2500 });
+    if (!path) return false;
+    p.dayPath = [...path, h]; p.goal = { ...goal, x: snap.x, z: snap.z };
+    return true;
+  }
+  // the station: the foot of the nearest platform ramp, within 700 m
+  toStation(p) {
+    const S = this.G.stations; if (!S?.platforms?.length) return false;
+    let best = null, bd = 700;
+    for (const pl of S.platforms) for (const r of pl.ramps || []) {
+      const low = r.ya <= r.yb, foot = low ? r.a : r.b, top = low ? r.b : r.a, d = Math.hypot(foot[0] - p.x, foot[1] - p.z);
+      if (d < bd) { bd = d; best = { pl, foot, top }; }
+    }
+    if (!best || !this.routeTo(p, best.foot[0], best.foot[1], { kind: 'station', pl: best.pl, foot: best.foot, top: best.top }, 60)) return false;
+    p.activity = 'Going for a train'; return true;
+  }
+  // a park, pitch or churchyard path within 700 m
+  toPark(p) {
+    const E = this._parkEdges; if (!E?.length) return false;
+    for (let k = 0; k < 4; k++) {
+      const e = E[Math.floor(this.rand() * E.length)], t = this.net.at(e * 2, this.net.len[e] / 2, this.tmp);
+      if (Math.hypot(t[0] - p.x, t[2] - p.z) > 700) continue;
+      if (this.routeTo(p, t[0], t[2], { kind: 'park' }, 40)) { p.activity = this.rand() < 0.15 ? 'Out for a run' : 'In the park'; return true; }
+    }
+    return false;
+  }
+  // ---------------- the station: up the ramp onto the platform, to wait for the train there (stations.js)
+  startPlatform(p) {
+    const g = p.goal, pl = g.pl, S = this.G.stations; p.goal = null;
+    if (!pl?.pts?.length || !S) { this.reattach(p); return; }
+    const i = Math.max(0, Math.min(pl.pts.length - 1, Math.floor(pl.pts.length * (0.15 + this.rand() * 0.7)))), spot = S.across(pl, i, 0.4 + this.rand() * 0.4);
+    p.mode = 'toPlatform'; p.plat = { pl, i, k: 0, path: [[g.foot[0], g.foot[1]], [g.top[0], g.top[1]], [spot[0], spot[2]]] };
+  }
+  toPlatformStep(p, dt) {
+    const P = p.plat; if (!P) { p.mode = 'walk'; return; }
+    const [tx, tz] = P.path[P.k], dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
+    if (d < 0.4) {
+      if (++P.k < P.path.length) return;
+      // on the platform: one of the people waiting there now (stations.js puts them on the next train)
+      const q = P.pl.pts[P.i];
+      (P.pl.people ||= []).push({ id: 'rail-' + p.id, x: p.x, y: p.y, z: p.z, heading: Math.atan2(-q.nz * P.pl.side, -q.nx * P.pl.side) + (this.rand() - 0.5) * 0.8,
+        look: p.look, visible: true, speed: 0, t: 0, phase: p.phase, pose: this.rand() < 0.3 ? 'phone' : 'idle' });
+      if (P.pl.served) { const last = P.pl.people.at(-1); last.board = this.G.stations.nearestDoor(P.pl, last.x, last.z); last.delay = 0.3; }
+      p.gone = true; p.visible = false; p.plat = null; return;
+    }
+    const st = Math.min(d, p.speed * dt); p.x += dx / d * st; p.z += dz / d * st;
+    p.heading = lerpAngle(p.heading, Math.atan2(dz, dx), Math.min(1, dt * 8)); p.speedNow = p.speed; p.pose = 'walk'; p.phase = (p.phase + p.speed * dt * 3.6) % 6.283;
+    this.ground(p);
+  }
+  // someone off a train (stations.js) now on foot in the street
+  adopt(a) {
+    const p = { id: 'p' + this.nextId++, h: 0, s: 0, sideSign: 1, lane: 0, lat01: 0.5, look: a.look, speed: this.walkSpeed(), mode: 'walk', t: 0, phase: a.phase || 0,
+      heading: a.heading || 0, x: a.x, y: a.y, z: a.z, visible: true, alpha: 1 };
+    this.list.push(p); this.reattach(p);
+    return p;
+  }
+  // ---------------- parks: wandering the grass, a sit on a bench, a jog round
+  startPark(p) {
+    p.mode = 'park'; p.dayPath = null; p.goal = null;
+    p.park = { legs: 2 + Math.floor(this.rand() * 5), cx: p.x, cz: p.z, tgt: null, pause: 0, jog: p.activity === 'Out for a run' };
+  }
+  parkStep(p, dt, rain) {
+    const k = p.park; if (!k) { p.mode = 'walk'; return; }
+    if (k.pause > 0) {
+      k.pause -= dt; p.speedNow = 0; p.pose = k.pose;
+      if (k.seat) { p.heading = k.seat.face; p.y = k.seat.y; if (rain > 0.5) k.pause = Math.min(k.pause, 2); }
+      else this.ground(p);
+      if (k.pause <= 0 && k.seat) { k.seat.ref.taken = Math.max(0, (k.seat.ref.taken || 1) - 1); k.seat = null; }
+      return;
+    }
+    if (!k.tgt) {
+      if (k.legs-- <= 0 || rain > 0.6) { this.reattach(p); return; }
+      const b = !k.jog && rain < 0.3 && this.rand() < 0.35 ? this.benchNear(p.x, p.z, 35) : null;
+      k.tgt = b || this.parkSpot(p.x, p.z, k.cx, k.cz, k.jog ? 60 : 40);
+      if (!k.tgt) { this.reattach(p); return; }
+    }
+    const dx = k.tgt.x - p.x, dz = k.tgt.z - p.z, d = Math.hypot(dx, dz), sp = k.jog ? 2.9 : p.speed * 0.85;
+    if (d < 0.3) {
+      if (k.tgt.ref && (k.tgt.ref.taken || 0) < 2 && !k.tgt.ref.broken) {
+        // sat on the bench: the body's root goes where the crowd renderer's seated pose rests on a 0.45 m seat
+        k.seat = { ...k.tgt, y: (this.G.tiles.ground(p.x, p.z) ?? p.y) + 0.445 + 0.55 - 0.87 * (p.look?.h || 1) };
+        k.tgt.ref.taken = (k.tgt.ref.taken || 0) + 1; k.pause = 25 + this.rand() * 70; k.pose = 'seated';
+      } else { k.pause = k.jog ? (this.rand() < 0.25 ? 4 + this.rand() * 6 : 0.01) : 3 + this.rand() * 18; k.pose = !k.jog && this.rand() < 0.3 ? 'phone' : 'idle'; }
+      k.tgt = null; return;
+    }
+    const st = Math.min(d, sp * dt); p.x += dx / d * st; p.z += dz / d * st;
+    p.heading = lerpAngle(p.heading, Math.atan2(dz, dx), Math.min(1, dt * 6));
+    p.speedNow = sp; p.phase = (p.phase + sp * dt * 3.6) % 6.283; p.pose = p.umb === 1 && !k.jog ? 'umbrella' : 'walk';
+    this.ground(p);
+  }
+  // somewhere on the grass within r of the park visit's centre, reached in a straight line over grass, paths or pitch
+  parkSpot(x, z, cx, cz, r) {
+    const ok = c => c === 0 || c === 7 || c === 10 || c === 13 || c === 16;
+    for (let k = 0; k < 10; k++) {
+      const a = this.rand() * 6.283, d = 6 + this.rand() * r, tx = cx + Math.cos(a) * d, tz = cz + Math.sin(a) * d;
+      let good = true;
+      for (let q = 1; q <= 6 && good; q++) { const f = q / 6; if (!ok(this.G.tiles.landcover(x + (tx - x) * f, z + (tz - z) * f))) good = false; }
+      if (good && !this.G.tiles.insideBuilding(tx, tz)) return { x: tx, z: tz };
+    }
+    return null;
+  }
+  // a free bench near (x, z) (benches are street furniture, breakables.js): a seat on it, facing out
+  benchNear(x, z, r) {
+    const out = this._bq ||= []; out.length = 0;
+    this.G.breakables?.gather?.(x, z, this.G.tiles.ground(x, z) ?? 0, r, out);
+    let best = null, bd = r;
+    for (const c of out) {
+      const b = c.b; if (!b || b.kind !== 4 || b.broken || (b.taken || 0) >= 2) continue;
+      const mx = (b.ax + b.bx) / 2, mz = (b.az + b.bz) / 2, d = Math.hypot(mx - x, mz - z); if (d >= bd) continue;
+      const a = Math.atan2(b.bz - b.az, b.bx - b.ax), fx = -Math.sin(a), fz = Math.cos(a), along = (b.taken ? 0.38 : -0.38);
+      best = { x: mx + fx * 0.12 + Math.cos(a) * along, z: mz + fz * 0.12 + Math.sin(a) * along, face: Math.atan2(fz, fx), ref: b }; bd = d;
+    }
+    return best;
+  }
+  // back onto the nearest pavement or path from wherever p got to (after a run from gunfire, a park visit, getting off
+  // a train), heading on away from p.awayFrom if there's one, the day's plan started afresh
+  reattach(p) {
+    const net = this.net, hit = net.nearest(p.x, p.z, 70, e => net.walkable(e) && !this.graph.hasMappedSidewalk(e));
+    this.queueRemove(p); p.stopIdx = null; p.park = null; p.leader = null; p.partner = null; p.corner = null; p.nextH = null; p.dayPath = null; p.goal = null;
+    if (!hit) { p.mode = 'walk'; p.gone = !this.seen(p, this.focus || p); return; }
+    let fwd = true;
+    if (p.awayFrom) { const ax = p.x - p.awayFrom.x, az = p.z - p.awayFrom.z; fwd = ax * hit.dx + az * hit.dz >= 0; }
+    else fwd = this.rand() < 0.5;
+    p.h = hit.e * 2 + (fwd ? 0 : 1); p.s = fwd ? hit.s : net.len[hit.e] - hit.s;
+    p.sideSign = (hit.side >= 0 ? 1 : -1) * (fwd ? 1 : -1); p.lat01 = 0.2 + this.rand() * 0.6; p.latT = p.lat01;
+    const [tx, tz] = this.pos(p); p.mode = 'fromDoor'; p.door = { x: tx, z: tz };
+    p.planAfter = p.t + 20 + this.rand() * 30; p.awayFrom = null;
   }
   update(dt, focus, info) {
     const G = this.G, net = this.net; this.info = info; this.focus = focus;
@@ -198,12 +350,28 @@ export class Peds {
       if (p.medicFall) { p.fall = Math.max(0, p.fall - dt * 0.7); p.pose = 'brace'; p.speedNow = 0; if (p.fall > 0) continue; p.medicFall = false; p.brace = 0; }
       if (p.wound) { p.wound.t += dt; if (p.wound.t > p.wound.life) p.wound = null; }
       if (p.reactT > 0) {
-        // running off (a wound to the leg makes it a limp, one to the body a hunched jog)
-        const sp = p.wound?.zone === 'leg' ? 1.5 : p.wound ? 2.6 : 3.5;
+        // running off (a wound to the leg makes it a limp, one to the body a hunched jog), each at their own pace:
+        // most sprint, the slow walkers can only manage a trot
+        const sp = p.wound?.zone === 'leg' ? 1.5 : p.wound ? 2.6 : (p.fleeSp ||= p.speed < 1.05 ? 2.3 + this.rand() * 0.5 : 3.3 + this.rand() * 1.4);
         p.reactT -= dt; p.heading = lerpAngle(p.heading, p.reactHeading, dt * 6); p.pose = p.reactPose; p.speedNow = p.reactPose === 'flee' ? sp : 0;
         if (p.reactT <= 0 && p.thenFlee) { p.thenFlee = false; p.reactPose = 'flee'; p.reactT = 5 + this.rand() * 3; }
-        if (p.reactPose === 'flee') { p.phase = (p.phase + dt * sp * 2.85) % 6.283; p.x += Math.cos(p.reactHeading + Math.PI) * sp * dt; p.z += Math.sin(p.reactHeading + Math.PI) * sp * dt; }
-        this.ground(p); continue;
+        if (p.reactPose === 'flee') {
+          p.fled = true; p.phase = (p.phase + dt * sp * 2.85) % 6.283;
+          const nx = p.x + Math.cos(p.reactHeading + Math.PI) * sp * dt, nz = p.z + Math.sin(p.reactHeading + Math.PI) * sp * dt;
+          // a wall in the way: veer along it (each keeps turning the same way) instead of running on the spot
+          if (this.G.tiles.insideBuilding(nx, nz)) p.reactHeading += (p.fleeTurn ||= this.rand() < 0.5 ? 1 : -1) * dt * 3;
+          else { p.x = nx; p.z = nz; }
+        }
+        this.ground(p);
+        // the run's over: on from wherever they got to (not back to the spot on the pavement they ran from); some
+        // go straight indoors, and the one who's calling it in does so now
+        if (p.reactT <= 0 && p.fled) {
+          p.fled = false; p.fleeSp = 0; p.awayFrom = { x: p.x + Math.cos(p.reactHeading) * 10, z: p.z + Math.sin(p.reactHeading) * 10 };
+          this.reattach(p); p.briskUntil = p.t + 25;
+          if (p.callAfter) { p.callAfter = false; p.phoneT = 9; }
+          else if (this.rand() < 0.35) { const D = this.doorsNear(p.x, p.z, 40); if (D.length) { const d0 = D.reduce((a, b) => Math.hypot(a.x - p.x, a.z - p.z) < Math.hypot(b.x - p.x, b.z - p.z) ? a : b); p.goal = { kind: 'door', x: d0.x, z: d0.z }; } }
+        }
+        continue;
       }
       if (p.phoneT > 0) { p.phoneT -= dt; p.pose = 'phone'; p.speedNow = 0; continue; }
       if(p.mode==='greeting'){
@@ -213,6 +381,9 @@ export class Peds {
         continue;
       }
       if (p.mode === 'talk') { this.talk(p, dt); continue; }
+      if (p.mode === 'park') { this.parkStep(p, dt, rain); continue; }
+      if (p.mode === 'boarding') { this.boardWalk(p, dt); continue; }
+      if (p.mode === 'toPlatform') { this.toPlatformStep(p, dt); continue; }
       if (p.mode === 'queue') { this.queue(p, dt); continue; }
       if (p.mode === 'shelter') { if (rain < 0.15 || p.t > p.shelterUntil) p.mode = 'walk'; p.pose = 'idle'; p.speedNow = 0; continue; }
       if (p.mode === 'cross') { this.cross(p, dt); continue; }
@@ -245,20 +416,52 @@ export class Peds {
       const a = ordered[i];
       for (let j=i+1; j<ordered.length; j++) {
         const b=ordered[j], dx=b.x-a.x;
-        if (dx>.65) break;
+        if (dx>1.8) break;
         const dz=b.z-a.z, d2=dx*dx+dz*dz;
+        if (d2 < 3.24 && (a.h >> 1) === (b.h >> 1)) this.giveWay(a, b);
+        if (dx>.65) continue;
         if (d2>=.36 || d2<=1e-6 || a.mode==='talk' || b.mode==='talk') continue;
         const d=Math.sqrt(d2), k=(.6-d)*.5/d;
         a.x-=dx*k; a.z-=dz*k; b.x+=dx*k; b.z+=dz*k;
       }
     }
   }
+  // what someone out and about sets off to do next: by the hour, by chance and by their job, so the people in one
+  // street aren't all heading for the same few places: a shop, work, home, a park, a bus stop, the station, or
+  // just a walk (no destination for a few minutes); each by their own walking route
+  // two people close on the same pavement or path: someone quicker coming up behind goes round, and two coming
+  // towards each other on the same line each keep to their own side
+  giveWay(a, b) {
+    if (a.mode !== 'walk' || b.mode !== 'walk' || a.corner || b.corner || a.lat01 == null || b.lat01 == null || a.leader || b.leader) return;
+    const e = a.h >> 1, side = this.side(e), sa = a.sideSign * ((a.h & 1) ? -1 : 1), sb = b.sideSign * ((b.h & 1) ? -1 : 1);
+    if (side && sa !== sb) return;                                     // the far side of the road
+    const la = side ? a.lat01 : sa * (a.lat01 - 0.5), lb = side ? b.lat01 : sb * (b.lat01 - 0.5);
+    if (Math.abs(la - lb) > 0.3) return;
+    const set = (q, sq, l) => { q.latT = Math.min(0.94, Math.max(0.06, side ? l : sq * l + 0.5)); q.latAt = q.t + 4; };
+    if (a.h === b.h) {
+      const [back, front, lf] = a.s < b.s ? [a, b, lb] : [b, a, la], sk = back === a ? sa : sb;
+      if (back.speed > front.speed + 0.05 && Math.abs(front.s - back.s) < 2.5) set(back, sk, lf + ((side ? lf < 0.5 : lf < 0) ? 0.4 : -0.4));
+    } else {
+      const L = this.net.len[e], bInA = L - b.s;
+      if (bInA <= a.s) return;                                          // already past each other
+      const dir = la <= lb ? -1 : 1; set(a, sa, la + dir * 0.22); set(b, sb, lb - dir * 0.22);
+    }
+  }
   planDay(p){
-    const hour=this.G.world.hours(), role=p.job ||= ['shop assistant','courier','office worker'][Number(p.id.slice(1))%3||0];
-    const kind=hour<7||hour>=18?'home':hour>=12&&hour<14?'shop':role==='shop assistant'?'shop':'work';
-    const places=[];
+    const hour=this.G.world.hours(), role=p.job ||= ['shop assistant','courier','office worker'][Number(p.id.slice(1))%3||0], r=this.rand();
+    let kind;
+    if(hour<6||hour>=22)kind=r<0.6?'home':r<0.8?'stroll':'shop';
+    else if((hour>=7&&hour<9.5)||(hour>=16.5&&hour<18.5))kind=r<0.3?'work':r<0.45?'stop':r<0.55?'station':r<0.75?'home':r<0.85?'shop':'stroll';
+    else if(hour>=18.5)kind=r<0.4?'home':r<0.6?'shop':r<0.7?'park':r<0.78?'station':r<0.85?'stop':'stroll';
+    else kind=r<0.3?'shop':r<0.46?'park':r<0.56?'stop':r<0.62?'station':r<0.72?(role==='shop assistant'?'shop':'work'):r<0.8?'home':'stroll';
+    if(kind==='stroll'){p.activity='Out for a walk';p.planAfter=p.t+60+this.rand()*180;return;}
+    if(kind==='stop'){this.toBusStop(p);if(p.goal){p.activity='Catching a bus';return;}kind='shop';}
+    if(kind==='station'&&this.toStation(p))return;
+    if(kind==='park'&&this.toPark(p))return;
+    if(kind==='station'||kind==='park')kind='shop';
+    const places=[], far=150+this.rand()*450;
     for(const tile of this.G.tiles.tiles.values())for(const site of tile.data?.buildings?.destinations||[]){
-      if(site.kind===kind && Math.hypot(site.x-p.x,site.z-p.z)<500)places.push(site);
+      if(site.kind===kind && Math.hypot(site.x-p.x,site.z-p.z)<far)places.push(site);
     }
     for(let attempt=0;attempt<5 && places.length;attempt++){
       const site=(attempt===0 && p[kind+'Site']) || places[Math.floor(this.rand()*places.length)];
@@ -282,7 +485,11 @@ export class Peds {
       const c = this.G.coverNear(p.x, p.z, 40);
       if (c) { p.goal = { kind: 'shelter', x: c[0], z: c[1] }; p.sheltered = true; }
     }
-    let sp = p.hurryUntil>p.t ? 3.8 : p.speed*hurry;
+    let sp = p.hurryUntil>p.t ? 3.8 : p.speed*hurry*(p.briskUntil>p.t ? 1.35 : 1);
+    // drifting across the pavement now and then, at a fraction of walking pace sideways
+    if (p.lat01 == null) { p.lat01 = 0.1 + this.rand() * 0.8; p.latT = p.lat01; }
+    if (!(p.latAt > p.t)) { p.latAt = p.t + 5 + this.rand() * 15; p.latT = Math.min(0.9, Math.max(0.1, (p.latT ?? p.lat01) + (this.rand() - 0.5) * 0.45)); }
+    { const k = dt * 0.25 / this.latSpan(e); p.lat01 += Math.max(-k, Math.min(k, (p.latT ?? p.lat01) - p.lat01)); }
     // crossings on this edge: maybe cross the road
     const crs = net.crossByEdge.get(e);
     if (crs && !p.crossCool) for (const c of crs) {
@@ -298,7 +505,7 @@ export class Peds {
     else if (p.nextH != null && cr > 0 && p.s >= L - cr && this.side(p.nextH >> 1) && this.startCorner(p, p.nextH, cr)) { p.nextH = null; return; }
     if (p.s >= L) {
       let next = p.nextH != null && p.nextH.link == null ? p.nextH : this.chooseNext(p); p.nextH = null;
-      if (p.goal?.kind === 'routine' && p.dayPath?.length && net.startNode(p.dayPath[0]) === net.endNode(p.h)) next = p.dayPath.shift();
+      if (p.goal && p.dayPath?.length && net.startNode(p.dayPath[0]) === net.endNode(p.h)) next = p.dayPath.shift();
       if (next && next.link != null) { p.mode = 'link'; p.door = { ...next }; p.s = L; return; }
       p.s = Math.max(0, p.s - L); p.h = next;
       if (!net.walkable(p.h >> 1)) { p.h = p.h ^ 1; p.s = 0; }
@@ -314,13 +521,18 @@ export class Peds {
       const gd = Math.hypot(p.goal.x - p.x, p.goal.z - p.z);
       if (gd < (p.goal.kind === 'door' ? 14 : 6)) {
         if (p.goal.kind === 'door') { p.mode = 'toDoor'; return; }
+        p.dayPath = null;
+        if (p.goal.kind === 'park') { p.goal = null; this.startPark(p); return; }
+        if (p.goal.kind === 'station') { this.startPlatform(p); return; }
         if(p.goal.kind==='routine'){
-          p.dayPath=null;
-          // home for the night: in at a door (once nobody's looking), not stood outside until seven in the morning
-          if(p.activity==='Home'){const D=this.doorsNear(p.x,p.z,45);if(D.length){const door=D[Math.floor(this.rand()*D.length)];p.goal={kind:'door',x:door.x,z:door.z};p.planAfter=p.t+120;return;}}
-          p.mode='scene';p.sceneT=p.activity==='Shopping'?18:Math.max(65,((p.activity==='Home'?7:18)-this.G.world.hours()+24)%24*3600/Math.max(1,this.G.world.s.scale));
-          p.scenePose=p.activity==='Home'?'idle':p.job==='courier'?'phone':'talk';
-          p.sceneX=p.x+1;p.sceneZ=p.z;p.planAfter=p.t+p.sceneT+1;
+          // home, or at work: in at a door (once nobody's looking), not stood about in the street for hours. Out
+          // shopping: a look in a window for a bit, and then most go in
+          const shopping=p.activity==='Shopping'||(p.activity==='shop assistant'&&this.rand()<0.4);
+          if(!shopping||this.rand()<0.55){const D=this.doorsNear(p.x,p.z,45);if(D.length){const door=D[Math.floor(this.rand()*D.length)];p.goal={kind:'door',x:door.x,z:door.z};p.planAfter=p.t+120;return;}}
+          const B=this.doorsNear(p.x,p.z,20)[0];
+          p.mode='scene';p.sceneT=shopping?6+this.rand()*16:30+this.rand()*60;
+          p.scenePose=shopping?'idle':p.job==='courier'?'phone':'talk';
+          p.sceneX=B?B.x:p.x+1;p.sceneZ=B?B.z:p.z;p.planAfter=p.t+p.sceneT+1;
         }
         if (p.goal.kind === 'stop') this.joinQueue(p);
         else if (p.goal.kind === 'shelter') { p.mode = 'shelter'; p.shelterUntil = p.t + 60 + this.rand() * 60; p.x = p.goal.x + (this.rand() - 0.5) * 1.5; p.z = p.goal.z + (this.rand() - 0.5) * 1.5; }
@@ -347,7 +559,7 @@ export class Peds {
     const a = net.at(h, L, [0, 0, 0, 0, 0]), b = net.at(nh, 0, [0, 0, 0, 0, 0]);
     const ss = p.sideSign, n1x = a[4] * ss, n1z = -a[3] * ss, n2x = b[4] * ss, n2z = -b[3] * ss, k = 1 + n1x * n2x + n1z * n2z;
     if (k < 0.35 || (h >> 1) === (nh >> 1)) return false;                     // too sharp: just walk it
-    const o1 = net.width[h >> 1] / 2 + 1.05 + p.lane * 0.6, o2 = net.width[nh >> 1] / 2 + 1.05 + p.lane * 0.6, o = (o1 + o2) / 2;
+    const o1 = this.latOff(p, h >> 1), o2 = this.latOff(p, nh >> 1), o = (o1 + o2) / 2;
     const cx = a[0] + (n1x + n2x) * o / k, cz = a[2] + (n1z + n2z) * o / k;
     const r2 = Math.min(o2 + 1.5, net.len[nh >> 1] * 0.45), bb = net.at(nh, r2, [0, 0, 0, 0, 0]);
     const B = [bb[0] + bb[4] * o2 * ss, bb[2] - bb[3] * o2 * ss], A = [p.x, p.z];
@@ -406,8 +618,8 @@ export class Peds {
     const hit = this.net.nearest(door.x, door.z, 40, e => this.net.walkable(e) && !this.graph.hasMappedSidewalk(e)); if (!hit) return;
     const gy = this.G.tiles.ground(door.x, door.z); if (gy == null) return;
     const h = hit.e * 2 + (this.rand() < 0.5 ? 1 : 0), s = (h & 1) ? this.net.len[hit.e] - hit.s : hit.s;
-    const p = { id: 'p' + this.nextId++, h, s, sideSign: hit.side >= 0 ? ((h & 1) ? -1 : 1) : ((h & 1) ? 1 : -1), lane: this.rand() * 0.8 - 0.4, look: People.randomLook(this.rand),
-      speed: 1.15 + this.rand() * 0.45, mode: 'fromDoor', t: 0, phase: this.rand() * 6, heading: 0, x: door.x, y: gy, z: door.z, visible: true, alpha: 0 };
+    const p = { id: 'p' + this.nextId++, h, s, sideSign: hit.side >= 0 ? ((h & 1) ? -1 : 1) : ((h & 1) ? 1 : -1), lane: this.rand() * 0.8 - 0.4, lat01: 0.1 + this.rand() * 0.8, look: People.randomLook(this.rand),
+      speed: this.walkSpeed(), mode: 'fromDoor', t: 0, phase: this.rand() * 6, heading: 0, x: door.x, y: gy, z: door.z, visible: true, alpha: 0 };
     const [tx, tz] = this.pos(p); p.door = { x: tx, z: tz };
     this.list.push(p);
   }
@@ -456,14 +668,24 @@ export class Peds {
     let q = this.queues.get(g.i); if (!q) this.queues.set(g.i, q = []);
     q.push(p); p.mode = 'queue'; p.stopIdx = g.i;
   }
+  // a stop's frame: along the kerb (u) and from the kerb towards the back of the pavement (n)
+  stopFrame(i) {
+    const F = this._sf ||= new Map(); if (F.has(i)) return F.get(i);
+    const st = this.net.busStops[i], hit = this.net.nearest(st[0], st[1], 30, e => !!(this.net.flags[e] & F_DRIVE));
+    let f;
+    if (hit && hit.d > 0.3) { const nx = (st[0] - hit.x) / hit.d, nz = (st[1] - hit.z) / hit.d; f = { ux: hit.dx, uz: hit.dz, nx, nz }; }
+    else { const a = (i * 1.7) % 6.28; f = { ux: Math.cos(a), uz: Math.sin(a), nx: -Math.sin(a), nz: Math.cos(a) }; }
+    F.set(i, f); return f;
+  }
   queue(p, dt) {
     const q = this.queues.get(p.stopIdx) || [];
-    const k = q.indexOf(p), st = this.net.busStops[p.stopIdx];
-    const ang = (p.stopIdx * 1.7) % 6.28;
-    const tx = st[0] + Math.cos(ang) * (1 + k * 0.85), tz = st[1] + Math.sin(ang) * (1 + k * 0.85);
+    const k = q.indexOf(p), st = this.net.busStops[p.stopIdx], F = this.stopFrame(p.stopIdx);
+    // a loose line along the kerb from the stop's pole, back from the edge, facing the road
+    const along = 0.9 + k * 0.85, back = 0.45 + ((k * 7) % 3) * 0.18;
+    const tx = st[0] - F.ux * along + F.nx * back, tz = st[1] - F.uz * along + F.nz * back;
     const dx = tx - p.x, dz = tz - p.z, d = Math.hypot(dx, dz);
     if (d > 0.1) { p.x += dx / d * Math.min(d, 1.3 * dt); p.z += dz / d * Math.min(d, 1.3 * dt); p.speedNow = 1.3; p.heading = Math.atan2(dz, dx); }
-    else { p.speedNow = 0; p.heading = lerpAngle(p.heading, ang + Math.PI, dt * 3); }
+    else { p.speedNow = 0; p.heading = lerpAngle(p.heading, Math.atan2(-F.nz, -F.nx) + ((k % 3) - 1) * 0.35, dt * 3); }
     p.pose = this.G.world.cur.rain > 0.35 && !st[3] ? 'umbrella' : (p.t % 30 < 8 ? 'phone' : 'idle');
     this.ground(p);
     p.phase = (p.phase + p.speedNow * dt * 3.6) % 6.283;
@@ -477,23 +699,39 @@ export class Peds {
     const road=this.net.nearest(st[0],st[1],65,e=>this.net.walkable(e));
     for(const trip of bus.passengers.filter(t=>t.to<=here)){
       if(!road)continue;
-      const p=trip.actor;
-      Object.assign(p,{h:road.e*2,s:road.s,sideSign:road.side||1,lane:0,x:st[0],z:st[1],y:bus.y,
-        mode:'walk',goal:null,stopIdx:null,leader:null,partner:null,visible:true,gone:false,crossCool:4});
+      const p=trip.actor, door=this.busDoor(bus), j=(this.rand()-0.5)*0.6;
+      // off at the door, a step down and onto the pavement
+      Object.assign(p,{h:road.e*2,s:road.s,sideSign:road.side||1,lane:0,lat01:0.2+this.rand()*0.6,x:door[0]+j,z:door[1]+j,y:bus.y,
+        mode:'fromDoor',goal:null,stopIdx:null,leader:null,partner:null,visible:true,gone:false,crossCool:4,dayPath:null,planAfter:0});
+      const [tx,tz]=this.pos(p);p.door={x:tx,z:tz};
       this.list.push(p);
     }
     bus.passengers=bus.passengers.filter(t=>t.to>here);
     if(!remaining)return 0;
     let boarded=0;
+    // the queue walks to the front door in turn and gets on there (boardWalk)
     for(const p of q.splice(0)){
-      if(p.gone)continue;
-      this.queueRemove(p);
-      const index=this.list.indexOf(p);if(index<0)continue;
-      this.list.splice(index,1);p.visible=false;
-      bus.passengers.push({actor:p,to:here+1+Math.floor(this.rand()*Math.min(remaining,5))});
+      if(p.gone || !this.list.includes(p))continue;
+      p.mode='boarding';p.bus=bus;p.boardDelay=0.3+boarded*1.1;p.boardTo=here+1+Math.floor(this.rand()*Math.min(remaining,5));p.stopIdx=null;
       boarded++;
     }
     return boarded;
+  }
+  // a bus's front door, on the kerb side (UK: the nearside, to the left of its heading)
+  busDoor(b) {
+    const c = Math.cos(b.heading), sn = Math.sin(b.heading), fwd = (b.len || 11) / 2 - 1.3;
+    return [b.x + c * fwd + sn * 1.5, b.z + sn * fwd - c * 1.5];
+  }
+  boardWalk(p, dt) {
+    const b = p.bus;
+    // the bus has gone without them (or was taken): back to the pavement
+    if (!b || b.gone || b.player || !b.served || b.v > 0.6) { p.bus = null; this.reattach(p); return; }
+    const [dx0, dz0] = this.busDoor(b), dx = dx0 - p.x, dz = dz0 - p.z, d = Math.hypot(dx, dz);
+    if ((p.boardDelay -= dt) > 0) { p.speedNow = 0; p.pose = 'idle'; p.heading = lerpAngle(p.heading, Math.atan2(dz, dx), Math.min(1, dt * 4)); this.ground(p); return; }
+    if (d < 0.45) { p.visible = false; p.gone = true; p.mode = 'rode'; (b.passengers ||= []).push({ actor: p, to: p.boardTo }); p.bus = null; return; }
+    const st = Math.min(d, 1.3 * dt); p.x += dx / d * st; p.z += dz / d * st;
+    p.heading = lerpAngle(p.heading, Math.atan2(dz, dx), Math.min(1, dt * 8)); p.speedNow = 1.3; p.pose = 'walk'; p.phase = (p.phase + 1.3 * dt * 3.6) % 6.283;
+    this.ground(p);
   }
   // ---------------- crossings
   waitCross(p, dt) {
@@ -510,7 +748,7 @@ export class Peds {
       go = this.clearRoad(p, c, 14);
     } else go = this.clearRoad(p, c, 28);
 
-    if (go) { p.mode = 'cross'; p.crossProg = 0; p.cx0 = p.x; p.cz0 = p.z; const w = this.net.width[p.h >> 1] / 2 + 1.05; const [, , tdx, tdz] = this.pos(p); p.cdx = -2 * w * p.sideSign * tdz; p.cdz = 2 * w * p.sideSign * tdx; if (c.kind === 'zebra' || c.kind === 'uncontrolled') G.traffic.zebraBusy.set((p.h >> 1) + ':' + Math.round(c.s), G.signals.t + 12); }
+    if (go) { p.mode = 'cross'; p.crossProg = 0; p.cx0 = p.x; p.cz0 = p.z; const w = this.latOff(p, p.h >> 1); const [, , tdx, tdz] = this.pos(p); p.cdx = -2 * w * p.sideSign * tdz; p.cdz = 2 * w * p.sideSign * tdx; if (c.kind === 'zebra' || c.kind === 'uncontrolled') G.traffic.zebraBusy.set((p.h >> 1) + ':' + Math.round(c.s), G.signals.t + 12); }
   }
   cross(p, dt) {
     const c = p.cross;
@@ -547,10 +785,14 @@ export class Peds {
   }
   disturb(x, z, r, kind) {
     for (const p of this.list) {
-      const d = Math.hypot(p.x - x, p.z - z); if (d > r || p.fallT > 0 || p.mode === 'chase') continue;
-      // gunfire: everyone in earshot runs, for longer; anything else, only those close by
-      const gun = kind === 'gun';
-      p.reactT = gun ? 5 + this.rand() * 4 : 2 + this.rand() * 2; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = d < 8 || gun ? 'flee' : this.rand() < 0.3 ? 'phone' : 'point';
+      const d = Math.hypot(p.x - x, p.z - z); if (d > r || p.fallT > 0 || p.mode === 'chase' || p.dead || p.officer || p.carried || p.awaitingMedic || p.impact || p.medicFall) continue;
+      // gunfire (or a killing): everyone in earshot runs, a good long way, each a little off straight away from it;
+      // anything else, only those close by
+      const gun = kind === 'gun' || kind === 'fatal';
+      if (gun && p.reactPose === 'flee' && p.reactT > 2) { p.reactT = Math.max(p.reactT, 6 + this.rand() * 4); continue; }   // already running
+      if (p.mode === 'boarding' || p.mode === 'park' || p.mode === 'queue' || p.mode === 'toPlatform' || p.mode === 'scene' || p.mode === 'talk') p.mode = 'walk';
+      p.reactT = gun ? 7 + this.rand() * 5 : 2 + this.rand() * 2; p.reactHeading = Math.atan2(z - p.z, x - p.x) + (gun ? (this.rand() - 0.5) * 0.9 : 0); p.reactPose = d < 8 || gun ? 'flee' : this.rand() < 0.3 ? 'phone' : 'point';
+      if (p.park?.seat) { p.park.seat.ref.taken = Math.max(0, (p.park.seat.ref.taken || 1) - 1); p.park = null; }
       // right next to the gun some freeze with their hands up rather than run (then run once it's quiet)
       if (gun && d < 7 && !p.officer && this.rand() < 0.35) { p.reactPose = 'hands'; p.reactT = 2.5 + this.rand() * 2; p.thenFlee = true; }
     }
