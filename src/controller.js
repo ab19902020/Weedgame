@@ -50,6 +50,8 @@ export class Controller {
     if (panel) { this.menu(dt, panel, pad, tap, axis); this.previous = buttons; return; }
     // ---- flying the drone: the pad is its remote (Mode 2, droneHud.js); the touchpad still opens the map
     if (G.drone?.active) { G.droneHud.padInput(pad, tap, axis, buttons); if (tap(PAD) || tap(SHARE)) H.toggleMap(true); this.previous = buttons; return; }
+    // ---- fishing: the pad is the rod and reel (fishingHud.js)
+    if (G.fishing?.active) { G.fishingHud.padInput(pad, tap, axis, buttons); if (tap(PAD) || tap(SHARE)) H.toggleMap(true); this.previous = buttons; return; }
     // ---- radio wheel: left D-pad opens, right stick or D-pad chooses, Cross confirms.
     if(G.radio?.opened){
       const x=axis(2),y=axis(3);if(Math.hypot(x,y)>.4)G.radio.select(x<-.35?'off':y<0?'music':'podcast');

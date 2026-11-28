@@ -1,0 +1,146 @@
+{
+ "loops": {
+  "reel": [
+   0.0,
+   5.2
+  ],
+  "clutch": [
+   5.28,
+   7.6
+  ]
+ },
+ "shots": {
+  "cast": [
+   [
+    12.96,
+    2.85
+   ]
+  ],
+  "swish": [
+   [
+    15.89,
+    1.0
+   ]
+  ],
+  "plop": [
+   [
+    16.97,
+    0.38
+   ]
+  ],
+  "lead": [
+   [
+    17.43,
+    1.08
+   ]
+  ],
+  "splash": [
+   [
+    18.59,
+    1.85
+   ],
+   [
+    20.52,
+    1.3
+   ],
+   [
+    21.9,
+    1.6
+   ]
+  ],
+  "thrash": [
+   [
+    23.58,
+    0.85
+   ],
+   [
+    24.51,
+    0.9
+   ],
+   [
+    25.49,
+    1.2
+   ]
+  ],
+  "snap": [
+   [
+    26.77,
+    0.64
+   ]
+  ],
+  "beep": [
+   [
+    27.49,
+    0.13
+   ]
+  ]
+ },
+ "sources": {
+  "507078": {
+   "author": "paulprit",
+   "title": "Angel Fly Fish Reel Slow Wind_1.wav",
+   "url": "https://freesound.org/s/507078/",
+   "licence": "CC0"
+  },
+  "507099": {
+   "author": "paulprit",
+   "title": "Fly Fishing Reel Running_5.wav",
+   "url": "https://freesound.org/s/507099/",
+   "licence": "CC0"
+  },
+  "853287": {
+   "author": "el_boss",
+   "title": "Casting Fishing Rod for Game Fishing SFX",
+   "url": "https://freesound.org/s/853287/",
+   "licence": "CC0"
+  },
+  "725426": {
+   "author": "mwchristian95",
+   "title": "Fishing Rod Cast - Swoosh",
+   "url": "https://freesound.org/s/725426/",
+   "licence": "CC0"
+  },
+  "853279": {
+   "author": "el_boss",
+   "title": "Fishing Lure Plop Water - Game SFX (2 or 2)",
+   "url": "https://freesound.org/s/853279/",
+   "licence": "CC0"
+  },
+  "178735": {
+   "author": "jc144940",
+   "title": "Rock In Water Splash-Plop 1.aif",
+   "url": "https://freesound.org/s/178735/",
+   "licence": "CC0"
+  },
+  "507094": {
+   "author": "paulprit",
+   "title": "Fish Splashing Release 1.wav",
+   "url": "https://freesound.org/s/507094/",
+   "licence": "CC0"
+  },
+  "507093": {
+   "author": "paulprit",
+   "title": "Fish Splashing Release 2.wav",
+   "url": "https://freesound.org/s/507093/",
+   "licence": "CC0"
+  },
+  "443380": {
+   "author": "kylecutsfilms",
+   "title": "Fish Splashing Pond.wav",
+   "url": "https://freesound.org/s/443380/",
+   "licence": "CC0"
+  },
+  "866245": {
+   "author": "canberries4",
+   "title": "big_cast_or_snap",
+   "url": "https://freesound.org/s/866245/",
+   "licence": "CC0"
+  },
+  "723998": {
+   "author": "D31V228",
+   "title": "Piezo Buzzer Alarm",
+   "url": "https://freesound.org/s/723998/",
+   "licence": "CC0"
+  }
+ }
+}

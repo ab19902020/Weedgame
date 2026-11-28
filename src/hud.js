@@ -113,6 +113,7 @@ export class Hud {
       Food: () => sites(s => s.kind==='food'), Pubs: () => sites(s => s.kind==='pub'),
       'Petrol stations': () => G.fuel?.stations || [], Stations: () => G.transit.stations.map(s => ({...s,name:s.name+' station'})),
       Buildings: () => sites(s => !homes.has(s.kind) && !['shop','mall','food','pub','gadget'].includes(s.kind)),
+      'Fishing lakes': () => (G.fishing?.index || []).map(l => ({ name: `${l.name}, ${l.place} (fishing)`, x: l.peg1?.x ?? l.x, z: l.peg1?.z ?? l.z })),
       Districts: () => G.manifest.districts, Landmarks: () => TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))
     };
     this.placeCategories = categories;   // (the phone's Kerb app offers the same places)
@@ -264,15 +265,16 @@ export class Hud {
     const boardable=!door&&!me.inside&&G.transit.nearby(me);
     const waiting=!inCar && !near && !boardable && !door && !me.inside && !G.transit.ride && (G.transit.platform(me)?'Awaiting train':G.transit.busStop(me)?'Awaiting bus':'');
     const giveUp=!inCar&&!near&&!!G.wanted?.canGiveUp();
+    const fishAt=!inCar&&!near&&!door&&!me.inside?G.fishing?.prompt?.():null;   // a fishing peg (fishing.js)
     // taxis (taxis.js): waving one down, getting in the one that's waiting for you, asking to be let out
     const TX=G.taxis, job=TX?.job, cabRide=!!TX?.riding, cabHere=!inCar&&job?.stage==='waiting'&&Math.hypot(job.v.x-me.x,job.v.z-me.z)<job.v.def.W/2+3.2, hail=!inCar&&!near&&!door&&!boardable&&TX?.hailCab;
     // someone's car or bike to take (carjack.js)
     const jack=!inCar&&!near&&!door&&!boardable&&!hail&&!cabHere&&G.carjack?.near, jackText=jack?({escooter:'Take scooter',moped:'Take moped',bicycle:'Take bike',ebike:'Take bike',motorcycle:'Take motorbike',dirtbike:'Take motorbike'}[jack.model]||'Steal car'):'';
-    const useText=cabRide?'Stop here':cabHere?(job.kind==='kerb'?'Get in (Kerb)':'Get in (taxi)'):hail?'Hail taxi':jack?jackText:giveUp?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
+    const useText=cabRide?'Stop here':cabHere?(job.kind==='kerb'?'Get in (Kerb)':'Get in (taxi)'):hail?'Hail taxi':jack?jackText:giveUp?'Give up':G.transit.ride?(G.transit.currentStop()?'Alight':'Request stop'):door&&!near?door.text:fishAt?fishAt.text:boardable?'Board':waiting||(inCar?'Exit':near?.owner?'Get in ('+near.owner+"'s)":near?'Get in':me.inside?'Indoors':'Get in');
     const use=this.el('bUse');
     if(use.lastChild.textContent!==useText){use.lastChild.textContent=useText;use.firstChild.innerHTML=inCar||G.transit.ride&&G.transit.currentStop()?ICON.exit:boardable||G.transit.ride?ICON.bus:ICON.door;}
     use.disabled=!!waiting&&!cabHere&&!hail&&!cabRide&&!jack;
-    const ready=giveUp||inCar||near||G.transit.ride||boardable||door||cabHere||hail||cabRide||jack;
+    const ready=giveUp||inCar||near||G.transit.ride||boardable||door||cabHere||hail||cabRide||jack||fishAt;
     use.classList.toggle('dim',!ready); use.classList.toggle('ready',!!(near||boardable||door)&&!inCar);
     // on foot: stick and actions; driving: wheel (or arrows) and pedals; riding a bus or train: just the stop button
     const ride=!!G.transit.ride||cabRide, drive=inCar&&!ride, steer=this.menu?.settings?.steering||'Steering wheel';

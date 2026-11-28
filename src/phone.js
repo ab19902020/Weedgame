@@ -12,6 +12,7 @@ const KINDS = ['Pubs', 'Food', 'Shops', 'Stations', 'Petrol stations', 'District
 const ICONS = {
   kerb: '<svg viewBox="0 0 24 24"><path d="M4 15l1.6-5A2 2 0 017.5 8.6h9a2 2 0 011.9 1.4L20 15v4h-2.4v-2H6.4v2H4z"/><circle cx="7.5" cy="14.5" r="1.3" fill="#0d1f17"/><circle cx="16.5" cy="14.5" r="1.3" fill="#0d1f17"/></svg>',
   map: '<svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 4v14M15 6v14" stroke="currentColor" stroke-width="1.6"/></svg>',
+  angler: '<svg viewBox="0 0 24 24"><path d="M3 12c3-4 8-5 12-2l4-3v10l-4-3c-4 3-9 2-12-2z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><circle cx="7.5" cy="11" r="1" fill="currentColor"/></svg>',
   radio: '<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 8l9-4" stroke="currentColor" stroke-width="1.6"/><circle cx="15.5" cy="14" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 12h4M6 15h4" stroke="currentColor" stroke-width="1.6"/></svg>',
   bank: '<svg viewBox="0 0 24 24"><path d="M3 9l9-5 9 5zM5 10h2v7H5zm4 0h2v7H9zm4 0h2v7h-2zm4 0h2v7h-2zM3 18h18v2H3z"/></svg>',
   drone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="M7 7l3 3M17 7l-3 3M7 17l3-3M17 17l-3-3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>',
@@ -77,6 +78,7 @@ export class Phone {
       case 'done': this.receipt = null; return this.go('home', true);
       case 'dmode': if (G.drone) { G.drone.mode = arg; G.drone.yawWant = G.drone.yaw; } return this.render(true);
       case 'dcam': if (G.drone) G.drone.cam = arg; return this.render(true);
+      case 'lake': { const L = (G.fishing?.index || []).find(l => l.id === arg); if (L) { const x = L.peg1?.x ?? L.x, z = L.peg1?.z ?? L.z; G.hud.nav.set({ x, z, name: L.name }); G.hud.toast?.(`Route set: ${L.name}, ${L.place}`); this.toggle(false); } return; }
       case 'route': { const t = G.techShop?.nearest?.(); if (t) { G.hud.nav.set({ x: t.x, z: t.z, name: t.name }); G.hud.toast?.(`Route set: ${t.name} · ${distanceLabel(t.d)}`); this.toggle(false); } return; }
     }
   }
@@ -109,6 +111,7 @@ export class Phone {
         <button class="phApp atlas" data-act="app" data-arg="map"><i>${ICONS.map}</i><span>Road Atlas</span></button>
         <button class="phApp drone" data-act="app" data-arg="drone"><i>${ICONS.drone}</i><span>Drone${owns ? '' : ''}</span></button>
         <button class="phApp tech" data-act="app" data-arg="tech"><i>${ICONS.tech}</i><span>TechZone</span></button>
+        <button class="phApp angler" data-act="app" data-arg="angler"><i>${ICONS.angler}</i><span>Angler</span></button>
         ${radio ? `<button class="phApp radio" data-act="app" data-arg="radio"><i>${ICONS.radio}</i><span>Radio</span></button>` : ''}
         <button class="phApp bank" data-act="app" data-arg="bank"><i>${ICONS.bank}</i><span>Bank</span></button>
       </div></div>`;
@@ -136,6 +139,22 @@ export class Phone {
       <div class="phQuote">${t ? `<small>Nearest store</small><strong>${esc(t.name)}</strong><div class="phFacts"><span>${distanceLabel(t.d)}</span><span>open 9–8</span></div>
       <button class="phGo" data-act="route">Get directions</button>` : '<p class="phNote">No store found.</p>'}
       <p class="phLine">Drones, spare batteries and props, guards, range extenders and more, in every town.</p></div>`;
+  }
+  // the angler's app: your best fish of each kind, the latest catches, what's in the tackle box, and the lakes
+  s_angler() {
+    const G = this.G, me = G.brothers.me, k = me.items?.fishing, lakes = G.fishing?.index || [];
+    const NAMES = { roach: 'Roach', rudd: 'Rudd', perch: 'Perch', bream: 'Bream', tench: 'Tench', common: 'Common carp', mirror: 'Mirror carp', pike: 'Pike' };
+    const lb = w => { let p = Math.floor(w), o = Math.round((w - p) * 16); if (o === 16) { p++; o = 0; } return p ? `${p} lb ${o} oz` : `${o} oz`; };
+    const LAKE = Object.fromEntries(lakes.map(l => [l.id, l.name]));
+    const pbs = k ? Object.entries(k.pb || {}).sort((a, b) => b[1] - a[1]) : [];
+    const rods = k ? Object.keys(k.rods || {}).map(r => ({ float: 'Float rod', carp: 'Carp rod', lure: 'Lure rod' }[r])).join(' · ') : '';
+    return `<div class="phApp-head angler"><b>Angler</b><span>${k?.stats ? `${k.stats.fish} fish · ${lb(k.stats.weight)} in all` : 'Your catches'}</span></div>
+      <div class="phQuote">${!k || !rods ? '<p class="phLine">No rod yet: TechZone sells float, carp and lure rods, rigged and ready, with bait, hooks, floats and nets.</p>' : `<p class="phLine">${esc(rods)}${k.net ? ' · landing net' : ''}${k.mat ? ' · mat' : ''}${k.catapult ? ' · catapult' : ''}</p>
+      <div class="phFacts"><span>Hooks ${k.tackle?.hooks || 0} · floats ${k.tackle?.floats || 0}</span><span>Hair rigs ${k.tackle?.hairrigs || 0} · leads ${k.tackle?.leads || 0}</span></div>
+      <div class="phFacts"><span>Maggots ${k.bait?.maggots || 0} · corn ${k.bait?.corn || 0}</span><span>Boilies ${k.bait?.boilies || 0} · worms ${k.bait?.worms || 0}</span></div>`}
+      ${pbs.length ? `<small>Personal bests</small><div class="phList">${pbs.map(([s, w]) => `<div class="phRow"><span>${esc(NAMES[s] || s)}</span><b>${lb(w)}</b></div>`).join('')}</div>` : ''}
+      ${k?.log?.length ? `<small>Latest catches</small><div class="phList">${k.log.slice(0, 8).map(c => `<div class="phRow dim"><span>${esc(NAMES[c.s] || c.s)} · ${esc(LAKE[c.lake] || c.lake)} peg ${c.peg}</span><b>${lb(c.lb)}</b></div>`).join('')}</div>` : ''}
+      <small>Fishing lakes</small>${lakes.map(l => `<button class="phGo" data-act="lake" data-arg="${l.id}">${esc(l.name)} · ${esc(l.place)}</button>`).join('')}</div>`;
   }
   s_bank() {
     const G = this.G, [a, b] = G.brothers.b, rides = G.taxis?.history || [];

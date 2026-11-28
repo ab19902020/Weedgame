@@ -45,6 +45,8 @@ import { NearTrees } from './nearTrees.js';
 import { Drone } from './drone.js';
 import { DroneHud } from './droneHud.js';
 import { DroneSky } from './droneSky.js';
+import { Fishing } from './fishing.js';
+import { FishingHud } from './fishingHud.js';
 import { Thermal } from './thermal.js';
 import { TechShop } from './techShop.js';
 
@@ -175,12 +177,14 @@ G.phone = new Phone(G);              // the phone: Kerb, the atlas, the radio (p
 // the Kestrel drone (drone.js), its screen and controls (droneHud.js), the sky and far land it flies in (droneSky.js)
 // and its thermal camera (thermal.js)
 G.drone = new Drone(G); G.droneHud = new DroneHud(G); G.droneSky = new DroneSky(G); G.thermal = new Thermal(G);
+// fishing at the lakes (fishing.js): the rods, the fish and the fight; its screen and controls (fishingHud.js)
+G.fishing = new Fishing(G); G.fishingHud = new FishingHud(G);
 G.techShop = new TechShop(G);        // TechZone, the gadget shops in every town (techShop.js)
 G.controller=new Controller(G);
 G.radio = new GameRadio(G);
 G.combat = new Combat(G);                 // weapons, fists, the brothers' arms (combat.js)
 G.gore = new Gore(G);                     // blood: spray, spatter, wounds, pools (gore.js)
-G.people.rigs.onHero = (slot, a, dt) => G.combat.pose(slot, a, dt);
+G.people.rigs.onHero = (slot, a, dt) => { const r = G.combat.pose(slot, a, dt); if (G.fishing?.active) G.fishing.poseArms(slot, a, slot.arms); return r; };
 // the brothers' own cars are Range Rovers (older saves had a hatch and an estate under these ids)
 const OWN = { 'cal-car': 'rangerover', 'leon-car': 'rangerover' };
 for (const sv of G.save.vehicles) {
@@ -260,6 +264,12 @@ function frame(time) {
   step(dt, true);
 }
 const _fwd = new THREE.Vector3();
+// at a fishing peg on foot, Use starts fishing (unless a car or a door is nearer)
+function fishUse() {
+  G.fishing.scan();
+  if (!G.fishing.here || !G.input.pressed.has('use') || G.interiors?.prompt || G.brothers.nearestVehicle()) return false;
+  G.input.consume('use'); G.fishing.tryStart(); return true;
+}
 function step(dt, render) {
   G.dt = dt; G.time += dt;
   const B = G.brothers, me = B.me;
@@ -277,7 +287,7 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (G.drone.active) G.drone.update(dt, G.droneHud.input(dt)); else if (!G.transit.update(dt) && !G.taxis.ride(dt) && !G.carjack.update(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
+  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (G.drone.active) G.drone.update(dt, G.droneHud.input(dt)); else if (G.fishing.active) G.fishing.update(dt, G.fishingHud.input(dt)); else if (fishUse()) { /* at a peg: Use goes fishing */ } else if (!G.transit.update(dt) && !G.taxis.ride(dt) && !G.carjack.update(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
   // the world streams around the drone while it flies (anywhere on the map), otherwise around the brother
   const F = G.drone.focus() || me;
   G.focus.x = F.x; G.focus.z = F.z;
@@ -356,7 +366,7 @@ function step(dt, render) {
   G.signalRenderer.draw(cam, G._groundAt ||= (x, z) => G.tiles.ground(x, z), G.time);
   G.lampGlow.update();
   G.hud.update(dt);
-  G.droneHud.update(dt);
+  G.droneHud.update(dt); G.fishingHud.update(dt);
   G.phone.update(dt);
   G.audio.update(dt, G);
   G.updateLighting(); G.placeSun(me.x, me.y, me.z);

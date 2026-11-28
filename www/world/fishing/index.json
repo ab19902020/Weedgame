@@ -1,0 +1,104 @@
+{
+ "lakes": [
+  {
+   "id": "southlake",
+   "name": "South Lake",
+   "place": "Woodley",
+   "x": -3314,
+   "z": -1131,
+   "box": [
+    -3600,
+    -1320,
+    -2960,
+    -960
+   ],
+   "area": 65452,
+   "pegs": 24,
+   "closedNote": "The western end is closed to fishing.",
+   "peg1": {
+    "x": -3445,
+    "z": -1263
+   }
+  },
+  {
+   "id": "whiteswan",
+   "name": "White Swan Lake",
+   "place": "Dinton Pastures",
+   "x": -1267,
+   "z": -1192,
+   "box": [
+    -1480,
+    -1600,
+    -1080,
+    -820
+   ],
+   "area": 92468,
+   "pegs": 58,
+   "closedNote": "",
+   "peg1": {
+    "x": -1361,
+    "z": -1193
+   }
+  },
+  {
+   "id": "blackswan",
+   "name": "Black Swan Lake",
+   "place": "Dinton Pastures",
+   "x": -764,
+   "z": -1338,
+   "box": [
+    -1220,
+    -1700,
+    -420,
+    -860
+   ],
+   "area": 258404,
+   "pegs": 57,
+   "closedNote": "",
+   "peg1": {
+    "x": -1053,
+    "z": -1339
+   }
+  },
+  {
+   "id": "canberra",
+   "name": "Canberra Lake",
+   "place": "Charvil",
+   "x": -809,
+   "z": -4067,
+   "box": [
+    -1000,
+    -4300,
+    -660,
+    -3820
+   ],
+   "area": 56464,
+   "pegs": 33,
+   "closedNote": "",
+   "peg1": {
+    "x": -907,
+    "z": -4069
+   }
+  },
+  {
+   "id": "orrell",
+   "name": "Orrell Lake",
+   "place": "Charvil",
+   "x": -700,
+   "z": -4922,
+   "box": [
+    -790,
+    -5080,
+    -600,
+    -4770
+   ],
+   "area": 9532,
+   "pegs": 10,
+   "closedNote": "",
+   "peg1": {
+    "x": -729,
+    "z": -4923
+   }
+  }
+ ]
+}
