@@ -109,10 +109,10 @@ export class Hud {
     const homes = new Set(['nice','trap','terrace','semi','detached','bungalow','cottage']);
     const sites = predicate => (G.interiors?.sites || []).filter(predicate);
     const categories = {
-      Houses: () => sites(s => homes.has(s.kind) || s.brothersHome), 'Brothers’ home': () => sites(s => s.brothersHome), Shops: () => sites(s => s.kind==='shop' || s.kind==='mall'),
+      Houses: () => sites(s => homes.has(s.kind) || s.brothersHome), 'Brothers’ home': () => sites(s => s.brothersHome), Shops: () => sites(s => s.kind==='shop' || s.kind==='mall' || s.kind==='gadget'), TechZone: () => sites(s => s.kind==='gadget' || s.kind==='mall'),
       Food: () => sites(s => s.kind==='food'), Pubs: () => sites(s => s.kind==='pub'),
       'Petrol stations': () => G.fuel?.stations || [], Stations: () => G.transit.stations.map(s => ({...s,name:s.name+' station'})),
-      Buildings: () => sites(s => !homes.has(s.kind) && !['shop','mall','food','pub'].includes(s.kind)),
+      Buildings: () => sites(s => !homes.has(s.kind) && !['shop','mall','food','pub','gadget'].includes(s.kind)),
       Districts: () => G.manifest.districts, Landmarks: () => TESTSPOTS.slice(0,4).map(([name,x,z])=>({name,x,z}))
     };
     this.placeCategories = categories;   // (the phone's Kerb app offers the same places)

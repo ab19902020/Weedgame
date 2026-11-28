@@ -12,9 +12,10 @@ import { PubGames } from './pubGames.js';
 import { Robbery } from './robbery.js';
 
 export const KIND_LABEL = { trap: 'Trap house', nice: 'House', terrace: 'Terraced house', semi: 'Semi-detached house', detached: 'Detached house', bungalow: 'Bungalow',
-  cottage: 'Cottage', warehouse: 'Warehouse', office: 'Offices', shop: 'Shop', pub: 'Pub', church: 'Church', mall: 'Shopping centre', food: 'Takeaway' };
-export const KIND_COLOUR = { trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', food: '#f08a24' };
+  cottage: 'Cottage', warehouse: 'Warehouse', office: 'Offices', shop: 'Shop', pub: 'Pub', church: 'Church', mall: 'Shopping centre', food: 'Takeaway', gadget: 'TechZone' };
+export const KIND_COLOUR = { gadget: '#ff7a1a', trap: '#e5483b', nice: '#e8b33a', mall: '#8e5bd6', warehouse: '#5f7d95', office: '#2f8cff', shop: '#1fa37a', pub: '#b0703a', church: '#7c6bd1', food: '#f08a24' };
 const HOME = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage']);
+const SHOWCASE = new Set(['shop', 'food', 'pub', 'gadget']);   // (their rooms show through their windows: showcase())
 
 export class Interiors {
   constructor(G) {
@@ -55,6 +56,7 @@ export class Interiors {
     if (s.kind === 'trap') return `Trap house, ${s.street}`;
     if (s.kind === 'nice') return `The nicer house, ${s.street}`;
     if (s.kind === 'mall') return 'The Oracle';
+    if (s.kind === 'gadget') return `TechZone, ${s.town || s.district}`;
     if (s.kind === 'food') return s.name + (s.street && !/^A\d|^M\d/.test(s.street) ? ', ' + s.street : ', ' + s.district);
     if (s.name && !HOME.has(s.kind)) return s.name;
     return `${KIND_LABEL[s.kind] || 'Building'}${s.street ? ', ' + s.street : ''}`;
@@ -110,7 +112,11 @@ export class Interiors {
       const s = b.site; U0['shO' + k].value.set(s.o[0], s.o[1]); U0['shX' + k].value.set(s.ax[0], s.ax[1]); U0['shY' + k].value.set(s.ay[0], s.ay[1]);
       U0['shWD' + k].value.set(s.W, s.D, b.floor0, b.plan.levels[0].ceil - 0.05); on.value = 1;
     }
-    for (const b of show) if (b.site.kind === 'shop') this.rob.update(dt, b, me); else this.food.update(dt, b, me, true);
+    for (const b of show) {
+      if (b.site.kind === 'shop') this.rob.update(dt, b, me);
+      else if (b.site.kind === 'gadget') { this.G.techShop?.decorate(b); for (const a of this.G.techShop?.people(b) || []) a.t += dt; if (b.techDemo) b.techDemo.rotation.y += dt * 0.35; }
+      else this.food.update(dt, b, me, true);
+    }
     if ((IN?.site.id ?? null) !== (this._vegFor ?? null)) {
       this._vegFor = IN?.site.id ?? null; if (IN) this.hideVeg(IN.site); else this.showVeg();
       // and cut the terrain, paths and walls out of its footprint (a hillside ran through some upstairs rooms)
@@ -132,6 +138,8 @@ export class Interiors {
           else for (const gm of IN.plan.games || []) if (Math.hypot(lx - gm.x, ly - gm.y) < 1.1) { this.prompt = { text: { darts: 'Play darts', pool: 'Play pool', fruit: 'Fruit machine' }[gm.type], act: 'game', site: IN.site, game: gm }; break; }
         }
         else if (IN.site.kind === 'shop') { const pr = this.rob.prompt(IN, me); if (pr) this.prompt = pr; }
+        // TechZone (techShop.js): the till and the demo drone, in its own stores and The Oracle's unit
+        else if (IN.site.kind === 'gadget' || IN.site.kind === 'mall') { const pr = this.G.techShop?.prompt(IN, me); if (pr) this.prompt = pr; }
       } else {
         let best = null, bd = 2.3;
         for (const s of this.sites) { const d = Math.hypot(s.dx - me.x, s.dz - me.z); if (d < bd) { bd = d; best = s; } }
@@ -156,7 +164,7 @@ export class Interiors {
     });
   }
   // the people inside the place you're in (staff, diners), drawn with the street's crowd
-  // the enterable shops, takeaways and pubs near the camera outside whose real rooms show through their windows
+  // the enterable shops, takeaways, pubs and TechZones near the camera outside whose real rooms show through their windows
   // (re-picked twice a second; built on the way, one a frame)
   showcase(IN, dt) {
     // (not from a car or a bus: going past at speed you'd only have time to see a hitch as each one was built)
@@ -167,7 +175,7 @@ export class Interiors {
     this._showT = 0.5;
     const c = this.G.camera.position, near = [];
     for (const s of this.sites) {
-      if (s.kind !== 'shop' && s.kind !== 'food' && s.kind !== 'pub') continue;
+      if (!SHOWCASE.has(s.kind)) continue;
       const d = Math.hypot(s.dx - c.x, s.dz - c.z);
       if (d < 30) near.push([d, s]);
     }
@@ -180,7 +188,8 @@ export class Interiors {
     return (this._show = out);
   }
   get people() {
-    const of = b => b.site.kind === 'food' || b.site.kind === 'pub' ? this.food.people(b) : b.site.kind === 'shop' ? this.rob.people(b) : [];
+    const k = b0 => b0.site.kind;
+    const of = b => k(b) === 'food' || k(b) === 'pub' ? this.food.people(b) : k(b) === 'shop' ? this.rob.people(b) : k(b) === 'gadget' || k(b) === 'mall' ? (this.G.techShop?.people(b) || []) : [];
     const b = this.at(this.G.brothers.me);
     if (b) return of(b);
     // outside: the people in the rooms showing through the windows
@@ -234,6 +243,7 @@ export class Interiors {
     const p = this.prompt; if (!p || this.fade.dir) return false;
     if (p.act === 'none') return false;
     if (p.act === 'rob') { this.rob.start(this.at(this.G.brothers.me)); return true; }
+    if (p.act === 'tech') { this.G.techShop?.open(); return true; }
     if (p.act === 'radio') this.G.radio?.toggle(); else if (p.act === 'sit') this.homeTV.sit(this.ensure(p.site)); else if (p.act === 'enter') this.enter(p.site); else if (p.act === 'order') this.food.open(p.site, p.till); else if (p.act === 'game') this.games.start(p.game.type, p.site); else this.leave(p.site);
     return true;
   }

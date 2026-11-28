@@ -8,7 +8,7 @@ import { frontageScore, buildingStyle, nearestFrontage } from './buildingFidelit
 const TILE = 256, NT = 65, STEP = 4;
 let NET = null;
 
-// the enterable shops, takeaways and pubs (world/interiors.json), by tile and building: their buildings get a shopfront
+// the enterable shops, takeaways, pubs and TechZones (world/interiors.json), by tile and building: their buildings get a shopfront
 // and a fascia, the front on the wall their door is in, even where the map doesn't tag the building itself a shop
 // (a petrol station's shop or a drive-through was a blank box with a door)
 let SITES = null, TILE_SITES = null;
@@ -17,7 +17,7 @@ async function loadSites(url) {
     const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json(), M = new Map();
     for (const s of d.sites || []) {
-      if (!/^(shop|food|pub)$/.test(s.kind) || !s.bkey || s.bi == null) continue;
+      if (!/^(shop|food|pub|gadget)$/.test(s.kind) || !s.bkey || s.bi == null) continue;
       let t = M.get(s.bkey); if (!t) M.set(s.bkey, t = new Map());
       t.set(s.bi, { name: s.name || '', kind: s.kind, food: s.food, door: s.door });
     }

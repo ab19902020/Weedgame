@@ -1,0 +1,13 @@
+{
+ "x0": -16384,
+ "z0": -9216,
+ "step": 64,
+ "gx": 449,
+ "gz": 241,
+ "w": 28672.0,
+ "h": 15360.0,
+ "colour": "colour.jpg",
+ "height": "height.bin",
+ "scale": 0.1,
+ "source": "world tiles land cover and trees (aerial colours); EA LIDAR Composite DTM (OGL v3), 64 m"
+}

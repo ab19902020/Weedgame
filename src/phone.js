@@ -14,14 +14,19 @@ const ICONS = {
   map: '<svg viewBox="0 0 24 24"><path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2z" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 4v14M15 6v14" stroke="currentColor" stroke-width="1.6"/></svg>',
   radio: '<svg viewBox="0 0 24 24"><rect x="3" y="8" width="18" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M7 8l9-4" stroke="currentColor" stroke-width="1.6"/><circle cx="15.5" cy="14" r="2.6" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 12h4M6 15h4" stroke="currentColor" stroke-width="1.6"/></svg>',
   bank: '<svg viewBox="0 0 24 24"><path d="M3 9l9-5 9 5zM5 10h2v7H5zm4 0h2v7H9zm4 0h2v7h-2zm4 0h2v7h-2zM3 18h18v2H3z"/></svg>',
+  drone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="M7 7l3 3M17 7l-3 3M7 17l3-3M17 17l-3-3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>',
+  tech: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 9h16l-1.2 10.2a1.5 1.5 0 01-1.5 1.3H6.7a1.5 1.5 0 01-1.5-1.3z"/><path d="M8.5 9V7a3.5 3.5 0 017 0v2"/><path d="M10 14l2 2 3-4"/></svg>',
 };
+// the phone itself: the brothers carry an Honor Magic7 Pro (flagship, MagicOS)
+const PHONE_MODEL = 'HONOR Magic7 Pro';
 
 export class Phone {
   constructor(G) {
     this.G = G; this.screen = 'home'; this.stack = []; this.quoteFor = null; this.places = []; this.kind = null; this.last = '';
     const el = this.el = document.createElement('div');
     el.id = 'phone'; el.hidden = true; el.dataset.pad = 'menu'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', 'Phone');
-    el.innerHTML = '<div class="phFrame"><div class="phStatus"><b class="phTime"></b><span class="phSig">4G <i></i><i></i><i></i><i></i></span></div><div class="phScreen"></div>'
+    el.classList.add('magic');
+    el.innerHTML = '<div class="phFrame"><div class="phPunch"></div><div class="phStatus"><b class="phTime"></b><span class="phSig">5G <i></i><i></i><i></i><i></i><em class="phBatt"><u></u></em></span></div><div class="phScreen"></div>'
       + '<div class="phNav"><button data-act="back">Back</button><button data-act="home">Home</button><button data-act="close">Close</button></div></div>';
     (document.getElementById('hud') || document.body).appendChild(el);
     this.body = el.querySelector('.phScreen');
@@ -50,6 +55,7 @@ export class Phone {
       case 'app':
         if (arg === 'map') { this.toggle(false); return G.hud.toggleMap(true); }
         if (arg === 'radio') { this.toggle(false); return G.radio?.toggle?.(); }
+        if (arg === 'fly') { this.toggle(false); return G.drone?.deploy(); }
         return this.go(arg === 'kerb' ? (T.job ? 'kerbRide' : 'kerbWhere') : arg);
       case 'kind': this.kind = arg; this.places = T.destinations(arg); return this.go('kerbPlaces');
       case 'place': {
@@ -69,6 +75,9 @@ export class Phone {
       case 'skip': T.skip(); if (this.screen !== 'kerbDone') this.toggle(false); return;   // (the receipt comes up when you're there)
       case 'stop': T.stopHere(); return this.render(true);
       case 'done': this.receipt = null; return this.go('home', true);
+      case 'dmode': if (G.drone) { G.drone.mode = arg; G.drone.yawWant = G.drone.yaw; } return this.render(true);
+      case 'dcam': if (G.drone) G.drone.cam = arg; return this.render(true);
+      case 'route': { const t = G.techShop?.nearest?.(); if (t) { G.hud.nav.set({ x: t.x, z: t.z, name: t.name }); G.hud.toast?.(`Route set: ${t.name} · ${distanceLabel(t.d)}`); this.toggle(false); } return; }
     }
   }
   home() { const h = (this.G.interiors?.sites || []).find(s => s.brothersHome); return h && { x: h.dx ?? h.x, z: h.dz ?? h.z, name: 'Home (' + (h.title || h.name || 'Woodley') + ')' }; }
@@ -88,14 +97,45 @@ export class Phone {
     if (force) this.note = null;
   }
   s_home() {
-    const G = this.G, me = G.brothers.me, job = G.taxis?.job, radio = !!G.radio?.device?.();
-    return `<div class="phHome"><div class="phHello"><small>${esc(G.districtName?.(me.x, me.z) || '')}</small><strong>${esc(me.short || '')} · ${money(cash(me))}</strong></div>
+    const G = this.G, me = G.brothers.me, job = G.taxis?.job, radio = !!G.radio?.device?.(), h = G.world.hours();
+    const time = String(Math.floor(h)).padStart(2, '0') + ':' + String(Math.floor((h % 1) * 60)).padStart(2, '0');
+    const W = G.world, wx = { clear: 'Sunny', broken: 'Partly cloudy', overcast: 'Cloudy', drizzle: 'Drizzle', rain: 'Rain', mist: 'Mist', clearing: 'Clearing' }[W.stateName?.()] || 'Fair';
+    const temp = Math.round(9 + Math.max(0, W.sunIntensity || 0.5) * 9 - (W.cur?.rain || 0) * 3);
+    const owns = !!G.drone?.kit?.(me);
+    return `<div class="phHome"><div class="phWidget"><b>${time}</b><div><span>${esc(G.districtName?.(me.x, me.z) || 'Berkshire')}</span><span>${wx} · ${temp}°C</span></div></div>
+      <div class="phHello"><small>${esc(PHONE_MODEL)}</small><strong>${esc(me.short || '')} · ${money(cash(me))}</strong></div>
       <div class="phApps">
         <button class="phApp kerb" data-act="app" data-arg="kerb"><i>${ICONS.kerb}</i><span>Kerb${job ? ' •' : ''}</span></button>
         <button class="phApp atlas" data-act="app" data-arg="map"><i>${ICONS.map}</i><span>Road Atlas</span></button>
+        <button class="phApp drone" data-act="app" data-arg="drone"><i>${ICONS.drone}</i><span>Drone${owns ? '' : ''}</span></button>
+        <button class="phApp tech" data-act="app" data-arg="tech"><i>${ICONS.tech}</i><span>TechZone</span></button>
         ${radio ? `<button class="phApp radio" data-act="app" data-arg="radio"><i>${ICONS.radio}</i><span>Radio</span></button>` : ''}
         <button class="phApp bank" data-act="app" data-arg="bank"><i>${ICONS.bank}</i><span>Bank</span></button>
       </div></div>`;
+  }
+  // the drone: fly it from here (the phone becomes its screen and sticks), its state, its settings
+  s_drone() {
+    const G = this.G, me = G.brothers.me, D = G.drone, k = D?.kit?.(me);
+    if (!k) return `<div class="phApp-head drone"><b>Kestrel Fly</b><span>No drone paired</span></div>
+      <div class="phQuote"><strong>Kestrel T3</strong><p class="phLine">A camera drone with a thermal camera: 4K and infrared, 31 minutes in the air, 15 km of video link. On sale at TechZone, in every town.</p>
+      <button class="phGo" data-act="route">Directions to TechZone</button></div>`;
+    const why = D.canDeploy(), up = Object.keys(k.upgrades || {});
+    const NAMES = { battery: 'High-capacity battery', guards: 'Propeller guards', range: 'Range extender' };
+    return `<div class="phApp-head drone"><b>Kestrel Fly</b><span>Kestrel T3 · paired</span></div>
+      <div class="phQuote"><div class="phFacts"><span>Battery 100%</span><span>Spare props ${Math.max(0, k.props ?? 0)}</span></div>
+      ${up.length ? `<p class="phLine">${up.map(u => NAMES[u] || u).join(' · ')}</p>` : ''}
+      <small>Flight mode</small><div class="phSeg">${['CINE', 'NORMAL', 'SPORT', 'MANUAL'].map(m => `<button data-act="dmode" data-arg="${m}" class="${D.mode === m ? 'on' : ''}">${m[0] + m.slice(1).toLowerCase()}</button>`).join('')}</div>
+      <small>Camera</small><div class="phSeg">${[['normal', 'Visible'], ['thermal', 'Thermal'], ['ironbow', 'Ironbow']].map(([c, n]) => `<button data-act="dcam" data-arg="${c}" class="${D.cam === c ? 'on' : ''}">${n}</button>`).join('')}</div>
+      ${why ? `<p class="phNote warn">${esc(why)}</p>` : ''}
+      <button class="phGo" data-act="app" data-arg="fly" ${why ? 'disabled' : ''}>Fly</button>
+      <p class="phNote">Left thumb: climb and turn. Right thumb: fly. Pad: left stick climb / turn, right stick fly, Cross take off / land, Square camera, Circle home, L1 / R1 mode.</p></div>`;
+  }
+  s_tech() {
+    const G = this.G, t = G.techShop?.nearest?.();
+    return `<div class="phApp-head tech"><b>TechZone</b><span>Gadgets · accessories · drones</span></div>
+      <div class="phQuote">${t ? `<small>Nearest store</small><strong>${esc(t.name)}</strong><div class="phFacts"><span>${distanceLabel(t.d)}</span><span>open 9–8</span></div>
+      <button class="phGo" data-act="route">Get directions</button>` : '<p class="phNote">No store found.</p>'}
+      <p class="phLine">Drones, spare batteries and props, guards, range extenders and more, in every town.</p></div>`;
   }
   s_bank() {
     const G = this.G, [a, b] = G.brothers.b, rides = G.taxis?.history || [];
@@ -153,6 +193,7 @@ export class Phone {
     this._t = 0.5;
     const h = G.world.hours(), t = String(Math.floor(h)).padStart(2, '0') + ':' + String(Math.floor((h % 1) * 60)).padStart(2, '0');
     const tm = this.el.querySelector('.phTime'); if (tm.textContent !== t) tm.textContent = t;
-    if (this.screen === 'kerbRide' || this.screen === 'home' || this.screen === 'bank') this.render();
+    const bt = this.el.querySelector('.phBatt'); if (bt) bt.dataset.p = '87';
+    if (this.screen === 'kerbRide' || this.screen === 'home' || this.screen === 'bank' || this.screen === 'drone') this.render();
   }
 }

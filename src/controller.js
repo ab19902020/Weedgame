@@ -48,6 +48,8 @@ export class Controller {
     // ---- menus and panels
     const panel = this.panel();
     if (panel) { this.menu(dt, panel, pad, tap, axis); this.previous = buttons; return; }
+    // ---- flying the drone: the pad is its remote (Mode 2, droneHud.js); the touchpad still opens the map
+    if (G.drone?.active) { G.droneHud.padInput(pad, tap, axis, buttons); if (tap(PAD) || tap(SHARE)) H.toggleMap(true); this.previous = buttons; return; }
     // ---- radio wheel: left D-pad opens, right stick or D-pad chooses, Cross confirms.
     if(G.radio?.opened){
       const x=axis(2),y=axis(3);if(Math.hypot(x,y)>.4)G.radio.select(x<-.35?'off':y<0?'music':'podcast');
@@ -98,7 +100,9 @@ export class Controller {
       this.flicked = this.padAim && Math.abs(rx) > 0.5;
       if (flick || (lockOn && this.padAim && tap(R3))) I.pressed.add('nextTarget');
       else if (tap(R3)) G.brothers.cam.yaw = G.brothers.me.heading + Math.PI;
-      if (tap(LEFT) || tap(RIGHT)) G.brothers.cam.yaw += (tap(LEFT) ? -1 : 1) * Math.PI / 2;
+      // D-pad right with a drone in the bag: fly it (drone.js); otherwise left / right swing the camera round
+      if (tap(RIGHT) && G.drone?.kit()) G.drone.deploy();
+      else if (tap(LEFT) || tap(RIGHT)) G.brothers.cam.yaw += (tap(LEFT) ? -1 : 1) * Math.PI / 2;
     }
     this.previous = buttons;
   }

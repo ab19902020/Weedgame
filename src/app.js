@@ -42,6 +42,11 @@ import { Haptics } from './haptics.js';
 import { Stations } from './stations.js';
 import { Wildlife } from './wildlife.js';
 import { NearTrees } from './nearTrees.js';
+import { Drone } from './drone.js';
+import { DroneHud } from './droneHud.js';
+import { DroneSky } from './droneSky.js';
+import { Thermal } from './thermal.js';
+import { TechShop } from './techShop.js';
 
 class Events { constructor() { this.h = {}; } on(n, f) { (this.h[n] ||= []).push(f); } emit(n, e) { for (const f of this.h[n] || []) f(e); } }
 
@@ -167,6 +172,10 @@ const init = G.save.initialBrothers(START);
 G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
 G.phone = new Phone(G);              // the phone: Kerb, the atlas, the radio (phone.js)
+// the Kestrel drone (drone.js), its screen and controls (droneHud.js), the sky and far land it flies in (droneSky.js)
+// and its thermal camera (thermal.js)
+G.drone = new Drone(G); G.droneHud = new DroneHud(G); G.droneSky = new DroneSky(G); G.thermal = new Thermal(G);
+G.techShop = new TechShop(G);        // TechZone, the gadget shops in every town (techShop.js)
 G.controller=new Controller(G);
 G.radio = new GameRadio(G);
 G.combat = new Combat(G);                 // weapons, fists, the brothers' arms (combat.js)
@@ -268,8 +277,10 @@ function step(dt, render) {
   pm.multiplyMatrices(G.camera.projectionMatrix, G.camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pm);
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
-  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (!G.transit.update(dt) && !G.taxis.ride(dt) && !G.carjack.update(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
-  G.focus.x = me.x; G.focus.z = me.z;
+  if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (G.drone.active) G.drone.update(dt, G.droneHud.input(dt)); else if (!G.transit.update(dt) && !G.taxis.ride(dt) && !G.carjack.update(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
+  // the world streams around the drone while it flies (anywhere on the map), otherwise around the brother
+  const F = G.drone.focus() || me;
+  G.focus.x = F.x; G.focus.z = F.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
   // (four times a second, squared distances: it ran over every signal head in the loaded world every frame)
   if (!me.vehicle && (G.brothers.speedNow || 0) < 0.3 && ((G._xingT = (G._xingT || 0) - dt) <= 0)) {
@@ -285,7 +296,8 @@ function step(dt, render) {
     const sp = v ? (v.sp || 0) : (G.brothers.speedNow || 0), hd = v ? v.heading : me.heading;
     const fl = Math.hypot(fwd.x, fwd.z) || 1;
     const L = G._look ||= { x: 0, z: 0, vx: 0, vz: 0 }; L.x = fwd.x / fl; L.z = fwd.z / fl; L.vx = Math.cos(hd) * sp; L.vz = Math.sin(hd) * sp;
-    G.tiles.update(me.x, me.z, L);
+    if (G.drone.active) { L.vx = G.drone.v.x; L.vz = G.drone.v.z; }
+    G.tiles.update(F.x, F.z, L);
   }
   G.nearTrees.update(dt);
   G.signals.update(dt);
@@ -314,6 +326,7 @@ function step(dt, render) {
   G.atmos.updateNearLights(G.camera.position);
   G.landmarks.update();
   G.interiors.update(dt);
+  G.techShop.update(dt);
   G.fuel.update(dt);
   if ((G._treeT = (G._treeT || 0) - dt) <= 0) {
     G._treeT = 1; let n = 0;
@@ -343,6 +356,7 @@ function step(dt, render) {
   G.signalRenderer.draw(cam, G._groundAt ||= (x, z) => G.tiles.ground(x, z), G.time);
   G.lampGlow.update();
   G.hud.update(dt);
+  G.droneHud.update(dt);
   G.phone.update(dt);
   G.audio.update(dt, G);
   G.updateLighting(); G.placeSun(me.x, me.y, me.z);
@@ -377,6 +391,8 @@ function step(dt, render) {
   // first time the world is in: let tiles copy landcover blocks straight to the GPU, and compile every
   // material (all car models, both people LODs, trees, grass, post) up front instead of mid-play
   if (!G._warm && !G._needGround && G.tiles.pending.size === 0 && G.frame > 3) { G._warm = true; G.tiles.gpuReady = true; warmup(); }
+  // the drone's sky first: above the cloud deck it clears the baked sky's clouds, in cloud it thickens the fog
+  G.droneSky.update(dt); G.thermal.update(dt);
   G.skyBake?.update(dt);
   G.ibl?.update(dt);
   G.grass?.update(G.camera.position);

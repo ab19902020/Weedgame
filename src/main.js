@@ -1,6 +1,6 @@
 // Green County · Berkshire sandbox bootstrap.
 import * as THREE from 'three/webgpu';
-import { fog, vec3, float, positionWorld, cameraPosition, length, exp, max, dot, pow, mix, normalize, smoothstep } from 'three/tsl';
+import { fog, vec3, float, positionWorld, cameraPosition, length, exp, max, dot, pow, mix, normalize, smoothstep, uniform } from 'three/tsl';
 import { fetchContainer } from './data.js';
 import { Network } from './network.js';
 import { repairGaps, alignRoads } from './roadProfile.js';
@@ -67,13 +67,15 @@ export async function boot(extra = {}) {
   const scene = new THREE.Scene();
   // aerial perspective: squared-exponential distance fog, thinner with height above the viewer,
   // warmed by sunlight scattered forward around the sun's direction
+  const fogEdge = uniform(1);
   {
     const rel = positionWorld.sub(cameraPosition), d = length(rel), v = rel.div(d.max(0.01));
     const hAtt = exp(max(positionWorld.y.sub(cameraPosition.y).add(3), 0).mul(-0.006));
     const dd = U.fogDensity.mul(d);
     // and the edge of the streamed world (budget.r1) fades into the haze over its last third, as in GTA: what's
     // further out isn't loaded at all
-    const R1 = Number(Q.get('r1')) || budget.r1, edge = smoothstep(R1 * 0.6, R1 * 0.97, d).mul(0.92).mul(hAtt.mul(0.5).add(0.5));
+    // (fogEdge 0: a drone high up sees the far terrain beyond the streamed tiles instead, droneSky.js)
+    const R1 = Number(Q.get('r1')) || budget.r1, edge = smoothstep(R1 * 0.6, R1 * 0.97, d).mul(0.92).mul(hAtt.mul(0.5).add(0.5)).mul(fogEdge);
     const f = max(float(1).sub(exp(dd.mul(dd).mul(hAtt).negate())), edge);
     const scatter = pow(max(dot(v, normalize(U.sunDir)), 0), 6).mul(float(1).sub(U.cover.mul(0.7))).mul(float(1).sub(U.night));
     const col = mix(vec3(U.fogCol), vec3(U.sunCol).mul(0.9).add(vec3(U.fogCol).mul(0.4)), scatter.mul(0.6));
@@ -106,7 +108,7 @@ export async function boot(extra = {}) {
   tiles.budget = budget;   // bush density per quality (tiles.addBushes)
   treeFar.value = budget.treeDist;   // trees fade out short of where perf.js stops drawing them (vegetation.js)
   const world = new World(extra.weather);
-  const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, choice, device, touch, budget, Q, U, lightPos, lightCol, NL, rail, frame: 0 };
+  const G = { THREE, renderer, scene, camera, net, tiles, world, manifest, sun, hemi, sky, backend, quality, choice, device, touch, budget, Q, U, lightPos, lightCol, NL, rail, fogEdge, frame: 0 };
   window.GC = G;
   if (Q.has('dbg')) { G.TSL = await import('three/tsl'); G.SURF = await import('./surfaces.js'); }
   await surfaces;
