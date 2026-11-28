@@ -1,6 +1,6 @@
 # Green County trees, grown in Blender 4.3 (bpy, bmesh, mathutils).
 #
-#   <python with bpy 4.3> tools/blender/trees.py [--preview DIR]
+#   blender -b -P tools/blender/trees.py -- [--preview DIR]      (Blender 4.3.2; or a Python with the bpy 4.3 module)
 #
 # Writes www/vegetation/trees.glb: one mesh per tree (broadleaves grown by space colonisation inside a crown
 # envelope; conifers as whorls about a leader), in metres, standing on its origin, Y up. Each has:

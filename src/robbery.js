@@ -16,6 +16,29 @@ const LINES = {
 };
 const pick = a => a[Math.floor(Math.random() * a.length)];
 
+// where shoppers stand: in front of the shelving, chillers and freezer, every metre or so, facing it (both sides of
+// an island of shelves), clear of everything else and inside the shop; spots in front of the same run share an aisle
+function shopSpots(P) {
+  const items = P.items || [], out = [];
+  const free = (x, y) => x > 0.45 && x < P.W - 0.45 && y > 0.45 && y < P.D - 0.45 && items.every(it => {
+    const c = Math.cos(it.rot || 0), sn = Math.sin(it.rot || 0), dx = x - it.x, dy = y - it.y;
+    const u = dx * c + dy * sn, v = -dx * sn + dy * c;
+    return Math.abs(u) > (it.w || 0) / 2 + 0.22 || Math.abs(v) > (it.d || 0) / 2 + 0.22;
+  });
+  items.forEach((it, k) => {
+    if (!/^(gondola2?|chiller|freezer|fridge2)$/.test(it.type)) return;
+    const c = Math.cos(it.rot || 0), sn = Math.sin(it.rot || 0);
+    for (const sd of it.type === 'gondola2' ? [1, -1] : [1]) {
+      const off = (it.d / 2 + 0.55) * sd;
+      for (let u = -it.w / 2 + 0.45; u <= it.w / 2 - 0.45 + 1e-6; u += 1.05) {
+        const x = it.x + u * c - off * sn, y = it.y + u * sn + off * c;
+        if (free(x, y)) out.push({ x, y, dx: sn * sd, dy: -c * sd, aisle: k * 2 + (sd > 0 ? 0 : 1) });
+      }
+    }
+  });
+  return out;
+}
+
 export class Robbery {
   constructor(G, interiors) { this.G = G; this.I = interiors; this.job = null; this.robbed = new Map(); }
   // the shopkeeper behind the counter (drawn with the street's crowd)
@@ -26,7 +49,27 @@ export class Robbery {
     for (const sp of P.staffSpots || []) {
       const [x, z] = toW(sp.x, sp.y);
       out.push({ id: `clerk-${s.id}`, x, y: b.floor0, z, heading: head(sp.dx, sp.dy), base: head(sp.dx, sp.dy), look: { ...People.randomLook(R, { work: true }), top: shopColour(s.name, R), cap: false, hood: false, bag: false, umbrella: 0 },
-        visible: true, speed: 0, t: R() * 9, phase: 0, pose: 'idle', staff: true, clerk: true });
+        visible: true, speed: 0, t: R() * 9, phase: 0, pose: 'idle', staff: true, clerk: true, lx: sp.x, ly: sp.y });
+    }
+    // shoppers: two to four browsing the shelves (each keeps to its own aisle, so nobody walks through the shelving),
+    // and now and then someone at the till
+    const spots = b.spots = shopSpots(P), used = new Set();
+    const n = Math.min(spots.length, 2 + Math.floor(R() * 3));
+    for (let k = 0; k < n; k++) {
+      let i = -1;
+      for (let q = 0; q < 20 && (i < 0 || used.has(i)); q++) i = Math.floor(R() * spots.length);
+      if (i < 0 || used.has(i)) break;
+      used.add(i);
+      const sp = spots[i], [x, z] = toW(sp.x, sp.y);
+      out.push({ id: `shopper-${s.id}-${k}`, x, y: b.floor0, z, heading: head(sp.dx, sp.dy), base: head(sp.dx, sp.dy),
+        look: { ...People.randomLook(R), umbrella: 0, carrier: R() < 0.35 }, visible: true, speed: 0, speedNow: 0, t: R() * 9, phase: R() * 6, pose: 'idle',
+        shopper: true, spot: i, lx: sp.x, ly: sp.y, wait: 2 + R() * 9 });
+    }
+    const till = P.tills?.[0], clerk = out.find(a => a.clerk);
+    if (till && clerk && R() < 0.6) {
+      const ly = till.y + 0.75, [x, z] = toW(till.x, ly), h = head(clerk.lx - till.x, clerk.ly - ly);
+      out.push({ id: `customer-${s.id}`, x, y: b.floor0, z, heading: h, base: h, look: { ...People.randomLook(R), umbrella: 0 }, visible: true, speed: 0, speedNow: 0, t: 0, phase: 0, pose: 'idle',
+        shopper: true, queue: true, lx: till.x, ly });
     }
     return (b.people = out);
   }
@@ -60,8 +103,29 @@ export class Robbery {
   }
   update(dt, b, me) {
     const G = this.G, people = this.people(b), j = this.job;
+    const s = b.site, I = this.I, head = (dx, dy) => Math.atan2(s.ax[1] * dx + s.ay[1] * dy, s.ax[0] * dx + s.ay[0] * dy);
     for (const a of people) {
       a.t += dt;
+      if (a.shopper) {
+        if (j && j.site === b.site) { a.pose = 'brace'; a.speedNow = 0; a.heading = Math.atan2(a.z - me.z, a.x - me.x); continue; }   // cowering, turned away
+        if (a.queue) { a.pose = a.t % 14 < 9 ? 'idle' : 'talk'; continue; }
+        if (a.target) {   // along the aisle to the next spot
+          const T = a.target, dx = T.x - a.lx, dy = T.y - a.ly, d = Math.hypot(dx, dy);
+          if (d < 0.04) { a.lx = T.x; a.ly = T.y; a.heading = a.base = head(T.dx, T.dy); a.target = null; a.wait = 4 + Math.random() * 10; a.pose = 'idle'; a.speedNow = 0; }
+          else { const k = Math.min(d, 0.95 * dt); a.lx += dx / d * k; a.ly += dy / d * k; a.heading = head(dx, dy); a.pose = 'walk'; a.speedNow = 0.95; a.phase = (a.phase + dt * 3.4) % 6.283; }
+          [a.x, a.z] = I.toWorld(s, a.lx, a.ly);
+        } else {
+          a.wait -= dt; a.speedNow = 0; a.pose = a.t % 23 < 4 ? 'phone' : 'idle';
+          a.heading += (a.base - a.heading) * Math.min(1, dt * 3);
+          if (a.wait <= 0) {   // on to another spot along the same aisle (not one someone's stood at)
+            const here = b.spots[a.spot], taken = new Set(people.filter(q => q.shopper && q !== a).map(q => q.spot));
+            const next = b.spots.map((p, i) => [p, i]).filter(([p, i]) => p.aisle === here.aisle && i !== a.spot && !taken.has(i));
+            if (next.length) { const [p, i] = next[Math.floor(Math.random() * next.length)]; a.spot = i; a.target = p; }
+            else a.wait = 3 + Math.random() * 6;
+          }
+        }
+        continue;
+      }
       if (j && j.site === b.site) {
         // hands up while it's emptied; then cowering behind the counter, on the phone to the police
         a.heading = Math.atan2(me.z - a.z, me.x - a.x);

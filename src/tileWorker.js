@@ -8,11 +8,29 @@ import { frontageScore, buildingStyle, nearestFrontage } from './buildingFidelit
 const TILE = 256, NT = 65, STEP = 4;
 let NET = null;
 
+// the enterable shops, takeaways and pubs (world/interiors.json), by tile and building: their buildings get a shopfront
+// and a fascia, the front on the wall their door is in, even where the map doesn't tag the building itself a shop
+// (a petrol station's shop or a drive-through was a blank box with a door)
+let SITES = null, TILE_SITES = null;
+async function loadSites(url) {
+  try {
+    const r = await fetch(url); if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json(), M = new Map();
+    for (const s of d.sites || []) {
+      if (!/^(shop|food|pub)$/.test(s.kind) || !s.bkey || s.bi == null) continue;
+      let t = M.get(s.bkey); if (!t) M.set(s.bkey, t = new Map());
+      t.set(s.bi, { name: s.name || '', kind: s.kind, door: s.door });
+    }
+    return M;
+  } catch { return new Map(); }
+}
 self.onmessage = async ev => {
   const m = ev.data;
   if (m.type === 'init') { initNet(m); return; }
   if (m.type === 'tile') {
     try {
+      SITES ??= await loadSites(m.url.replace(/tiles\/[^/]*$/, 'interiors.json'));
+      TILE_SITES = SITES.get(m.key) || null;
       const r = await fetch(m.url);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const { header, arrays } = decode(await inflate(await r.arrayBuffer()));
@@ -1515,11 +1533,12 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     const m = M.subarray(bi * NM, bi * NM + NM), firstAttribute = B.x.length;
     const base = m[0] + hmin, low = m[1] + hmin - 0.6, wallH = m[2], roof = m[3], rh = m[4];
     const rcx = m[5], rcz = m[6], rang = m[7], rL = m[8], rW = m[9], cls = m[10], lv = m[11], seed = m[13];
-    const bname = (header.bn && header.bn[bi]) || '';
-    const retail = m[12] > 0 || cls === 6 || cls === 7;
+    const site = !lod && TILE_SITES ? TILE_SITES.get(bi) || null : null;
+    const bname = (header.bn && header.bn[bi]) || site?.name || '';
+    const retail = m[12] > 0 || cls === 6 || cls === 7 || !!site;
     let brand = (!lod && fasciaBrand(bname, retail)) || null;
     // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
-    const shop = m[12] || ((cls === 6 || cls === 7) && bname) || brand || poiOn.has(bi) ? 1 : 0;
+    const shop = m[12] || ((cls === 6 || cls === 7) && bname) || brand || poiOn.has(bi) || site ? 1 : 0;
     // a shop the map gives no name still has a board over the window: what kind of shop it is (or To Let)
     // (one whose name wasn't taken as a shop's, because the building isn't tagged retail, gets its own name)
     if (!lod && !brand && shop && cls !== 13 && cls !== 8) brand = (bname && fasciaBrand(bname, true)) || fasciaBrand(UNNAMED_SHOPS[Math.abs(Math.floor(seed * 7 + bi)) % UNNAMED_SHOPS.length], true);
@@ -1588,6 +1607,12 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
           }
         }
       }
+    }
+    // an enterable site's shopfront is the wall its door is in
+    if (site?.door && outer && outer.length > 2) {
+      const dx = site.door.x - ox, dz = site.door.z - oz; let bd = 1e9, bq = -1;
+      for (let q = 0; q < outer.length; q++) { const fr = edgeFrame(outer, q); if (!fr || fr.L < 2.4) continue; const d = Math.hypot(fr.mx - dx, fr.mz - dz); if (d < bd) { bd = d; bq = q; } }
+      if (bq >= 0 && bd < 8) { front = bq; if (!street.includes(bq)) street.unshift(bq); }
     }
     if (!lod && (shop || brand) && front < 0 && outer) {
       let bl = 0, bq = -1;

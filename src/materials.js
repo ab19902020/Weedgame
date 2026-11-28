@@ -362,7 +362,16 @@ export function structMaterial() {
 }
 
 // --- buildings --------------------------------------------------------------------------
+// the shop shelving seen through shop windows: four of the Blender-rendered bays side by side (tools/blender/shelves.py)
+let shopShelves0 = null;
+function shopShelvesTex() {
+  if (shopShelves0) return shopShelves0;
+  const t = shopShelves0 = new THREE.TextureLoader().load('assets/shop/window.jpg');
+  t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
 export function buildingMaterial() {
+  const shopShelves = shopShelvesTex();
   const m = std();
   m.maskNode = indoorCut(positionWorld);   // (a shell lower than the rooms inside it showed its roof upstairs)
   const A = attribute('bA', 'vec4');
@@ -532,20 +541,19 @@ export function buildingMaterial() {
   // (the room's fine detail fades to its average once a pixel covers more than a few centimetres of wall)
   const detail = float(1).sub(smoothstep(0.03, 0.1, max(fU, fV)));
   const furniture = hitBack.mul(step(hy, mix(float(0.7), float(1.1), roomSeed))).mul(step(abs(hx.sub(roomSeed.sub(0.5).mul(sp))), sp.mul(0.25))).mul(mix(float(0.15), float(0.6), detail));
-  const shelfZone = shopFront.mul(hitBack.add(hitSide).min(1)).mul(step(0.35, hy)).mul(step(hy, 2.45)).mul(detail);
+  // a shop's shelves are the Blender-rendered bays (tools/blender/shelves.py: drinks, crisps, biscuits, tins, 4 m of them
+  // repeating, each shop starting at its own place); cafés, takeaways and pubs get no shelving: a warm room, people
+  const eatery = isPub.add(step(35.5, brand).mul(step(brand, 49.5))).min(1);
+  const shelfZone = shopFront.mul(float(1).sub(eatery)).mul(hitBack.add(hitSide).min(1)).mul(step(hy, 1.6)).mul(detail);
   const along = sel(hitBack.greaterThan(0.5), hx, hz);
-  const cell = h3(vec3(floor(along.div(0.28)), floor(hy.div(0.42)), roomSeed.mul(53)));
-  const hue = fract(cell.mul(7.13));
-  const stockHue = sel(hue.lessThan(0.2), vec3(0.72, 0.16, 0.12), sel(hue.lessThan(0.4), vec3(0.15, 0.32, 0.66), sel(hue.lessThan(0.55), vec3(0.85, 0.68, 0.12), sel(hue.lessThan(0.7), vec3(0.18, 0.5, 0.22), sel(hue.lessThan(0.85), vec3(0.9, 0.88, 0.84), vec3(0.45, 0.2, 0.5))))));
-  const stock = mix(vec3(0.22), stockHue, 0.9).mul(cell.mul(0.45).add(0.45));
-  const shelfEdge = step(fract(hy.div(0.42)), 0.09);
+  const stock = texture(shopShelves, vec2(fract(along.div(4).add(roomSeed.mul(0.71))), hy.div(1.6).clamp(0.002, 0.998))).rgb;
   let roomCol = room.mul(float(1).sub(furniture));
-  // a shop's walls a mid grey (not the homes' wallpaper), its shelves full of coloured stock
-  roomCol = mix(roomCol, room.mul(vec3(0.4, 0.4, 0.42)), shopFront);
+  // a shop's walls a mid grey (not the homes' wallpaper); a café's or a pub's warm
+  roomCol = mix(roomCol, room.mul(mix(vec3(0.4, 0.4, 0.42), vec3(0.95, 0.78, 0.58), eatery)), shopFront);
   // above the shelves a shop is a dark bulkhead (and a dimmer ceiling between its lights), not more lit wall
-  roomCol = mix(roomCol, vec3(0.05, 0.05, 0.055), shopFront.mul(step(2.75, hy)).mul(hitBack.add(hitSide).min(1)));
+  roomCol = mix(roomCol, vec3(0.05, 0.05, 0.055), shopFront.mul(float(1).sub(eatery)).mul(step(2.75, hy)).mul(hitBack.add(hitSide).min(1)));
   roomCol = mix(roomCol, roomCol.mul(0.5), shopFront.mul(float(1).sub(hitBack)).mul(float(1).sub(hitSide)).mul(float(1).sub(hitFloor)));
-  roomCol = mix(roomCol, mix(stock, vec3(0.75), shelfEdge), shelfZone.mul(step(0.18, fract(along.div(0.28)))));
+  roomCol = mix(roomCol, stock, shelfZone);
   // strip lights across a shop's ceiling, and now and then someone browsing against the shelves
   const hitCeil = float(1).sub(hitBack).mul(float(1).sub(hitSide)).mul(float(1).sub(hitFloor));
   const strip = shopFront.mul(hitCeil).mul(step(fract(hz.div(1.6)), 0.12)).mul(step(abs(fract(hx.div(2.4)).sub(0.5)), 0.38));
