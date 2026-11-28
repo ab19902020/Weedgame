@@ -77,6 +77,7 @@ export class Audio {
       this.loadClip('drone').then(buf => { this.droneBuf = buf; }).catch(console.warn),
       this.loadClip('fishing').then(buf => { this.fishBuf = buf; }).catch(console.warn),
       this.loadClip('explosion').then(buf => { this.boomBuf = buf; }).catch(console.warn),
+      this.loadClip('fire').then(buf => { this.fireBuf = buf; }).catch(console.warn),
       this.loadFleet().catch(error => console.warn('Fleet audio unavailable', error)),
       this.loadRecordings().catch(error => console.warn('Sound recordings unavailable', error)),
       this.loadWorld().catch(error => console.warn('World sound bank unavailable', error)),

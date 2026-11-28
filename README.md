@@ -1,4 +1,4 @@
-# Green County · Berkshire sandbox (v0.46.0)
+# Green County · Berkshire sandbox (v0.47.0)
 
 A free-roam, 1:1 slice of Berkshire, 219 km² from Reading and Caversham in the west to Bracknell in the east, plus the whole M4 across it from Junction 12 (Theale) to Junction 8/9 (Holyport): Reading town centre, Cemetery Junction, Earley, Woodley, Winnersh, Wokingham and Bracknell, and every village, lane, footpath, lake and river between them (Sonning, Twyford, Charvil, Hurst, Dinton Pastures, Sindlesham, Shinfield, Arborfield, Binfield and more). It starts in **sandbox mode**: you control Cal or Leon Ward and can explore indefinitely. There are no missions, objectives, phone calls, deliveries or sales. The cannabis-empire layer from the v0.3–v0.5 prototype will sit on this world later; its save data is carried along untouched.
 

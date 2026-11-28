@@ -25,10 +25,23 @@ const QUALITY = { low: 0.6, medium: 0.8, high: 1 };
 // ------------------------------------------------------------------ the atlas: 4 x 2 cells of 128 x 128
 // 0-2 tongues of flame, 3 a glow, 4-5 billows, 6 a flash, 7 a puff
 let ATLAS = null;
-function atlas() {
+export function atlas() {
   if (ATLAS) return ATLAS;
   const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
-  const cell = (i, draw) => { g.save(); g.translate((i % 4) * 128, Math.floor(i / 4) * 128); g.beginPath(); g.rect(0, 0, 128, 128); g.clip(); draw(); g.restore(); };
+  // (each cell faded out well before its edges, so no sprite shows a straight edge and no cell bleeds into the next in
+  // the smaller mipmaps)
+  const cell = (i, draw, round) => {
+    g.save(); g.translate((i % 4) * 128, Math.floor(i / 4) * 128); g.beginPath(); g.rect(0, 0, 128, 128); g.clip(); draw();
+    g.globalCompositeOperation = 'destination-in'; g.filter = 'none';
+    if (round) { const m = g.createRadialGradient(64, 64, 40, 64, 64, 60); m.addColorStop(0, 'rgba(0,0,0,1)'); m.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = m; g.fillRect(0, 0, 128, 128); }
+    else {
+      const h = g.createLinearGradient(0, 0, 128, 0); h.addColorStop(0, 'rgba(0,0,0,0)'); h.addColorStop(0.06, 'rgba(0,0,0,1)'); h.addColorStop(0.94, 'rgba(0,0,0,1)'); h.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = h; g.fillRect(0, 0, 128, 128);
+      const v = g.createLinearGradient(0, 0, 0, 128); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(0.05, 'rgba(0,0,0,1)'); v.addColorStop(0.96, 'rgba(0,0,0,1)'); v.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = v; g.fillRect(0, 0, 128, 128);
+    }
+    g.restore();
+  };
   // a tongue of flame: white-hot at the root, through yellow and orange to a ragged deep red tip
   const tongue = k => {
     const lean = (k - 1) * 10;
@@ -54,13 +67,21 @@ function atlas() {
     g.fillStyle = r; g.fillRect(0, 0, 128, 128);
   };
   // a cauliflower billow (white; tinted in the shader): overlapping soft lobes, denser in the middle
+  // (irregular: lobes of all sizes scattered wide, and wisps drawn out from the edge, so a puff has no round outline)
   const billow = (seed, lobes, blur) => {
     let s = seed; const R = () => (s = (s * 16807) % 2147483647) / 2147483647;
     g.filter = `blur(${blur}px)`;
     for (let i = 0; i < lobes; i++) {
-      const a = R() * Math.PI * 2, d = R() * R() * 32, x = 64 + Math.cos(a) * d, y = 64 + Math.sin(a) * d, r = 14 + R() * 20;
-      const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,0.42)'); gr.addColorStop(0.55, 'rgba(255,255,255,0.22)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      const a = R() * Math.PI * 2, d = Math.sqrt(R()) * 40, x = 64 + Math.cos(a) * d, y = 64 + Math.sin(a) * d, r = 7 + R() * R() * 26;
+      const k = 0.48 * (1 - d / 52);
+      const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(255,255,255,${k.toFixed(3)})`); gr.addColorStop(0.5, `rgba(255,255,255,${(k * 0.45).toFixed(3)})`); gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    }
+    for (let i = 0; i < 6; i++) {
+      const a = R() * Math.PI * 2, x = 64 + Math.cos(a) * 30, y = 64 + Math.sin(a) * 30;
+      g.save(); g.translate(x, y); g.rotate(a + (R() - 0.5)); g.scale(2.2, 0.7);
+      const gr = g.createRadialGradient(0, 0, 0, 0, 0, 12); gr.addColorStop(0, 'rgba(255,255,255,0.16)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = gr; g.fillRect(-14, -14, 28, 28); g.restore();
     }
     g.filter = 'none';
   };
@@ -74,8 +95,8 @@ function atlas() {
     }
     g.globalCompositeOperation = 'source-over';
   };
-  cell(0, () => tongue(0)); cell(1, () => tongue(1)); cell(2, () => tongue(2)); cell(3, glow);
-  cell(4, () => billow(7, 26, 6)); cell(5, () => billow(91, 22, 7)); cell(6, flash); cell(7, () => billow(4242, 30, 8));
+  cell(0, () => tongue(0)); cell(1, () => tongue(1)); cell(2, () => tongue(2)); cell(3, glow, true);
+  cell(4, () => billow(7, 34, 5), true); cell(5, () => billow(91, 30, 6), true); cell(6, flash, true); cell(7, () => billow(4242, 38, 6), true);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
   return (ATLAS = t);
 }
@@ -147,9 +168,9 @@ export class FireFx {
     // lit from above by the day, from below by the fire it came off
     const day = float(1).sub(U.night.mul(0.82));
     const base = mix(vec3(0.045, 0.041, 0.038), vec3(0.62, 0.62, 0.64), dark);
-    const lit = base.mul(mix(float(0.55), float(1.15), uv().y).mul(day).add(0.06)).add(vec3(1, 0.42, 0.1).mul(glw).mul(float(1).sub(uv().y.mul(0.55))).mul(0.9));
+    const lit = base.mul(mix(float(0.55), float(1.15), uv().y).mul(day).add(day.mul(0.06)).add(0.012)).add(vec3(1, 0.42, 0.1).mul(glw).mul(float(1).sub(uv().y.mul(0.55))).mul(0.9));
     sm.colorNode = lit;
-    sm.opacityNode = stx.a.mul(1.6).min(1).mul(smoothstep(0, 0.1, st)).mul(smoothstep(1, 0.38, st)).mul(den);
+    sm.opacityNode = stx.a.mul(1.45).min(1).mul(smoothstep(0, 0.1, st)).mul(smoothstep(1, 0.38, st)).mul(den);
     this.smoke = new THREE.Sprite(sm); this.smoke.count = 0; this.smoke.frustumCulled = false; this.smoke.renderOrder = 5; this.smoke.visible = false;
     this.scene.add(this.smoke);
   }

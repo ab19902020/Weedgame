@@ -549,10 +549,11 @@ export class Peds {
     for (const p of this.list) {
       const d = Math.hypot(p.x - x, p.z - z); if (d > r || p.fallT > 0 || p.mode === 'chase') continue;
       // gunfire: everyone in earshot runs, for longer; anything else, only those close by
-      const gun = kind === 'gun';
+      // ('blaze': a car alight right by them; they run as from gunfire, but nobody puts their hands up to a fire)
+      const gun = kind === 'gun' || kind === 'blaze';
       p.reactT = gun ? 5 + this.rand() * 4 : 2 + this.rand() * 2; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = d < 8 || gun ? 'flee' : this.rand() < 0.3 ? 'phone' : 'point';
       // right next to the gun some freeze with their hands up rather than run (then run once it's quiet)
-      if (gun && d < 7 && !p.officer && this.rand() < 0.35) { p.reactPose = 'hands'; p.reactT = 2.5 + this.rand() * 2; p.thenFlee = true; }
+      if (kind === 'gun' && d < 7 && !p.officer && this.rand() < 0.35) { p.reactPose = 'hands'; p.reactT = 2.5 + this.rand() * 2; p.thenFlee = true; }
     }
   }
   // a blow or a round (combat.js): kind 'jab' | 'body' | 'stagger' | 'down' | 'shot'; dir the heading of the force,

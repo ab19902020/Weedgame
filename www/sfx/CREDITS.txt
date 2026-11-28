@@ -300,3 +300,9 @@ Toshogu Spring Festival, Nikko, on Wikimedia Commons, all public domain:
 “Explosions-LS100155.ogg”, Fg2, public domain, https://commons.wikimedia.org/wiki/File:Explosions-LS100155.ogg
 Game edits: six blasts excerpted with their echoes, mono, high-passed at 25 Hz, levelled and faded. In the game they're
 pitched down and layered with a low-passed copy of themselves (a fuel tank's deep whump), delayed and dulled with distance.
+fire.ogg — “Fire of the forge” (WWS Fireoftheforge.ogg), Work With Sounds / La Fonderie, CC BY 4.0: the crackle of a
+coke-and-wood fire in a blacksmith's forge (tools/audio/build_fire.py).
+https://commons.wikimedia.org/wiki/File:WWS_Fireoftheforge.ogg
+https://creativecommons.org/licenses/by/4.0/
+Game edits: a 9 s stretch of steady crackle, mono, band-limited, the loudest pops softened, levelled and crossfaded into a
+seamless loop. In the game a second copy an octave down and low-passed runs under it for the roar of a car well alight.

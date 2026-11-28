@@ -57,7 +57,7 @@ export class VehicleFires {
     if (v.player) this.G.hud.banner('Your vehicle’s on fire — get out!', 'pursuit', 4);
     if (!o.quiet) this.G.emergency?.vehicleFire?.(v);
     // people further off stop to look (and get their phones out); anyone close runs
-    this.G.peds?.disturb?.(v.x, v.z, 45, 'fire'); this.G.peds?.disturb?.(v.x, v.z, 14, 'gun');
+    this.G.peds?.disturb?.(v.x, v.z, 45, 'fire'); this.G.peds?.disturb?.(v.x, v.z, 14, 'blaze');
     return true;
   }
   // a hose on it (emergency.js): it doesn't go up while they're cooling it, and it's out when the heat's gone
@@ -104,7 +104,7 @@ export class VehicleFires {
       if (!F || v.dead || !G.traffic.byId.has(v.id)) { this.list.delete(v); continue; }
       F.t += dt;
       if (F.bail != null && F.t >= F.bail) { F.bail = null; this.bailOut(v); }
-      if (!F.out && (F.scare = (F.scare || 0) - dt) <= 0) { F.scare = 1.5; G.peds?.disturb?.(v.x, v.z, 13, 'gun'); }   // (nobody hangs about next to it)
+      if (!F.out && (F.scare = (F.scare || 0) - dt) <= 0) { F.scare = 1.5; G.peds?.disturb?.(v.x, v.z, 13, 'blaze'); }   // (nobody hangs about next to it)
       if (v._air) this.fly(v, dt);
       if (!F.out) {
         if (F.cool > 0) F.cool -= dt;
@@ -185,7 +185,7 @@ export class VehicleFires {
     // the fire's light on everything round it, flickering
     if (heat > 0.02) {
       const t = G.fireFx.time, fl = 0.8 + 0.12 * Math.sin(t * 13.7 + v.x) + 0.08 * Math.sin(t * 31.3 + v.z);
-      G.fireFx.light(v.x, (v.y || 0) + (B ? 0.9 : H * 0.9), v.z, 1, 0.5, 0.15, (1.3 + 1.0 * k) * heat * fl * (heavy(v) ? 1.4 : 1), 8 + 5 * k);
+      G.fireFx.light(v.x, (v.y || 0) + (B ? 0.9 : H * 0.9), v.z, 1, 0.5, 0.15, (1.6 + 1.3 * k) * heat * fl * (heavy(v) ? 1.4 : 1), 9 + 6 * k);
     }
   }
   // the driver (or rider) gets out and runs
@@ -235,7 +235,7 @@ export class VehicleFires {
     const cam = G.camera.position, d = Math.hypot(x - cam.x, z - cam.z);
     G.brothers.cam.shake = Math.max(G.brothers.cam.shake || 0, clamp(1.35 - d / 45, 0, 1.1) * Math.min(1.2, k));
     if (d < 120) G.haptics?.rumble?.(clamp(1.1 - d / 90, 0.15, 1), clamp(1 - d / 110, 0.1, 0.9), 350 + 450 * clamp(1 - d / 80, 0, 1));
-    G.peds?.disturb?.(x, z, 140, 'gun');
+    G.peds?.disturb?.(x, z, 140, 'blaze');
     G.hud.feed('Explosion · ' + (G.roadName(x, z) || 'nearby'));
     G.events?.emit?.('explosion', { x, y: gy, z, by, v: src });
   }
@@ -345,8 +345,9 @@ export class VehicleFires {
         ph.vx += nx * push; ph.vz += nz * push; ph.w += rnd(-1, 1) * 1.8 * f; o._kick = [rnd(-1, 1) * f * 6, f * 8];
         if (!o.parked) { o.crashed = true; o.v = 0; }
       }
-      // (centre to centre: a car parked nose to tail with it is about 5.5 m off)
-      if (!o.burning && !o.burnt && (d < 5.8 * k || (d < 7.2 * k && Math.random() < 0.5) || o.eng >= 1)) this.ignite(o, { by, fuse: rnd(3, 6.5), quiet: true });
+      // (to its near end, about: a car parked nose to tail with it is 3-4 m off)
+      const dn = Math.max(0, d - (o.def.L || 4) * 0.4);
+      if (!o.burning && !o.burnt && (dn < 4.6 * k || (dn < 6 * k && Math.random() < 0.5) || o.eng >= 1)) this.ignite(o, { by, fuse: rnd(3, 6.5), quiet: true });
     }
     this.props(x, y, z, k);
   }
@@ -372,6 +373,7 @@ export class VehicleFires {
   // a blackened patch on the road where it went up
   scorch(x, y, z, size, heading) {
     const G = this.G;
+    if (typeof document === 'undefined') return;
     if (!this._scorchMat) {
       const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
       const r = g.createRadialGradient(64, 64, 4, 64, 64, 62); r.addColorStop(0, 'rgba(8,7,6,0.92)'); r.addColorStop(0.45, 'rgba(14,12,10,0.75)'); r.addColorStop(0.8, 'rgba(20,18,16,0.3)'); r.addColorStop(1, 'rgba(20,18,16,0)');
