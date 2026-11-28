@@ -17,7 +17,8 @@ export class NearTrees {
     this.timer = 0; this.lx = 1e9; this.lz = 1e9;
     this._d = new THREE.Matrix4(); this._m = new THREE.Matrix4(); this._tc = new THREE.Matrix4(); this._t0 = new THREE.Matrix4();
     this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3(); this._up = new THREE.Vector3(0, 1, 0); this._c = new THREE.Color();
-    if (this.near > 0 && !G.Q?.has('notrees')) new GLTFLoader().load('vegetation/trees.glb', g => this.setup(g), undefined, e => console.warn('Trees failed to load', e));
+    // (still being refined: off unless asked for with ?neartrees in the address; the leaf-card crowns everywhere meanwhile)
+    if (this.near > 0 && G.Q?.has('neartrees')) new GLTFLoader().load('vegetation/trees.glb', g => this.setup(g), undefined, e => console.warn('Trees failed to load', e));
   }
   setup(g) {
     const G = this.G, mat = nearTreeMaterial(), sm = G.renderer.shadowMap.enabled;

@@ -1,12 +1,18 @@
 // One media element, no decoded album in memory (the playing track is held compressed, see load()). Independent per-device tuning,
 // shared resume points for the stations. Assets are local to www/radio in the APK.
+// Tracks: [title, file in www/radio, gain]. The gains even out the loudness (songs to about -14 LUFS, the talk to -15,
+// measured with ffmpeg's EBU R128 meter), so changing track or station doesn't jump in volume.
 export const STATIONS=[
   {id:'music',name:'United Road FM',icon:'♫',kind:'MUSIC',tracks:[
-    ['Feel It','feel-it'],['Manchester Is Red (UK Trap Remix)','manchester-trap'],
-    ['National Anthem','national-anthem'],["Don't Tap the Glass",'dont-tap-glass'],
-    ['Rashford Is Red (Remix)','rashford-remix'],['Manchester Is Red (Remastered)','manchester-is-red'],
-    ['Manchester Red (Remastered)','manchester-red'],['Oh Ah Cantona','oh-ah-cantona']]},
-  {id:'podcast',name:'Green County Talk',icon:'◉',kind:'PODCAST',tracks:[['Theo Von – Childhood Stories','theo-von']]},
+    ['The United Road (2026 Studio Remaster)','the-united-road.mp3',0.68],['Feel It','feel-it.mp3',1.22],
+    ['Manchester Is Red (UK Trap Remix)','manchester-trap.mp3',0.99],['Red Devil (Take Me Home, United Road)','red-devil.mp3',0.88],
+    ['National Anthem','national-anthem.mp3',1.16],['Rashford Is Red (Remix)','rashford-remix.mp3',0.9],
+    ['Under My Skin','under-my-skin.mp3',1.2],['Manchester Is Red (Remastered)','manchester-is-red.mp3',0.92],
+    ['Magic (Remix)','magic.mp3',1.35],['Oh Ah Cantona','oh-ah-cantona.mp3',1.07],
+    ['Still Holding','still-holding.mp3',1.17],['Manchester Red (Remastered)','manchester-red.mp3',0.95],
+    ['Red Side Indie Anthem (Remix)','red-side.mp3',0.92],['The Wolves (Remix)','the-wolves.mp3',1.16],
+    ['Don\'t Tap the Glass','dont-tap-glass.mp3',1.19]]},
+  {id:'podcast',name:'Green County Talk',icon:'◉',kind:'PODCAST',tracks:[['Theo Von – Childhood Stories','theo-von.m4a',1.32]]},
   {id:'off',name:'Radio off',icon:'⏻',kind:'OFF',tracks:[]}
 ];
 export function stationFromStick(x,y){if(Math.hypot(x,y)<.4)return null;return x<-.35?'off':y<0?'music':'podcast';}
@@ -56,7 +62,7 @@ export class GameRadio {
     if(this.context?.startsWith('home:')){const me=this.G.brothers.me,IN=this.G.interiors.at(me),it=IN?.plan.items.find(i=>i.type==='radio');if(it){const [x,z]=this.G.interiors.toLocal(IN.site,me.x,me.z);this.attenuation=Math.max(.12,1-Math.hypot(x-it.x,z-it.y)/13);}}else this.attenuation=1;
     this.setVolume();
   }
-  setVolume(){this.audio.volume=Math.max(0,Math.min(1,this.volume*(this.attenuation??1)));}
+  setVolume(){const s=STATIONS.find(s=>s.id===this.current),p=this.resume[this.current],t=s&&p?s.tracks[p.index]:null;this.audio.volume=Math.max(0,Math.min(1,this.volume*(this.attenuation??1)*(t?.[2]??1)));}
   toggle(){if(this.opened)this.close();else if(!this.blocked&&this.device()){this.setContext(this.device());this.opened=true;this.selected=this.current;this.el.hidden=false;this.G.input.release();this.G.input.keys.clear();this.G.input.held.clear();this.G.input.pressed.clear();this.refresh();}}
   close(){if(this.opened){this.G.input.release();this.G.input.pressed.clear();this.G.input.keys.clear();this.G.input.held.clear();}this.opened=false;this.el.hidden=true;}
   select(id){if(STATIONS.some(s=>s.id===id)){this.selected=id;this.refresh();}}
@@ -67,9 +73,10 @@ export class GameRadio {
   // resuming part-way through and the podcast's back-30-seconds work. Missing files fall back to the plain URL, which
   // fails into the "install the radio asset pack" message.
   load(){const s=STATIONS.find(s=>s.id===this.current),p=this.resume[this.current];if(!s?.tracks.length||!p)return;
-    const url='radio/'+s.tracks[p.index][1]+'.m4a',tok=this.loadTok=(this.loadTok||0)+1;
+    const f=s.tracks[p.index][1],file=f.includes('.')?f:f+'.m4a',url='radio/'+file,tok=this.loadTok=(this.loadTok||0)+1;
+    const type=file.endsWith('.mp3')?'audio/mpeg':'audio/mp4';
     const start=src=>{if(tok!==this.loadTok)return;this.audio.src=src;this.setVolume();this.play();};
-    fetch(url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.blob();}).then(b=>{if(tok!==this.loadTok)return;if(this.blobUrl)URL.revokeObjectURL(this.blobUrl);this.blobUrl=URL.createObjectURL(b.type?b:new Blob([b],{type:'audio/mp4'}));start(this.blobUrl);}).catch(()=>start(url));}
+    fetch(url).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.blob();}).then(b=>{if(tok!==this.loadTok)return;if(this.blobUrl)URL.revokeObjectURL(this.blobUrl);this.blobUrl=URL.createObjectURL(b.type===type?b:new Blob([b],{type}));start(this.blobUrl);}).catch(()=>start(url));}
   play(){if(this.current==='off'||!this.context||this.manualPause||document.hidden)return;this.audio.play().catch(()=>{this.status='Press Play to start audio';this.refresh();});}
   pauseToggle(){if(this.current==='off')return;if(this.audio.paused){this.manualPause=false;this.play();}else{this.manualPause=true;this.audio.pause();}this.refresh();}
   skip(dir){const s=STATIONS.find(s=>s.id===this.current),p=this.resume[this.current];if(!s?.tracks.length||!p)return;

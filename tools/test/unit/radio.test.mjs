@@ -1,4 +1,5 @@
 import test from 'node:test';import assert from 'node:assert/strict';import {STATIONS,nextTrack,stationFromStick} from '../../../src/radio.js';
-test('8 songs, one podcast and off',()=>{assert.equal(STATIONS[0].tracks.length,8);assert.equal(STATIONS[1].tracks.length,1);assert.equal(STATIONS[2].tracks.length,0);assert.equal(new Set(STATIONS.flatMap(s=>s.tracks.map(t=>t[1]))).size,9);});
-test('playlist wraps',()=>{assert.equal(nextTrack(7,8),0);assert.equal(nextTrack(0,8,-1),7);});
+test('15 songs, one podcast and off',()=>{assert.equal(STATIONS[0].tracks.length,15);assert.equal(STATIONS[1].tracks.length,1);assert.equal(STATIONS[2].tracks.length,0);assert.equal(new Set(STATIONS.flatMap(s=>s.tracks.map(t=>t[1]))).size,16);});
+test('every track is in www/radio, with a sensible gain',async()=>{const fs=await import('node:fs');for(const s of STATIONS)for(const [title,file,gain] of s.tracks){assert.ok(fs.existsSync(new URL('../../../www/radio/'+file,import.meta.url)),file);assert.ok(gain>0.3&&gain<1.8,title);}});
+test('playlist wraps',()=>{assert.equal(nextTrack(14,15),0);assert.equal(nextTrack(0,15,-1),14);});
 test('wheel directions',()=>{assert.equal(stationFromStick(0,-1),'music');assert.equal(stationFromStick(0,1),'podcast');assert.equal(stationFromStick(-1,0),'off');assert.equal(stationFromStick(.1,.1),null);});
