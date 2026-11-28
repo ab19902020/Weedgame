@@ -229,7 +229,7 @@ async function step(name, fn) {
   });
 
   let parked = null;
-  await step('Park, switch brothers, drive to Reading, return and find the car', async rec => {
+  await step('Park, go to Reading, come back and find the car', async rec => {
     await T.dev('spot-woodley-precinct'); await T.frames(12);
     const car = await p.evaluate(() => { const v = GC.traffic.byId.get('cal-car'); return [v.x, v.z]; });
     await T.walkTo(car[0], car[1], { within: 3.2, bursts: 40, frames: 10, run: true });
@@ -241,24 +241,15 @@ async function step(name, fn) {
     parked = await p.evaluate(() => { const v = GC.traffic.byId.get('cal-car'); return { x: +v.x.toFixed(2), z: +v.z.toFixed(2), heading: +v.heading.toFixed(3), road: GC.roadName(v.x, v.z) }; });
     rec.notes.push(`Cal parked at ${parked.x}, ${parked.z} on ${parked.road}`);
     rec.shots.push(await T.shot('10-cal-parked'));
-    await T.tap('#bSwap'); await T.frames(10);
-    s = await T.state(); rec.notes.push(`switched to ${s.brother} at ${s.x}, ${s.z}`);
-    const lcar = await p.evaluate(() => { const v = GC.traffic.byId.get('leon-car'); return [v.x, v.z]; });
-    await T.walkTo(lcar[0], lcar[1], { within: 3.2, bursts: 40, frames: 10, run: true });
-    await T.tap('#bUse'); await T.frames(3);
-    s = await T.state(); if (s.vehicle !== 'leon-car') { rec.fail = 'Leon could not get into his car'; return; }
-    await T.stick(0, 0.8, 14); await T.stopVehicle();   // reverse away: Leon's car is parked behind Cal's
-    rec.notes.push('Leon reversed out; the Woodley-to-Reading run is shortened with the Dev "Go to" teleport (software rendering runs ~1 fps here)');
+    rec.notes.push('the Woodley-to-Reading trip is made with the Dev "Go to" teleport (software rendering runs ~1 fps here)');
     await T.dev('goto-reading-town-centre'); await T.frames(15);
-    await T.stick(0, -0.7, 16); await T.stopVehicle();
-    await T.tap('#bUse'); await T.frames(3);
-    s = await T.state(); rec.notes.push(`Leon parked in ${s.district} on ${s.road}`);
+    s = await T.state(); rec.notes.push(`Cal in ${s.district} on ${s.road}`);
     await T.face(-7323, -2601); await T.frames(2);
-    rec.shots.push(await T.shot('11-leon-in-reading'));
-    await T.tap('#bSwap'); await T.frames(15);
+    rec.shots.push(await T.shot('11-cal-in-reading'));
+    await T.dev('spot-woodley-precinct'); await T.frames(15);
     s = await T.state();
     const now = await p.evaluate(() => { const v = GC.traffic.byId.get('cal-car'); return { x: +v.x.toFixed(2), z: +v.z.toFixed(2), heading: +v.heading.toFixed(3) }; });
-    rec.notes.push(`back as ${s.brother} in ${s.district}; Cal's car now at ${now.x}, ${now.z} (moved ${Math.hypot(now.x - parked.x, now.z - parked.z).toFixed(2)} m)`);
+    rec.notes.push(`back in ${s.district}; Cal's car now at ${now.x}, ${now.z} (moved ${Math.hypot(now.x - parked.x, now.z - parked.z).toFixed(2)} m)`);
     rec.shots.push(await T.shot('12-cal-car-still-there'));
     if (Math.hypot(now.x - parked.x, now.z - parked.z) > 0.5) rec.fail = 'Cal\'s car moved';
     await T.tap('#bMap'); await T.frames(3); rec.shots.push(await T.shot('13-map-both-brothers')); await T.tap('#mClose');
@@ -362,15 +353,15 @@ async function step(name, fn) {
 
   let before = null;
   await step('Close and resume', async rec => {
-    before = await p.evaluate(() => ({ b: GC.brothers.b.map(b => [b.short, +b.x.toFixed(1), +b.z.toFixed(1), b.vehicle]), active: GC.brothers.active, cars: ['cal-car', 'leon-car'].map(id => { const v = GC.traffic.byId.get(id); return [id, +v.x.toFixed(1), +v.z.toFixed(1)]; }), t: Math.round(GC.world.time), weather: GC.world.stateName(), wet: +GC.world.s.wet.toFixed(2) }));
+    before = await p.evaluate(() => ({ b: GC.brothers.b.map(b => [b.short, +b.x.toFixed(1), +b.z.toFixed(1), b.vehicle]), active: GC.brothers.active, cars: ['cal-car', 'cal-bike'].map(id => { const v = GC.traffic.byId.get(id); return [id, +v.x.toFixed(1), +v.z.toFixed(1)]; }), t: Math.round(GC.world.time), weather: GC.world.stateName(), wet: +GC.world.s.wet.toFixed(2) }));
     await p.evaluate(() => GC.save.now());
     await p.reload(); await p.waitForFunction(() => window.GC && GC.frame > 3 && document.getElementById('boot').textContent === '', null, { timeout: 0, polling: 500 });
     await T.frames(5);
-    const after = await p.evaluate(() => ({ b: GC.brothers.b.map(b => [b.short, +b.x.toFixed(1), +b.z.toFixed(1), b.vehicle]), active: GC.brothers.active, cars: ['cal-car', 'leon-car'].map(id => { const v = GC.traffic.byId.get(id); return [id, +v.x.toFixed(1), +v.z.toFixed(1)]; }), t: Math.round(GC.world.time), weather: GC.world.stateName(), wet: +GC.world.s.wet.toFixed(2) }));
+    const after = await p.evaluate(() => ({ b: GC.brothers.b.map(b => [b.short, +b.x.toFixed(1), +b.z.toFixed(1), b.vehicle]), active: GC.brothers.active, cars: ['cal-car', 'cal-bike'].map(id => { const v = GC.traffic.byId.get(id); return [id, +v.x.toFixed(1), +v.z.toFixed(1)]; }), t: Math.round(GC.world.time), weather: GC.world.stateName(), wet: +GC.world.s.wet.toFixed(2) }));
     rec.before = before; rec.after = after;
     rec.shots.push(await T.shot('26-resumed'));
     const same = JSON.stringify(before.b) === JSON.stringify(after.b) && JSON.stringify(before.cars) === JSON.stringify(after.cars) && before.weather === after.weather && Math.abs(after.t - before.t) < 600;
-    rec.notes.push(`brothers, cars and weather restored: ${same}; clock ${before.t} -> ${after.t}`);
+    rec.notes.push(`Cal, his car and bike, and the weather restored: ${same}; clock ${before.t} -> ${after.t}`);
     if (!same) rec.fail = 'state differs after resume';
   });
 
@@ -393,11 +384,11 @@ async function step(name, fn) {
     const after = await p.evaluate(() => ({ x: GC.brothers.me.x, z: GC.brothers.me.z, perfCar: GC.traffic.byId.has('perf-car'), last: (() => { try { const l = JSON.parse(localStorage.getItem('greenCounty.perf.last')); return l && { kind: l.kind, completed: l.completed, frames: l.summary?.frames, drawCallsP50: l.summary?.drawCallsP50 }; } catch { return null; } })() }));
     const restored = Math.hypot(after.x - before.x, after.z - before.z) < 1 && !after.perfCar;
     rec.result = { ...mid, restored, log: after.last };
-    rec.notes.push(`flythrough ${(mid.progress * 100).toFixed(1)}% of ${mid.km} km in 40 s, stopped; brother restored: ${restored}; log saved: ${!!after.last}`);
+    rec.notes.push(`flythrough ${(mid.progress * 100).toFixed(1)}% of ${mid.km} km in 40 s, stopped; Cal restored: ${restored}; log saved: ${!!after.last}`);
     if (!(mid.progress > 0) || !restored || !after.last) rec.fail = 'flythrough did not run, restore or save its log';
   });
 
-  await step('Traffic persists across save, reload and brother swap (same ids within 200 m of each brother)', async rec => {
+  await step('Traffic persists across save and reload (same ids within 200 m of Cal)', async rec => {
     const ready = async () => { await p.waitForFunction(() => window.GC && GC.frame > 3 && document.getElementById('boot').textContent === '' && !GC._needGround, null, { timeout: 0, polling: 300 }); await T.frames(3); };
     const r = await require('./fleet.js').run({ p, tap: T.tap, ready });
     rec.result = r; rec.notes.push(JSON.stringify(r.steps));
@@ -412,22 +403,6 @@ async function step(name, fn) {
   if (vids[0]) { fs.renameSync(path.join(vdir, vids[0]), path.join(OUT, 'acceptance-run.webm')); }
   fs.rmSync(vdir, { recursive: true, force: true });
 
-  // migration: a prototype save with an active phone order must load into free roam with no mission
-  await step('Prototype save migrates with missions disabled', async rec => {
-    const M = await launch(null);
-    await M.p.goto(BASE + '?backend=webgl');
-    await M.p.evaluate(() => { localStorage.clear(); localStorage.setItem('greenCounty', JSON.stringify({ x: 5830, y: 3000, cx: 5832, cy: 2994, drive: false, cash: 515, flower: 6, owned: [0, 2], crew: [2], business: { active: 1, positions: [[5830, 3000], [5844, 3005]], call: { i: 3, accepted: true }, jobs: 2, paint: 0x174936, wardrobe: [{ jacket: 2, skin: 0, hair: 0 }, { jacket: 3, skin: 1, hair: 1 }], blocks: ['13,6'] } })); });
-    await M.p.goto(BASE + '?backend=webgl');
-    await M.p.waitForFunction(() => window.GC && GC.frame > 3 && document.getElementById('boot').textContent === '', null, { timeout: 0, polling: 500 });
-    await M.frames(6);
-    const r = await M.p.evaluate(() => { GC.save.now(); const s = JSON.parse(localStorage.getItem('greenCounty.sandbox.v1')); return { active: GC.brothers.me.short, pos: GC.brothers.b.map(b => [b.short, Math.round(b.x), Math.round(b.z)]), district: GC.districtName(GC.brothers.me.x, GC.brothers.me.z), legacyKept: !!localStorage.getItem('greenCounty'), businessKept: !!s.business?.legacy?.business, jobs: s.business?.legacy?.business?.jobs, mode: s.mode, text: document.body.innerText }; });
-    rec.result = { ...r, text: undefined };
-    rec.shots.push(await M.p.screenshot({ path: path.join(OUT, '27-migrated-prototype-save.png') }).then(() => '27-migrated-prototype-save.png'));
-    rec.notes.push(`active ${r.active} in ${r.district}; prototype save kept: ${r.legacyKept}; business progress carried (jobs=${r.jobs}); mode ${r.mode}`);
-    if (MISSION.test(r.text)) rec.fail = 'mission text visible after migration';
-    if (!r.legacyKept || !r.businessKept) rec.fail = 'legacy data not preserved';
-    await M.b.close();
-  });
   log.finished = new Date().toISOString();
   fs.writeFileSync(path.join(OUT, 'acceptance.json'), JSON.stringify(log, null, 1));
   console.log('done', log.steps.map(s => `${s.ok ? 'PASS' : 'FAIL'} ${s.name}`).join('\n'));

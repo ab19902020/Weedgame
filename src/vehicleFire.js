@@ -305,7 +305,7 @@ export class VehicleFires {
     this._e.set(v.roll, -v.heading, v.pitch, 'YXZ'); this._q.setFromEuler(this._e); this._c.set(0, hc, 0).applyQuaternion(this._q);
     v.x = A.cx - this._c.x; v.y = A.cy - this._c.y; v.z = A.cz - this._c.z;
   }
-  // the blast on everything round it: people, the brothers, other vehicles, street furniture
+  // the blast on everything round it: people, Cal, other vehicles, street furniture
   blast(x, y, z, k, by, src) {
     const G = this.G, R = 10 * k, kill = 4.2 * k;
     // people

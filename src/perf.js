@@ -23,7 +23,7 @@ import * as THREE from 'three/webgpu';
 // people: pedestrians. Medium has no GTAO (a full-screen pass a phone GPU can't afford at 60) and a tighter shadow box.
 export const BUDGETS = {
   // v0.36, the happy medium. Low: 720p up to the screen's refresh rate (120 Hz phones: 120 fps); the sun casts
-  // shadows from people, the brothers and their cars only (a small map round you, redrawn every other frame: a few
+  // shadows from people, Cal and his cars only (a small map round you, redrawn every other frame: a few
   // draw calls) and a tiny sky cube gives paint and glass their reflections. Medium: 1080p at 60 with FSR from a
   // lower internal resolution, and a cheap sun shadow: a tight 40 m box round you, cast by buildings, people and the
   // brothers (not trees, shrubs, street clutter or traffic, which keep their contact shadows), redrawn every other
@@ -343,7 +343,7 @@ export class Flythrough {
     G.hud?.toast(`Perf flythrough · ${(path.length / 1000).toFixed(1)} km · ${path.route.join(' → ')}`, 5);
     return true;
   }
-  // called every frame instead of the brothers' input update
+  // called every frame instead of Cal's input update
   update() {
     const G = this.G, P = this.path, now = performance.now();
     const wall = Math.min(0.5, (now - this.lastT) / 1000); this.lastT = now;

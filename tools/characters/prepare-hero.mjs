@@ -1,20 +1,19 @@
-// Prepares a hero character (Cal, Leon) for the game from a supplied Tripo GLB.
+// Prepares the hero character (Cal) for the game from a supplied Tripo GLB.
 //
 //   npm i --no-save @gltf-transform/core@4.1.1 @gltf-transform/functions@4.1.1 sharp@0.33.5
 //   node tools/characters/prepare-hero.mjs <source.glb> www/characters/<name>.glb [--idle-from <clip>]
 //
-//   Leon: node tools/characters/prepare-hero.mjs man_in_tracksuit_3d_model1.glb www/characters/leon.glb --idle-from laugh_01
 //   Cal:  node tools/characters/prepare-hero.mjs man_in_jacket_3d_model.glb www/characters/cal.glb
 //
 // What it does:
 //  1. Re-skins any vertices bound to 'neutral_bone' (a joint no clip animates, so they stayed at the
-//     origin and dragged long spikes out of the body: 5 vertices on Leon) with their nearest neighbour's weights.
+//     origin and dragged long spikes out of the body) with their nearest neighbour's weights.
 //  2. Makes every clip in place: the hips' net travel over the clip is removed linearly, so walk, run,
 //     swim and the emotes loop on the spot and the game moves the character. Bob, crouch and jump arcs stay.
 //     Exporter suffixes ('walk.001') are dropped from clip names.
-//  3. --idle-from: adds an 'idle' clip holding the first pose of the named clip (Leon has no idle; Cal has
-//     'standing_relax').
-//  4. Merges every skinned part into one draw call (Leon had 26), drops redundant keyframes and re-encodes
+//  3. --idle-from: adds an 'idle' clip holding the first pose of the named clip, for a model without one
+//     (Cal has his own 'standing_relax').
+//  4. Merges every skinned part into one draw call, drops redundant keyframes and re-encodes
 //     the textures as 1024 px JPEG (4096 px maps cost ≈256 MB of GPU memory per character, 1024 px ≈16 MB).
 import { NodeIO } from '@gltf-transform/core';
 import { resample, prune, dedup, textureCompress } from '@gltf-transform/functions';
@@ -97,8 +96,8 @@ if (src0) for (const ch of src0.listChannels()) {
   const prim = doc.createPrimitive().setMaterial(prims[0].getMaterial());
   for (const nm of names) prim.setAttribute(nm, doc.createAccessor().setType(arrays[nm].type).setArray(arrays[nm].arr).setBuffer(buf));
   prim.setIndices(doc.createAccessor().setType('SCALAR').setArray(new Uint32Array(idx)).setBuffer(buf));
-  const mesh = doc.createMesh('leon').addPrimitive(prim);
-  nodes[0].setMesh(mesh).setName('leon');
+  const mesh = doc.createMesh('hero').addPrimitive(prim);
+  nodes[0].setMesh(mesh).setName('hero');
   for (const n of nodes.slice(1)) n.dispose();
 }
 // lean keyframes, phone-sized textures

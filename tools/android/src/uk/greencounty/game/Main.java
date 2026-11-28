@@ -3,7 +3,6 @@ package uk.greencounty.game;
 import android.app.Activity;
 import android.app.GameManager;
 import android.os.Build;
-import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.View;
 import android.view.InputDevice;
@@ -27,17 +26,14 @@ import java.util.Map;
 /**
  * Hosts the game in a WebView. Assets are served from a virtual https origin
  * (https://appassets.androidplatform.net/) so ES modules, workers, fetch() and WebGPU's
- * secure-context requirement work. On first launch of this version the old file:// origin's
- * localStorage save (prototype v0.3-v0.5) is read once and handed to the game.
+ * secure-context requirement work.
  */
 public class Main extends Activity {
   static final String ORIGIN = "https://appassets.androidplatform.net/";
   WebView web;
-  SharedPreferences prefs;
 
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
-    prefs = getSharedPreferences("gc", MODE_PRIVATE);
     getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     web = new WebView(this);
     setContentView(web);
@@ -47,7 +43,7 @@ public class Main extends Activity {
     s.setDomStorageEnabled(true);
     s.setDatabaseEnabled(true);
     s.setMediaPlaybackRequiresUserGesture(false);
-    s.setAllowFileAccess(true);           // only used by the one-off legacy-save migration page
+    s.setAllowFileAccess(false);
     s.setAllowContentAccess(false);
     web.addJavascriptInterface(new Bridge(), "GCNative");
     web.setWebViewClient(new WebViewClient() {
@@ -68,11 +64,10 @@ public class Main extends Activity {
       }
       @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest req) {
         String u = req.getUrl().toString();
-        return !(u.startsWith(ORIGIN) || u.startsWith("file:///android_asset/"));
+        return !u.startsWith(ORIGIN);
       }
     });
-    if (!prefs.getBoolean("migrated06", false)) web.loadUrl("file:///android_asset/migrate.html");
-    else web.loadUrl(ORIGIN + "index.html");
+    web.loadUrl(ORIGIN + "index.html");
   }
 
   private WebResourceResponse episode(String path, String range) throws java.io.IOException {
@@ -137,13 +132,6 @@ public class Main extends Activity {
     }
     @JavascriptInterface public String chipset() { return Build.VERSION.SDK_INT >= 31 ? Build.SOC_MODEL : ""; }
     @JavascriptInterface public float refreshRate() { return getWindowManager().getDefaultDisplay().getRefreshRate(); }
-    @JavascriptInterface public String legacySave() { return prefs.getString("legacySave", null); }
-    @JavascriptInterface public void storeLegacy(String json) {
-      SharedPreferences.Editor e = prefs.edit();
-      if (json != null && json.length() > 2) e.putString("legacySave", json);
-      e.putBoolean("migrated06", true).apply();
-      runOnUiThread(new Runnable() { public void run() { web.loadUrl(ORIGIN + "index.html"); } });   // (no lambdas: plain dx)
-    }
     // a game controller's own rumble motors (DualShock 4, DualSense or any pad with them, over Bluetooth or USB):
     // strong is the low, heavy motor, weak the high one, 0..1, for ms milliseconds. False when there's no pad that can
     @JavascriptInterface public boolean rumble(float strong, float weak, int ms) {

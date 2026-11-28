@@ -3,13 +3,13 @@ import {isCycle} from './propulsion.js';
 // Near the focus they run full car-following (IDM) with lanes, signals and give-way rules;
 // further away they keep moving along their routes at reduced cost, so nothing pops or U-turns
 // at a streaming boundary.
-import { MODELS, PAINTS, randomModel, paintFor } from './vehicles.js';
-import { F_ONEWAY, F_ROUNDABOUT, F_BRIDGE, F_DRIVE } from './network.js';
+import { MODELS, randomModel, paintFor } from './vehicles.js';
+import { F_ONEWAY, F_ROUNDABOUT, F_DRIVE } from './network.js';
 
-// the simulation bubble round the player: full simulation inside FULL_R, cars kept up to BUBBLE_R (frozen beyond it
-// near an anchor), removed past KILL_R. Set per quality preset (perf.js `bubble`, setRadius).
+// the simulation bubble round the focus (the player, or the drone in flight): full simulation inside FULL_R, cars kept
+// up to BUBBLE_R (frozen beyond it near an anchor: Cal himself while the drone is away), removed past KILL_R. Set per quality preset (perf.js `bubble`, setRadius).
 let FULL_R = 480, BUBBLE_R = 650, KILL_R = 820;
-export const KEEP_R = 250;        // the fleet within this radius of either brother is kept (frozen while he is inactive) and saved
+export const KEEP_R = 250;        // the fleet within this radius of the player is saved with the game
 const RANK = { motorway: 10, trunk: 9, primary: 8, secondary: 7, tertiary: 6, motorway_link: 8, trunk_link: 7, primary_link: 7, secondary_link: 6, tertiary_link: 5, unclassified: 4, residential: 3, living_street: 2, service: 1, busway: 3 };
 const DENS = { motorway: 1 / 120, trunk: 1 / 140, primary: 1 / 110, secondary: 1 / 160, tertiary: 1 / 220, motorway_link: 1 / 300, trunk_link: 1 / 300, primary_link: 1 / 240, secondary_link: 1 / 300, tertiary_link: 1 / 400, unclassified: 1 / 520, residential: 1 / 1040, living_street: 1 / 1800 };
 
@@ -60,12 +60,25 @@ export class Traffic {
     }
     return this.randomModel();
   }
+  // the driver's temperament: most drive at about the limit and keep a sensible gap; some are cautious (under the
+  // limit, long gaps, gentle on the pedals, slow away from the lights, an amber is a stop), some press on (a
+  // little over, close up, quick away, through on the amber, short of patience at a right turn). Everyone takes a
+  // moment to move off once the way ahead clears (so a queue pulls away one car at a time, not all at once),
+  // wanders a little within the lane and lets the speed drift
   driver(v) {
-    const r = this.rand();
-    v.v0f = 0.85 + r * 0.3;        // desired speed factor
+    const R = () => this.rand(), r = R(), style = r < 0.18 ? 'cautious' : r < 0.84 ? 'normal' : 'assertive';
+    const c = style === 'cautious', a = style === 'assertive';
+    v.style = style;
+    v.v0f = c ? 0.82 + R() * 0.1 : a ? 1.04 + R() * 0.12 : 0.9 + R() * 0.16;        // desired speed factor
     if (v.model === 'moped') v.v0f *= 0.62;
     if (isCycle(v.model) || v.model==='escooter') { v.v0f*=.55; v.citySpeed = v.model==='bicycle'?5.3:v.model==='ebike'?7.5:6.3; v.v=Math.min(v.v,v.citySpeed); }
-    v.T = 1.2 + this.rand() * 0.6; v.s0 = 2 + this.rand(); v.amax = v.model.startsWith('bus') ? 1.0 : v.model === 'escooter' ? 1.1 : v.model === 'moped' ? 1.4 : 1.6 + this.rand() * 0.8; v.bc = 2.2;
+    v.T = c ? 1.8 + R() * 0.6 : a ? 0.95 + R() * 0.3 : 1.25 + R() * 0.45; v.s0 = c ? 2.6 + R() : a ? 1.5 + R() * 0.5 : 2 + R();
+    v.amax = v.model.startsWith('bus') ? 1.0 : v.model === 'escooter' ? 1.1 : v.model === 'moped' ? 1.4 : c ? 1.2 + R() * 0.4 : a ? 2.2 + R() * 0.6 : 1.6 + R() * 0.6;
+    v.bc = c ? 1.8 : a ? 2.8 : 2.2;
+    v.react = c ? 0.9 + R() * 0.6 : a ? 0.3 + R() * 0.3 : 0.5 + R() * 0.5;        // seconds to move off
+    v.amberDec = c ? 2.4 : a ? 4.8 : 3.5;                                          // braking they'll accept to stop for an amber
+    v.patience = c ? 32 : a ? 9 : 20;                                             // at a right turn, waiting on oncoming traffic
+    v.wanderA = 0.05 + R() * 0.12; v.wanderF = 0.04 + R() * 0.07; v.wanderP = R() * 6.283;
   }
   spawnAt(h, s, opts = {}) {
     const model = opts.model || this.pickModel(h);
@@ -108,7 +121,9 @@ export class Traffic {
   place(v,dt=0) {
     const t = this.net.at(v.h, v.s, this.tmp);
     const dx = t[3], dz = t[4];
-    const off = this.laneOffset(v.h, v.lane) + v.lat;
+    // (a little wander within the lane on the straight, none near a junction where the turning arc takes over)
+    const wk = v.wanderA && !v.siren ? Math.max(0, Math.min(1, (Math.min(v.s, this.net.len[v.h >> 1] - v.s) - 10) / 10)) * Math.min(1, v.v / 4) : 0;
+    const off = this.laneOffset(v.h, v.lane) + v.lat + (wk ? v.wanderA * wk * Math.sin(v.wanderP + (this.clock || 0) * v.wanderF * 6.283) : 0);
     let tx=t[0]+dz*off, tz=t[2]-dx*off, hd=Math.atan2(dz,dx);
     const remain=this.net.len[v.h>>1]-v.s;
     let arc=v.exitArc, offset=v.s;
@@ -253,7 +268,7 @@ export class Traffic {
   }
   // ----------------------------------------------------------------- main update
   update(dt, focus, camInfo) {
-    this.focus = focus;
+    this.focus = focus; this.clock = (this.clock || 0) + dt;
     this.routeBudget = 3;
     const net = this.net;
     // occupancy buckets per half-edge
@@ -322,6 +337,7 @@ export class Traffic {
     this.extend(v);
     let vmax = Math.max(4, (net.speed[e] / 3.6) * (v.v0f || 1) * (v.siren ? 1.35 : 1)) * (v.slow || 1);
     if (v.citySpeed) vmax = Math.min(vmax,v.citySpeed);
+    if (v.wanderP != null && !v.siren && !v.busData) vmax *= 1 + 0.035 * Math.sin((this.clock || 0) * 0.45 + v.wanderP * 1.7);
     this.leaderGap(v, occ); let gap = this.lgGap, lv = this.lgV, lead = this.lgLead;
     let stopAt = 1e9;
     const rem = L - v.s;
@@ -340,7 +356,7 @@ export class Traffic {
     if (approaches && !v.siren) for (const [ci,g,stop] of approaches) {
       const a = this.sig.aspect(ci, g);
       const dStop = stop - v.s;
-      if (dStop > -0.5 && (a === 'R' || a === 'RA' || (a === 'A' && dStop > v.v * v.v / (2 * 3.5)))) stopAt = Math.min(stopAt, dStop);
+      if (dStop > -0.5 && (a === 'R' || a === 'RA' || (a === 'A' && dStop > v.v * v.v / (2 * (v.amberDec || 3.5))))) stopAt = Math.min(stopAt, dStop);
     }
     // give way / stop / roundabout entry at the end of this half-edge
     const ctrl = (v.h & 1) ? net.ctrlA[e] : net.ctrlB[e];
@@ -356,7 +372,7 @@ export class Traffic {
     const nhT = v.route[v.ri + 1];
     if (nhT != null && rem < 22 && !v.siren && !(net.flags[e] & F_ROUNDABOUT) && net.inD[net.endNode(v.h)].length > 2 && this.turnOf(v.h, nhT) === 'right') {
       v.rtWait = v.v < 0.5 ? (v.rtWait || 0) + dt : (v.rtWait || 0);
-      if (this.oncoming(v, net.endNode(v.h), occ) && v.rtWait < 20) stopAt = Math.min(stopAt, rem - 2);
+      if (this.oncoming(v, net.endNode(v.h), occ) && v.rtWait < (v.patience || 20)) stopAt = Math.min(stopAt, rem - 2);
     } else if (rem > 30) v.rtWait = 0;
     // indicators: signal the coming turn from ~40 m out (UK left = nearside), and when pulling out to pass
     const nhI = v.route[v.ri + 1];
@@ -411,6 +427,9 @@ export class Traffic {
     const sStar = s0 + Math.max(0, v.v * T + v.v * dv / (2 * Math.sqrt(a * b)));
     let acc = a * (1 - Math.pow(v.v / vmax, 4) - Math.pow(sStar / Math.max(0.1, gap), 2));
     acc = Math.max(-8, Math.min(a, acc));
+    // standing: a moment's reaction before moving off once the way clears (not for blue lights)
+    if (v.v < 0.3 && !v.siren && v.react) { if (acc > 0.15) { v.goT = (v.goT || 0) + dt; if (v.goT < v.react) acc = Math.min(acc, 0); } else v.goT = 0; }
+    else if (v.v > 1) v.goT = 0;
     v.v = Math.max(0, v.v + acc * dt);
     if (gap < 0.3 && lv < 0.1) v.v = 0;
     v.brake = acc < -0.8 || (v.v < 0.2 && gap < 20);
@@ -478,7 +497,7 @@ export class Traffic {
     }
   }
   // ----------------------------------------------------------------- persistence
-  // anchors: positions to keep traffic around (both brothers). Set by the app every frame.
+  // anchors: positions to keep traffic around (Cal: the traffic round him waits while the drone flies far off)
   nearAnchor(v, r = KEEP_R) {
     const A = this.anchors; if (!A) return false;
     for (const a of A) { const dx = v.x - a.x, dz = v.z - a.z; if (dx * dx + dz * dz < r * r) return true; }

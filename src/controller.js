@@ -2,10 +2,10 @@
 //   on foot   left stick move (L3 —), right stick camera (R3 camera behind), Cross sprint, Square jump,
 //             Triangle enter / exit a vehicle and every interaction, Circle reload (melee with no gun), R2 fire /
 //             attack, L2 aim (free aim; with Lock-on aiming in Settings, flick the right stick to switch target),
-//             L1 weapon wheel (hold, point a stick, let go), R1 pick up, D-pad down switch brother, D-pad up the phone
+//             L1 weapon wheel (hold, point a stick, let go), R1 pick up, D-pad up the phone
 //             (Kerb rides, phone.js), touchpad or Share the map, Options pause
 //   driving   R2 accelerate, L2 brake / reverse, R1 handbrake (Cross too), L3 horn, Triangle get out,
-//             D-pad right headlights / full beam, touchpad camera, D-pad down switch brother
+//             D-pad right headlights / full beam, touchpad camera
 //   menus     D-pad or left stick move between buttons (any direction), Cross choose, Circle back, Options close;
 //             on the map: left stick pans, L1 / R1 zoom, Triangle drops a waypoint
 //   pointer   the pub games and the console games in the living room get a pointer on the left stick:
@@ -73,7 +73,6 @@ export class Controller {
     const boost = 1 + Math.min(0.6, Math.max(0, this.edgeT - 0.25) * 2);
     I.look.dx += cv(axis(2)) * dt * 260 * boost; I.look.dy += cv(axis(3)) * dt * 200;
     if (tap(TRI)) I.pressed.add('use');
-    if (tap(DOWN)) I.pressed.add('swap');
     if (tap(UP)) G.phone?.toggle(true);
     if (tap(SHARE)) H.toggleMap(true);
     if (car) {

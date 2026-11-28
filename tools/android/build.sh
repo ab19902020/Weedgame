@@ -12,7 +12,6 @@ python3 tools/android/icon.py $W/res
 cp -r tools/android/res/xml $W/res/
 # everything in www but the browser test pages
 for f in www/*; do [ "$f" = www/test ] || cp -r "$f" $W/assets/www/; done
-cp tools/android/assets-extra/migrate.html $W/assets/
 $BT/aapt2 compile --dir $W/res -o $W/res.zip
 $BT/aapt2 link -o $W/base.apk -I $JAR --manifest tools/android/AndroidManifest.xml $W/res.zip -A $W/assets \
   --min-sdk-version 26 --target-sdk-version 35 --version-code $CODE --version-name $VERSION -0 bin -0 png -0 mp4

@@ -112,7 +112,7 @@ G.lampGlow = new LampGlow(G);       // far street lights at night (lampGlow.js)
 G.breakables = new Breakables(G);   // street furniture, trees, hedges and walls that give way; crash debris
 G.traffic.maxVehicles = G.budget.vehicles; G.traffic.setRadius?.(G.budget.bubble);
 G.vehicleRenderer = new VehicleRenderer(G.scene, G.renderer.shadowMap.enabled && G.budget.shadow?.traffic !== false);
-G.vehicleRenderer.heroCars = G.heroCars = new HeroCars(G.scene);   // the brothers' Range Rovers (heroCars.js)
+G.vehicleRenderer.heroCars = G.heroCars = new HeroCars(G.scene);   // the Range Rovers drawn up close (heroCars.js)
 G.people = new People(G.scene, G.renderer.shadowMap.enabled);
 G.signalRenderer = new SignalRenderer(G.scene, G.net, G.signals);
 G.peds = new Peds(G);
@@ -173,7 +173,7 @@ G.teleport = (x, z, heading) => {
   G.hud.fade(G.districtName(x, z));
 };
 
-// ---------------------------------------------------------------- brothers & their cars
+// ---------------------------------------------------------------- Cal and his car
 const init = G.save.initialBrothers(START);
 G.brothers = new Brothers(G, init);
 G.hud = new Hud(G);
@@ -186,41 +186,35 @@ G.fishing = new Fishing(G); G.fishingHud = new FishingHud(G);
 G.techShop = new TechShop(G);        // TechZone, the gadget shops in every town (techShop.js)
 G.controller=new Controller(G);
 G.radio = new GameRadio(G);
-G.combat = new Combat(G);                 // weapons, fists, the brothers' arms (combat.js)
+G.combat = new Combat(G);                 // weapons, fists, Cal's arms (combat.js)
 G.gore = new Gore(G);                     // blood: spray, spatter, wounds, pools (gore.js)
 G.people.rigs.onHero = (slot, a, dt) => { const r = G.combat.pose(slot, a, dt); if (G.fishing?.active) G.fishing.poseArms(slot, a, slot.arms); return r; };
-// the brothers' own cars are Range Rovers (older saves had a hatch and an estate under these ids)
+// Cal's own car is a Range Rover (very old saves had a hatch under this id). A save from the two-brother game keeps
+// Leon's white one and his road bike, now Cal's too
 const OWN = { 'cal-car': 'rangerover', 'leon-car': 'rangerover' };
 for (const sv of G.save.vehicles) {
-  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: OWN[sv.id] || sv.model, paint: sv.id === 'cal-car' ? 0x1e4d38 : sv.id === 'leon-car' ? 0xffffff : sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined, fuel: typeof sv.fuel === 'number' ? sv.fuel : undefined });
+  const v = G.traffic.add({ id: sv.id, kind: 'parked', model: OWN[sv.id] || sv.model, paint: sv.id === 'cal-car' ? 0x1e4d38 : sv.id === 'leon-car' ? 0xffffff : sv.paint, x: sv.x, y: sv.y, z: sv.z, heading: sv.heading, parked: true, free: true, owner: sv.owner === 'Leon' ? 'Cal' : sv.owner, parkedBy: sv.parkedBy, dmg: Array.isArray(sv.dmg) ? sv.dmg.slice(0, 4) : undefined, fuel: typeof sv.fuel === 'number' ? sv.fuel : undefined });
   if (sv.id.startsWith('p:')) G.save.taken.add(sv.id);
 }
 if (!G.traffic.byId.has('cal-car')) {
-  // both cars on the service road at the north end of the precinct, in view from the start
-  const a = kerbPlace(START.x, START.z - 33), b = kerbPlace(START.x - 6, START.z - 33);
-  // Cal's is British racing green, Leon's is the white one. Same cabin, wheel and seats in both.
+  // on the service road at the north end of the precinct, in view from the start: British racing green
+  const a = kerbPlace(START.x, START.z - 33);
   G.traffic.add({ id: 'cal-car', kind: 'parked', model: 'rangerover', paint: 0x1e4d38, x: a.x, y: 0, z: a.z, heading: a.heading, parked: true, free: true, owner: 'Cal' });
-  G.traffic.add({ id: 'leon-car', kind: 'parked', model: 'rangerover', paint: 0xffffff, x: b.x - Math.cos(b.heading) * 7, y: 0, z: b.z - Math.sin(b.heading) * 7, heading: b.heading, parked: true, free: true, owner: 'Leon' });
 }
-// the brothers' bikes, a scrambler and a road bike, beside the cars (added to older saves too)
+// his scrambler, across the bay from the car, nose in (added to older saves too)
 if (!G.traffic.byId.has('cal-bike')) {
-  const c = G.traffic.byId.get('cal-car'), l = G.traffic.byId.get('leon-car');
-  if (c && l) {
-    // across the bay from the Range Rovers, nose in, a metre and a half apart
-    const mx = (c.x + l.x) / 2, mz = (c.z + l.z) / 2, h = c.heading, fx = Math.cos(h), fz = Math.sin(h), sx = -fz, sz = fx;
-    const k = kerbPlace(mx + fx * 12, mz + fz * 12);
+  const c = G.traffic.byId.get('cal-car');
+  if (c) {
+    const k = kerbPlace(c.x + Math.cos(c.heading) * 12, c.z + Math.sin(c.heading) * 12);
     G.traffic.add({ id: 'cal-bike', kind: 'parked', model: 'dirtbike', paint: 0xd0632a, x: k.x, y: 0, z: k.z, heading: k.heading + 0.25, parked: true, free: true, owner: 'Cal' });
-    G.traffic.add({ id: 'leon-bike', kind: 'parked', model: 'motorcycle', paint: 0x2b2f36, x: k.x + Math.cos(k.heading) * 2.4, y: 0, z: k.z + Math.sin(k.heading) * 2.4, heading: k.heading + 0.25, parked: true, free: true, owner: 'Leon' });
-    void sx; void sz;
   }
 }
-// the simulated fleet that was around both brothers comes back with the same ids
+// the simulated fleet that was around him comes back with the same ids
 G.traffic.anchors = G.brothers.b;
 G.traffic.restoreFleet(G.save.fleet, i => G.buses.routes.find(r => r.i === i));
-// brothers who were driving when the game closed sit in their (parked) car
-for (const b of G.brothers.b) { const v = G.brothers.vehicleOf(b); if (v) { v.parked = b !== G.brothers.me; v.player = b === G.brothers.me; } }
+// driving when the game closed: back at the wheel
+{ const v = G.brothers.vehicleOf(G.brothers.me); if (v) { v.parked = false; v.player = true; } }
 G._needGround = true;
-if (G.save.migrated) G.hud.toast('Prototype save found · brothers placed where you left them · business progress kept for later', 6);
 
 // ---------------------------------------------------------------- loop
 G.focus = { x: G.brothers.me.x, z: G.brothers.me.z };
@@ -281,7 +275,6 @@ function step(dt, render) {
   if (G._needGround) {
     const gy = G.tiles.terrain(me.x, me.z);
     if (gy != null) {
-      if (B.b.some(b => b.migrated)) for (const b of B.b) if (b.migrated) { const p = kerbPlace(b.x, b.z, e => G.net.walkable(e)); b.x = p.x + Math.sin(p.heading) * 1.5; b.z = p.z - Math.cos(p.heading) * 1.5; b.migrated = false; }
       for (const b of B.b) { const g = G.tiles.ground(b.x, b.z); if (g != null) b.y = g; }
       for (const v of G.traffic.list) if (v.free || v.owner) { const g = G.tiles.ground(v.x, v.z, v.y || gy + 1); if (g != null && (!v.y || Math.abs(v.y - g) > 1.5)) v.y = g; }
       G._needGround = false;
@@ -292,7 +285,7 @@ function step(dt, render) {
   G.world.update(dt);
   camInfo.night = G.U.night.value; camInfo.rain = G.world.cur.rain; camInfo.hour = G.world.hours();
   if (!G._needGround) { if (G.perf.fly.active) G.perf.fly.update(); else if (G.drone.active) G.drone.update(dt, G.droneHud.input(dt)); else if (G.fishing.active) G.fishing.update(dt, G.fishingHud.input(dt)); else if (fishUse()) { /* at a peg: Use goes fishing */ } else if (!G.transit.update(dt) && !G.taxis.ride(dt) && !G.carjack.update(dt)) { B.update(dt, G.input); if (!G.interiors.homeTV.seated) G.controller.actions(dt); else { G.controller.hitPressed = false; G.controller.hitHeld = false; } G.combat.update(dt, G.controller.hitPressed, G.controller.hitHeld); } }
-  // the world streams around the drone while it flies (anywhere on the map), otherwise around the brother
+  // the world streams around the drone while it flies (anywhere on the map), otherwise around Cal
   const F = G.drone.focus() || me;
   G.focus.x = F.x; G.focus.z = F.z;
   // standing at a signalised crossing presses the button (calls the pedestrian stage)
@@ -358,7 +351,7 @@ function step(dt, render) {
   const cam = G.camera.position;
   G.vehicleRenderer.draw(G.traffic.list, cam, G.budget.vehicleDist);
   G.trains.draw(cam, Math.max(600, G.budget.vehicleDist * 2));
-  const actors = [B.actor[B.active], ...G.transit.people, ...G.neighbourhood.actors, ...G.emergency.actors, ...G.interiors.people]; const o = B.b[1 - B.active]; if (!o.vehicle) actors.push(B.actor[1 - B.active]);
+  const actors = [B.actor[B.active], ...G.transit.people, ...G.neighbourhood.actors, ...G.emergency.actors, ...G.interiors.people];
   const rigs = G.people.rigs;
   if (rigs.previewRole) {
     const heading = B.cam.yaw;
@@ -431,7 +424,7 @@ if (G.Q.has('graphicsMenu')) {
 }
 G.renderer.setAnimationLoop(frame);
 
-// headless checks: ?fp=leon or ?fp=cal closes the menu and sits that brother in the driver's seat
+// headless checks: ?fp=cal closes the menu and sits Cal in his car's driver's seat (?fp=<vehicle id> another)
 if (G.Q.get('fp') || G.Q.get('qa')) {
   globalThis.GC = G;
   G.sitIn = (id) => {
@@ -446,7 +439,7 @@ if (G.Q.get('fp') || G.Q.get('qa')) {
   };
 }
 if (G.Q.get('fp')) {
-  const id = G.Q.get('fp') === 'cal' ? 'cal-car' : 'leon-car';
+  const fp = G.Q.get('fp'), id = fp === 'cal' || fp === '1' ? 'cal-car' : fp;
   const tick = () => {
     if (!G.hud.menu.el.hidden) G.hud.menu.close();
     if (!G._needGround && G.sitIn(id)) return;

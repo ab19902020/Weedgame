@@ -6,7 +6,7 @@
 // pedals: accelerator and brake, which you can rock between without lifting. Brake held at a standstill engages
 // reverse. Drag the free screen to look around. Handling assists (Easy or Realistic) are in carPhysics.js.
 const STICK_R = 58, WHEEL_R = 96;
-const KEYMAP = { ShiftLeft: 'run', ShiftRight: 'run', KeyF: 'use', Enter: 'use', KeyL: 'beam', KeyH: 'horn', Space: 'brake', Tab: 'swap', KeyM: 'map', KeyN: 'phone', KeyP: 'dev', Backquote: 'dev', KeyC: 'camera', KeyV: 'camera',
+const KEYMAP = { ShiftLeft: 'run', ShiftRight: 'run', KeyF: 'use', Enter: 'use', KeyL: 'beam', KeyH: 'horn', Space: 'brake', KeyM: 'map', KeyN: 'phone', KeyP: 'dev', Backquote: 'dev', KeyC: 'camera', KeyV: 'camera',
   KeyJ: 'hit', KeyK: 'aim', KeyT: 'nextTarget', KeyR: 'reload', KeyX: 'wheel', Digit0: 'weapon0', Digit1: 'weapon1', Digit2: 'weapon2', Digit3: 'weapon3', Digit4: 'weapon4', Digit5: 'weapon5', Digit6: 'weapon6', Digit7: 'weapon7', Digit8: 'weapon8', Digit9: 'weapon9', Minus: 'weapon10' };
 export class Input {
   constructor(root) {
@@ -199,8 +199,6 @@ export class Input {
     steer += this.move.x;
     return { steer: Math.max(-1, Math.min(1, steer)), gas: Math.min(1, gas), brake: Math.min(1, brake) };
   }
-  // older callers: throttle on -y
-  driveAxis() { const c = this.driveControls(); return { x: c.steer, y: c.brake - c.gas }; }
   takeLook() { const d = { dx: this.look.dx, dy: this.look.dy }; this.look.dx = this.look.dy = 0; if (this.keys.has('KeyQ')) d.dx -= 6; if (this.keys.has('KeyE')) d.dx += 6; return d; }
   consume(name) { const has = this.pressed.has(name); this.pressed.delete(name); return has; }
   // on-screen button wiring

@@ -3,10 +3,10 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, float, vec2, vec3, vec4, attribute, positionWorld, positionLocal, normalWorld, cameraPosition, texture, uv,
-  mix, smoothstep, step, clamp, fract, floor, abs, max, min, pow, exp, sin, cos, dot, normalize, length, reflect, select, If, Loop, fwidth,
-  int, cross, dFdx, dFdy,
+  mix, smoothstep, step, clamp, fract, floor, abs, max, min, pow, exp, sin, dot, normalize, length, reflect, select,
+  If, Loop, fwidth, int, cross, dFdx, dFdy,
 } from 'three/tsl';
-import { U, noiseTex, cloudTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL, NF } from './env.js';
+import { U, noiseTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL, NF } from './env.js';
 import { L, sAlbedo, sDetail, sAlbedoAT, perturb, perturbW, groundUV, worldToView, albedoTex } from './surfaces.js';
 import { BRAND_N, paletteBytes } from './brands.js';
 // branch-free select: plain select() compiles to if/else blocks, which breaks texture sampling

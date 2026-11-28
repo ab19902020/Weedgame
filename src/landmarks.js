@@ -2,7 +2,7 @@
 // docs/COVERAGE.md), canopies (rain shelter) and street furniture: bus stops and shelters.
 import {TransitSign} from './transitSign.js';
 import * as THREE from 'three/webgpu';
-import { Fn, uv, vec3, float, fract, step, mix, max, positionWorld, normalWorld } from 'three/tsl';
+import { uv, vec3, float, fract, step, mix, max, positionWorld } from 'three/tsl';
 import { mergeGeos } from './tiles.js';
 import { U } from './env.js';
 import { lightPool } from './materials.js';

@@ -1,6 +1,6 @@
 // Procedural, instanced vehicles. Simulation owns vehicle state; this module only draws.
 import * as THREE from 'three/webgpu';
-import { Fn, attribute, vec2, vec3, float, int, mix, step, sin, fract, floor, positionLocal, positionGeometry, instanceIndex, select, abs, length, smoothstep, uniformArray } from 'three/tsl';
+import { attribute, vec2, vec3, float, mix, step, sin, fract, floor, positionGeometry, abs, length, smoothstep } from 'three/tsl';
 import { motorcycleMesh } from './motorcycles.js';
 import { U, cloudShadow } from './env.js';
 import { mergeGeos } from './tiles.js';
@@ -25,7 +25,7 @@ export const MODELS = {
   hothatch: { L: 4.28, W: 1.79, H: 1.45, wb: 2.63, wr: 0.33, prof: 'hatch', max: 40, mass: 1350 },
   coupe: { L: 4.64, W: 1.83, H: 1.38, wb: 2.81, wr: 0.34, prof: 'saloon', max: 30, mass: 1550 },
   sports: { L: 4.52, W: 1.95, H: 1.2, wb: 2.62, wr: 0.35, prof: 'saloon', max: 12, mass: 1450 },
-  // the brothers' own car: a hand-made model drawn by heroCars.js (wheelbase centre 0.12 m ahead of the body centre)
+  // Cal's own car: a hand-made model drawn by heroCars.js (wheelbase centre 0.12 m ahead of the body centre)
   rangerover: { L: 4.95, W: 2.02, H: 1.9, wb: 2.91, wr: 0.42, prof: 'glb', max: 6, mass: 2450, glb: 'rangerover', wx: 0.12 },
   bus: { L: 10.6, W: 2.55, H: 4.3, wb: 5.6, wr: 0.5, prof: 'decker', max: 30, mass: 12000 },
   busS: { L: 11.2, W: 2.5, H: 3.05, wb: 5.9, wr: 0.5, prof: 'single', max: 20, mass: 10000 },
@@ -356,7 +356,7 @@ export class VehicleRenderer {
     for (const v of vehicles) {
       if (v.hidden) continue;
       const dx = v.x - cam.x, dz = v.z - cam.z; if (dx * dx + dz * dz > md2) continue;
-      // a hand-made model (the brothers' Range Rovers, 85,000 triangles) past 35 m: the instanced SUV stands in for it,
+      // a hand-made model (the Range Rovers, 85,000 triangles) past 35 m: the instanced SUV stands in for it,
       // as GTA swaps a car for its low-detail model at a distance
       const md = MODELS[v.model], d2 = dx * dx + dz * dz;
       const mk = md.glb && d2 > 35 * 35 && !v.camInside && this.meshes.suv ? 'suv' : md.far && d2 > 45 * 45 && !v.camInside && this.meshes[md.far] ? md.far : v.model;

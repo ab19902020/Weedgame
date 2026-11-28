@@ -1,9 +1,8 @@
 // Rain particles, shelter raster, night light-pool map and the nearest-lights list used for
 // wet reflections. All driven from the single weather clock.
 import * as THREE from 'three/webgpu';
-import { Fn, float, vec2, vec3, vec4, attribute, positionLocal, texture, mix, fract, step, max, min, sin, cos, abs, cameraPosition, instanceIndex, floor, positionWorld, normalize, cross, length, smoothstep, uv, uniform, varyingProperty, sqrt } from 'three/tsl';
+import { Fn, float, vec2, vec3, vec4, attribute, positionLocal, texture, mix, fract, step, max, min, sin, cos, abs, cameraPosition, floor, normalize, cross, length, smoothstep, uv, uniform, varyingProperty } from 'three/tsl';
 import { U, coverData, coverTex, COVER_N, lightData, lightTex, LIGHT_N, LIGHT_RES, lightPos, lightCol, NL } from './env.js';
-import { pointInRing } from './tiles.js';
 
 const DROPS = 9000, BOX = 36, HGT = 22, SPLASHES = 700, SPLASH_BOX = 22;
 const splashAt = uniform(new THREE.Vector3(0, -1000, 0));   // the active brother's ground point

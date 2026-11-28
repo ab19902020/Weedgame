@@ -16,7 +16,7 @@ Every input that ends up in the game or the APK, with its licence, date and use.
 
 ## Characters
 
-`www/characters/cal.glb` and `www/characters/leon.glb` are the two playable brothers. Both were supplied by the project owner as Tripo-generated models with their animation sets, and were processed with `tools/characters/prepare-hero.mjs` (see `docs/CLAUDE-CHARACTERS.md`).
+`www/characters/cal.glb` is Cal, the playable character (Leon's model, `leon.glb`, was removed in v0.47 when the game went to one character). It was supplied by the project owner as a Tripo-generated model with its animation set, and was processed with `tools/characters/prepare-hero.mjs` (see `docs/CLAUDE-CHARACTERS.md`).
 
 Everyone else on the street is drawn by the crowd renderer (`src/humans.js`). Four in five ordinary pedestrians are one of the fourteen people of **"Citizen NPC Pack 1 Character Lowpoly Mobile"** by 00amza (https://sketchfab.com/3d-models/citizen-npc-pack-1-character-lowpoly-mobile-711ee48bcf80426bbf98ad01e1b9da1c), licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/). This work is based on that pack: `tools/characters/bake-citizens.py` merges each citizen's body and head, brings the A-pose arms down to the sides, fits every vertex to the crowd's skeleton and packs the textures into one atlas (`www/characters/citizens.bin`, `.json`, `.jpg`). The source pack is kept in `source-assets/incoming/`.
 
@@ -74,12 +74,11 @@ Details in `www/weapons/SOURCES.txt`. The pub games' ball and cue clicks are the
 
 ## Model simplification (v0.36, work in progress)
 
-`www/characters/cal.glb`, `leon.glb` and `www/vehicles/rangerover.glb` were simplified with gltfpack 1.2.0 (meshoptimizer, MIT, Arseny Kapoulkine) at 40% / 40% / 30% of their triangles, keeping every named node, material, texture and animation (`-si 0.4|0.3 -kn -km -ke -noq -af 0`): Cal 36,649 to 14,658 triangles, Leon 51,333 to 20,532, the Range Rover 486,415 to 145,960.
+`www/characters/cal.glb` (and, until v0.47, `leon.glb`) and `www/vehicles/rangerover.glb` were simplified with gltfpack 1.2.0 (meshoptimizer, MIT, Arseny Kapoulkine) at 40% / 40% / 30% of their triangles, keeping every named node, material, texture and animation (`-si 0.4|0.3 -kn -km -ke -noq -af 0`): Cal 36,649 to 14,658 triangles, Leon 51,333 to 20,532, the Range Rover 486,415 to 145,960.
 
 ## Ideas taken from other projects (v0.33)
 
 * **GTW — Go To Wherever** (github.com/galatolofederico/gtw, MIT, © 2026 Rolandjg - fableflight and Federico Galatolo): the night city of street lights seen from afar (`src/lampGlow.js` is our own code after that look). Its building facades and filmic AgX grading were compared with ours, which already have both.
-* **Leon's standing idle** (`www/characters/leon_idle.json`): Cal's own `standing_relax` clip retargeted onto Leon's skeleton by `tools/characters/retarget_idle.py`.
 
 ## Surface textures (photographic, CC0)
 
@@ -146,14 +145,6 @@ The animals and their models are original work (procedural geometry in `src/wild
 | Hedgehog studies: Bristol urban hedgehog radio-tracking (reported by phys.org, 2010); garden survey results for Reading (getreading.co.uk); People's Trust for Endangered Species, *Living with mammals* | Hedgehogs in gardens, most active after midnight and wary of people and dogs |
 | Camera-trap studies of urban mammals (Rowcliffe et al., UCL Discovery; PMC 8933609; *Diversity* 17:423, Sheffield Hallam); Natural History Museum, *The secret world of night creatures*; Sussex Wildlife Trust on urban wildlife | Foxes at dusk, through the night and at dawn, lying up by day; badgers shyer of people than foxes; muntjac and roe deer at the edge of town |
 | Wokingham Borough Council countryside bulletins; Eton College nature notes; BTO paper on suburban birds | Garden and parkland birds of the area, and its deer |
-
-## Legacy prototype assets (kept in `legacy/`, not shipped in v0.6)
-
-| Asset | Licence | Note |
-|---|---|---|
-| `legacy/assets/portrait.jpg`, `portrait.js` (Lee Perry-Smith head scan, Infinite-Realities, via three.js examples) | CC BY 3.0 | Used by the v0.3–v0.5 prototype only |
-| `legacy/assets/facades.jpg` | Prototype asset (origin recorded in the prototype hand-off) | Not used by v0.6 |
-| `legacy/map.js` | ODbL (OSM-derived) | Prototype corridor extract, superseded by `www/world/` |
 
 ## Signing
 

@@ -162,7 +162,7 @@ export class Transit {
       const dest=stop||v;me.x=dest.x;me.z=dest.z;me.y=rail?dest.y:(G.tiles.ground(dest.x,dest.z)??dest.y);
       this.ride=null;this.request=false;this.train=null;this.cars=[];G.hud.toast('Alighted · '+(dest.name||'Terminus'));return false;
     }
-    I.consume('swap');I.consume('jump');I.consume('hit');I.consume('pickup');
+    I.consume('jump');I.consume('hit');I.consume('pickup');
     me.x=v.x;me.z=v.z;me.y=v.y;me.heading=v.heading;
     B.actor[B.active].visible=false;
     this.riderLook=I.takeLook();

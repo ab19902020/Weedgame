@@ -74,10 +74,20 @@ export class Police {
     inc.injury = !!opts.injury; inc.trapped = !!opts.trapped; inc.patient = opts.patient; inc.medical = !!opts.medical;   // medical: an ambulance only (someone hurt, nobody killed)
     inc.patients = opts.patient ? [opts.patient] : [];
     this.incidents.push(inc);
-    // witnesses: nearby pedestrians react; one of them phones it in
-    const w = this.G.peds.near(x, z, 55);
-    for (const p of w) { p.reactT = 3 + this.rand() * 3; p.reactHeading = Math.atan2(z - p.z, x - p.x); p.reactPose = 'point'; }
-    if (w.length) { const caller = w[Math.floor(this.rand() * w.length)]; caller.reactT = 0; caller.phoneT = 9; inc.witnesses = w.map(p => p.id); inc.caller = caller; inc.callAt = 6 + this.rand() * 6; }
+    // witnesses: nearby pedestrians react; one of them phones it in. At a killing they run (and the one calling it in
+    // does so once they're clear); anything else draws a crowd that points and stares
+    const violent = type === 'fatal', w = this.G.peds.near(x, z, 55).filter(p => !p.dead && !p.officer && !p.carried && !p.awaitingMedic && !p.impact && !p.hiVis);
+    for (const p of w) {
+      if (p.reactPose === 'flee' && p.reactT > 0) continue;           // already running from the gunfire
+      p.reactHeading = Math.atan2(z - p.z, x - p.x);
+      if (violent) { p.reactT = 7 + this.rand() * 5; p.reactHeading += (this.rand() - 0.5) * 0.9; p.reactPose = 'flee'; }
+      else { p.reactT = 3 + this.rand() * 3; p.reactPose = 'point'; }
+    }
+    if (w.length) {
+      const caller = w[Math.floor(this.rand() * w.length)];
+      if (violent) caller.callAfter = true; else { caller.reactT = 0; caller.phoneT = 9; }
+      inc.witnesses = w.map(p => p.id); inc.caller = caller; inc.callAt = (violent ? 12 : 6) + this.rand() * 6;
+    }
     else inc.callAt = 20 + this.rand() * 25; // a driver phones it in
     this.G.events.emit('noise', { x, z, r: 40, kind: type });
     return inc;
@@ -338,22 +348,5 @@ export class Police {
       if (Math.hypot(v.x - me.x, v.z - me.z) < 180 || Math.hypot(v.x - cam.x, v.z - cam.z) < 120) continue;
       G.traffic.remove(v); this.units.splice(i, 1);
     }
-  }
-  // a police car on a road 250-450 m from (x, z), heading in to it
-  respond(x, z, k = 0) {
-    const G = this.G, net = G.net;
-    for (let tries = 0; tries < 8; tries++) {
-      const a = this.rand() * Math.PI * 2, r = 260 + this.rand() * 220;
-      const n = net.nearest(x + Math.cos(a) * r, z + Math.sin(a) * r, 150, e => (net.flags[e] & 16) && !/motorway|service|track/.test(net.classes[net.cls[e]]));
-      if (!n) continue;
-      const h = n.e * 2 + (net.flags[n.e] & 1 ? 0 : (this.rand() < 0.5 ? 0 : 1));
-      const v = G.traffic.spawnAt(h, Math.min(n.s, net.len[n.e] - 1), { kind: 'police', model: 'police', paint: 0xf2f2f2 });
-      if (!v) continue;
-      v.id = 'police-r' + (this._resp = (this._resp || 0) + 1); G.traffic.byId.set(v.id, v);
-      v.beat = { x, z, r: 600 }; v.persistent = true; v.status = 'patrol'; v.dest = this.beatNode(v);
-      this.units.push(v);
-      return v;
-    }
-    return null;
   }
 }

@@ -1,4 +1,4 @@
-// The brothers' weapons: ten from the Silo/Lost Signal armoury (Quaternius Ultimate Guns Pack, CC0 1.0,
+// Cal's weapons: ten from the Silo/Lost Signal armoury (Quaternius Ultimate Guns Pack, CC0 1.0,
 // www/weapons/SOURCES.txt) with the owner's own firing and handling recordings (www/sfx/guns). Data only, so
 // the catalogue can be checked without a browser (tools/test/unit/weapons.test.mjs).
 //
@@ -10,7 +10,7 @@
 //   butt      the middle of the butt plate, which sits in the right shoulder (long guns)
 //   muzzle    where the round leaves the barrel
 //   sight     the rear sight (the eye lines up behind it when aiming a long gun)
-// `scale` takes each low-poly model to a believable size in the brothers' hands (the pack's rifles are about
+// `scale` takes each low-poly model to a believable size in Cal's hands (the pack's rifles are about
 // two-thirds size). hold: 'pistol' (two hands on a handgun), 'smg' (held in front of the chest, no stock),
 // 'rifle' (butt in the shoulder), 'knife'.
 export const WEAPONS = [

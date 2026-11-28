@@ -1,6 +1,6 @@
 // The fast-food places (interiorPlan.js food(), menus in food.js): staff behind the tills and in the kitchen, a
 // few people eating, and ordering: walk up to a till, Order, pick from the menu, pay, then eat in (you sit and
-// eat while the clock moves on) or take it away in a bag and eat it wherever you like. Also the brothers' cash
+// eat while the clock moves on) or take it away in a bag and eat it wherever you like. Also Cal's cash
 // (each has his own; fuel.js spends it too).
 import { People } from './characters.js';
 import { MENUS, STYLE, FOOD_WORD, price, cash, spend } from './food.js';

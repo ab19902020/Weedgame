@@ -154,7 +154,7 @@ export class Taxis {
     G.hud.toast('Taxi! It\'s pulling in for you');
     return true;
   }
-  // before the brothers move (app.js): boarding, and the ride itself (true while you're in the back)
+  // before Cal moves (app.js): boarding, and the ride itself (true while you're in the back)
   ride(dt) {
     const G = this.G, I = G.input, B = G.brothers, me = B.me, J = this.job;
     if (!J) {
@@ -191,7 +191,7 @@ export class Taxis {
     if (J.dest && d < 14 && v.v < 0.4 && J.t > 2) { this.dropOff(false); return false; }
     if (J.dest && (G.time - (v.routedAt || 0)) > 6 && (d > 80 && v.ri >= v.route.length - 1 || v.stuck > 25)) this.routeTo(v, J.drop);
     if (I.consume('use')) this.stopHere();
-    I.consume('swap'); I.consume('jump'); I.consume('hit'); I.consume('pickup'); I.consume('wheel');
+    I.consume('jump'); I.consume('hit'); I.consume('pickup'); I.consume('wheel');
     me.x = v.x; me.z = v.z; me.y = v.y; me.heading = v.heading;
     B.actor[B.active].visible = false;
     const look = I.takeLook(), c = B.cam;

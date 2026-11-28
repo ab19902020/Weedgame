@@ -1,4 +1,4 @@
-// The brothers' living-room TV (Woodley home): sit on the sofa in front of it, turn it on, flick through the
+// Cal's living-room TV (Woodley home): sit on the sofa in front of it, turn it on, flick through the
 // channels (drawn live onto the screen in the room), watch the episodes when they're packaged with the game, or
 // play the games console (Narco Lord, The Results Business: full-screen, with the controller driving them).
 // The menu is the game's own panel of buttons: touch, or the controller's D-pad / stick, Cross and Circle

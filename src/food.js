@@ -50,7 +50,7 @@ export const STYLE = {
 };
 export const price = p => '£' + p.toFixed(2);
 
-// the brothers' cash: each has his own (restaurants.js, fuel.js spend it)
+// Cal's cash (restaurants.js, fuel.js spend it)
 const START_CASH = 1500;   // to start with (no wages yet: Dev adds more)
 export const cash = b => (b.cash ??= START_CASH);
 export function spend(b, amount) { if (cash(b) + 1e-6 < amount) return false; b.cash = Math.round((b.cash - amount) * 100) / 100; return true; }

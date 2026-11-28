@@ -3,7 +3,7 @@
 // metres, using the streamed landcover and terrain; height fades out towards the edge so there is
 // no visible border. Blades sway with the wind and darken when wet.
 import * as THREE from 'three/webgpu';
-import { float, vec3, mix, sin, uv, positionLocal, positionGeometry, positionWorld, cameraPosition, length, smoothstep, step, instanceIndex, fract, normalize, vec4 } from 'three/tsl';
+import { float, vec3, mix, sin, uv, positionLocal, positionGeometry, positionWorld, cameraPosition, length, smoothstep, step, instanceIndex, fract, normalize } from 'three/tsl';
 import { U, cloudShadow } from './env.js';
 import { worldToView } from './surfaces.js';
 

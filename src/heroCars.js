@@ -1,4 +1,4 @@
-// Hand-made car models (GLB) for the brothers' own vehicles: the Range Rover. Prepared by
+// Hand-made car models (GLB) for Cal's own vehicles: the Range Rover. Prepared by
 // tools/vehicles/prepare-car.mjs into one body mesh plus four wheels centred on their axles.
 //
 // Each car on the road gets its own clone (there are only a few): the body follows the sprung pose from

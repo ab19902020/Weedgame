@@ -450,7 +450,7 @@ function furnishHouse(P, s) {
     const layout = livingWalls(P, g, L, tvSide, sw, clamp(sw * 0.7, 1.0, 1.8));
     const opp = layout.opposite;
     const tvU = wallItem(P, g, L, layout.side, 'tvunit', layout.tv, 0.42, 0.5, { col: trap ? 0x2c2a28 : pick(R, [0x2c2a28, 0xe9e4da, 0x9a7a58, 0x55585c]) });
-    // (the brothers' own: a big 16:9 set, about 90 inches, black until it's switched on: homeTV.js)
+    // (Cal's own: a big 16:9 set, about 90 inches, black until it's switched on: homeTV.js)
     if (tvU) P.add(g, 'tv', tvU.x, tvU.y, s.brothersHome ? 2.0 : trap ? 1.45 : nice ? 1.6 : 1.15, 0.08, s.brothersHome ? 1.13 : 0.7, { rot: tvU.rot, base: 0.5, solid: false, dark: !!s.brothersHome });
     if(tvU)P.add(g,'radio',tvU.x-.35*Math.cos(tvU.rot),tvU.y-.35*Math.sin(tvU.rot),.24,.16,.15,{base:.5,rot:tvU.rot,solid:false});
     if(s.brothersHome && tvU)P.add(g,'box',tvU.x+.55*Math.cos(tvU.rot),tvU.y+.55*Math.sin(tvU.rot),.26,.21,.065,{base:.5,col:0x21252c,rot:tvU.rot,solid:false});

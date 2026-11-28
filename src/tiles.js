@@ -405,11 +405,6 @@ export class Tiles {
     // only where the landcover says water (the grid's level extends a little under the banks)
     return this.landcover(x, z) === 4 || this.landcover(x + 2, z) === 4 || this.landcover(x - 2, z) === 4 || this.landcover(x, z + 2) === 4 || this.landcover(x, z - 2) === 4 ? s / w / 100 : null;
   }
-  // depth of water over the ground at (x, z) (0 on dry land)
-  waterDepth(x, z, curY = null) {
-    const l = this.waterLevel(x, z); if (l == null) return 0;
-    const g = this.ground(x, z, curY); return g == null ? 0 : Math.max(0, l - g);
-  }
   landcover(x, z) {
     const t = this.tileAt(x, z); if (!t) return 0;
     const lx = Math.floor((x - t.data.ox) / 2), lz = Math.floor((z - t.data.oz) / 2);

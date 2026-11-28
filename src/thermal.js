@@ -69,7 +69,7 @@ export class Thermal {
       this.q.setFromAxisAngle(Y, yaw); this.p.set(x, y, z); this.s.set(sx, sy, sz);
       this.m.compose(this.p, this.q, this.s); mesh.setMatrixAt(i, this.m); mesh.instanceColor.setXYZ(i, heat, heat, heat);
     };
-    // people: the street's crowd, the people in view (actors), and the brothers
+    // people: the street's crowd, the people in view (actors), and Cal
     const B = G.brothers, people = [...G.peds.list, ...(G.interiors?.people || []), ...(G.emergency?.actors || []), ...(G.neighbourhood?.actors || [])];
     for (const b of B.b) if (!b.vehicle) people.push(b);
     for (const p of people) {
