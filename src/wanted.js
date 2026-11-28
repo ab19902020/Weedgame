@@ -526,13 +526,13 @@ export class Wanted {
     if (hit) {
       C.fx.tracer(o, aim, L);
       if (car) {
-        C.impact({ kind: 'car', t: L, v: car, p: new THREE.Vector3(tx, ty - 0.1 + Math.random() * 0.4, tz) }, aim, { damage: 30 });
+        C.impact({ kind: 'car', t: L, v: car, p: new THREE.Vector3(tx, ty - 0.1 + Math.random() * 0.4, tz) }, aim, { damage: 30, by: 'police' });
         if (Math.random() < 0.4) this.hurt(dmg * 0.8, x, z);
       } else this.hurt(dmg, x, z);
     } else {
       const h = C.trace(o, aim, 90, G.brothers.active);
       C.fx.tracer(o, aim, h.t);
-      if (h.kind !== 'none' && h.kind !== 'ped') C.impact(h, aim, { damage: 30 });
+      if (h.kind !== 'none' && h.kind !== 'ped') C.impact(h, aim, { damage: 30, by: 'police' });
     }
   }
   taser(o, me, d) {
@@ -653,6 +653,8 @@ export class Wanted {
   }
   giveUp() { if (!this.canGiveUp()) return false; this.hold = { kind: 'surrender', t: 0 }; this.G.hud.banner('You put your hands up', 'pursuit', 3); return true; }
   stun(secs) { if (this.hold && this.hold.kind !== 'surrender') return; this.hold = { kind: 'stun', t: 0, secs }; this.G.haptics?.rumble?.(1, 1, 900); }
+  // knocked off your feet by a blast (vehicleFire.js): down for a moment, then up again
+  knock(secs) { if (this.hold) return; this.hold = { kind: 'knocked', t: 0, secs }; }
   // ---------------------------------------------------------------- your health
   hurt(dmg, fx, fz) {
     const G = this.G, me = G.brothers.me;
@@ -688,7 +690,7 @@ export class Wanted {
   holdStep(dt, me, car) {
     const G = this.G, H = this.hold, B = G.brothers, a = B.actor[B.active];
     H.t += dt;
-    if (H.kind === 'stun') {
+    if (H.kind === 'stun' || H.kind === 'knocked') {
       a.down = H.t < H.secs ? Math.min(1, H.t / 0.35) : Math.max(0, 1 - (H.t - H.secs) / 0.8);
       if (H.t > H.secs + 0.8) { a.down = 0; this.hold = null; }
       return;

@@ -8,6 +8,7 @@ import roadBikeBank from './motorcycleCues.json';
 import v8Bank from './rangeroverCues.json';
 import i4Bank from './inline4Cues.json';
 import fishCues from './fishingCues.json';
+import boomCues from './explosionCues.json';
 
 // Every sound in the game is a real recording (credits: www/sfx/CREDITS.txt):
 //  - sfx/berkshire.ogg  footsteps, doors, horn, crashes, punches, crowd, traffic engines (soundCues.json)
@@ -75,6 +76,7 @@ export class Audio {
       this.loadClip('room-tone').then(buf => this.slice(buf, [0, buf.duration], this.roomTone)).catch(console.warn),
       this.loadClip('drone').then(buf => { this.droneBuf = buf; }).catch(console.warn),
       this.loadClip('fishing').then(buf => { this.fishBuf = buf; }).catch(console.warn),
+      this.loadClip('explosion').then(buf => { this.boomBuf = buf; }).catch(console.warn),
       this.loadFleet().catch(error => console.warn('Fleet audio unavailable', error)),
       this.loadRecordings().catch(error => console.warn('Sound recordings unavailable', error)),
       this.loadWorld().catch(error => console.warn('World sound bank unavailable', error)),
@@ -287,6 +289,61 @@ export class Audio {
       else if (e.kind === 'splash') this.shot('thud', x, z, 0.5, y);
     }
   }
+  // ---------------------------------------------------------------- fire (vehicleFire.js, emergency.js)
+  // the roar and crackle of the nearest big fire (fireFx.js picks it): a real fire recording looped there
+  // (tools/audio/build_fire.py), with a copy an octave down and low-passed under it for the roar of a car well alight
+  updateFire(G, t) {
+    if (!this.fireBuf) return;
+    const L = G.fireFx?.loud;
+    if (!this.fireV) {
+      if (!L) return;
+      const A = this.ctx, p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = 5; p.rolloffFactor = 1.1; p.connect(this.outdoors);
+      const g = A.createGain(); g.gain.value = 0; g.connect(p);
+      const lo = A.createBiquadFilter(); lo.type = 'lowpass'; lo.frequency.value = 420; lo.connect(g);
+      const a = A.createBufferSource(); a.buffer = this.fireBuf; a.loop = true; a.connect(g); a.start(0, Math.random() * this.fireBuf.duration);
+      const b = A.createBufferSource(), bg = A.createGain(); b.buffer = this.fireBuf; b.loop = true; b.playbackRate.value = 0.5; bg.gain.value = 1.1; b.connect(bg); bg.connect(lo); b.start(0, Math.random() * this.fireBuf.duration);
+      this.fireV = { p, g };
+    }
+    const V = this.fireV;
+    V.g.gain.setTargetAtTime(L ? Math.min(1.3, 0.3 + L[3] * 0.55) : 0, t, L ? 0.5 : 1.2);
+    if (L) this.setPos(V.p, L[0], L[1], L[2]);
+  }
+  // ---------------------------------------------------------------- explosions (vehicleFire.js)
+  // a real blast (tools/audio/build_explosion.py) pitched down to a fuel tank's deep whump, a low-passed copy under it
+  // for the weight of it, the street's echo after; it reaches you after the flash (sound takes its time over a
+  // distance) and duller the further off it is; then the crunch of the car and the glass coming down
+  explosion(x, y, z, k = 1) {
+    if (!this.on || !this.ctx) return;
+    const A = this.ctx, cam = this.G.camera.position, d = Math.hypot(x - cam.x, y - cam.y, z - cam.z);
+    if (d > 1200) return;
+    const late = d / 343, t0 = A.currentTime + late;
+    if (this.boomBuf) {
+      const B = boomCues.blasts; let i = Math.floor(Math.random() * B.length); if (i === this._boomI) i = (i + 1) % B.length; this._boomI = i;
+      const [start, len] = B[i];
+      const pan = A.createPanner(); pan.panningModel = 'equalpower'; pan.distanceModel = 'inverse'; pan.refDistance = 16 * k; pan.rolloffFactor = 0.5;
+      this.setPos(pan, x, y, z); pan.connect(this.outdoors);
+      const lp = A.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = Math.max(700, 17000 / (1 + d / 45)); lp.Q.value = 0.4; lp.connect(pan);
+      // the echo off the buildings round about
+      const echo = A.createDelay(1.5), eg = A.createGain(), ef = A.createBiquadFilter();
+      echo.delayTime.value = 0.16 + Math.random() * 0.14; eg.gain.value = 0.28; ef.type = 'lowpass'; ef.frequency.value = 1400;
+      lp.connect(echo); echo.connect(ef); ef.connect(eg); eg.connect(pan);
+      const nodes = [pan, lp, echo, eg, ef];
+      const voice = (rate, gain, cutoff) => {
+        const src = A.createBufferSource(), g = A.createGain(); src.buffer = this.boomBuf; src.playbackRate.value = rate; g.gain.value = gain;
+        src.connect(g);
+        if (cutoff) { const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cutoff; g.connect(f); f.connect(lp); nodes.push(f); } else g.connect(lp);
+        src.start(t0, start, len); nodes.push(src, g);
+        return src;
+      };
+      const r = (0.6 + Math.random() * 0.1) / Math.sqrt(Math.max(0.5, k));
+      voice(r, 1.15 * k, 0);
+      const tail = voice(r * 0.6, 1.3 * k, 240);
+      tail.onended = () => setTimeout(() => { for (const n of nodes) n.disconnect(); }, 1600);
+    }
+    // the car itself, and the glass, coming down
+    if (d < 260) setTimeout(() => { this.play('crash', x, y, z, 0.75 * Math.min(1.2, k)); }, late * 1000 + 40);
+    if (d < 160) setTimeout(() => { this.shot('glass', x, z, 0.9, y); }, late * 1000 + 180 + Math.random() * 120);
+  }
   setPos(node, x, y, z) { const p = node; if (p.positionX) { p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z; } else p.setPosition(x, y, z); }
   crash(x, z, k = 1) {
     const y = this.G.tiles.terrain(x,z) ?? this.G.brothers.me.y;
@@ -328,6 +385,7 @@ export class Audio {
     else { L.setPosition(cam.x, cam.y, cam.z); L.setOrientation(f.x, f.y, f.z, 0, 1, 0); }
     this.updateRail(G,cam,t);
     this.updateDrone(G, t);
+    this.updateFire(G, t);
     const w = G.world.cur, rain = w.rain;
     const inCar = !!me.vehicle;
     if (this.bird && !me.inside && !inCar && G.treesNear > 0.35 && rain < 0.3 && t > (this.nextBird || 0)) {

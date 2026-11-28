@@ -7,6 +7,7 @@ import { positionWorld, dot, step, max, float } from 'three/tsl';
 import { MENUS, STYLE, price } from './food.js';
 import { U } from './env.js';
 import { frontDoor } from './interiorPlan.js';
+import { doorParts, DOOR_KIND } from './doorModel.js';
 
 // ------------------------------------------------------------------ textures (canvas, made once)
 const TEX = {};
@@ -549,19 +550,14 @@ function opening(gb, P, s, o, r, side, c, H, top) {
   }
   if (o.kind === 'front') {
     if (side !== s.sides[0]) return;
-    const dc = frontDoor(P.site);
-    if (dc == null) { // glass doors
-      gb.box('plain', fr, -len / 2, len / 2, -0.08, -0.04, hgt - 0.08, hgt, 0x3b3b3b);
-      gb.box('plain', fr, -0.03, 0.03, -0.08, -0.04, 0, hgt, 0x3b3b3b);
-      gb.quad('glass', wp(horiz, c, side, side > 0 === horiz ? o.a : o.b, H, -0.06), horiz ? [(side > 0 ? 1 : -1) * len, 0, 0] : [0, 0, (side > 0 ? -1 : 1) * len], [0, hgt, 0], 0xffffff);
-      return;
+    // the same door as the one outside (doorModel.js), its decorated face to the room: the parts' z (out to the
+    // street) becomes v into the room, so the handle, the letterbox and the panels are on this side
+    const kind = DOOR_KIND(P.site), dc = frontDoor(P.site) ?? 0x2a2d31;
+    for (const p of doorParts(kind, len, hgt, dc, P.site.id)) {
+      const m = p.m === 'glass' ? 'glass' : p.m === 'frost' ? 'frosted' : 'plain';
+      gb.box(m, fr, -p.x1, -p.x0, p.z0 - 0.1, p.z1 - 0.1, p.y0, p.y1, m === 'plain' ? p.c : 0xffffff);
     }
-    gb.box('plain', fr, -len / 2, len / 2, -0.1, -0.05, 0, hgt, dc);
-    gb.box('plain', fr, len / 2 - 0.16, len / 2 - 0.1, -0.05, 0.0, 1.0, 1.04, 0xc9b26a);         // handle
-    gb.box('plain', fr, -0.18, 0.18, -0.05, -0.03, 1.45, 1.5, 0xc9b26a);                              // letterbox
-    if (!P.style.trap) gb.quad('frosted', wp(horiz, c, side, side > 0 === horiz ? mid - 0.15 : mid + 0.15, H + 1.6, -0.045), horiz ? [(side > 0 ? 0.3 : -0.3), 0, 0] : [0, 0, (side > 0 ? -0.3 : 0.3)], [0, 0.3, 0], 0xffffff);
-    // architrave
-    arch(gb, fr, len, hgt, 0xf6f5f0);
+    if (kind === 'house' || kind === 'pub') arch(gb, fr, len, hgt, P.style.trap ? 0xe2dccd : 0xf6f5f0);
     return;
   }
   if (o.kind === 'door') {

@@ -207,6 +207,8 @@ export class Atmos {
       if (v.siren) list.push([v.x, v.y + v.def.H + 0.1, v.z, (Math.floor(U.t.value * 2.6) % 2) * 2.5, 0.1, 0.3, 1, d2 - 2]);
     }
     G.signalRenderer.nearLights(cam, list, 40);
+    // fires and explosion flashes (fireFx.js): always in the wet road, ahead of the lamps
+    if (G.fireFx) for (const l of G.fireFx.near) list.push([l[0], l[1], l[2], Math.min(6, l[6] * 0.8), l[3], l[4], l[5], -1]);
     list.sort((a, b) => a[7] - b[7]);
     for (let i = 0; i < NL; i++) {
       const l = list[i];

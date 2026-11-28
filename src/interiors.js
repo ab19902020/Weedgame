@@ -5,6 +5,7 @@
 // it can't be seen from outside and you see the street through its windows.
 import * as THREE from 'three/webgpu';
 import { makePlan, frontDoor } from './interiorPlan.js';
+import { doorParts, doorMeshes, DOOR_KIND } from './doorModel.js';
 import { buildInterior, setDaylight } from './interiorMesh.js';
 import { HomeTV } from './homeTV.js';
 import { Restaurants } from './restaurants.js';
@@ -209,7 +210,7 @@ export class Interiors {
     for (const s of this.sites) {
       const d = Math.hypot(s.dx - me.x, s.dz - me.z), have = this.near.get(s.id);
       if (d < R && !have) this.near.set(s.id, this.outsideBits(s));
-      else if (d > R + 40 && have) { this.outside.remove(have.group); have.group.traverse(o => { if (o.geometry && o.geometry !== this.ringGeo && o.geometry !== this.discGeo) o.geometry.dispose(); }); this.near.delete(s.id); }
+      else if (d > R + 40 && have) { this.outside.remove(have.group); have.group.traverse(o => { if (o.geometry && o.geometry !== this.ringGeo && o.geometry !== this.discGeo && o.geometry !== this._stepGeo) o.geometry.dispose(); }); this.near.delete(s.id); }
     }
   }
   // a glowing ring on the pavement at the door, and a real front door on the building's front wall
@@ -221,27 +222,23 @@ export class Interiors {
     const dm = this.ringMat.clone(); dm.color.copy(col).multiplyScalar(0.35); dm.opacity = 0.35;
     const disc = new THREE.Mesh(this.discGeo, dm); disc.position.set(s.dx, 0.05, s.dz); disc.renderOrder = 3;
     group.add(ring, disc);
-    // the door: a panel, its frame and a step, flat to the front wall, facing the street
+    // the front door (doorModel.js: a proper door for the kind of building, the same one you see from inside), on
+    // the front wall at the floor's height, with a step up to it from the pavement
     const w = s.plan.frontW ? s.plan.frontW * 2 : 0.94, h = s.plan.frontTop || 2.05;
-    const dc = frontDoor(s), glassy = dc == null, doorCol = glassy ? 0x3b3b3b : dc;   // (the same door as inside)
-    const m = new THREE.MeshStandardNodeMaterial({ color: doorCol, roughness: 0.5, metalness: glassy ? 0.4 : 0.05 });
-    const fm = new THREE.MeshStandardNodeMaterial({ color: 0xf2f1ec, roughness: 0.6 });
-    const door = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.06), m);
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(w + 0.16, h + 0.1, 0.05), fm);
-    const step = new THREE.Mesh(new THREE.BoxGeometry(w + 0.4, 0.12, 0.45), new THREE.MeshStandardNodeMaterial({ color: 0x9a9690, roughness: 0.9 }));
+    const g = this.G.tiles.ground(s.dx, s.dz), gy = g ?? s.base;
+    const lift = Math.max(0.06, Math.min(0.6, Math.max(s.base, gy) + 0.12 - gy));
     const yaw = Math.atan2(-s.ay[0], -s.ay[1]);   // facing out (-ay)
     const holder = new THREE.Group();
     holder.position.set(s.wx, 0, s.wz); holder.rotation.y = yaw;
-    frame.position.set(0, (h + 0.1) / 2, 0.025); door.position.set(0, h / 2, 0.045); step.position.set(0, 0.06, 0.22);
-    holder.add(frame, door, step);
-    if (glassy) { const gl = new THREE.Mesh(new THREE.BoxGeometry(w - 0.12, h - 0.3, 0.02), new THREE.MeshStandardNodeMaterial({ color: 0x9fc4d8, roughness: 0.1, metalness: 0.3 })); gl.position.set(0, h / 2 + 0.05, 0.08); holder.add(gl); }
-    else { const knob = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.2, 0.05), new THREE.MeshStandardNodeMaterial({ color: 0xc9b26a, metalness: 0.8, roughness: 0.3 })); knob.position.set(w / 2 - 0.12, 1.0, 0.09); holder.add(knob); }
-    for (const o of holder.children) { o.castShadow = false; o.receiveShadow = true; }
+    const door = new THREE.Group(); door.position.y = lift; holder.add(door);
+    for (const m of doorMeshes(doorParts(DOOR_KIND(s), w, h, frontDoor(s) ?? 0x2a2d31, s.id))) door.add(m);
+    this._stepGeo ??= new THREE.BoxGeometry(1, 1, 1); this._stepMat ??= new THREE.MeshStandardNodeMaterial({ color: 0x9a9690, roughness: 0.9 });
+    const step = new THREE.Mesh(this._stepGeo, this._stepMat); step.scale.set(w + 0.4, lift, 0.45); step.position.set(0, lift / 2, 0.22); holder.add(step);
+    holder.traverse(o => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = true; } });
     group.add(holder);
     this.outside.add(group);
     const n = { group, ring, disc, holder, ringY: null };
     // the door's base on the ground in front of the wall
-    const g = this.G.tiles.ground(s.dx, s.dz);
     if (g != null) { group.position.y = g; n.ringY = g; }
     return n;
   }

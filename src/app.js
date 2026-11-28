@@ -21,6 +21,8 @@ import { Peds } from './peds.js';
 import { Police } from './police.js';
 import { Wanted } from './wanted.js';
 import { Emergency } from './emergency.js';
+import { FireFx } from './fireFx.js';
+import { VehicleFires } from './vehicleFire.js';
 import { Taxis } from './taxis.js';
 import { Phone } from './phone.js';
 import { Gore } from './gore.js';
@@ -122,6 +124,8 @@ G.cones = new Cones(G);              // traffic cones at police scenes (cones.js
 G.haptics = new Haptics(G);          // controller rumble and DualSense triggers (haptics.js)
 G.neighbourhood=new Neighbourhood(G);
 G.emergency = new Emergency(G);      // ambulances and fire engines, all over the map (emergency.js)
+G.fireFx = new FireFx(G);            // flames, smoke, explosions and their light (fireFx.js)
+G.vfire = new VehicleFires(G);       // vehicles catching fire and blowing up (vehicleFire.js)
 G.taxis = new Taxis(G, camInfo);      // cabs on the streets and Kerb rides (taxis.js)
 G.carjack = new Carjack(G);           // taking anyone's car or bike; riders thrown off bikes (carjack.js)
 G.parking = new Parking(G);
@@ -330,6 +334,8 @@ function step(dt, render) {
   G.trains.update(dt);
   G.neighbourhood.update(dt);
   G.emergency.update(dt);
+  G.vfire.update(dt);
+  G.fireFx.update(dt);   // (after everything that keeps a fire going this frame)
   G.taxis.update(dt);
   G.atmos.updateCover(me.x, me.z);
   G.atmos.updateLights(me.x, me.z);

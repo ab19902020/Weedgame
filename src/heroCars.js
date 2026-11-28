@@ -9,7 +9,9 @@
 // broken lamps from the damage zones; and the dark glasshouse areas of the texture shaded as tinted glass.
 import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { texture, uv, uniform, vec3, vec4, float, mix, step, smoothstep, abs, max, min, positionGeometry, positionLocal, normalGeometry, sin, fract, floor, dot, frontFacing } from 'three/tsl';
+import { texture, uv, uniform, vec3, vec4, float, mix, step, smoothstep, abs, max, min, positionGeometry, positionLocal, positionWorld, normalGeometry, sin, fract, floor, dot, frontFacing } from 'three/tsl';
+import { U } from './env.js';
+import { lightPool } from './materials.js';
 
 // model space: +Z forward, +Y up, +X the car's left, 0.978 units long. The game's car frame is +X forward.
 export const HERO_CARS = {
@@ -74,7 +76,7 @@ export class HeroCars {
     const mBody = new THREE.Group(), mGround = new THREE.Group();
     for (const m of [mBody, mGround]) { m.rotation.y = Math.PI / 2; m.scale.setScalar(C.scale); }
     body.add(mBody); ground.add(mGround);
-    const state = { brake: uniform(0), lights: uniform(0), reverse: uniform(0), indL: uniform(0), indR: uniform(0), camIn: uniform(0), dmg: uniform(new THREE.Vector4()), paint: uniform(new THREE.Vector3(1, 1, 1)) };
+    const state = { brake: uniform(0), lights: uniform(0), reverse: uniform(0), indL: uniform(0), indR: uniform(0), camIn: uniform(0), dmg: uniform(new THREE.Vector4()), paint: uniform(new THREE.Vector3(1, 1, 1)), burnt: uniform(0), burning: uniform(0) };
     const mesh = new THREE.Mesh(parts.body.geo, bodyMaterial(parts.body.mat, C, state));
     // (85,000 triangles: culled to the view like anything else, and kept out of the shadow pass, where a plain
     // box the car's size casts its shadow instead)
@@ -158,6 +160,7 @@ export class HeroCars {
     s.brake.value = v.brake ? 1 : 0; s.lights.value = v.lights ? (v.fullBeam ? 1.45 : 1) : 0; s.reverse.value = v.reversing ? 1 : 0;
     s.indL.value = (v.ind === 1 || v.hazard) && blink ? 1 : 0; s.indR.value = (v.ind === 2 || v.hazard) && blink ? 1 : 0;
     const d = v.dmg || [0, 0, 0, 0]; s.dmg.value.set(d[0], d[1], d[2], d[3]);
+    s.burnt.value = v.burnt ? 1 : 0; s.burning.value = v.burning ? 1 : 0;
   }
   finish() {
     for (const [id, c] of this.active) if (!this.seen.has(id)) {
@@ -290,7 +293,10 @@ function bodyMaterial(src, C, s) {
   col = mix(col, col.mul(s.paint), panels);
   // interior: charcoal trim and leather, a little lighter low down (seats, floor) than up at the headlining
   const trim = vec3(0.028, 0.026, 0.024).mul(float(0.8).add(base.dot(vec3(0.3, 0.59, 0.11)).mul(0.6)));
-  m.colorNode = mix(col, trim, inside);
+  // burnt out (fireFx.js): soot black with blistered rust on the panels, the glass gone, the cabin a black hole
+  const rustN = hash(floor(p.mul(41)).add(7.7)), ashN = hash(floor(p.mul(170)).add(1.3));
+  const charCol = mix(vec3(0.022, 0.02, 0.019).mul(float(0.65).add(ashN.mul(0.7))), mix(vec3(0.12, 0.055, 0.025), vec3(0.2, 0.12, 0.07), ashN), step(0.78, rustN).mul(panels));
+  m.colorNode = mix(mix(col, trim, inside), mix(charCol, vec3(0.006), max(glass, inside)), s.burnt);
   // from inside, the window openings are cut out so the driver sees the road; from outside they stay glass
   const winRegion = max(max(inScreen, inBack), inSide.mul(step(Sd.y0 + 0.008, p.y)).mul(step(p.y, Sd.y1 - 0.012)));
   // (the model also has an inner glass layer facing into the cabin: cut that too)
@@ -300,9 +306,9 @@ function bodyMaterial(src, C, s) {
   m.alphaTest = 0.5;
   // gloss: the paint and glass in the texture get a clearcoat; rubber and trim stay matt
   const rough = rm.g, metal = rm.b;
-  m.roughnessNode = mix(mix(mix(rough, float(0.04), glass), float(0.85), scuff), float(0.75), inside);
-  m.metalnessNode = metal.mul(float(1).sub(scuff)).mul(float(1).sub(glass)).mul(float(1).sub(inside));
-  m.clearcoatNode = max(smoothstep(0.75, 0.4, rough), glass).mul(float(1).sub(dm.mul(0.8))).mul(float(1).sub(inside));
+  m.roughnessNode = mix(mix(mix(mix(rough, float(0.04), glass), float(0.85), scuff), float(0.75), inside), float(0.93), s.burnt);
+  m.metalnessNode = metal.mul(float(1).sub(scuff)).mul(float(1).sub(glass)).mul(float(1).sub(inside)).mul(float(1).sub(s.burnt.mul(0.8)));
+  m.clearcoatNode = max(smoothstep(0.75, 0.4, rough), glass).mul(float(1).sub(dm.mul(0.8))).mul(float(1).sub(inside)).mul(float(1).sub(s.burnt));
   m.clearcoatRoughnessNode = mix(float(0.05), float(0.5), dm);
   if (src.normalMap) m.normalMap = src.normalMap;
   // emission
@@ -311,8 +317,12 @@ function bodyMaterial(src, C, s) {
   const tail = tailLens.mul(float(1).sub(indRear)).mul(float(1).sub(brokenR)).mul(s.lights.mul(0.9).add(s.brake.mul(3.2)).add(0.05));
   const rev = revLens.mul(s.reverse).mul(2.5).mul(float(1).sub(brokenR));
   const ind = indFront.mul(step(0.3, lum)).add(indRear.mul(red)).min(1).mul(indOn).mul(4);
+  // on fire: the flames inside light the glass and the cabin from within, flickering
+  const flick = float(0.72).add(sin(U.t.mul(23).add(p.z.mul(30))).mul(0.16)).add(sin(U.t.mul(41).add(p.x.mul(50)).add(p.y.mul(70))).mul(0.12));
+  const fireE = vec3(1, 0.42, 0.09).mul(max(glass, inside)).mul(s.burning).mul(flick).mul(2.2);
   m.emissiveNode = vec3(0.9, 0.93, 1).mul(drl.mul(float(1).sub(inside))).add(vec3(1, 0.95, 0.85).mul(beam))
     .add(vec3(1, 0.04, 0.02).mul(tail)).add(vec3(1, 0.03, 0.02).mul(hiStop).mul(s.brake).mul(3))
-    .add(vec3(1, 0.98, 0.95).mul(rev)).add(vec3(1, 0.5, 0.05).mul(ind));
+    .add(vec3(1, 0.98, 0.95).mul(rev)).add(vec3(1, 0.5, 0.05).mul(ind)).mul(float(1).sub(s.burnt))
+    .add(fireE).add(lightPool(positionWorld).mul(mix(mix(col, trim, inside), charCol, s.burnt)));
   return m;
 }
