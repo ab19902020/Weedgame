@@ -1,4 +1,4 @@
-// Arms and hands for the brothers' rigs (Tripo skeletons: L_/R_ Clavicle, Upperarm, Forearm, Hand, Index1..3,
+// Arms and hands for Cal's rig (Tripo skeletons: L_/R_ Clavicle, Upperarm, Forearm, Hand, Index1..3,
 // Mid, Ring, Pinky, Thumb), worked in world space so it doesn't matter that Cal's and Leon's bones point their
 // local axes different ways: the animation clips still drive the body and legs, and this lays the arms on top.
 //  reach(): a two-bone solve from the shoulder to put the wrist on a target with the elbow bent towards a pole,

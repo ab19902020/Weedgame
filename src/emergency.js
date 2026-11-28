@@ -32,7 +32,7 @@ const uniformLook = (top, legs) => ({ ...People.randomLook(Math.random, { work: 
 
 // (flames, smoke and their light: fireFx.js; vehicles alight and blowing up: vehicleFire.js)
 
-const HOMES = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage', 'nice']);   // (never the trap house or the brothers' own)
+const HOMES = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage', 'nice']);   // (never the trap house or Cal's own)
 const BURNABLE = new Set([...HOMES, 'shop', 'pub', 'food', 'gadget', 'office', 'warehouse']);
 
 export class Emergency {

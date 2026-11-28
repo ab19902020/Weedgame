@@ -3,7 +3,7 @@
 //   a car: Use and the brother runs to the driver's door (the right: these are British cars), yanks it open, drags
 //     the driver out and throws them down in the road, gets in and drives off. They pick themselves up and run.
 //   a bike, moped or scooter: he boots the rider off it, they go sprawling, and he's on.
-// Not buses, the police, ambulances or fire engines, a taxi on a job, or the brothers' own cars.
+// Not buses, the police, ambulances or fire engines, a taxi on a job, or Cal's own cars.
 // Also here: someone thrown off a bike when a car hits it, and the bike going down on its side and sliding.
 import { People } from './characters.js';
 
@@ -40,7 +40,7 @@ export class Carjack {
     }
     return best;
   }
-  // ---------------------------------------------------------------- per frame (before the brothers move: app.js)
+  // ---------------------------------------------------------------- per frame (before Cal moves: app.js)
   // true while a theft is under way (the brother is ours to move)
   update(dt) {
     const G = this.G, B = G.brothers, me = B.me, I = G.input;
@@ -58,7 +58,7 @@ export class Carjack {
   start(v) {
     const G = this.G, bike = v.def.wheels === 2;
     // it stops where it is (pulled up short), its driver still in it for now
-    this.job = { v, bike, stage: 'run', t: 0, v0: v.v || 0, role: G.brothers.active ? 'leon' : 'cal' };
+    this.job = { v, bike, stage: 'run', t: 0, v0: v.v || 0, role: 'cal' };
     Object.assign(v, { parked: true, occupied: true, jacked: true });
     this.near = null;
   }

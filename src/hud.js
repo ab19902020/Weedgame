@@ -17,7 +17,6 @@ export const TESTSPOTS = [
 const svg = d => `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
 const ICON = {
   cam: svg('<path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/>'),
-  swap: svg('<path d="M4 8h13l-3-3M20 16H7l3 3"/>'),
   map: svg('<path d="M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14"/>'),
   phone: svg('<rect x="7" y="2.5" width="10" height="19" rx="2.2"/><path d="M10.5 18.5h3"/>'),
   menu: svg('<path d="M4 7h16M4 12h16M4 17h16"/>'),
@@ -57,7 +56,7 @@ export class Hud {
       <div id="fade"></div>
       <div id="btns">
         <div class="top">
-          <button id="bCam" data-act="camera" aria-label="Camera">${ICON.cam}<b>Camera</b></button><button id="bSwap" aria-label="Swap brother">${ICON.swap}<b>Swap</b></button><button id="bPhone" aria-label="Phone">${ICON.phone}<b>Phone</b></button><button id="bMap" aria-label="Map">${ICON.map}<b>Map</b></button><button id="bMenu" aria-label="Menu">${ICON.menu}<b>Menu</b></button><button id="bDev" aria-label="Developer">${ICON.dev}<b>Dev</b></button>
+          <button id="bCam" data-act="camera" aria-label="Camera">${ICON.cam}<b>Camera</b></button><button id="bPhone" aria-label="Phone">${ICON.phone}<b>Phone</b></button><button id="bMap" aria-label="Map">${ICON.map}<b>Map</b></button><button id="bMenu" aria-label="Menu">${ICON.menu}<b>Menu</b></button><button id="bDev" aria-label="Developer">${ICON.dev}<b>Dev</b></button>
         </div>
         <div class="foot">
           <button id="bUse" class="ctx"><i>${ICON.door}</i><span>Enter</span></button>
@@ -101,7 +100,7 @@ export class Hud {
     this.buildWheel();
     I.bindButton(this.el('bUse'), 'use'); I.bindButton(this.el('bRun'), 'run', true); I.bindButton(this.el('bHorn'), 'horn', true);
     I.bindButton(this.el('bBeam'),'beam'); I.bindButton(this.el('bHand'), 'brake', true); I.bindPedals(this.el('pGas'), this.el('pBrake')); I.bindArrows(this.el('sLeft'), this.el('sRight'));
-    I.bindButton(this.el('bSwap'), 'swap'); I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bPhone'), 'phone'); I.bindButton(this.el('bDev'), 'dev');
+    I.bindButton(this.el('bCam'), 'camera'); I.bindButton(this.el('bMap'), 'map'); I.bindButton(this.el('bPhone'), 'phone'); I.bindButton(this.el('bDev'), 'dev');
     this.el('mClose').onclick = () => this.toggleMap(false);
     this.el('mMe').onclick = () => { const me = G.brothers.me; this.mapView.x = me.x; this.mapView.z = me.z; this.mapView.s = 1.2; };
     this.mapView = { x: 0, z: 0, s: 0.25 };
@@ -289,7 +288,6 @@ export class Hud {
     for(const id of ['bJump','bHit','bPickup','bRun','bWeapon'])this.el(id).hidden=drive||ride;
     { const st = this.G.combat?.status(); this.el('bAim').hidden = drive || ride || !(st && !st.melee); }
     if(drive||ride)this.el('ammo').hidden=true; else this.updateAmmo();
-    this.el('bSwap').hidden=ride;
     if(drive!==this._wasDriving){this._wasDriving=drive;if(drive&&steer==='Tilt')I.calibrateTilt();}
     if(drive){
       const v=G.traffic.byId.get(me.vehicle),c=I.driveControls(0);
@@ -341,14 +339,8 @@ export class Hud {
         if (kind) siteIcon(c, v.x, v.z, kind, (v.kerb ? 9 : 7) / scale, -rot, v.siren && (Math.floor(performance.now()/350)%2) ? '#b44751' : v === G.taxis?.job?.v ? '#1fa36a' : undefined);
       }
     });
-    // screen space: the other brother (held at the rim when out of range), the needle, north
+    // screen space: the needle, north
     c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const other = G.brothers.b[1 - G.brothers.active];
-    const cs = Math.cos(rot), sn = Math.sin(rot), ox0 = (other.x - me.x) * scale, oz0 = (other.z - me.z) * scale;
-    let ox = ox0 * cs - oz0 * sn, oz = ox0 * sn + oz0 * cs;
-    const lim = R - 10, ol = Math.hypot(ox, oz); if (ol > lim) { ox *= lim / ol; oz *= lim / ol; }
-    dot(c, R + ox, R + oz, 6.5, '#ffb347', '#1a1208', 1.6);
-    c.fillStyle = '#1a1208'; c.font = '800 8.5px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(other.short[0], R + ox, R + oz + 0.5);
     c.save(); c.translate(R, R);
     c.rotate(me.heading + rot);
     const sweep=c.createRadialGradient(0,0,3,0,0,32);
@@ -427,7 +419,7 @@ export class Hud {
     if (!force && !this.atlas.pending && sig === this._mapSig && now - (this._mapT || 0) < 250) return;
     this._mapSig = sig; this._mapT = now;
     const c = cv.getContext('2d');
-    // names keep clear of the controls and of the brothers' markers
+    // names keep clear of the controls and of your marker
     const avoid = [];
     for (const q of this.el('map').querySelectorAll('.maptools,.atlasPlaces,.atlasFooter,.mapDirectory')) { const r = q.getBoundingClientRect(); if (r.width) avoid.push([r.x + r.width / 2, r.y + r.height / 2, r.width + 8, r.height + 8]); }
     for (const b of G.brothers.b) avoid.push([(b.x - V.x) * V.s + W / 2, (b.z - V.z) * V.s + H / 2 - 8, 64, 58]);
@@ -459,22 +451,22 @@ export class Hud {
           c.save(); c.beginPath(); c.arc(X(this.mapPlace.x),Z(this.mapPlace.z),15,0,Math.PI*2);
           c.strokeStyle='#162d29'; c.lineWidth=5; c.stroke(); c.strokeStyle='#f5d772'; c.lineWidth=3; c.stroke(); c.restore();
         }
-        // the brothers' cars and the police
+        // your cars and the police
         for (const v of G.traffic.list) {
           const x = X(v.x), z = Z(v.z); if (x < -10 || x > W + 10 || z < -10 || z > H + 10) continue;
           const kind = v.kind === 'police' ? 'police' : v.owner || v.free ? 'car' : v.kind === 'bus' ? 'bus' : null;
           if (kind) siteIcon(c, x, z, kind, s < 0.1 ? 5 : 8, 0, v.siren && (Math.floor(now/350)%2) ? '#b44751' : undefined);
         }
-        // the brothers: you as a needle, the other as a ringed initial
-        G.brothers.b.forEach((b, i) => {
-          const x = X(b.x), z = Z(b.z), me = i === G.brothers.active;
-          if (me) {
+        // you, as a needle
+        G.brothers.b.forEach(b => {
+          const x = X(b.x), z = Z(b.z);
+          {
             c.save(); c.translate(x, z);
             c.fillStyle = 'rgba(47,113,212,0.18)'; c.beginPath(); c.arc(0, 0, 20, 0, 7); c.fill();
             c.rotate(b.heading); c.beginPath(); c.moveTo(13, 0); c.lineTo(-9, -9); c.lineTo(-4.5, 0); c.lineTo(-9, 9); c.closePath();
             c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = '#ffffff'; c.stroke(); c.fillStyle = '#2f71d4'; c.fill();
             c.restore();
-          } else { dot(c, x, z, 9, '#ffb347', '#ffffff', 2.2); c.fillStyle = '#2a1a05'; c.font = '800 10px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(b.short[0], x, z + 0.5); }
+          }
           c.font = '800 12px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
           c.strokeStyle = 'rgba(255,255,255,0.95)'; c.lineWidth = 3.5; c.strokeText(b.short, x, z - 22); c.fillStyle = '#16211c'; c.fillText(b.short, x, z - 22);
         });
@@ -557,8 +549,8 @@ export class Hud {
     });
     section('Characters & animation');
     const rigs = G.people.rigs;
-    row('Character preview', ['cal', 'leon', 'off'].map(role => btn(role, () => { rigs.previewRole = role === 'off' ? null : role; if (ROLES[role]?.hero) rigs.previewClip = ROLES[role].idle; }, 'preview-' + role)));
-    for (const hero of ['cal', 'leon']) row(hero === 'cal' ? 'Cal' : 'Leon', ROLES[hero].clips.map(clip => btn(clip.replace(/_0?(\d)$/, ' $1').replace(/_/g, ' '), () => { rigs.previewRole = hero; rigs.previewClip = clip; }, hero + '-' + clip)));
+    row('Character preview', ['cal', 'off'].map(role => btn(role, () => { rigs.previewRole = role === 'off' ? null : role; if (ROLES[role]?.hero) rigs.previewClip = ROLES[role].idle; }, 'preview-' + role)));
+    row('Cal', ROLES.cal.clips.map(clip => btn(clip.replace(/_0?(\d)$/, ' $1').replace(/_/g, ' '), () => { rigs.previewRole = 'cal'; rigs.previewClip = clip; }, 'cal-' + clip)));
     section('Vehicles & fuel');
     const fuel = amount => {
       const v = G.brothers.vehicleOf(G.brothers.me);

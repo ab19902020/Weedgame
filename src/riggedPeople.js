@@ -1,8 +1,7 @@
-// The two playable Ward brothers, Cal and Leon: Tripo rigs with 21 and 20 clips (prepared by
-// tools/characters/prepare-hero.mjs), each with its own skeleton and mixer. They are the only skinned GLB
-// characters in the game; everyone else on the street is the procedural crowd (humans.js), which also draws
-// every pedestrian's hit and shot reactions.
-import { AnimationMixer, AnimationClip, Group, LoopOnce } from 'three/webgpu';
+// Cal Ward, the playable character: a Tripo rig with 21 clips (prepared by tools/characters/prepare-hero.mjs),
+// its own skeleton and mixer. He is the only skinned GLB character in the game; everyone else on the street is
+// the procedural crowd (humans.js), which also draws every pedestrian's hit and shot reactions.
+import { AnimationMixer, Group, LoopOnce } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 
@@ -17,23 +16,10 @@ export const ROLES = {
     // the source rig is 0.959 units tall; Cal is 1.78 m. In-place walk covers 1.16 m/s, run 4.18 m/s at this scale
     scale: 1.78 / 0.959, walkSpeed: 1.16, runSpeed: 4.18, jumpScale: 1.2, hitScale: 1.8, swimTilt: false, prop: null, range: 160, hero: true, shadow: true,
   },
-  leon: {
-    // his own 'idle' sags into a half-seated crouch, so he stands with Cal's 'standing_relax', retargeted onto his
-    // skeleton (tools/characters/retarget_idle.py → characters/leon_idle.json, loaded with his model)
-    idle: 'standing_relax', extraClips: ['characters/leon_idle.json'], walk: 'walk', run: 'run', jump: 'jump', swim: 'swim', hit: 'front_kick_02', phone: 'make_a_call_01',
-    // one-shot clips (the rest loop); fidgets play now and then while he stands still
-    once: ['jump', 'front_kick_01', 'front_kick_02', 'jump_down', 'climb', 'greet_01', 'flip', 'pitch_baseball', 'turn', 'agree', 'laugh_01', 'afraid', 'run_upstairs'],
-    fidgets: ['agree', 'laugh_01', 'turn', 'make_a_call_01'],
-    clips: ['idle', 'walk', 'run', 'jump', 'swim', 'agree', 'greet_01', 'laugh_01', 'afraid', 'turn', 'make_a_call_01', 'make_a_call_02',
-      'front_kick_01', 'front_kick_02', 'flip', 'pitch_baseball', 'shovel', 'climb', 'jump_down', 'run_upstairs'],
-    // the source rig is 0.971 units tall; Leon is 1.81 m. In-place walk covers 1.21 m/s, run 4.38 m/s at this scale
-    scale: 1.81 / 0.971, walkSpeed: 1.21, runSpeed: 4.38, jumpScale: 2.2, hitScale: 1.5, swimTilt: false, prop: null, range: 160, hero: true, shadow: true,
-  },
 };
 function roleOf(a) {
   if (a.previewRole) return a.previewRole;
   if (a.id === 'brother0') return 'cal';
-  if (a.id === 'brother1') return 'leon';
   return null;
 }
 
@@ -49,11 +35,7 @@ export class RiggedPeople {
   load(role) {
     if (!this.templates.has(role)) {
       this.templates.set(role, null);
-      const extra = Promise.all((ROLES[role]?.extraClips || []).map(url => fetch(url).then(r => r.ok ? r.json() : Promise.reject(Error(url + ' HTTP ' + r.status))).then(j => AnimationClip.parse(j)).catch(e => { console.warn('Clip load failed', url, e); return null; })));
-      new GLTFLoader().load('characters/' + role + '.glb', asset => extra.then(clips => {
-        for (const c of clips) if (c && !asset.animations.some(a => a.name === c.name)) asset.animations.push(c);
-        this.templates.set(role, asset);
-      }), undefined, e => console.warn('Character load failed', role, e));
+      new GLTFLoader().load('characters/' + role + '.glb', asset => this.templates.set(role, asset), undefined, e => console.warn('Character load failed', role, e));
     }
     return this.templates.get(role);
   }
@@ -66,11 +48,10 @@ export class RiggedPeople {
     const actions = Object.fromEntries(asset.animations.map(clip => [clip.name, mixer.clipAction(clip)]));
     for (const name of R.once) if (actions[name]) { actions[name].setLoop(LoopOnce, 1); actions[name].clampWhenFinished = true; }
     this.scene.add(root);
-    const seatJoints = role === 'leon' ? ['L_Thigh','R_Thigh','L_Calf','R_Calf'].map(name => body.getObjectByName(name)).filter(Boolean).map(bone => ({ bone, rest: bone.quaternion.clone() })) : [];
     // the clip's own pose, saved after each update and put back before the next whenever IK or a reaction has moved
     // bones on top of it (the mixer only writes a value when it changes, so a still clip wouldn't undo them)
     const base = []; body.traverse(n => { if (n.isBone) base.push([n, n.quaternion.clone()]); });
-    return {role, root, body, actions, mixer, seatJoints, head:body.getObjectByName('Head'), lock: 0, still: 0, base, extra: false};
+    return {role, root, body, actions, mixer, head:body.getObjectByName('Head'), lock: 0, still: 0, base, extra: false};
   }
   // pick the clip for an actor's state; one-shots (jump, kick, fidgets) hold until they finish
   choose(slot, a, R, dt) {
@@ -140,15 +121,9 @@ export class RiggedPeople {
       slot.body.position.y = swim && R.swimTilt ? .5 : .15*(a.fall || 0);
       // Restore the sampled pose before the mixer evaluates the next frame.
       if (slot.extra) { for (const [bone, q] of slot.base) bone.quaternion.copy(q); slot.extra = false; }
-      if(slot.wasSeated)for(const j of slot.seatJoints)j.bone.quaternion.copy(j.rest);
       slot.mixer.update(dt);
       for (const e of slot.base) e[1].copy(e[0].quaternion);
-      slot.wasSeated=a.pose==='seated' && slot.seatJoints.length>0;
-      if(slot.wasSeated){
-        slot.body.position.y=-.43;
-        slot.seatJoints.forEach(({bone,rest},i)=>{rest.copy(bone.quaternion);bone.rotateX(i<2?-1.46:1.48);});
-      }
-      // the brothers' arms (weapons, fists: combat.js)
+      // Cal's arms (weapons, fists: combat.js)
       if (this.onHero?.(slot, a, dt) !== false) slot.extra = true;
     }
     for (const [id,slot] of this.active) if (!visible.has(id)) this.remove(id,slot);

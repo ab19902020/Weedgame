@@ -32,15 +32,14 @@ const check = (name, pass, info) => { res[name] = { ok: !!pass, ...info }; if (!
 if (cases.includes('cars')) {
   await p.waitForFunction(() => GC.vehicleRenderer.meshes.compact && GC.vehicleRenderer.meshes.bmwx3, null, { timeout: 0, polling: 1000 });
   const rr = await p.evaluate(async () => {
-    const G = GC, c = G.traffic.byId.get('cal-car'), l = G.traffic.byId.get('leon-car'), me = G.brothers.me;
-    if (!c || !l) return { cars: !!c + !!l };
+    const G = GC, c = G.traffic.byId.get('cal-car'), me = G.brothers.me;
+    if (!c) return { cars: 0 };
     me.x = c.x - Math.sin(c.heading) * 4; me.z = c.z + Math.cos(c.heading) * 4;
     // (the hand-made model loads on first sight)
-    for (let k = 0; k < 40 && !(G.heroCars.active.get('cal-car')?.body.visible && G.heroCars.active.get('leon-car')?.body.visible); k++) await G._frames(2);
-    const shown = id => !!G.heroCars.active.get(id)?.body.visible;
-    return { cars: 2, model: c.model, cal: shown('cal-car'), leon: shown('leon-car') };
+    for (let k = 0; k < 40 && !G.heroCars.active.get('cal-car')?.body.visible; k++) await G._frames(2);
+    return { cars: 1, model: c.model, cal: !!G.heroCars.active.get('cal-car')?.body.visible };
   });
-  check('range rovers there and drawn', rr.cars === 2 && rr.model === 'rangerover' && rr.cal && rr.leon, rr);
+  check('range rover there and drawn', rr.cars === 1 && rr.model === 'rangerover' && rr.cal, rr);
   // every supplied car (the baked sets), and a Range Rover
   const models = await p.evaluate(async () => (await Promise.all(['carpack', 'realcars'].map(s => fetch('vehicles/' + s + '.json').then(r => r.json())))).flatMap(J => J.cars.map(c => c.name)).concat(['rangerover']));
   for (const model of models.filter(m => !process.env.ONLY || process.env.ONLY.split(',').includes(m))) {

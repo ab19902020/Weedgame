@@ -1,10 +1,13 @@
 import {quietDrive} from './propulsion.js';
-// Cal and Ward brothers: the only playable people. Walking, running, driving, parking,
-// swapping, and the third-person orbit camera.
+// Cal Ward, the one playable character (the game had two brothers to swap between until v0.47; Cal has the
+// fuller set of animations, his own standing idle and the better hold on a gun). Walking, running, driving,
+// parking, and the third-person orbit camera. (`b` and `actor` stay arrays of one, `active` is always 0, so
+// everything that asks for B.b[B.active] or B.actor[B.active] still works.)
 import * as THREE from 'three/webgpu';
 import { MODELS } from './vehicles.js';
 import { lerpAngle } from './traffic.js';
 import { pointInRing } from './tiles.js';
+import { CAL } from './save.js';
 
 const JACKETS = [0x314958, 0x765741, 0x294735, 0x653143], SKINS = [0xb48265, 0x895e46, 0xc39475];
 
@@ -14,21 +17,19 @@ const SWIM_DEPTH = 0.45;   // a swimmer's root sits this far below the surface: 
 export class Brothers {
   constructor(G, saved) {
     this.G = G;
-    const def = (i) => ({ name: i ? 'Leon Ward' : 'Cal Ward', short: i ? 'Leon' : 'Cal', x: 0, y: 0, z: 0, heading: 0, vehicle: null,
-      outfit: { jacket: i, skin: i ? 1 : 0, hair: 0 } });
-    this.b = saved?.brothers || [def(0), def(1)];
-    this.active = saved?.active ?? 0;
+    this.b = saved?.brothers?.length ? [saved.brothers[0]] : [{ ...CAL, x: 0, y: 0, z: 0, heading: 0, vehicle: null }];
+    this.active = 0;
     this.cam = { yaw: saved?.camYaw ?? 0, pitch: 0.28, dist: 4.4, x: 0, y: 0, z: 0, lastUser: -10, fade: 0, foot: 0, car: 0, cine: null };
     try { const m = JSON.parse(localStorage.getItem('greenCounty.camModes') || '{}'); this.cam.foot = m.foot | 0; this.cam.car = m.car | 0; } catch (e) { /* storage blocked */ }
-    this.actor = [0, 1].map(i => ({ id: 'brother' + i, x: 0, y: 0, z: 0, heading: 0, speed: 0, phase: 0, look: this.lookFor(i), visible: true, t: 0 }));
+    this.actor = [{ id: 'brother0', x: 0, y: 0, z: 0, heading: 0, speed: 0, phase: 0, look: this.lookFor(), visible: true, t: 0 }];
     this.vel = { x: 0, z: 0 };
     this.notice = null;
   }
-  lookFor(i) {
-    const o = this.b[i].outfit;
-    // Cal: short crop, dark trousers, black shoes. Leon: hoodie, jeans, white trainers, a little taller and heavier
-    return { skin: SKINS[o.skin] ?? SKINS[0], hair: 0x2b1d14, top: JACKETS[o.jacket] ?? JACKETS[0], legs: i ? 0x2b3a55 : 0x22252b, bald: o.hair === 1, bag: false, umbrella: 0x1a1a1a, h: i ? 1.02 : 1.0,
-      style: 1, female: false, face: i ? 0 : 1, build: i ? 0.55 : 0.38, shoe: i ? 2 : 0, hood: !!i, cap: false, umbIdx: 0 };
+  // (the crowd renderer's stand-in for him, at a distance: short crop, dark trousers, black shoes)
+  lookFor() {
+    const o = this.b[0].outfit || CAL.outfit;
+    return { skin: SKINS[o.skin] ?? SKINS[0], hair: 0x2b1d14, top: JACKETS[o.jacket] ?? JACKETS[0], legs: 0x22252b, bald: o.hair === 1, bag: false, umbrella: 0x1a1a1a, h: 1.0,
+      style: 1, female: false, face: 1, build: 0.38, shoe: 0, hood: false, cap: false, umbIdx: 0 };
   }
   get me() { return this.b[this.active]; }
   vehicleOf(b) { return b.vehicle ? this.G.traffic.byId.get(b.vehicle) : null; }
@@ -71,14 +72,7 @@ export class Brothers {
       if (!veh && G.wanted?.canGiveUp() && !this.nearestVehicle()) G.wanted.giveUp();
       else if(!G.interiors?.use())this.toggleVehicle();
     }
-    if (input.consume('swap')) this.swap();
-    // update actors for both brothers
-    for (let i = 0; i < 2; i++) {
-      const b = this.b[i], a = this.actor[i];
-      a.look = this.lookFor(i);
-      a.visible = !b.vehicle;
-      if (i !== this.active) { a.x = b.x; a.y = b.y; a.z = b.z; a.heading = b.heading; a.speed = 0; a.pose = b.swimming ? 'swim' : G.world.cur.rain > 0.35 && !G.shelteredAt(b.x, b.y, b.z) ? 'umbrella' : 'idle'; a.t += dt; }
-    }
+    const a = this.actor[0]; a.look = this.lookFor(); a.visible = !me.vehicle;
   }
   walk(dt, input) {
     const G = this.G, me = this.me, a = this.actor[this.active];
@@ -353,22 +347,7 @@ export class Brothers {
       this.cam.lastUser = -10;
     }
   }
-  swap() {
-    const G = this.G;
-    if (G.wanted?.level || G.wanted?.hold) { G.hud.toast('Not while the police are after you'); return; }   // (as in GTA V)
-    const from = this.me;
-    const fv = this.vehicleOf(from);
-    if (fv && Math.abs(fv.sp || 0) > 1.5) { G.hud.toast('Stop the vehicle before switching'); return; }
-    if (fv) { fv.sp = 0; fv.v = 0; fv.player = false; fv.parked = true; fv.occupied = from.short; if (fv.ph) { fv.ph.vx = fv.ph.vz = fv.ph.w = 0; } G.save.markVehicle(fv); }
-    this.active = 1 - this.active;
-    const to = this.me;
-    const tv = this.vehicleOf(to);
-    if (tv) { tv.parked = false; tv.player = true; tv.occupied = null; }
-    this.cam.yaw = to.heading + Math.PI; this.cam.lastUser = -10;
-    G.events.emit('swap', { from, to });
-    G.hud.fade(`${to.name} · ${G.districtName(to.x, to.z)}`);
-    G.save.now();
-  }
+
 }
 
 // push a circle out of a vehicle's oriented box

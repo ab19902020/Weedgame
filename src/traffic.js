@@ -6,10 +6,10 @@ import {isCycle} from './propulsion.js';
 import { MODELS, PAINTS, randomModel, paintFor } from './vehicles.js';
 import { F_ONEWAY, F_ROUNDABOUT, F_BRIDGE, F_DRIVE } from './network.js';
 
-// the simulation bubble round the player: full simulation inside FULL_R, cars kept up to BUBBLE_R (frozen beyond it
-// near an anchor), removed past KILL_R. Set per quality preset (perf.js `bubble`, setRadius).
+// the simulation bubble round the focus (the player, or the drone in flight): full simulation inside FULL_R, cars kept
+// up to BUBBLE_R (frozen beyond it near an anchor: Cal himself while the drone is away), removed past KILL_R. Set per quality preset (perf.js `bubble`, setRadius).
 let FULL_R = 480, BUBBLE_R = 650, KILL_R = 820;
-export const KEEP_R = 250;        // the fleet within this radius of either brother is kept (frozen while he is inactive) and saved
+export const KEEP_R = 250;        // the fleet within this radius of the player is saved with the game
 const RANK = { motorway: 10, trunk: 9, primary: 8, secondary: 7, tertiary: 6, motorway_link: 8, trunk_link: 7, primary_link: 7, secondary_link: 6, tertiary_link: 5, unclassified: 4, residential: 3, living_street: 2, service: 1, busway: 3 };
 const DENS = { motorway: 1 / 120, trunk: 1 / 140, primary: 1 / 110, secondary: 1 / 160, tertiary: 1 / 220, motorway_link: 1 / 300, trunk_link: 1 / 300, primary_link: 1 / 240, secondary_link: 1 / 300, tertiary_link: 1 / 400, unclassified: 1 / 520, residential: 1 / 1040, living_street: 1 / 1800 };
 
@@ -497,7 +497,7 @@ export class Traffic {
     }
   }
   // ----------------------------------------------------------------- persistence
-  // anchors: positions to keep traffic around (both brothers). Set by the app every frame.
+  // anchors: positions to keep traffic around (Cal: the traffic round him waits while the drone flies far off)
   nearAnchor(v, r = KEEP_R) {
     const A = this.anchors; if (!A) return false;
     for (const a of A) { const dx = v.x - a.x, dz = v.z - a.z; if (dx * dx + dz * dz < r * r) return true; }

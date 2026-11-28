@@ -1,4 +1,4 @@
-// The brothers' phone: D-pad up on a controller (as in GTA V), N on a keyboard, or the phone button on screen.
+// Cal's phone: D-pad up on a controller (as in GTA V), N on a keyboard, or the phone button on screen.
 // Apps: Kerb (book a ride: taxis.js), the Road Atlas, the radio when there's one to hand, and your money.
 // The screens are plain buttons, so the controller moves between them like any other panel (data-pad="menu"):
 // the D-pad or stick to move, Cross to choose, Circle Back.
@@ -18,7 +18,7 @@ const ICONS = {
   drone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="5" cy="5" r="3"/><circle cx="19" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><path d="M7 7l3 3M17 7l-3 3M7 17l3-3M17 17l-3-3"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></svg>',
   tech: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 9h16l-1.2 10.2a1.5 1.5 0 01-1.5 1.3H6.7a1.5 1.5 0 01-1.5-1.3z"/><path d="M8.5 9V7a3.5 3.5 0 017 0v2"/><path d="M10 14l2 2 3-4"/></svg>',
 };
-// the phone itself: the brothers carry an Honor Magic7 Pro (flagship, MagicOS)
+// the phone itself: Cal carries an Honor Magic7 Pro (flagship, MagicOS)
 const PHONE_MODEL = 'HONOR Magic7 Pro';
 
 export class Phone {
@@ -157,9 +157,9 @@ export class Phone {
       <small>Fishing lakes</small>${lakes.map(l => `<button class="phGo" data-act="lake" data-arg="${l.id}">${esc(l.name)} · ${esc(l.place)}</button>`).join('')}</div>`;
   }
   s_bank() {
-    const G = this.G, [a, b] = G.brothers.b, rides = G.taxis?.history || [];
+    const G = this.G, a = G.brothers.me, rides = G.taxis?.history || [];
     return `<div class="phApp-head bank"><b>County Bank</b></div><div class="phList">
-      <div class="phRow"><span>${esc(a.short)}</span><b>${money(cash(a))}</b></div><div class="phRow"><span>${esc(b.short)}</span><b>${money(cash(b))}</b></div>
+      <div class="phRow"><span>${esc(a.short)}</span><b>${money(cash(a))}</b></div>
       ${rides.slice(-4).reverse().map(r => `<div class="phRow dim"><span>Kerb · ${esc(r.to || 'ride')}</span><b>−${money(r.fare)}</b></div>`).join('')}</div>`;
   }
   // Kerb: where to?

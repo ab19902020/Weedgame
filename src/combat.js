@@ -1,4 +1,4 @@
-// Fighting and firearms for the brothers.
+// Fighting and firearms for Cal.
 //  - Weapons (weaponsData.js): picked on the weapon wheel (hud.js), drawn and held for real: the gun is placed
 //    from the body (rifle butt in the right shoulder, handguns and SMGs out in front of the chest) and both arms
 //    are solved onto it (armIK.js), right palm round the grip, index finger on the trigger, left hand on the
@@ -36,7 +36,7 @@ export class Combat {
     this.loader = new GLTFLoader();
     this.templates = new Map(); this.loading = new Map();
     this.buf = {}; this.bufLoading = null;
-    this.s = [0, 1].map(i => ({ i, mag: {}, aim: 0, aimT: 0, fireT: 0, queued: false, reloadT: 0, cues: [], recoil: 0, pump: 0, gun: null, gunKey: null,
+    this.s = [0].map(i => ({ i, mag: {}, aim: 0, aimT: 0, fireT: 0, queued: false, reloadT: 0, cues: [], recoil: 0, pump: 0, gun: null, gunKey: null,
       aimDir: new THREE.Vector3(1, 0, 0), aimYaw: 0, target: null, muzzle: new THREE.Vector3(), gunQ: new THREE.Quaternion(), posed: false,
       move: null, combo: 0, comboT: 0, guard: 0, slash: null, shake: 0 }));
     this.reported = -99;
@@ -88,7 +88,7 @@ export class Combat {
     src.onended = () => { src.disconnect(); g.disconnect(); pan.disconnect(); };
     src.start();
   }
-  // ---------------------------------------------------------------- per frame (after the brothers have moved)
+  // ---------------------------------------------------------------- per frame (after Cal has moved)
   update(dt, hitPressed, hitHeld) {
     const G = this.G, B = G.brothers, I = G.input;
     // the wheel and the number keys
@@ -530,9 +530,9 @@ export class Combat {
       }
     }
   }
-  // ---------------------------------------------------------------- the brothers' arms (riggedPeople calls this)
+  // ---------------------------------------------------------------- Cal's arms (riggedPeople calls this)
   pose(slot, a, dt) {
-    const i = a.id === 'brother1' ? 1 : 0, s = this.s[i], w = this.weapon(i);
+    const i = 0, s = this.s[i], w = this.weapon(i);
     if (!slot.arms) slot.arms = new HeroArms(slot.body);
     const arms = slot.arms; if (!arms.ok) return;
     this.meleeTick(i);
