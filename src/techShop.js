@@ -10,6 +10,7 @@ import * as THREE from 'three/webgpu';
 import { People } from './characters.js';
 import { cash, spend } from './food.js';
 import { CATALOGUE, CATEGORIES } from './techCatalogue.js';
+import { kitOf } from './fishing.js';
 import { buildDroneModel, buildDroneBox } from './droneModel.js';
 
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
@@ -168,15 +169,18 @@ export class TechShop {
   close() { this.panel?.remove(); this.panel = null; }
   render() {
     const G = this.G, me = G.brothers.me, k = G.drone?.kit(me), el = this.panel; if (!el) return;
-    const owned = it => it.kind === 'drone' ? !!k : it.kind === 'upgrade' ? !!k?.upgrades?.[it.upgrade] : it.kind === 'item' ? (me.items?.gadgets || []).includes(it.id) : false;
+    const fk = me.items?.fishing;
+    const owned = it => it.kind === 'drone' ? !!k : it.kind === 'upgrade' ? !!k?.upgrades?.[it.upgrade] : it.kind === 'item' ? (me.items?.gadgets || []).includes(it.id)
+      : it.kind === 'fishing' ? (it.fish.rod ? !!fk?.rods?.[it.fish.rod] : it.fish.gear ? !!fk?.[it.fish.gear] : false) : false;
+    const count = it => it.kind !== 'fishing' || !fk ? '' : it.fish.tackle ? `<em>${fk.tackle?.[it.fish.tackle] || 0} in the box</em>` : it.fish.bait ? `<em>${fk.bait?.[it.fish.bait] || 0} hookbaits in the bag</em>` : '';
     const rows = CATEGORIES.map(cat => `<h3>${esc(cat)}</h3>` + CATALOGUE.filter(i => i.cat === cat).map(it => {
       const have = owned(it), needs = it.needs === 'drone' && !k, poor = cash(me) + 1e-6 < it.price;
       const label = have && !it.repeat ? 'Owned' : needs ? 'Needs a drone' : poor ? 'Not enough cash' : `Buy ${money(it.price)}`;
-      return `<div class="tzItem${it.hero ? ' hero' : ''}"><div><b>${esc(it.name)}</b><small>${esc(it.blurb)}</small>${it.id === 'props' && k ? `<em>${Math.max(0, k.props ?? 0)} sets in the kit</em>` : ''}</div>
+      return `<div class="tzItem${it.hero ? ' hero' : ''}"><div><b>${esc(it.name)}</b><small>${esc(it.blurb)}</small>${it.id === 'props' && k ? `<em>${Math.max(0, k.props ?? 0)} sets in the kit</em>` : ''}${count(it)}</div>
         <button data-buy="${it.id}" ${(have && !it.repeat) || needs || poor ? 'disabled' : ''}>${label}</button></div>`;
     }).join('')).join('');
     el.innerHTML = `<div class="tzHead"><canvas class="tzLogo" width="300" height="56"></canvas><span>${esc(me.short)} · ${money(cash(me))}</span><button data-close>Close</button></div>
-      <div class="tzBody">${rows}<p class="tzNote">Gadgets, phones and accessories arriving soon.</p></div>`;
+      <div class="tzBody">${rows}<p class="tzNote">Fishing tickets are bought at the lake: South Lake (Woodley), White Swan and Black Swan (Dinton Pastures), Canberra and Orrell (Charvil).</p></div>`;
     const lc = el.querySelector('.tzLogo').getContext('2d'); lc.drawImage(logoCanvas(300, 56, { bg: '#0000', stripe: false, scale: 0.62 }), 0, 0);
   }
   buy(id) {
@@ -185,6 +189,13 @@ export class TechShop {
     if (it.kind === 'drone') { G.drone.give(me); G.hud?.toast?.('Kestrel T3 bought! Fly it with the Fly drone button, your phone\'s Drone app, or D-pad right on a pad', 5); }
     else if (it.kind === 'props') { G.drone.upgrade(me, 'props'); G.hud?.toast?.('4 spare prop sets in the kit'); }
     else if (it.kind === 'upgrade') { G.drone.upgrade(me, it.upgrade); G.hud?.toast?.(`${it.name} fitted`); }
+    else if (it.kind === 'fishing') {
+      const fk = kitOf(me), f = it.fish;
+      if (f.rod) { fk.rods[f.rod] = { rig: f.rod === 'lure' ? 'spinner' : true, wear: 0 }; G.hud?.toast?.(`${it.name} bought, rigged and ready. Go fishing at a peg on South Lake, White Swan, Black Swan, Canberra or Orrell`, 5); }
+      else if (f.gear) { fk[f.gear] = true; G.hud?.toast?.(`${it.name} bought`); }
+      else if (f.tackle) { fk.tackle[f.tackle] = (fk.tackle[f.tackle] || 0) + f.n; G.hud?.toast?.(`${it.name}: ${fk.tackle[f.tackle]} in the box`); }
+      else if (f.bait) { fk.bait[f.bait] = (fk.bait[f.bait] || 0) + f.n; G.hud?.toast?.(`${it.name}: ${fk.bait[f.bait]} hookbaits`); }
+    }
     else { me.items ??= {}; (me.items.gadgets ??= []).push(it.id); G.hud?.toast?.(`${it.name} bought`); }
     G.haptics?.select?.(); G.audio?.play?.('Car_Door_Close', me.x, me.y + 1, me.z, 0.0001);
     G.save?.now?.();

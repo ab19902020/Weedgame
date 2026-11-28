@@ -60,7 +60,12 @@ export class Haptics {
     // triggers: what the hands are on
     let R = 'off', L = 'off';
     const w = G.combat?.status?.(), aiming = !car && w && !w.melee && (G.input?.held?.has('aim') || G.input?.aimLatch || G.controller?.padAim);
-    if (aiming) { L = 'aim'; R = w.pellets || w.bolt ? 'heavy' : w.hold === 'rifle' ? 'rifle' : 'pistol'; }
+    const fishing = G.fishing?.active;
+    if (fishing) {
+      // the reel: R2 stiffens as the line comes tight (and when the clutch is giving line); L2 a soft stop for the lift
+      const st = G.fishing.status(), k = clamp01(st.tension / Math.max(1, st.line));
+      R = 'reel' + Math.min(5, Math.round(k * 6)); L = st.state === 'fight' || st.state === 'netting' ? 'aim' : 'off';
+    } else if (aiming) { L = 'aim'; R = w.pellets || w.bolt ? 'heavy' : w.hold === 'rifle' ? 'rifle' : 'pistol'; }
     else if (car) {
       const sp = Math.abs(car.sp ?? car.v ?? 0);
       R = 'gas' + Math.min(5, Math.floor(sp / 7)); L = (car.ph?.slip || 0) > 0.5 ? 'abs' : 'brake';
@@ -100,6 +105,7 @@ function crc32(bytes) { let c = 0xffffffff; for (const b of bytes) c = CRC[(c ^ 
 const TRIG = {
   off: [0x05], aim: [0x01, 40, 70], pistol: [0x02, 70, 150, 200], rifle: [0x02, 60, 140, 160], heavy: [0x02, 80, 175, 255],
   brake: [0x01, 30, 90], abs: [0x01, 30, 150],
+  reel0: [0x01, 0, 10], reel1: [0x01, 0, 50], reel2: [0x01, 0, 90], reel3: [0x01, 0, 130], reel4: [0x01, 0, 180], reel5: [0x01, 0, 240],
   gas0: [0x01, 10, 20], gas1: [0x01, 10, 50], gas2: [0x01, 10, 80], gas3: [0x01, 10, 110], gas4: [0x01, 10, 140], gas5: [0x01, 10, 170],
 };
 class DualSenseHID {

@@ -396,3 +396,56 @@ body.drone-on #btns, body.drone-on #touch, body.drone-on #mini, body.drone-on #s
 #techPanel .tzItem button:disabled { background: #2a2f37; color: #8b93a0; }
 #techPanel button:focus-visible, #techPanel button:focus { outline: 2px solid #ffd2a8; outline-offset: 2px; }
 #techPanel .tzNote { color: #7d8693; font-size: 12px; text-align: center; margin-top: 10px; }
+
+/* ---------------------------------------------------------------- fishing (fishingHud.js) */
+body.fishing-on #btns, body.fishing-on #touch, body.fishing-on #clock, body.fishing-on #speedo, body.fishing-on #ammo, body.fishing-on #droneLaunch, body.fishing-on #road, body.fishing-on #guidance { display: none !important; }
+#fishHud { position: fixed; inset: 0; z-index: 6; pointer-events: none; color: #f2f6f0; font: 13px system-ui, sans-serif; user-select: none; -webkit-user-select: none; }
+#fishHud[hidden] { display: none; }
+#fishHud .fZone { position: absolute; top: 90px; bottom: 0; pointer-events: auto; touch-action: none; }
+#fishHud .fZone.aim { left: 0; width: 42%; } #fishHud .fZone.look { left: 42%; right: 0; }
+#fishHud .fTop { position: absolute; top: max(10px, env(safe-area-inset-top)); left: max(176px, calc(env(safe-area-inset-left) + 166px)); right: max(12px, env(safe-area-inset-right)); display: flex; gap: 10px; align-items: flex-start; }
+#fishHud .fInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 7px 12px; border-radius: 12px; background: #0b120ccc; border: 1px solid #ffffff1c; }
+#fishHud .fInfo b { font: 700 14px system-ui; color: #cfe9b8; } #fishHud .fInfo span { font: 600 12px system-ui; color: #d5ddd2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#fishHud .fBtns { display: flex; gap: 8px; pointer-events: auto; }
+#fishHud .fBtns button { width: 54px; height: 54px; border-radius: 50%; border: 1px solid #ffffff30; background: #101810d0; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0; }
+#fishHud .fBtns button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#fishHud .fBtns button b { font: 700 8.5px system-ui; letter-spacing: .04em; text-transform: uppercase; }
+#fishHud .fMain { position: absolute; right: max(26px, env(safe-area-inset-right)); bottom: max(26px, env(safe-area-inset-bottom)); width: 118px; height: 118px; border-radius: 50%; pointer-events: auto; touch-action: none;
+  border: 2px solid #ffffff60; background: radial-gradient(circle at 40% 35%, #3f6a3a, #1b3119); color: #fff; font: 800 17px system-ui; letter-spacing: .02em; box-shadow: 0 6px 22px #000a; }
+#fishHud .fMain canvas { position: absolute; inset: -38px; width: 194px; height: 194px; pointer-events: none; }
+#fishHud .fMain.hot { background: radial-gradient(circle at 40% 35%, #ff7a3a, #b42a10); animation: fPulse .35s infinite alternate; }
+#fishHud .fMain.dim { opacity: .55; }
+@keyframes fPulse { to { transform: scale(1.07); } }
+#fishHud .fReel { position: absolute; right: max(160px, calc(env(safe-area-inset-right) + 150px)); bottom: max(34px, env(safe-area-inset-bottom)); width: 86px; height: 86px; border-radius: 50%; pointer-events: auto; touch-action: none;
+  border: 2px solid #ffffff50; background: #121a12d8; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font: 800 12px system-ui; }
+#fishHud .fReel svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+#fishHud .fReel.on { background: #2f5a2a; border-color: #b9f0a8; }
+#fishHud .fTension { position: absolute; right: max(18px, env(safe-area-inset-right)); top: 96px; bottom: 170px; width: 46px; display: flex; flex-direction: column; align-items: center; pointer-events: auto; opacity: .55; }
+#fishHud .fTension.active { opacity: 1; }
+#fishHud .fTension::before { content: ''; position: absolute; top: 34px; bottom: 58px; left: 17px; width: 12px; border-radius: 6px; background: #ffffff1c; border: 1px solid #ffffff30; }
+#fishHud .fTension .fill { position: absolute; bottom: 58px; left: 17px; width: 12px; max-height: calc(100% - 92px); border-radius: 6px; transition: background .2s; }
+#fishHud .fTension .drag { position: absolute; left: 10px; width: 26px; height: 3px; background: #fff; margin-bottom: 58px; max-height: calc(100% - 92px); }
+#fishHud .fTension b { position: absolute; bottom: 40px; font: 700 9px system-ui; text-transform: uppercase; letter-spacing: .06em; }
+#fishHud .fTension button { width: 34px; height: 30px; border-radius: 9px; border: 1px solid #ffffff40; background: #101810d0; color: #fff; font: 800 17px system-ui; position: absolute; }
+#fishHud .fTension button[data-f="drag+"] { top: 0; } #fishHud .fTension button[data-f="drag-"] { bottom: 0; }
+#fishHud .fDrag { position: absolute; bottom: 31px; font: 700 10px system-ui; white-space: nowrap; color: #e8f5e0; }
+#fishHud .fBite { position: absolute; left: max(14px, env(safe-area-inset-left)); top: 180px; width: 160px; padding: 0 0 6px; border-radius: 12px; background: #0b120cc4; border: 1px solid #ffffff1c; display: none; flex-direction: column; align-items: center; overflow: hidden; }
+#fishHud .fBite.on { display: flex; } #fishHud .fBite canvas { width: 160px; height: 110px; } #fishHud .fBite span { font: 700 12px system-ui; color: #ffe0a8; }
+#fishHud .fSay { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); font: 900 24px system-ui; letter-spacing: .02em; color: #fff; text-shadow: 0 2px 8px #000, 0 0 2px #000; opacity: 0; transition: opacity .2s; white-space: nowrap; }
+#fishHud .fSay.on { opacity: 1; }
+#fishHud .fAimStick { position: absolute; width: 120px; height: 44px; border-radius: 22px; background: #ffffff14; border: 1px solid #ffffff38; display: none; }
+#fishHud .fAimStick.on { display: block; } #fishHud .fAimStick i { position: absolute; left: 42px; top: 4px; width: 36px; height: 36px; border-radius: 50%; background: #ffffffb0; }
+.fPanel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; width: min(460px, 92vw); max-height: 88vh; overflow: auto; pointer-events: auto; color: #eef3ec; font: 14px system-ui, sans-serif;
+  background: #0e140ff4; border: 1px solid #2f3b2f; border-radius: 16px; box-shadow: 0 12px 34px #000b; padding: 14px 16px; }
+.fPanel h2 { margin: 0 0 2px; font: 800 19px system-ui; color: #cfe9b8; } .fPanel h3 { margin: 12px 0 6px; font: 700 11px system-ui; letter-spacing: .14em; text-transform: uppercase; color: #9fd28a; }
+.fPanel p { margin: 6px 0; line-height: 1.4; } .fPanel .sub { color: #aab8a6; font-size: 12px; } .fPanel ul { margin: 6px 0; padding-left: 18px; color: #d9e3d5; }
+.fPanel .row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.fPanel button { min-height: 42px; padding: 6px 14px; border-radius: 11px; border: 1px solid #3c4a3c; background: #1b241b; color: #fff; font: 700 13px system-ui; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.fPanel button small { font: 600 10.5px system-ui; color: #aab8a6; } .fPanel button.on { background: #3d6a35; border-color: #a6e08f; }
+.fPanel button[data-p="buy"], .fPanel button[data-p="return"], .fPanel button[data-p="close"] { background: #6ac25a; color: #0b1a08; border: 0; }
+.fPanel button:disabled { opacity: .45; } .fPanel .warn { color: #ffb36a; }
+.fPanel.catch { top: auto; bottom: max(16px, env(safe-area-inset-bottom)); transform: translateX(-50%); }
+.fPanel.catch .cTop { display: flex; justify-content: space-between; font: 800 20px system-ui; color: #cfe9b8; } .fPanel.catch .big { font: 900 30px system-ui; margin: 4px 0; } .fPanel.catch .big small { font: 600 13px system-ui; color: #aab8a6; }
+.fPanel .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; background: #2e5a26; color: #dfffd0; font: 800 12px system-ui; } .fPanel .badge.gold { background: #6a5014; color: #ffe9a8; }
+#phone.magic .phApp.angler i { background: linear-gradient(145deg, #3fae5a, #1d5f30); color: #fff; } #phone.magic .phApp.angler i svg { fill: none; }
+#phone.magic .phApp-head.angler { background: linear-gradient(135deg, #2f8f4a, #164a26); }

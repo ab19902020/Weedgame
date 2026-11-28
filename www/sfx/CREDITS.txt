@@ -279,3 +279,16 @@ https://freesound.org/people/echobones/sounds/521558/
 drone.ogg — UAS Drone Hover 01.wav, DCPoke, CC0. A DJI Phantom 4 Pro hovering, recorded outdoors on a Tascam DR-40.
 https://freesound.org/people/DCPoke/sounds/387985/
 Game edits: 9.4 s of the steady hover, mono, high-passed at 110 Hz, levelled and crossfaded into a seamless loop.
+fishing.ogg — the fishing sounds (tools/audio/build_fishing.py), all CC0 on Freesound:
+“Angel Fly Fish Reel Slow Wind_1.wav”, paulprit, CC0, https://freesound.org/s/507078/
+“Fly Fishing Reel Running_5.wav”, paulprit, CC0, https://freesound.org/s/507099/
+“Casting Fishing Rod for Game Fishing SFX”, el_boss, CC0, https://freesound.org/s/853287/
+“Fishing Rod Cast - Swoosh”, mwchristian95, CC0, https://freesound.org/s/725426/
+“Fishing Lure Plop Water - Game SFX (2 or 2)”, el_boss, CC0, https://freesound.org/s/853279/
+“Rock In Water Splash-Plop 1.aif”, jc144940, CC0, https://freesound.org/s/178735/
+“Fish Splashing Release 1.wav”, paulprit, CC0, https://freesound.org/s/507094/
+“Fish Splashing Release 2.wav”, paulprit, CC0, https://freesound.org/s/507093/
+“Fish Splashing Pond.wav”, kylecutsfilms, CC0, https://freesound.org/s/443380/
+“big_cast_or_snap”, canberries4, CC0, https://freesound.org/s/866245/
+“Piezo Buzzer Alarm”, D31V228, CC0, https://freesound.org/s/723998/
+Game edits: excerpts, mono, high-pass, levelled, faded; the reel and clutch made into seamless loops; one bleep cut from the piezo buzzer for the bite alarm.

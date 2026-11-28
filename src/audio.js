@@ -7,6 +7,7 @@ import dirtBank from './dirtbikeCues.json';
 import roadBikeBank from './motorcycleCues.json';
 import v8Bank from './rangeroverCues.json';
 import i4Bank from './inline4Cues.json';
+import fishCues from './fishingCues.json';
 
 // Every sound in the game is a real recording (credits: www/sfx/CREDITS.txt):
 //  - sfx/berkshire.ogg  footsteps, doors, horn, crashes, punches, crowd, traffic engines (soundCues.json)
@@ -73,6 +74,7 @@ export class Audio {
       this.loadClip('passing-engine').then(buf => { this.trafficIdle = buf; }).catch(console.warn),
       this.loadClip('room-tone').then(buf => this.slice(buf, [0, buf.duration], this.roomTone)).catch(console.warn),
       this.loadClip('drone').then(buf => { this.droneBuf = buf; }).catch(console.warn),
+      this.loadClip('fishing').then(buf => { this.fishBuf = buf; }).catch(console.warn),
       this.loadFleet().catch(error => console.warn('Fleet audio unavailable', error)),
       this.loadRecordings().catch(error => console.warn('Sound recordings unavailable', error)),
       this.loadWorld().catch(error => console.warn('World sound bank unavailable', error)),
@@ -232,6 +234,27 @@ export class Audio {
   // and the rear pair of props, each re-pitched by its motors' speed so they beat against each other as it
   // manoeuvres, louder as the props work harder. Heard close up in the chase view, distant from the pilot's spot,
   // and in the FPV view as the camera's own mic hears it, quieter and duller.
+  // ---------------------------------------------------------------- fishing (fishing.js): real recordings (tools/audio/build_fishing.py)
+  // a one-off at a place: cast, swish, plop, lead, splash, thrash, snap, beep (the bite alarm)
+  fishShot(name, x, y, z, gain = 0.5, rate = 1) {
+    if (!this.on || !this.fishBuf) return; const o = fishCues.shots[name]; if (!o) return;
+    this.shotFrom(this.fishBuf, o, 'f:' + name, x, y, z, gain, 6, rate * (name === 'beep' ? 1 : 0.96 + Math.random() * 0.08));
+  }
+  // the reel wound in and the clutch giving line: two loops at the angler, their level and pitch set every frame
+  fishLoops(reelG, reelRate, clutchG, clutchRate, P) {
+    if (!this.on || !this.fishBuf) return;
+    const A = this.ctx, t = A.currentTime;
+    if (!this.fishV) {
+      if (!P) return;
+      const p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = 3; p.rolloffFactor = 1.2; p.connect(this.outdoors);
+      const mk = name => { const g = A.createGain(); g.gain.value = 0; g.connect(p); return { g, src: this.slice(this.fishBuf, fishCues.loops[name], g) }; };
+      this.fishV = { p, reel: mk('reel'), clutch: mk('clutch') };
+    }
+    const V = this.fishV;
+    V.reel.g.gain.setTargetAtTime(reelG, t, 0.05); V.reel.src.playbackRate.setTargetAtTime(reelRate, t, 0.05);
+    V.clutch.g.gain.setTargetAtTime(clutchG, t, 0.04); V.clutch.src.playbackRate.setTargetAtTime(clutchRate, t, 0.05);
+    if (P) this.setPos(V.p, P.x, P.y + 1.1, P.z);
+  }
   updateDrone(G, t) {
     const D = G.drone; if (!this.droneBuf || !D) return;
     const live = D.active && (D.state === 'flying' || D.state === 'crashed' || D.turtleT > 0);
