@@ -93,7 +93,7 @@ export class Combat {
     // the wheel and the number keys
     for (let n = 0; n <= 10; n++) if (I.consume('weapon' + n)) this.select(n === 0 ? null : WEAPONS[n - 1]?.key);
     if (I.consume('wheel')) G.hud?.toggleWheel?.();
-    for (let i = 0; i < 2; i++) this.tick(i, dt);
+    this.tick(0, dt);
     const me = B.me, i = B.active, s = this.s[i], a = B.actor[i];
     const busy = !!me.vehicle || G.transit?.ride || G.interiors?.games?.open || G.hud?.wheelOpen;
     this.targeting(i, dt, busy);
