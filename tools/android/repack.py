@@ -136,8 +136,9 @@ for i in src.infolist():
         if perms: data = add_permissions(data, perms)
     if i.filename == 'classes.dex' and dex: data = open(dex, 'rb').read(); print('classes.dex replaced by', dex)
     add(i.filename, data, i.compress_type == zipfile.ZIP_STORED or i.filename == 'resources.arsc'); n_tpl += 1
-# assets/www as tools/android/build.sh copies them
-for top in ['index.html', 'app.js', 'worker.js', 'hud.css', 'county-menu.webp', 'characters', 'vehicles', 'weapons', 'props', 'sfx', 'world', 'assets']:
+# assets/www as tools/android/build.sh copies them: everything in www but the browser test pages (a fixed list here
+# once left www/radio, and with it every radio track, out of the APK)
+for top in sorted(t for t in os.listdir(os.path.join(repo, 'www')) if t != 'test' and not t.startswith('.')):
     p = os.path.join(repo, 'www', top)
     files = [p] if os.path.isfile(p) else [os.path.join(d, f) for d, _, fs in os.walk(p) for f in fs]
     for f in sorted(files):
