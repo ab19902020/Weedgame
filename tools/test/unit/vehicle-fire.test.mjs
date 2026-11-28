@@ -125,3 +125,16 @@ test('your own car only catches once its engine\'s completely gone, and gives yo
   v.eng = 1.18; run(vf, 1);
   assert.ok(v.burning && v.fire.fuse >= 10, `alight, with ${v.fire?.fuse.toFixed(1)} s to get out`);
 });
+
+test('the driver of a car in traffic that catches gets out and runs; a parked car has nobody in it', () => {
+  const { G, vf } = world(), v = add(G, 't', 'hatch', 0, 0), p = add(G, 'p', 'saloon', 20, 0);
+  Object.assign(v, { parked: false, kind: 'traffic', v: 9 });
+  vf.ignite(v, { fuse: 30 }); vf.ignite(p, { fuse: 30 });
+  assert.ok(v.crashed && v.v === 0, 'it stops');
+  run(vf, 2);
+  assert.equal(G.peds.list.length, 1, 'one person out (the parked car was empty)');
+  const d = G.peds.list[0];
+  assert.equal(d.reactPose, 'flee'); assert.ok(d.reactT > 5, 'running');
+  assert.ok(Math.hypot(d.x - v.x, d.z - v.z) < 2, 'from beside the car');
+  assert.equal(v.occupied, false);
+});

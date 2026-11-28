@@ -50,7 +50,7 @@ export class VehicleFires {
   // ('front' the engine, 'rear' the tank), quiet (no 999 call) }
   ignite(v, o = {}) {
     if (!v?.def || pedal(v) || v.burnt || v.burning || v.dead) return false;
-    const F = v.fire = { t: 0, heat: 0.18, spread: 0, fuse: o.fuse ?? rnd(10, 14), from: o.from || 'front', by: o.by ?? v.lastHitBy ?? null, exploded: false, post: 0, cool: 0, srcs: null, bail: v.player || (v.parked && v.occupied !== true) ? null : rnd(0.6, 1.4) };
+    const F = v.fire = { t: 0, heat: 0.18, spread: 0, fuse: o.fuse ?? rnd(10, 14), from: o.from || 'front', by: o.by ?? v.lastHitBy ?? null, exploded: false, post: 0, cool: 0, srcs: null, bail: v.player || v.parked ? null : rnd(0.6, 1.4) };
     v.burning = true; v.smoking = true;
     if (!v.player) Object.assign(v, { crashed: !v.parked, v: 0, brake: true, hazard: false });
     this.list.add(v);
@@ -191,7 +191,7 @@ export class VehicleFires {
   // the driver (or rider) gets out and runs
   bailOut(v) {
     const G = this.G;
-    if (v.player || v.law || (v.parked && v.occupied !== true)) return;
+    if (v.player || v.law || v.parked) return;   // (a parked car's empty, or it's the other brother sat in it)
     // (out of the driver's door, on the right)
     const h = v.heading, B = bike(v), sx = -Math.sin(h), sz = Math.cos(h), off = B ? 0.7 : v.def.W / 2 + 0.45;
     const x = v.x + sx * off + Math.cos(h) * (B ? 0 : v.def.L * 0.08), z = v.z + sz * off + Math.sin(h) * (B ? 0 : v.def.L * 0.08);
@@ -255,7 +255,8 @@ export class VehicleFires {
   }
   // thrown up and spun by the blast; it comes down on its wheels (a bike on its side)
   launch(v, k) {
-    const B = bike(v), m = v.def.mass || 1500, up = clamp(9.5 - m / 600, 4.2, 8) * (B ? 1.15 : 1) * (0.85 + Math.random() * 0.3) / Math.sqrt(k);
+    // (about 2 m up for a car, a little more for a motorbike, a bus or a fire engine barely off the ground)
+    const B = bike(v), m = v.def.mass || 1500, up = clamp(8.4 - m / 650, 3.2, 7) * (0.88 + Math.random() * 0.24);
     const a = Math.random() * Math.PI * 2, lat = rnd(0.4, 1.6);
     this._e.set(v.roll || 0, -v.heading, v.pitch || 0, 'YXZ'); this._q.setFromEuler(this._e); this._c.set(0, v.def.H * 0.45, 0).applyQuaternion(this._q);
     v._air = { cx: v.x + this._c.x, cy: (v.y || 0) + this._c.y, cz: v.z + this._c.z, vx: Math.cos(a) * lat, vy: up, vz: Math.sin(a) * lat,
