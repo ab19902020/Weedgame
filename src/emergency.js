@@ -29,10 +29,14 @@ const smooth = k => { k = clamp(k, 0, 1); return k * k * (3 - 2 * k); };
 const uniformLook = (top, legs) => ({ ...People.randomLook(Math.random, { work: true }), citizen: null, top, legs, bag: false, backpack: false, headphones: false, carrier: false,
   coat: false, skirt: false, tights: false, shorts: false, denim: false, hood: false, cap: false, beanie: false, scarf: false, stoop: false, outfit: 0, idle: 0, shoe: 0 });
 
+const HOMES = new Set(['terrace', 'semi', 'detached', 'bungalow', 'cottage', 'nice']);   // (never the trap house or the brothers' own)
+const BURNABLE = new Set([...HOMES, 'shop', 'pub', 'food', 'gadget', 'office', 'warehouse']);
+
 export class Emergency {
   constructor(G) {
-    this.G = G; this.calls = []; this.actors = []; this.wrecks = []; this.elapsed = 0;
+    this.G = G; this.calls = []; this.actors = []; this.wrecks = []; this.elapsed = 0; this.scorch = [];
     this.nextFire = 1200 + Math.random() * 1200;
+    this.nextBuilding = 900 + Math.random() * 900;   // (a house or a shop alight now and then: building fires below)
     G.events?.on?.('casualty', e => this.casualty(e.p, e.label));
     const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...o });
     this.mats = {
@@ -41,6 +45,9 @@ export class Emergency {
       hose: M(0x7c1812, { side: THREE.DoubleSide, roughness: 0.75 }), branch: M(0x2a2a2c, { metalness: 0.7, roughness: 0.3 }),
       water: new THREE.MeshBasicMaterial({ color: 0xdcecff, transparent: true, opacity: 0.55, depthWrite: false }),
       steam: new THREE.MeshBasicMaterial({ color: 0xe4e7ea, transparent: true, opacity: 0.22, depthWrite: false }),
+      soot: new THREE.MeshBasicMaterial({ color: 0x0d0b0a, transparent: true, opacity: 0.8, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
+      blackSmoke: M(0x1f1d1c, { transparent: true, opacity: 0.8, depthWrite: false }),
+      glow: new THREE.MeshBasicMaterial({ color: 0xff7a1e }),
     };
     this.geos = { box: new THREE.BoxGeometry(1, 1, 1), wheel: new THREE.CylinderGeometry(0.065, 0.065, 0.045, 10).rotateX(Math.PI / 2), drop: new THREE.IcosahedronGeometry(1, 0), puff: new THREE.IcosahedronGeometry(1, 1), cone: new THREE.ConeGeometry(1, 1, 7) };
     this._m = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._s = new THREE.Vector3(); this._p = new THREE.Vector3(); this._v = new THREE.Vector3();
@@ -140,13 +147,19 @@ export class Emergency {
       this.nextFire = this.elapsed + 1200 + Math.random() * 1200;
       if (!G.police.incidents.some(i => i.status !== 'cleared')) this.startFire();
     }
+    if (this.elapsed >= this.nextBuilding) {
+      this.nextBuilding = this.elapsed + 1100 + Math.random() * 1300;
+      if (!G.police.incidents.some(i => i.status !== 'cleared')) this.startBuildingFire();
+    }
+    // the soot over a burnt-out house's windows stays while you're about, and goes once you're well away
+    for (let i = this.scorch.length - 1; i >= 0; i--) { const o = this.scorch[i]; if (Math.hypot(o.position.x - G.focus.x, o.position.z - G.focus.z) > 450) { G.scene.remove(o); this.scorch.splice(i, 1); } }
     this.checkFires(dt); this.dispatchInjuries(dt);
     for (let i = this.calls.length - 1; i >= 0; i--) {
       const c = this.calls[i]; c.time += dt; c.t += dt;
       const v = c.unit;
       // the vehicle's been taken (by you) or wrecked, the patient's gone, or it's all taken far too long: stand down
       if (v.player || v.dead || c.time > 600 || (c.patient && c.patient.gone && c.stage !== 'board' && c.stage !== 'done')) { this.end(c, true); this.calls.splice(i, 1); continue; }
-      if (c.fire) this.burn(c, dt);
+      if (c.fire) { if (c.building) this.burnBuilding(c, dt); else this.burn(c, dt); }
       if (c.stage === 'drive') this.arrive(c, dt);
       else if (c.service === 'ambulance') this.ambulance(c, dt);
       else this.firefight(c, dt);
@@ -418,7 +431,9 @@ export class Emergency {
   firefight(c, dt) {
     const G = this.G, v = c.unit, F = this.frame(v), [A, B, C] = c.crew;
     const car = c.car || (c.incident && G.traffic.byId.get(c.incident.parties?.[0]));
-    const fx = car?.x ?? c.x, fz = car?.z ?? c.z, fy = car?.y ?? v.y;
+    const fx = car?.x ?? c.x, fz = car?.z ?? c.z, fy = car?.y ?? c.fy ?? v.y;
+    // (a building: the jet goes on whichever window's burning worst; the crew stay where they set up)
+    const ax = c.aimAt?.[0] ?? fx, ay = c.aimAt?.[1] ?? fy, az = c.aimAt?.[2] ?? fz;
     // the pump and its deliveries: by the back, on the fire's side
     if (c.pumpSide == null) c.pumpSide = ((fx - v.x) * F.rx + (fz - v.z) * F.rz) >= 0 ? 1 : -1;
     const s = c.pumpSide, back = -v.def.L / 2 + 1.1, [kx, kz] = F.at(back, s * (v.def.W / 2 + 0.12)), [ox, oz] = F.at(back, s * (v.def.W / 2 + 0.7));
@@ -452,17 +467,19 @@ export class Emergency {
       }
       case 'spray': case 'damp': {
         // the jet on the fire until it's out, then a little longer on the hot shell
-        this.face(A, fx, fz, 'hold', dt); this.face(B, fx, fz, 'hold', dt); this.face(C, kx, kz, 'point', dt);
+        this.face(A, ax, az, 'hold', dt); this.face(B, ax, az, 'hold', dt); this.face(C, kx, kz, 'point', dt);
         this.layHose(c, kx, kz);
         const on = c.stage === 'spray' || c.t < 3;
-        this.spray(c, dt, fx, fy, fz, on);
-        if (c.stage === 'spray') { c.heat = Math.max(0, c.heat - dt / 14); if (c.heat <= 0) { c.stage = 'damp'; c.t = 0; this.burnOut(c); } }
+        this.spray(c, dt, ax, ay, az, on);
+        // (a car in a quarter of a minute; a house or a shop, or a forecourt, takes a good deal longer)
+        const takes = c.building ? 45 : c.forecourt ? 32 : 14;
+        if (c.stage === 'spray') { c.heat = Math.max(0, c.heat - dt / takes); if (c.heat <= 0) { c.stage = 'damp'; c.t = 0; if (c.building) this.buildingOut(c); else if (c.forecourt) this.forecourtOut(c); else this.burnOut(c); } }
         else if (c.t > 6) { c.stage = 'makeUp'; c.t = 0; c.water.jet.visible = false; }
         break;
       }
       case 'makeUp': {
         // the hose made up: walked back in to the pump
-        this.spray(c, dt, fx, fy, fz, false);
+        this.spray(c, dt, ax, ay, az, false);
         const a = this.walk(A, ox, oz, dt, 1.5, v), b = this.walk(B, ...stand(0.6), dt, 1.5, v);
         this.face(C, kx, kz, 'hold', dt);
         this.layHose(c, kx, kz);
@@ -519,6 +536,131 @@ export class Emergency {
     car.dmg = [Math.max(car.dmg?.[0] || 0, 0.7), Math.max(car.dmg?.[1] || 0, 0.5), Math.max(car.dmg?.[2] || 0, 0.5), Math.max(car.dmg?.[3] || 0, 0.5)];
     this.wrecks.push(car);
     this.G.hud.feed('Fire out · ' + (this.G.roadName(car.x, car.z) || 'the vehicle fire'));
+  }
+  // ---------------------------------------------------------------- building fires
+  // A house, a shop, a takeaway or a pub alight (one of the buildings you can go into: interiors.json gives its front
+  // wall and its floors), or a petrol station's forecourt (a pump shot up): flames out of the windows and up the
+  // front, a column of black smoke off the roof, a 999 call, and the fire brigade, who run the hose out to the front
+  // and knock it down window by window. What's left is soot over the windows.
+  startBuildingFire() {
+    const G = this.G, I = G.interiors, f = G.focus, me = G.brothers.me;
+    if (!I?.ready || this.calls.some(c => c.service === 'fire')) return false;
+    const list = [];
+    for (const s of I.sites) {
+      if (!BURNABLE.has(s.kind) || s.brothersHome || s.id === me.inside || s.burning || (s.burntAt && G.time - s.burntAt < 1800)) continue;
+      const d = Math.hypot(s.dx - f.x, s.dz - f.z);
+      if (d > 70 && d < 320) list.push(s);
+    }
+    return list.length ? this.igniteBuilding(list[Math.floor(Math.random() * list.length)]) : false;
+  }
+  igniteBuilding(s) {
+    const G = this.G, I = G.interiors;
+    if (!s || this.calls.some(c => c.service === 'fire')) return false;
+    const out = (s.door?.wall || 0.2) + 0.4, [fx, fz] = I.toWorld(s, s.W / 2, -out);
+    const home = HOMES.has(s.kind);
+    if (!this.sendCrew('fire', fx, fz, home ? 'house fire' : 'building fire', null)) return false;
+    const call = this.calls[this.calls.length - 1];
+    const gy = Math.max(s.base, G.tiles.ground(s.dx, s.dz) ?? s.base);
+    Object.assign(call, { building: s, heat: 1, fy: gy + 1.4, gy });
+    call.fire = this.buildingFireMesh(s, gy); G.scene.add(call.fire);
+    s.burning = true;
+    G.hud.feed('999 call: ' + (home ? 'a house fire' : 'a fire at ' + (s.title || s.name || 'a building')) + ' · ' + (s.street || G.roadName(fx, fz) || 'nearby'));
+    return true;
+  }
+  // the windows it shows at (the ground floor's along the front, and upstairs on a house of two floors), each a fire
+  // behind the glass and flames licking out and up the wall; the smoke off the roof
+  buildingFireMesh(s, gy) {
+    const I = this.G.interiors, M = this.mats, g = new THREE.Group();
+    const fh = s.floorH || 2.7, lv = Math.max(1, s.lv || 1), wall = s.wall || fh * lv, face = -(s.door?.wall || 0.2) - 0.04;
+    const xs = s.W > 8 ? [0.2, 0.5, 0.8] : s.W > 5 ? [0.27, 0.73] : [0.5];
+    const spots = xs.map(fr => [s.W * fr, gy + 0.95]);
+    if (lv >= 2) for (const fr of xs.slice(0, 2)) spots.push([s.W * Math.min(0.85, fr + 0.06), gy + fh + 0.95]);
+    const yaw = Math.atan2(-s.ay[0], -s.ay[1]);   // facing out to the street
+    g.userData.windows = spots.map(([lx, y], w) => {
+      const [x, z] = I.toWorld(s, lx, face);
+      const win = new THREE.Group(); win.position.set(x, y, z); win.rotation.y = yaw;
+      const glow = new THREE.Mesh(this.geos.box, M.glow); glow.scale.set(0.95, 1.15, 0.02); glow.position.set(0, 0.45, -0.06); win.add(glow);
+      for (let k = 0; k < 6; k++) { const fl = new THREE.Mesh(this.geos.cone, k % 2 ? M.flameA : M.flameB); fl.userData.k = k; win.add(fl); }
+      win.userData.w = w; win.userData.glow = glow;
+      g.add(win); return win;
+    });
+    const [rx, rz] = I.toWorld(s, s.W / 2, s.D * 0.45);
+    const col = new THREE.Group(); col.position.set(rx, gy + wall + 0.6, rz); g.add(col); g.userData.smoke = col;
+    for (let k = 0; k < 12; k++) { const p = new THREE.Mesh(this.geos.puff, k % 3 ? M.blackSmoke : M.smoke); p.userData.j = k; col.add(p); }
+    return g;
+  }
+  burnBuilding(c, dt) {
+    const g = c.fire, t = c.time, k = c.heat ?? 1, W = g.userData.windows, n = W.length;
+    const damp = c.stage === 'damp' || c.stage === 'makeUp' || c.stage === 'stow' || c.stage === 'board';
+    let worst = null, wk = 0;
+    for (const win of W) {
+      // they go out one after another as the jet works along them (the last to catch, first out)
+      const th = win.userData.w / (n + 1), kw = clamp((k - th) / (1 - th), 0, 1);
+      win.userData.glow.visible = kw > 0.04; win.userData.glow.scale.y = 1.15 * (0.5 + 0.5 * kw);
+      for (const fl of win.children) {
+        if (fl.userData.k == null) continue;
+        const j = fl.userData.k, f = 1 + 0.3 * Math.sin(t * 8 + j * 1.7 + win.userData.w) + 0.15 * Math.sin(t * 21 + j);
+        const r = (0.2 + j * 0.035) * (0.4 + 0.6 * kw), hgt = (0.9 + 0.35 * (j % 3)) * f * kw * 1.5;
+        fl.visible = kw > 0.03; fl.scale.set(r, hgt, r);
+        // out of the top of the window and up the wall, leaning out from it
+        fl.position.set((j - 2.5) * 0.16, 0.85 + hgt * 0.45, 0.18 + 0.1 * (j % 2)); fl.rotation.x = 0.28;
+      }
+      if (kw > wk) { wk = kw; worst = win; }
+    }
+    if (worst) { const p = worst.position; c.aimAt = [p.x, p.y + 0.6, p.z]; }
+    // black smoke while it's burning, thinning to a grey haze once it's out
+    const sm = Math.max(k, damp ? Math.max(0, 0.6 - (c.t || 0) / 30) : 0), col = g.userData.smoke;
+    for (const o of col.children) {
+      const j = o.userData.j, u = (t * 0.09 + j / 12) % 1, sc = (0.9 + u * 3.6) * (0.35 + 0.65 * sm);
+      o.position.set(Math.sin(j * 1.9) * 1.1 + u * 4, u * 17, Math.cos(j * 2.3) * 1.1 + u * 1.5); o.scale.setScalar(sc); o.visible = sm > 0.02;
+    }
+  }
+  buildingOut(c) {
+    const G = this.G, s = c.building; if (!s || s.burntAt) return;
+    s.burning = false; s.burntAt = G.time;
+    // soot over each window that burned, up the wall from its head
+    for (const win of c.fire?.userData.windows || []) {
+      const m = new THREE.Mesh(this.geos.box, this.mats.soot); m.scale.set(1.3, 1.6, 0.01);
+      m.position.copy(win.position); m.position.y += 1.05; m.rotation.y = win.rotation.y;
+      m.position.x += Math.sin(win.rotation.y) * 0.02; m.position.z += Math.cos(win.rotation.y) * 0.02;
+      G.scene.add(m); this.scorch.push(m);
+    }
+    G.hud.feed('Fire out · ' + (s.title || s.street || 'the building'));
+  }
+  // ---------------------------------------------------------------- the forecourt
+  // rounds through a pump: three and it goes up, a fire on the island that rolls black smoke out under the canopy
+  shotLine(o, d, len) {
+    const G = this.G, F = G.fuel; if (!F?.stations?.length) return;
+    for (const st of F.stations) {
+      if (Math.hypot(st.x - o.x, st.z - o.z) > 80 || !st.islands) continue;
+      for (const isl of st.islands) {
+        if (isl.burning) continue;
+        // the nearest the round's line comes to the island's pumps, at pump height
+        const gy = G.tiles.ground(isl.x, isl.z) ?? st.base ?? o.y, tx = isl.x - o.x, ty = gy + 1.0 - o.y, tz = isl.z - o.z;
+        const tt = clamp(tx * d.x + ty * d.y + tz * d.z, 0, len), px = o.x + d.x * tt - isl.x, py = o.y + d.y * tt - (gy + 1.0), pz = o.z + d.z * tt - isl.z;
+        if (Math.hypot(px, pz) > 0.8 || Math.abs(py) > 0.95) continue;
+        isl.hits = (isl.hits || 0) + 1;
+        G.breakables?.debris?.spark?.(6, isl.x, gy + 1, isl.z, -d.x * 3, 2, -d.z * 3, 3);
+        if (isl.hits >= 3) this.igniteForecourt(st, isl);
+        return;
+      }
+    }
+  }
+  igniteForecourt(st, isl) {
+    const G = this.G;
+    if (isl.burning || this.calls.some(c => c.service === 'fire')) return false;
+    isl.burning = true;
+    G.peds?.disturb?.(isl.x, isl.z, 60, 'gun');   // (everyone runs)
+    if (!this.sendCrew('fire', isl.x, isl.z, 'petrol station fire', null)) { isl.burning = false; return false; }
+    const call = this.calls[this.calls.length - 1], gy = G.tiles.ground(isl.x, isl.z) ?? st.base ?? 0;
+    Object.assign(call, { forecourt: { st, isl }, heat: 1, fy: gy + 0.8 });
+    call.fire = this.fireMesh(); call.fire.scale.setScalar(2.1); call.fire.position.set(isl.x, gy + 0.2, isl.z); G.scene.add(call.fire);
+    G.hud.feed('999 call: a fire at the pumps · ' + (st.name || 'the petrol station'));
+    return true;
+  }
+  forecourtOut(c) {
+    const { st, isl } = c.forecourt; isl.burning = false; isl.hits = 0; isl.burnt = this.G.time;
+    this.G.hud.feed('Fire out · ' + (st.name || 'the forecourt'));
   }
   // the hose: a ribbon turned to face the camera (so it reads as a round hose from any angle), from the pump
   // coupling down to the ground, along it to the second firefighter, up through his hands and on to the branch
@@ -604,7 +746,7 @@ export class Emergency {
     if (c.bed) G.scene.remove(c.bed);
     if (c.hose) { G.scene.remove(c.hose.mesh, c.hose.branch); c.hose.mesh.geometry.dispose(); }
     if (c.water) { G.scene.remove(c.water.jet, c.water.steam); c.water.jet.dispose?.(); c.water.steam.dispose?.(); }
-    if (c.fire) { G.scene.remove(c.fire); if (abandoned && c.car) this.burnOut(c); }
+    if (c.fire) { G.scene.remove(c.fire); if (abandoned && c.car) this.burnOut(c); if (c.building && !c.building.burntAt) this.buildingOut(c); if (c.forecourt) c.forecourt.isl.burning = false; }
     if (c.incident && c.service === 'ambulance') c.incident.medicalBusy = false;
     const P = c.patient;
     if (P && abandoned && !P.gone) {

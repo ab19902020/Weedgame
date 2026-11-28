@@ -306,6 +306,7 @@ export class Combat {
         if (near.kind !== 'none') { hit = near; dir = td; tt = near.t; }
       }
       this.impact(hit, dir, w);
+      G.emergency?.shotLine?.(o, td, tt);   // (through a petrol pump: three and the forecourt goes up)
       if (hit.kind === 'ped') hitSomeone = true;
       if (dirs.length === 1 || Math.random() < 0.35) this.fx.tracer(o, td, tt);
     }
