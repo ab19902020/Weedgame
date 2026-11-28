@@ -7,7 +7,7 @@ import {
   int, cross, dFdx, dFdy,
 } from 'three/tsl';
 import { U, noiseTex, cloudTex, coverTex, COVER_N, lightTex, LIGHT_N, LIGHT_RES, atlasTex, ATLAS_N, cloudShadow, skyColor, lightPos, lightCol, NL, NF } from './env.js';
-import { L, sAlbedo, sDetail, sAlbedoAT, perturb, perturbW, groundUV, worldToView } from './surfaces.js';
+import { L, sAlbedo, sDetail, sAlbedoAT, perturb, perturbW, groundUV, worldToView, albedoTex } from './surfaces.js';
 import { BRAND_N, paletteBytes } from './brands.js';
 // branch-free select: plain select() compiles to if/else blocks, which breaks texture sampling
 // (WGSL uniformity) and leaks block-scoped vars (GLSL). Both sides are cheap or already computed.
@@ -123,13 +123,27 @@ export function terrainMaterial() {
     const t = slot.mul(128).add(positionLocal.xz.add(off).div(2)).div(ATLAS_N);
     return texture(atlasTex, t).r.mul(255);
   });
-  // jitter the 2 m landcover lookup so soft boundaries (grass, woods, fields) read as organic edges, not
-  // pixels; hard town ground (roads, pavements, car parks, hard standing, building edges) keeps straight edges
-  const c00 = cls(vec2(0, 0));
-  const hardG = step(0.5, c00).mul(step(c00, 3.5)).add(step(7.5, c00).mul(step(c00, 10.5))).add(step(11.5, c00).mul(step(c00, 12.5))).add(step(16.5, c00).mul(step(c00, 17.5))).min(1);
+  // where hard town ground (roads, pavements, car parks, hard standing, building edges) meets anything soft the
+  // edge is a smooth contour: the four 2 m cells around the point vote hard or soft, bilinearly, so a kerb line
+  // or car park edge running at an angle is a clean line, not a staircase of cells, and not the ragged blotches a
+  // jittered lookup left along every verge. Between soft classes (grass, woods, fields) the lookup is still
+  // jittered so those boundaries read as organic edges.
+  const hardOf = c => step(0.5, c).mul(step(c, 3.5)).add(step(7.5, c).mul(step(c, 10.5))).add(step(11.5, c).mul(step(c, 12.5))).add(step(16.5, c).mul(step(c, 17.5))).min(1);
+  const q = positionLocal.xz.div(2).sub(0.5), qi = floor(q), qf = fract(q);
+  const corner = (dx, dz) => texture(atlasTex, slot.mul(128).add(clamp(qi.add(vec2(dx, dz)), 0, 127)).add(0.5).div(ATLAS_N)).r.mul(255);
+  const k00 = corner(0, 0), k10 = corner(1, 0), k01 = corner(0, 1), k11 = corner(1, 1);
+  const h00 = hardOf(k00), h10 = hardOf(k10), h01 = hardOf(k01), h11 = hardOf(k11);
+  const hb = mix(mix(h00, h10, qf.x), mix(h01, h11, qf.x), qf.y);
+  const hardG = step(nz(p.xz, 1 / 3.1).r.sub(0.5).mul(0.14).add(0.5), hb);
   const jit = nz(p.xz, 1 / 5.3).rg.sub(0.5).mul(mix(float(2.4), float(0.45), hardG));
   const palC = Fn(([c]) => texture(palTex, vec2(c.add(0.5).div(32), 0.5)).rgb);
-  const c0 = cls(jit);
+  const cj = cls(jit);
+  // a jittered lookup that lands on the other kind takes the nearest corner cell of the right kind instead
+  const sc = (h, w) => w.add(0.01).mul(float(1).sub(abs(h.sub(hardG))));
+  const s00 = sc(h00, float(1).sub(qf.x).mul(float(1).sub(qf.y))), s10 = sc(h10, qf.x.mul(float(1).sub(qf.y)));
+  const s01 = sc(h01, float(1).sub(qf.x).mul(qf.y)), s11 = sc(h11, qf.x.mul(qf.y));
+  const b1 = sel(s10.greaterThan(s00), k10, k00), m1 = max(s00, s10), b2 = sel(s11.greaterThan(s01), k11, k01), m2 = max(s01, s11);
+  const c0 = sel(abs(hardOf(cj).sub(hardG)).lessThan(0.5), cj, sel(m2.greaterThan(m1), b2, b1));
   const tintRaw = palC(c0).mul(0.5).add(palC(cls(jit.add(vec2(1.6, 0)))).mul(0.25)).add(palC(cls(jit.add(vec2(0, -1.6)))).mul(0.25));
   const isWater = step(3.5, c0).mul(step(c0, 4.5));
   const layer = classLayer(c0);
@@ -151,6 +165,9 @@ export function terrainMaterial() {
   const daisy = isLawn.mul(step(0.972, nz(p.xz, 1 / 0.16).b));
   albedo = mix(albedo, albedo.mul(vec3(0.62, 0.95, 0.5)), clover.mul(0.4));
   albedo = mix(albedo, vec3(0.8, 0.78, 0.64), daisy);
+  // a pavement cell's fringe beyond the drawn flags gets the same slab joints, so the two read as one footway
+  const flagJ = smoothstep(0.012, 0.04, fract(p.x.div(0.6))).mul(smoothstep(0.012, 0.04, fract(p.z.div(0.9))));
+  albedo = mix(albedo, albedo.mul(mix(float(0.58), float(1), flagJ)), step(1.5, c0).mul(step(c0, 2.5)));
   const sh = shelter(p);
   const wet = U.wet.mul(float(1).sub(sh));
   albedo = albedo.mul(mix(float(1), mix(float(0.62), float(0.82), greenish), wet));
@@ -250,7 +267,7 @@ export function groundMaterial() {
   const tex = sAlbedoAT(layer, uvm, smoothstep(0.3, 0.7, nz(p.xz, 1 / 11).g));
   // colour casts: darker A-road asphalt, repair patches, warm block paving, lighter tarmac pavements
   const roadTone = vec3(0.78).mul(smoothstep(0.62, 0.66, patch).mul(-0.18).add(1.04)).mul(big.mul(0.2).add(0.9));
-  const tone = sel(isRoad.greaterThan(0.5), roadTone, sel(tarmacPave.greaterThan(0.5), vec3(0.95), sel(isPlaza.greaterThan(0.5), vec3(1.18, 0.92, 0.8),
+  const tone = sel(isRoad.greaterThan(0.5), roadTone, sel(tarmacPave.greaterThan(0.5), vec3(0.95), sel(isPlaza.greaterThan(0.5), vec3(1.06, 0.93, 0.85),
     sel(isPath.greaterThan(0.5), vec3(0.82, 0.78, 0.72), sel(isBallast.greaterThan(0.5), vec3(0.8, 0.72, 0.66), vec3(1))))));
   let albedo = tex.mul(tone);
   // aggregate chips, tar patches, slab joints, weeds in the cracks, mossy kerbs
@@ -425,13 +442,17 @@ export function buildingMaterial() {
   const roofLayer = sel(isFlat.greaterThan(0.5), int(L.felt), sel(roofFinish.equal(1), int(L.roof_slate), sel(roofFinish.equal(2), int(L.roof_clay), sel(roofFinish.equal(3), int(L.felt), defaultRoof))));
   const layer = sel(isWall.add(isBay).greaterThan(0.5), wallLayer, sel(isChim.greaterThan(0.5), int(L.brick_red), roofLayer));
   const uvm = vec2(u.x, u.y);
-  const wallTex = sAlbedo(layer, uvm);
+  // walls: the photographic brick and stone, a little less contrasty (pulled 18% towards the texture's own mean,
+  // its smallest mip), so a whole street of brick reads as a calm surface, not a busy pattern; roofs as they are
+  const wallTex0 = sAlbedo(layer, uvm);
+  const wallTex = mix(wallTex0, mix(texture(albedoTex, vec2(0.5)).depth(layer).level(12).rgb, wallTex0, 0.82), isWall.add(isBay).min(1));
   const isRender = sel(wallLayer.equal(int(L.render)), float(1), float(0)).mul(isWall);
   const isPeb = sel(wallLayer.equal(int(L.pebbledash)), float(1), float(0)).mul(isWall);
   // render paint colours: magnolia, white, cream, pale grey, the odd pastel
-  const paint = sel(r1.lessThan(0.35), vec3(1.25, 1.2, 1.05), sel(r1.lessThan(0.6), vec3(1.4, 1.4, 1.36), sel(r1.lessThan(0.8), vec3(1.3, 1.22, 1.0), sel(r1.lessThan(0.93), vec3(1.1, 1.12, 1.12), vec3(1.15, 1.25, 1.3)))));
+  // (softened: the old near-white paints glared in sunshine and made whole streets look stark)
+  const paint = sel(r1.lessThan(0.35), vec3(1.08, 1.02, 0.88), sel(r1.lessThan(0.6), vec3(1.14, 1.12, 1.06), sel(r1.lessThan(0.8), vec3(1.1, 1.02, 0.84), sel(r1.lessThan(0.93), vec3(0.96, 0.97, 0.96), vec3(0.98, 1.03, 1.06)))));
   const cladTint = mix(vec3(0.75, 0.8, 0.85), vec3(0.45, 0.55, 0.7), r1);
-  let wallCol = wallTex.mul(mix(vec3(1), paint, isRender)).mul(mix(vec3(1), vec3(1.5), isPeb)).mul(mix(vec3(1), cladTint.mul(1.3), sel(wallLayer.equal(int(L.cladding)), float(1), float(0))));
+  let wallCol = wallTex.mul(mix(vec3(1), paint, isRender)).mul(mix(vec3(1), vec3(1.28), isPeb)).mul(mix(vec3(1), cladTint.mul(1.3), sel(wallLayer.equal(int(L.cladding)), float(1), float(0))));
   wallCol = wallCol.mul(h1(seed.add(2.2)).mul(0.18).add(0.91));   // per-building weathering / batch variation
   const streak = isRender.mul(smoothstep(0.8, 0.96, nz(vec2(u.x.mul(2.2), float(0.3)), 0.4).r)).mul(smoothstep(0.2, 4.0, u.y));
   wallCol = wallCol.mul(float(1).sub(streak.mul(0.28)));
@@ -595,15 +616,15 @@ export function buildingMaterial() {
   const warm = mix(vec3(1.0, 0.74, 0.46), vec3(0.85, 0.9, 1.0), step(0.75, h1(roomSeed.mul(13))).max(shopFront));
   // ---- roofs: photographic clay / slate / felt with moss and weathering
   const moss = nz(p.xz, 1 / 3.1).g;
-  const roofCol = wallTex.mul(mix(vec3(1), vec3(0.75, 0.85, 0.55), smoothstep(0.62, 0.8, moss).mul(0.35))).mul(h1(seed.add(9.9)).mul(0.2).add(0.9));
+  const roofCol = wallTex.mul(mix(vec3(1), vec3(0.75, 0.85, 0.55), smoothstep(0.62, 0.8, moss).mul(0.35))).mul(h1(seed.add(9.9)).mul(0.2).add(0.8));
   const flatCol = wallTex.mul(sel(step(3.5, cls).mul(step(0.5, r1)).greaterThan(0.5), vec3(1.5), vec3(0.85)));
   let albedo = wallCol.mul(isWall);
-  const frameCol = sel(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), sel(r3.lessThan(0.85), vec3(0.9, 0.9, 0.88), vec3(0.15, 0.12, 0.1)));
+  const frameCol = sel(isOffice.greaterThan(0.5), vec3(0.12, 0.13, 0.14), sel(r3.lessThan(0.85), vec3(0.8, 0.79, 0.76), vec3(0.15, 0.12, 0.1)));
   albedo = mix(albedo, frameCol, frame.mul(float(1).sub(doorZone)));
   albedo = mix(albedo, wallCol.mul(mix(float(0.55), float(0.8), step(0, ry))), reveal.mul(float(1).sub(shopFront)));
   const sill = insideU(cu, ww.mul(0.5).add(0.06), fcu).mul(between(fv, winBot.sub(0.05), winBot, ffv)).mul(isWall).mul(float(1).sub(isInd)).mul(float(1).sub(shopFront)).mul(float(1).sub(doorZone)).mul(step(0, u.y))
     .mul(float(1).sub(rearShop.max(blankSide))).mul(float(1).sub(shop.mul(front).mul(step(fi, 0.5)))).mul(float(1).sub(curtainW)).mul(float(1).sub(balCol)).mul(float(1).sub(stairCol));   // (only under a window that's there)
-  albedo = mix(albedo, vec3(0.7, 0.68, 0.62), sill);
+  albedo = mix(albedo, vec3(0.64, 0.62, 0.57), sill);
   // the panels under flats' windows: muted (weathered render, faded GRP, dark spandrel glass), and on about a
   // third of blocks none at all, just brick
   const panelCol = sel(r1.lessThan(0.25), vec3(0.38, 0.2, 0.15), sel(r1.lessThan(0.5), vec3(0.24, 0.25, 0.27), sel(r1.lessThan(0.7), vec3(0.16, 0.24, 0.25), sel(r1.lessThan(0.85), vec3(0.62, 0.61, 0.58), vec3(0.1, 0.1, 0.11)))));
@@ -612,7 +633,10 @@ export function buildingMaterial() {
   // spandrels between a curtain wall's floors: a dark band at each slab
   const spandrel = curtainW.mul(isWall).mul(float(1).sub(between(fv, winBot, winTop, ffv))).mul(step(0, u.y)).mul(float(1).sub(shopG));
   albedo = mix(albedo, vec3(0.16, 0.18, 0.2), spandrel);
-  albedo = mix(albedo, mix(vec3(0.012, 0.014, 0.016), vec3(0.03, 0.06, 0.07), curtainW.add(ribbon.mul(0.5))), glass);
+  // window glass: dark close to, but further off a window reads as a soft grey-blue (frames, nets, the sky in it),
+  // not a black hole: whole streets of black windows looked forbidding
+  const winFar = smoothstep(0.012, 0.06, max(fU, fV));
+  albedo = mix(albedo, mix(mix(vec3(0.03, 0.034, 0.038), vec3(0.03, 0.06, 0.07), curtainW.add(ribbon.mul(0.5))), vec3(0.1, 0.11, 0.12), winFar.mul(0.6)), glass);
   albedo = mix(albedo, doorRGB, isDoor.mul(float(1).sub(doorGlass)));
   albedo = mix(albedo, frameCol, doorFrame);
   albedo = mix(albedo, vec3(0.012, 0.014, 0.016), doorGlass);
@@ -633,7 +657,7 @@ export function buildingMaterial() {
   albedo = mix(albedo, vec3(0.7, 0.69, 0.66), balSlab);
   albedo = albedo.add(roofCol.mul(isRoof).mul(float(1).sub(pEq(9).mul(0.3)))).add(flatCol.mul(isFlat)).add(wallTex.mul(isChim));
   // trims (uPVC white mostly; black or stained timber on some), gutters, soffits, clay pots, bay windows
-  const trimCol = sel(r3.lessThan(0.8), vec3(0.8, 0.8, 0.78), sel(r3.lessThan(0.93), vec3(0.035, 0.035, 0.04), vec3(0.17, 0.1, 0.055)));
+  const trimCol = sel(r3.lessThan(0.8), vec3(0.74, 0.73, 0.7), sel(r3.lessThan(0.93), vec3(0.035, 0.035, 0.04), vec3(0.17, 0.1, 0.055)));
   const gutterCol = sel(r1.lessThan(0.22), vec3(0.75), vec3(0.03, 0.03, 0.032));
   albedo = albedo.add(trimCol.mul(isTrim)).add(gutterCol.mul(isGutter)).add(trimCol.mul(0.92).mul(isSoffit)).add(vec3(0.42, 0.2, 0.1).mul(isPot));
   albedo = albedo.add(isBay.mul(mix(mix(mix(vec3(0.012, 0.014, 0.016), trimCol, bFrame.add(bHead).min(1)), vec3(0.68, 0.66, 0.6), bSill), wallCol, bRiser)));
@@ -685,7 +709,7 @@ export function buildingMaterial() {
   // glass mirrors the sky map, which has no street in it: towards the horizon (a shop window seen along the
   // parade, a block's windows from below) occlude that reflection, as the buildings and trees opposite would
   const rW = reflect(viewDir().negate(), nW);
-  m.aoNode = mix(float(1), smoothstep(-0.05, 0.4, rW.y).mul(0.62).add(0.3), glass.add(doorGlass).min(1));
+  m.aoNode = mix(float(1), smoothstep(-0.05, 0.4, rW.y).mul(0.5).add(0.45), glass.add(doorGlass).min(1));
   const plain = glass.add(frame).add(isDoor).add(sill).add(trimAll).add(balRail).add(slabs).min(1);
   m.normalNode = perturb(nW, d, mix(float(1.0), float(0.7), isRender).mul(float(1).sub(plain)));
   const refl = skyReflection(p, nW, glass.mul(float(1).sub(balOcc)).mul(mix(float(0.55), float(1), h1(roomSeed.mul(17.3)).max(shopFront))).mul(mix(mix(float(0.6), float(1.0), curtainW.add(ribbon.mul(0.5))), float(0.18), shopFront)).add(wet.mul(isRoof).mul(0.25)));
@@ -699,7 +723,10 @@ export function buildingMaterial() {
   // seen along the street is mostly reflection, not a pale wash of lit shelves
   const transm = float(1).sub(pow(float(1).sub(max(dot(nW, viewDir()), 0)), 2).mul(0.85));
   const interior = roomCol.mul(seeIn).mul(warm.mul(lamp).add(daylight).add(shopDay)).mul(transm);
-  m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo)).add(fascia.mul(fasciaCol).mul(U.night).mul(0.55));
+  // what glass seen side-on mirrors instead of the sky: the street, the houses and trees opposite (a mid tone, so
+  // windows along a road aren't black)
+  const streetRefl = glass.mul(float(1).sub(smoothstep(-0.05, 0.35, rW.y))).mul(float(1).sub(U.night.mul(0.85))).mul(float(1).sub(shopFront.mul(0.5)));
+  m.emissiveNode = interior.add(refl).add(vec3(U.horizon).mul(0.07).mul(streetRefl)).add(lightPool(p).mul(albedo)).add(fascia.mul(fasciaCol).mul(U.night).mul(0.55));
   // the real interior of an enterable building you're stood near shows through its ground-floor windows (interiors.js
   // showcase): the panes there are cut away, so what you see from the street is what you walk into
   // A pane is cut only where the view through it goes on into the room's box (its plan, floor to ceiling): at a glancing

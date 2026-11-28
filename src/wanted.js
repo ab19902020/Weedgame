@@ -11,11 +11,16 @@
 // search round where you were last seen (the circle on the minimap). Get outside the circle and stay unseen for a
 // while, and they lose you. Indoors you're out of sight.
 //
-// The cars: far off they come by the roads on blue lights. Close in, each one is driven through the same car
-// physics as yours (carPhysics.js, `driven`) by a pursuit driver with a job: the PIT (get alongside your back
-// wheel and turn in, so the back of your car comes round), the block (get ahead and turn across you), the ram,
-// and the tail (on your bumper). When you slow down they box you in, front, back and sides, and the crews get out.
-// From two stars: stingers (spike strips) laid ahead of you; from four, roadblocks of two cars across the road.
+// The cars work as a team, the way British traffic units run a pursuit (plan(), TPAC: tactical pursuit and
+// containment). Far off they come by the roads on blue lights, heading for where you're going rather than where you
+// are. Close in, each is driven through the same car physics as yours (carPhysics.js, `driven`) by a pursuit driver
+// with a role: the lead car follows at a safe distance (more the faster you go) with a second behind it; they ease
+// off for traffic in their way rather than plough through it. Given a straight run at moderate speed and three cars,
+// they contain you: one gets in front and slows, bringing you down with it (a rolling block), one closes up behind
+// and the others come up alongside, until you're boxed in and stop and the crews get out. Tactical contact (the
+// PIT: alongside your back wheel, then turning in) only from three stars, ramming only from four. From two stars a
+// crew lays a stinger (spike strip) ahead: it lies at the kerb by their car and is pulled across as you come, and
+// back once you're past; from four, roadblocks of two cars across the road.
 //
 // On foot: the officers get out and come for you with Tasers (you drop for a few seconds and they cuff you). At five
 // stars it's armed response officers (dark kit, caps), who stand and shoot: at you, or at your car and through the
@@ -115,6 +120,7 @@ export class Wanted {
     if (!this.hold || this.hold.kind === 'stun' || this.hold.kind === 'surrender') {
       this.bringIn(dt, me, car);
       const T = this.targetOf(me, car);
+      this.watch(dt, T); if ((this.planT = (this.planT || 0) - dt) <= 0) { this.planT = 0.5; this.plan(T); }
       for (const u of this.units.slice()) this.unit(u, dt, T, me, car);
       for (const o of this.foot.slice()) this.officer(o, dt, T, me, car);
       this.stingers(dt, T, car);
@@ -220,6 +226,8 @@ export class Wanted {
       if (this.phase === 'active' && (d < 25 || d < DRIVE_R && (L.losT = (L.losT || 0) - dt) <= 0 && ((L.losT = 0.3), this.los(u.x, u.y + 1.2, u.z, tx, T.y + 1, tz)))) { this.takeWheel(u); return; }
       if ((L.routeT -= dt) <= 0) {
         L.routeT = 2.5;
+        // intercepting: a point ahead of you on your way (8 s on), so they meet you rather than trail you
+        if (L.role === 'intercept' && d > 160) { const k = Math.min(8, d / 25); tx = T.x + T.vx * k; tz = T.z + T.vz * k; }
         const n = G.net.nearest(tx, tz, 150, e => G.net.flags[e] & 16);
         if (n) { u.dest = Math.hypot(G.net.nodes[G.net.ea[n.e] * 3] - u.x, G.net.nodes[G.net.ea[n.e] * 3 + 2] - u.z) < Math.hypot(G.net.nodes[G.net.eb[n.e] * 3] - u.x, G.net.nodes[G.net.eb[n.e] * 3 + 2] - u.z) ? G.net.ea[n.e] : G.net.eb[n.e]; u.route = [u.h]; u.ri = 0; }
       }
@@ -242,6 +250,51 @@ export class Wanted {
       if (d < (L.best ?? 1e9) - 1) { L.best = d; L.noProg = 0; } else L.noProg = (L.noProg || 0) + dt;
       if ((L.slowT > (car ? 1.2 : 0.4) || (!car && d < 90 && L.noProg > 5)) && Math.abs(u.sp) < 5) { L.best = null; this.deploy(u); }
     }
+  }
+  // ---------------------------------------------------------------- the team
+  // How British traffic units work a pursuit (TPAC: tactical pursuit and containment): a lead car follows at a safe
+  // distance with a second behind it, nobody piling in; where the road and the speed allow, they contain you: one
+  // gets in front and slows, bringing you down with it (a rolling block), one closes up behind and the others come up
+  // alongside, until you're boxed in and stop. Tactical contact (the PIT) only from three stars; ramming only from
+  // four. Cars further off don't chase your tail: they head for where you're going. Re-planned twice a second.
+  watch(dt, T) {
+    const dh = this.lastH == null ? 0 : Math.abs(wrap(T.h - this.lastH)) / Math.max(dt, 1e-3);
+    this.lastH = T.h;
+    // how long they've been going straight (a containment needs a straight run), and their speed smoothed
+    this.straight = dh < 0.12 && T.sp > 3 ? (this.straight || 0) + dt : 0;
+    this.suspectSp = (this.suspectSp ?? T.sp) + (T.sp - (this.suspectSp ?? T.sp)) * Math.min(1, dt * 2);
+  }
+  plan(T) {
+    const close = this.units.filter(u => u.law && !u.law.fixed && u.law.mode === 'drive' && !u.dead);
+    for (const u of this.units) if (u.law && !u.law.fixed) u.law.role = u.law.mode === 'road' ? (T.car && T.sp > 6 && this.phase === 'active' ? 'intercept' : 'converge') : null;
+    if (this.phase !== 'active') { for (const u of close) u.law.role = 'search'; return; }
+    const tfx = Math.cos(T.h), tfz = Math.sin(T.h), trx = -tfz, trz = tfx;
+    const R = close.map(u => ({ u, along: (u.x - T.x) * tfx + (u.z - T.z) * tfz, side: (u.x - T.x) * trx + (u.z - T.z) * trz, d: Math.hypot(u.x - T.x, u.z - T.z) }));
+    const free = () => R.filter(r => !r.u.law.role);
+    const take = (role, score) => { const c = free().sort((a, b) => score(a) - score(b))[0]; if (c) c.u.law.role = role; return c; };
+    const moving = T.car && T.sp > 4;
+    if (!moving) {
+      // stopped, or on foot: the box, then everyone else holds back and the crews get out
+      take('rear', r => Math.hypot(r.along + 8, r.side)); take('front', r => Math.hypot(r.along - 8, r.side));
+      take('left', r => Math.hypot(r.along, r.side + 4)); take('right', r => Math.hypot(r.along, r.side - 4));
+    } else {
+      const contain = this.level >= 2 && R.length >= 3 && this.suspectSp < 20 && this.straight > 1.5;
+      if (contain) {
+        take('front', r => -r.along + Math.abs(r.side) * 0.5);
+        take('rear', r => r.along < 0 ? -r.along : 50 + r.along);
+        take('left', r => Math.abs(r.side + 3) + Math.abs(r.along) * 0.3);
+        take('right', r => Math.abs(r.side - 3) + Math.abs(r.along) * 0.3);
+        if (!this.contained) { this.contained = true; this.G.hud.feed('Police: containment — boxing you in'); }
+      } else {
+        this.contained = false;
+        take('lead', r => (r.along < 0 ? 0 : 40) + r.d);
+        if (this.level >= 3 && T.sp > 6 && T.sp < 24) take('pit', r => Math.abs(r.along + T.L * 0.5) + Math.abs(Math.abs(r.side) - 2.5));
+        if (this.level >= 4) take('ram', r => r.d);
+        take('second', r => (r.along < 0 ? 0 : 40) + r.d);
+      }
+      for (const r of free()) r.u.law.role = 'second';
+    }
+    for (const r of free()) r.u.law.role = 'hold';
   }
   // off the lanes: the car is driven through carPhysics.js from here
   takeWheel(u) {
@@ -271,47 +324,58 @@ export class Wanted {
     const along = (u.x - T.x) * tfx + (u.z - T.z) * tfz, side = (u.x - T.x) * trx + (u.z - T.z) * trz;
     const look = clamp(d / Math.max(12, Math.abs(sp) + 6), 0, 1.4);
     let ax = T.x + T.vx * look, az = T.z + T.vz * look, want = 60, hb = false;
-    const job = T.search ? 'search' : L.job;
+    const role = T.search ? 'search' : L.role || ({ pit: 'lead', block: 'second', tail: 'second', ram: 'second' }[L.job]) || 'second';
+    const gap = clamp(6 + T.sp * 1.1, 8, 34), lenGap = T.L / 2 + u.def.L / 2;
+    // a point beside / ahead of / behind the target, in its frame
+    const at = (fwd, right, lead = 0.25) => [T.x + tfx * fwd + trx * right + T.vx * lead, T.z + tfz * fwd + trz * right + T.vz * lead];
     if (T.car && T.sp > 4) {
-      if (job === 'pit') {
-        // the PIT: come up alongside the back wheel, a car's width out, then turn into the rear quarter so the back
-        // of the car is pushed round and it spins out
+      if (role === 'lead' || role === 'second' || role === 'hold') {
+        // following: the lead at a safe gap, close enough to keep eyes on; the second behind it, offset a little
+        const g = role === 'lead' ? gap : gap + 12, off = role === 'lead' ? 0 : (L.off ??= Math.random() < 0.5 ? -1.6 : 1.6);
+        [ax, az] = at(-g, off, 0.4);
+        const behind = -along;   // metres behind the target (negative: we're level or ahead)
+        want = T.sp + clamp((behind - g) * 0.45, -8, role === 'lead' ? 9 : 7);
+        if (behind < g * 0.55) want = Math.min(want, T.sp - 3);   // too close: drop back
+      } else if (role === 'front') {
+        // get in front, then slow: the rolling block brings them down with you
+        const ahead = along - lenGap - 3;
+        [ax, az] = at(lenGap + 4, 0, 0.5);
+        if (ahead < 0) { want = T.sp + clamp(-ahead * 0.5 + 3, 2, 11); L.rollT = 0; }
+        else { L.rollT = (L.rollT || 0) + dt; want = Math.max(0, T.sp - 1.5 - L.rollT * 1.2); }
+      } else if (role === 'rear') {
+        [ax, az] = at(-(lenGap + 2.5), 0, 0.3);
+        want = T.sp + clamp((-along - lenGap - 2.5) * 0.6, -6, 7);
+      } else if (role === 'left' || role === 'right') {
+        const s2 = role === 'right' ? 1 : -1;
+        [ax, az] = at(-T.L * 0.1, s2 * (T.W / 2 + u.def.W / 2 + 0.7), 0.3);
+        want = T.sp + clamp((-along - T.L * 0.1) * 0.5, -5, 7);
+      } else if (role === 'pit') {
+        // tactical contact: alongside the back wheel, a car's width out, then turn into the rear quarter
         if (!L.side) L.side = side >= 0 ? 1 : -1;
         const inPlace = d < 10 && along < T.L * 0.1 && along > -T.L * 0.9 && Math.abs(side) < T.W / 2 + 2.6;
         const ox = inPlace ? -T.L * 0.32 : -T.L * 0.45, oz = inPlace ? L.side * (T.W * 0.15) : L.side * (T.W / 2 + 1.3);
         ax = T.x + tfx * ox + trx * oz + T.vx * 0.25; az = T.z + tfz * ox + trz * oz + T.vz * 0.25;
-        want = T.sp + clamp((d - 2) * 0.9, -5, 10) + (inPlace ? 2.5 : 0);
-      } else if (job === 'block') {
-        // get ahead of them, then turn across their path and stop
-        if (L.blockT > 0) { L.blockT -= dt; ax = u.x + trx * 10; az = u.z + trz * 10; want = 0; hb = true; }
-        else {
-          const lead = 16 + T.sp * 0.9;
-          ax = T.x + tfx * lead + T.vx * look * 0.4; az = T.z + tfz * lead + T.vz * look * 0.4;
-          want = T.sp + clamp((lead - along) * 0.6, -4, 14);
-          if (along > 9 && Math.abs(side) < 5 && sp > 8) L.blockT = 1.6;
-        }
-      } else if (job === 'ram') {
-        want = T.sp + clamp(d * 0.7, 3, 12);
-      } else {
-        // tail: on the back bumper, pushing when they slow
-        const ox = -(T.L / 2 + u.def.L / 2 + 1.5);
-        ax = T.x + tfx * ox + T.vx * look * 0.5; az = T.z + tfz * ox + T.vz * look * 0.5;
-        want = T.sp + clamp((d - 4) * 0.7, -6, 9);
+        want = T.sp + clamp((d - 2) * 0.9, -5, 8) + (inPlace ? 2.5 : 0);
+      } else if (role === 'ram') {
+        want = T.sp + clamp(d * 0.6, 3, 10);
       }
     } else if (!T.search) {
-      // slow or stopped (or on foot): box them in, front, back and sides, then stop
-      const slot = { pit: [0, 1], block: [1, 0], tail: [-1, 0], ram: [0, -1] }[job] || [0, 1];
-      const sx = slot[0] * (T.L / 2 + u.def.L / 2 + 0.8), sz = slot[1] * (T.W / 2 + u.def.W / 2 + 0.6);
-      ax = T.x + tfx * sx + trx * sz; az = T.z + tfz * sx + trz * sz;
-      const ds = Math.hypot(ax - u.x, az - u.z);
-      want = T.car ? clamp(ds * 0.8, 0, 16) : clamp((d - 9) * 0.8, 0, 18);
+      // slow or stopped (or on foot): the box (front, back and sides), the rest hold back
+      const slot = { front: [1, 0], rear: [-1, 0], left: [0, -1], right: [0, 1] }[role];
+      if (slot) {
+        const sx = slot[0] * (lenGap + 0.8), sz = slot[1] * (T.W / 2 + u.def.W / 2 + 0.6);
+        ax = T.x + tfx * sx + trx * sz; az = T.z + tfz * sx + trz * sz;
+        const ds = Math.hypot(ax - u.x, az - u.z);
+        want = T.car ? clamp(ds * 0.8, 0, 14) : clamp((d - 9) * 0.8, 0, 16);
+      } else { want = clamp((d - (T.car ? 22 : 14)) * 0.6, 0, 12); }
     } else {
-      want = d > 40 ? 22 : 12;
+      want = d > 40 ? 20 : 11;
     }
+    void hb;
     // steer for the aim point; feel ahead for walls; ease off for sharp turns
     let err = wrap(Math.atan2(az - u.z, ax - u.x) - h);
     let steer = clamp(err * 2.2, -1, 1);
-    const feel = this.feel(u, sp);
+    const feel = this.feel(u, sp, T.car);
     steer = clamp(steer + feel.steer, -1, 1);
     const turn = Math.abs(err);
     want = Math.min(want, turn > 1.6 ? 7 : turn > 0.9 ? 13 : turn > 0.45 ? 24 : 60, feel.slow);
@@ -326,8 +390,17 @@ export class Wanted {
     return { throttle: thr, brake: brk, steer, handbrake: hb, assists: 1 };
   }
   // feelers ahead (left, centre, right) for buildings: steer away from the blocked side, slow for a wall in front
-  feel(u, sp) {
+  feel(u, sp, target = null) {
     const G = this.G, h = u.heading, out = { steer: 0, slow: 60 };
+    // traffic (and the other police cars) in the way ahead: ease off and edge round it, rather than plough through
+    const fx = Math.cos(h), fz = Math.sin(h), reachV = clamp(Math.abs(sp) * 1.4, 8, 30);
+    for (const v of G.traffic.list) {
+      if (v === u || v === target || v.hidden) continue;
+      const dx = v.x - u.x, dz = v.z - u.z; if (Math.abs(dx) > reachV || Math.abs(dz) > reachV) continue;
+      const a = dx * fx + dz * fz, l = -dx * fz + dz * fx;
+      if (a < 1 || a > reachV || Math.abs(l) > (v.def?.W || 2) / 2 + u.def.W / 2 + 0.6) continue;
+      out.slow = Math.min(out.slow, Math.max(2, (a - 4) * 0.7)); out.steer += l > 0 ? -0.35 : 0.35;
+    }
     const reach = clamp(Math.abs(sp) * 0.9, 6, 22);
     const blocked = (a, r) => { const x = u.x + Math.cos(h + a) * r, z = u.z + Math.sin(h + a) * r; return G.tiles.insideBuilding(x, z, u.y + 1); };
     const c = blocked(0, reach * 0.6) || blocked(0, reach), l = blocked(-0.42, reach * 0.8), r = blocked(0.42, reach * 0.8);
@@ -492,8 +565,18 @@ export class Wanted {
     const G = this.G;
     if (this.block) {
       const B = this.block; B.t += dt;
-      // the stinger: a car that runs over it loses its tyres
-      if (B.strip && car) {
+      // the stinger lies at the kerb until you're coming: then it's pulled across the carriageway, and back once
+      // you're past (so the cars behind you don't run over it)
+      if (B.strip) {
+        const c0 = Math.cos(B.angle), s0 = Math.sin(B.angle), pos = car || T, rel = (pos.x - B.x) * c0 + (pos.z - B.z) * s0;
+        const coming = rel < 0 && rel > -70 && !B.used, passed = rel > 6 || B.used;
+        B.out = clamp((B.out || 0) + (coming && !passed ? dt * 2.2 : passed ? -dt * 1.2 : 0), 0, 1);
+        const k = 0.06 + 0.94 * B.out, ax = -s0 * B.kerb, az = c0 * B.kerb;
+        B.strip.scale.z = k; B.strip.position.set(B.x + ax * 3.4 * (1 - k), B.y + 0.05, B.z + az * 3.4 * (1 - k));
+        if (coming && B.out > 0.5 && !B.called) { B.called = true; G.hud.feed('Police: stinger out'); }
+      }
+      // the stinger: a car that runs over it (while it's out) loses its tyres
+      if (B.strip && car && B.out > 0.7) {
         const c = Math.cos(B.angle), s = Math.sin(B.angle), along = (x, z) => (x - B.x) * c + (z - B.z) * s, across = (x, z) => -(x - B.x) * s + (z - B.z) * c;
         const a = along(B.px ?? car.x, B.pz ?? car.z), b = along(car.x, car.z);
         if (a * b <= 0 && a !== b) {
@@ -505,7 +588,7 @@ export class Wanted {
       if (B.t > 60 || Math.hypot(B.x - T.x, B.z - T.z) > 500) this.clearBlock();
       return;
     }
-    if (this.level < 2 || this.phase !== 'active' || !car || T.sp < 9 || (this.blockT -= dt) > 0) return;
+    if (this.level < 2 || this.phase !== 'active' || !car || T.sp < 9 || this.contained || (this.blockT -= dt) > 0) return;
     this.blockT = 3;
     // a point on the road ahead of you, 150-230 m on
     const net = G.net, n = net.nearest(car.x, car.z, 20, e => net.flags[e] & 16); if (!n) return;
@@ -522,10 +605,15 @@ export class Wanted {
     const pos = [0, 0, 0, 0, 0]; net.at(h, Math.max(2, net.len[h >> 1] - (dist - want)), pos);
     const [x, y, z, ddx, ddz] = pos, angle = Math.atan2(ddz, ddx);
     if (this.cam?.visible(x, y + 1, z, 4) && Math.hypot(x - G.camera.position.x, z - G.camera.position.z) < 120) return;
-    const B = this.block = { x, y, z, angle, t: 0, cars: [] };
-    // the stinger across the carriageway
+    const B = this.block = { x, y, z, angle, t: 0, cars: [], kerb: 1, out: 0 };
+    // the stinger, laid from the nearside kerb by the crew of a car pulled up just beyond it
     const strip = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 6.8), new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.6 }));
     strip.position.set(x, y + 0.05, z); strip.rotation.y = -angle; G.scene.add(strip); B.strip = strip;
+    if (this.level < 4) {
+      const w = (net.width[h >> 1] || 7) / 2, kx = -Math.sin(angle) * B.kerb, kz = Math.cos(angle) * B.kerb;
+      const v = G.traffic.add({ id: 'stinger-' + Math.round(this.t * 10), kind: 'police', model: 'police', paint: 0xf2f2f2, x: x + Math.cos(angle) * 14 + kx * (w + 1.2), y, z: z + Math.sin(angle) * 14 + kz * (w + 1.2), heading: angle, parked: true, persistent: true });
+      if (v) { v.lightsOnly = true; v.status = 'roadblock'; v.law = { job: 'block', mode: 'stop', out: [], crew: 1, fixed: true }; G.police.units.push(v); B.cars.push(v); this.deploy(v); v.law.mode = 'stop'; }
+    }
     // four stars: two cars across the road beyond it, crews out and aiming
     if (this.level >= 4) for (const s of [-1, 1]) {
       const cx = x + Math.cos(angle) * 9 - Math.sin(angle) * s * 2.6, cz = z + Math.sin(angle) * 9 + Math.cos(angle) * s * 2.6;
