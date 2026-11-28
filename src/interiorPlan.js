@@ -5,10 +5,21 @@
 // Local frame: x along the front wall (0..W), y from the front wall inwards (0..D), h up from the ground floor.
 
 import { STYLE } from './food.js';
+import { siteBrand } from './brands.js';
 
 export function rng(seed) { let s = (seed >>> 0) || 1; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
 const pick = (R, a) => a[Math.floor(R() * a.length) % a.length];
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+// A shop's, a takeaway's or a pub's front wall inside is the shopfront the street sees (materials.js buildingMaterial: the
+// glass from the stall riser up to the fascia, glazing bars every bay, a transom; the storey height the tile worker
+// gives the building), so what you see from outside is what you walk into. Heights from this floor (it's laid 12 cm
+// above the building's base: interiors.js ensure).
+function shopfrontOf(s, ceil) {
+  const brand = siteBrand(s.name, s.kind, s.food), big = !!brand?.canopy;
+  const fhE = big ? clamp(s.wall, 3.4, 9.2) : clamp(s.wall / Math.max(1, s.lvT || s.lv || 1), 2.4, 5);
+  const gBot = !brand ? 0.14 : big ? 0.02 : brand.bank ? 0.32 : brand.pub ? 0.4 : 0.14;
+  return { bot: clamp(gBot * fhE - 0.12, 0.05, 1.2), top: clamp((big ? 0.76 : 0.74) * fhE - 0.12, 1.3, ceil - 0.08), bay: big ? 3.1 : 1.7 };
+}
 
 // ------------------------------------------------------------------ palettes (each site picks its own)
 const PAINT = { magnolia: 0xefe4cf, white: 0xf2f0ea, grey: 0xc9c9c4, greige: 0xd6cbb9, sage: 0xb9c4a8, duck: 0x8fb3b6, navy: 0x3c4a63, blush: 0xe3c2b6,
@@ -18,6 +29,12 @@ const WOOD = [0xffffff, 0xe8d2b2, 0xc59a6a, 0x9a7050, 0xf0e3cc];          // tin
 const SOFA = [0x6b7079, 0x3f4a5f, 0x5b4636, 0x7c8a6d, 0x9b3e3a, 0x2f5d57, 0xc0b49d, 0x4a4a4e];
 const UNITS = [[0xf4f4f1, 'white gloss'], [0xe8ddc7, 'cream shaker'], [0x8fa38c, 'sage shaker'], [0x2e3d55, 'navy'], [0x9b7653, 'oak'], [0x6f7378, 'grey']];
 const DUVET = [0xf3f3f3, 0x9fb3c8, 0xd9b7b0, 0x7d8e74, 0x3e4b61, 0xe7d9b8];
+
+// the front door's colour, the same outside (interiors.js) as in (interiorMesh.js); null: a shop's glazed door
+export function frontDoor(s) {
+  if (['mall', 'office', 'shop', 'food'].includes(s.kind)) return null;
+  return { trap: 0xe9e6dc, nice: 0x2e3d55, warehouse: 0x5f7d95, church: 0x5b3a22, pub: 0x2f4a3a }[s.kind] ?? [0x2e3d55, 0x7d1f2a, 0x3a5a3a, 0x2c2c2c, 0xe9e6dc][s.id % 5];
+}
 
 // ------------------------------------------------------------------ the plan
 export class Plan {
@@ -92,6 +109,14 @@ export class Plan {
           if (fx > s.a + 0.3 && fx < s.b - 0.3) s.open.push({ a: fx - (this.frontW || 0.47), b: fx + (this.frontW || 0.47), bot: 0, top: this.frontTop || 2.05, kind: 'front', leaf: 'closed' });
         }
         if (this.party.has(s.outer) || !r.windows) continue;
+        if (this.shopfront && lv.i === 0) {
+          // the shopfront either side of the door; the other walls are blank outside, so they're blank in here too
+          if (s.outer !== 'y0') continue;
+          const sf = this.shopfront, fr = s.open.find(o => o.kind === 'front');
+          for (const [a, b] of fr ? [[s.a + 0.2, fr.a - 0.15], [fr.b + 0.15, s.b - 0.2]] : [[s.a + 0.2, s.b - 0.2]])
+            if (b - a > 0.6) s.open.push({ a, b, bot: sf.bot, top: Math.min(sf.top, lv.ceil - 0.08), kind: 'window', shop: sf.bay });
+          continue;
+        }
         const L = s.b - s.a; if (L < 1.1) continue;
         const n = r.windows === 'many' ? Math.max(1, Math.floor(L / 3.2)) : 1;
         for (let k = 0; k < n; k++) {
@@ -663,6 +688,7 @@ function shop(P, s) {
   P.room(g, 'stock', 0, D - sd, W, D, { floor: ['concrete', 0xc8c6c0], wall: ['plaster', PAINT.grey], windows: 0 });
   P.door(g, 'shop', 'stock', { at: W - 1.0 });
   P.style = { shop: true, brand };
+  P.shopfront = shopfrontOf(s, g.ceil);
   P.finish();
   const r = P.find(g, 'shop');
   // the counter: freestanding by the door on one side, the shopkeeper behind it with the gantry (cigarettes behind
@@ -707,6 +733,7 @@ function pub(P, s) {
   const carpet = pick(R, [0x6b2f35, 0x2f4a3a, 0x3a3550, 0x5a3a2a]), paper = pick(R, [0xb99d6b, 0x9a6b5b, 0x7a8a6b, 0x8a7a9a]);
   P.room(g, 'bar', 0, 0, W, D, { floor: ['carpet', carpet], wall: ['wallpaper', paper], windows: 'many', ceil: 0xe9dcc0, kind: 'pub', sill: 0.85, winW: 1.2 });
   P.style = { pub: true };
+  P.shopfront = shopfrontOf(s, ceil);
   P.finish();
   const r = P.find(g, 'bar'); r.dado = true;
   s.food = 'pub';
@@ -859,6 +886,7 @@ function food(P, s) {
   const g = P.level(ceil);
   P.room(g, 'restaurant', 0, 0, W, D, { floor: ['tile', st.floor], wall: ['plaster', st.wall], windows: 'many', sill: 0.4, head: Math.min(2.4, ceil - 0.3), ceil: 0xf2f2ee, kind: 'food', winW: 1.6 });
   P.style = { food: cat, st };
+  P.shopfront = shopfrontOf(s, ceil);
   P.finish();
   const r = P.find(g, 'restaurant');
   // the counter right across the room (staff only behind it), tills along it

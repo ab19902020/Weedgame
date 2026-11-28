@@ -3,7 +3,10 @@
 // unlit with light baked into the vertex colours (ceiling-light falloff, darker corners, faces by direction),
 // so interiors cost no lights or shadows, look the same on every phone and never flicker.
 import * as THREE from 'three/webgpu';
+import { positionWorld, dot, step, max, float } from 'three/tsl';
 import { MENUS, STYLE, price } from './food.js';
+import { U } from './env.js';
+import { frontDoor } from './interiorPlan.js';
 
 // ------------------------------------------------------------------ textures (canvas, made once)
 const TEX = {};
@@ -105,6 +108,16 @@ function signAtlas(names) {
 }
 
 // ------------------------------------------------------------------ materials (shared by every interior)
+// Seen from the street through a shop's windows (interiors.js showcase), the window frames and glass, which sit out in
+// the thickness of the outer walls, would poke out through the building's shell: the strip just outside the plan isn't
+// drawn then (inside, the showcase is off and they're all there)
+const band = (o, X, Y, WD, on) => {
+  const d = positionWorld.xz.sub(o), lx = dot(d, X), ly = dot(d, Y);
+  const near = step(-0.5, lx).mul(step(lx, WD.x.add(0.5))).mul(step(-0.5, ly)).mul(step(ly, WD.y.add(0.5)));
+  const within = step(-0.01, lx).mul(step(lx, WD.x.add(0.01))).mul(step(-0.01, ly)).mul(step(ly, WD.y.add(0.01)));
+  return on.mul(near).mul(float(1).sub(within));
+};
+const showMask = () => max(band(U.shO0, U.shX0, U.shY0, U.shWD0, U.shOn0), band(U.shO1, U.shX1, U.shY1, U.shWD1, U.shOn1)).lessThan(0.5);
 let MATS = null;
 export function materials() {
   if (MATS) return MATS;
@@ -120,6 +133,7 @@ export function materials() {
   MATS.glass.userData.rep = MATS.frosted.userData.rep = 1;
   for (const n of SHELVES) MATS['shelf_' + n] = M(shelfTexture(n));
   MATS.sign = new THREE.MeshBasicNodeMaterial({ map: signAtlas(MALL_NAMES).t, vertexColors: true }); MATS.sign.userData.rep = 1;
+  for (const n in MATS) MATS[n].maskNode = showMask();
   return MATS;
 }
 // the overall brightness (and a warmer cast at night) for every interior
@@ -481,7 +495,7 @@ function opening(gb, P, s, o, r, side, c, H, top) {
   const soff = [headB[0] - headA[0], 0, headB[2] - headA[2]], inw = [headO[0] - headA[0], 0, headO[2] - headA[2]];
   const crs = (u, v) => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
   if (crs(soff, inw)[1] < 0) gb.quad('plain', headA, soff, inw, 0xf3f2ee); else gb.quad('plain', headA, inw, soff, 0xf3f2ee);
-  if (o.bot > 0.01) {
+  if (o.bot > 0.01 && !o.shop) {   // (a shopfront has its frame's bottom rail, no sill)
     const sa = wp(horiz, c, side, o.a - 0.04, H + o.bot, 0.04), sb = wp(horiz, c, side, o.b + 0.04, H + o.bot, 0.04), so = wp(horiz, c, side, o.a - 0.04, H + o.bot, out);
     const v1 = [sb[0] - sa[0], 0, sb[2] - sa[2]], v2 = [so[0] - sa[0], 0, so[2] - sa[2]];
     if (crs(v1, v2)[1] > 0) gb.quad('plain', sa, v1, v2, 0xf6f5f0); else gb.quad('plain', sa, v2, v1, 0xf6f5f0);
@@ -492,13 +506,18 @@ function opening(gb, P, s, o, r, side, c, H, top) {
   if (o.kind === 'window') {
     if (side !== (s.sides[0])) return;
     const ext = -depth + 0.06;    // the window sits near the outside of the reveal
-    const fc = P.style.church ? 0x6b5a46 : P.style.trap ? 0xe0dccf : 0xf4f4f2;
+    const fc = o.shop ? 0x2c2f33 : P.style.church ? 0x6b5a46 : P.style.trap ? 0xe0dccf : 0xf4f4f2;
     // frame
     gb.box('plain', fr, -len / 2, len / 2, ext - 0.04, ext + 0.02, o.bot, o.bot + 0.06, fc);
     gb.box('plain', fr, -len / 2, len / 2, ext - 0.04, ext + 0.02, o.top - 0.06, o.top, fc);
     gb.box('plain', fr, -len / 2, -len / 2 + 0.06, ext - 0.04, ext + 0.02, o.bot, o.top, fc);
     gb.box('plain', fr, len / 2 - 0.06, len / 2, ext - 0.04, ext + 0.02, o.bot, o.top, fc);
-    if (len > 1.1 && !P.style.warehouse) gb.box('plain', fr, -0.03, 0.03, ext - 0.04, ext + 0.02, o.bot, o.top, fc);
+    if (o.shop) {
+      // a shopfront: dark aluminium glazing bars a bay apart and a transom, as the street sees it (materials.js)
+      const n = Math.max(1, Math.round(len / o.shop)), tr = o.bot + (o.top - o.bot) * 0.62;
+      for (let k = 1; k < n; k++) { const u = -len / 2 + len * k / n; gb.box('plain', fr, u - 0.03, u + 0.03, ext - 0.04, ext + 0.02, o.bot, o.top, fc); }
+      gb.box('plain', fr, -len / 2, len / 2, ext - 0.04, ext + 0.02, tr - 0.025, tr + 0.025, fc);
+    } else if (len > 1.1 && !P.style.warehouse) gb.box('plain', fr, -0.03, 0.03, ext - 0.04, ext + 0.02, o.bot, o.top, fc);
     // glass, frosted, stained, or covered over
     const pane = (m, col, flat) => gb.quad(m, wp(horiz, c, side, side > 0 === horiz ? o.a : o.b, H + o.bot, ext - 0.01), horiz ? [(side > 0 ? 1 : -1) * len, 0, 0] : [0, 0, (side > 0 ? -1 : 1) * len], [0, hgt, 0], col, flat ? { flat } : undefined);
     if (P.style.church) pane('stained', 0xffffff, 1);
@@ -507,7 +526,7 @@ function opening(gb, P, s, o, r, side, c, H, top) {
     else pane('glass', 0xffffff);
     if (o.cover === 'boards') for (let k = 0; k < 4; k++) { const h0 = o.bot + 0.05 + k * hgt / 4, tilt = (k % 2 ? 1 : -1) * 0.02; gb.box('plain', fr, -len / 2 - 0.05, len / 2 + 0.05, 0.0, 0.025, h0, h0 + hgt / 4 - 0.06 + tilt, 0xa88a5e); }
     // a radiator under the window in homes
-    const home = !P.style.warehouse && !P.style.office && !P.style.shop && !P.style.mall && !P.style.church && !P.style.pub;
+    const home = !o.shop && !P.style.warehouse && !P.style.office && !P.style.shop && !P.style.mall && !P.style.church && !P.style.pub && !P.style.food;
     if (home && o.bot > 0.75 && len > 0.7) {
       const rw = Math.min(len, 1.4), rc = P.style.trap ? 0xe6e0cf : 0xf6f6f2;
       gb.box('plain', fr, -rw / 2, rw / 2, 0.04, 0.11, 0.15, Math.min(o.bot - 0.1, 0.72), rc);
@@ -515,7 +534,7 @@ function opening(gb, P, s, o, r, side, c, H, top) {
       gb.box('plain', fr, rw / 2 - 0.02, rw / 2 + 0.04, 0.05, 0.1, 0.1, 0.2, 0xd8d8d4);
     }
     // curtains or blinds in homes
-    if (!P.style.warehouse && !P.style.office && !P.style.shop && !P.style.mall && !P.style.church && r.kind !== 'bath' && o.cover !== 'boards') {
+    if (!o.shop && !P.style.warehouse && !P.style.office && !P.style.shop && !P.style.mall && !P.style.church && r.kind !== 'bath' && o.cover !== 'boards') {
       const cc = P.style.trap ? 0x5a4f45 : [0x8f6f5f, 0x5f6f8f, 0xd8cfc0, 0x6f8f6f, 0xb3936a][(Math.abs(Math.round(mid * 7)) + r.name.length) % 5];
       gb.box('plain', fr, -len / 2 - 0.15, len / 2 + 0.15, 0.03, 0.05, o.top + 0.05, o.top + 0.09, 0x8a8a88);
       const closed = P.style.trap;
@@ -530,7 +549,7 @@ function opening(gb, P, s, o, r, side, c, H, top) {
   }
   if (o.kind === 'front') {
     if (side !== s.sides[0]) return;
-    const dc = P.style.trap ? 0xe9e6dc : P.style.office || P.style.mall || P.style.shop ? null : [0x2e3d55, 0x7d1f2a, 0x3a5a3a, 0x2c2c2c, 0xe9e6dc][P.site.id % 5];
+    const dc = frontDoor(P.site);
     if (dc == null) { // glass doors
       gb.box('plain', fr, -len / 2, len / 2, -0.08, -0.04, hgt - 0.08, hgt, 0x3b3b3b);
       gb.box('plain', fr, -0.03, 0.03, -0.08, -0.04, 0, hgt, 0x3b3b3b);

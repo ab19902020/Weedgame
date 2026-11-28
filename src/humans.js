@@ -376,13 +376,17 @@ function crowdMaterial(tex = null) {
   const iPos = attribute('iPos', 'vec4'), iAnim = attribute('iAnim', 'vec4'), iCol = attribute('iCol', 'vec4'), iSty = attribute('iSty', 'vec4');
   const iExt = attribute('iExt', 'vec4'), iR1 = attribute('iR1', 'vec4'), iR2 = attribute('iR2', 'vec4'), iR3 = attribute('iR3', 'vec4');
   const vN = varyingProperty('vec3', 'vSkinN');
-  // packed per-person data is decoded here, where it is exact (interpolated varyings would scramble the bits)
-  const vSkinC = varyingProperty('vec3', 'vSkinC'), vTopC = varyingProperty('vec3', 'vTopC'), vLegC = varyingProperty('vec3', 'vLegC'), vHairC = varyingProperty('vec4', 'vHairC');
-  const vAccC = varyingProperty('vec3', 'vAccC');
+  // packed per-person data is decoded here, where it is exact (interpolated varyings would scramble the bits).
+  // Packed tight: WebGPU gives a pipeline 16 inter-stage slots (WebGL packs varyings itself), and with three.js's own
+  // and the rest-pose position and normal this used 18, so on WebGPU nobody drawn by this material showed (police,
+  // firefighters, paramedics, shop and café staff). The skin attribute's four values (limb, chain, region, tag) ride
+  // in the four colours' fourth slots; the outfit and the face cell share one.
+  const vSkinC = varyingProperty('vec4', 'vSkinC'), vTopC = varyingProperty('vec4', 'vTopC'), vLegC = varyingProperty('vec4', 'vLegC'), vHairC = varyingProperty('vec4', 'vHairC');
+  const vAccC = varyingProperty('vec4', 'vAccC');
   const vMisc = varyingProperty('vec4', 'vMisc');   // hi-vis, shoe index, umbrella index, umbrella up
-  const vLegs = varyingProperty('vec4', 'vLegs');   // shorts, tights, denim, (unused)
-  const vOutfit = varyingProperty('float','vOutfit');
-  const vFace = varyingProperty('float', 'vFace');  // face atlas cell (0-3 men, 4-7 women)
+  const vLegs = varyingProperty('vec4', 'vLegs');   // shorts, tights, denim, outfit * 8 + face atlas cell (0-3 men, 4-7 women)
+  const skV = vec4(vSkinC.w, vTopC.w, vLegC.w, vAccC.w);   // (the skin attribute, as the fragments see it)
+  const ofV = floor(vLegs.w.add(0.5)), vOutfit = floor(ofV.div(8).add(0.01)), vFace = ofV.sub(vOutfit.mul(8));
   // two wounds (gore.js): the angle round the body from the front, the height, how far the blood has soaked, how wet
   const vW0 = varyingProperty('vec4', 'vW0'), vW1 = varyingProperty('vec4', 'vW1');
   const iW0 = attribute('iW0', 'vec4'), iW1 = attribute('iW1', 'vec4');
@@ -396,13 +400,12 @@ function crowdMaterial(tex = null) {
     // iSty.x = hair style + 0.05 x face index
     const style = floor(iSty.x.add(0.01)), flags = floor(iSty.y.add(0.5)), hgt = iSty.z;
     const acc = floor(iExt.x.add(0.5)), gait = floor(iExt.z.add(0.5));
-    vOutfit.assign(floor(flags.div(2048)));
-    vFace.assign(floor(fract(iSty.x).mul(20).add(0.5)));
+    const outfitI = floor(flags.div(2048)), faceI = floor(fract(iSty.x).mul(20).add(0.5));
     vW0.assign(iW0); vW1.assign(iW1);
-    vSkinC.assign(unpack(iCol.x)); vTopC.assign(unpack(iCol.y)); vLegC.assign(unpack(iCol.z)); vAccC.assign(unpack(iExt.y));
+    vSkinC.assign(vec4(unpack(iCol.x), sk.x)); vTopC.assign(vec4(unpack(iCol.y), sk.y)); vLegC.assign(vec4(unpack(iCol.z), sk.z)); vAccC.assign(vec4(unpack(iExt.y), sk.w));
     vHairC.assign(vec4(unpack(iCol.w), step(0.6, fract(iCol.x.mul(0.000031)))));
     vMisc.assign(vec4(bit(flags, 3), floor(flags.div(64)).sub(floor(flags.div(256)).mul(4)), floor(flags.div(256)).mod(8), bit(flags, 1)));
-    vLegs.assign(vec4(bit(acc, 8), bit(acc, 9), bit(acc, 10), 0));
+    vLegs.assign(vec4(bit(acc, 8), bit(acc, 9), bit(acc, 10), outfitI.mul(8).add(faceI)));
     const female = step(1.5, iSty.w), build = iSty.w.sub(female.mul(2));
     const phi = iAnim.x, run = step(1.5, iAnim.y), amp = iAnim.y.sub(run.mul(2));
     const pose = floor(iAnim.z.add(0.01)), t = iAnim.w;
@@ -442,7 +445,7 @@ function crowdMaterial(tex = null) {
     const jawWidth = build.sub(.35).mul(.32).sub(female.mul(.035));
     p = vec3(p.x.mul(float(1).add(headWeight.mul(jawWidth).mul(float(1).sub(smoothstep(1.62,1.70,y))))),
       p.y, p.z.mul(float(1).add(headWeight.mul(build.sub(.35)).mul(.12))));
-    const quilt = eq(vOutfit,2).mul(eq(sk.z,1));
+    const quilt = eq(outfitI,2).mul(eq(sk.z,1));
     const loft = sin(y.mul(74)).mul(.0025).add(.007).mul(quilt);
     p = p.add(n.mul(loft));
     }
@@ -547,13 +550,13 @@ function crowdMaterial(tex = null) {
     return rotY(p, yaw).add(iPos.xyz);
   })();
   const blood = woundBlood(positionGeometry, vW0, vW1);
-  if (tex) return texturedLook(m, tex, vN, sk, blood);
+  if (tex) return texturedLook(m, tex, vN, skV, blood);
   // fabric folds (bunching at elbows, knees and the waist), fine weave and hair strands perturb the normal
   {
-    const rg = sk.z, rp0 = positionGeometry, cloth = step(0.5, rg).mul(step(rg, 2.5)).add(eq(rg, 14)).min(1);
-    const elbow = step(2.5, sk.x).mul(step(sk.x, 4.5)).mul(smoothstep(0.25, 0.0, abs(sk.y.sub(1.0))));
-    const kneeZ = step(0.5, sk.x).mul(step(sk.x, 2.5)).mul(smoothstep(0.08, 0.0, abs(rp0.y.sub(0.5))));
-    const waist = eq(sk.x, 0).mul(smoothstep(0.05, 0.0, abs(rp0.y.sub(1.0)))).add(eq(sk.x, 0).mul(smoothstep(0.04, 0.0, abs(rp0.y.sub(0.89)))));
+    const rg = skV.z, rp0 = positionGeometry, cloth = step(0.5, rg).mul(step(rg, 2.5)).add(eq(rg, 14)).min(1);
+    const elbow = step(2.5, skV.x).mul(step(skV.x, 4.5)).mul(smoothstep(0.25, 0.0, abs(skV.y.sub(1.0))));
+    const kneeZ = step(0.5, skV.x).mul(step(skV.x, 2.5)).mul(smoothstep(0.08, 0.0, abs(rp0.y.sub(0.5))));
+    const waist = eq(skV.x, 0).mul(smoothstep(0.05, 0.0, abs(rp0.y.sub(1.0)))).add(eq(skV.x, 0).mul(smoothstep(0.04, 0.0, abs(rp0.y.sub(0.89)))));
     const zone = elbow.add(kneeZ).add(waist).min(1).mul(cloth);
     const ridge = cos(rp0.y.mul(210).add(sin(rp0.x.mul(70).add(rp0.z.mul(50))).mul(2.5)));
     const crumple = vec3(sin(rp0.y.mul(97).add(rp0.x.mul(53))), sin(rp0.z.mul(89).add(rp0.y.mul(71))), sin(rp0.x.mul(83).add(rp0.z.mul(61))));
@@ -561,9 +564,9 @@ function crowdMaterial(tex = null) {
     m.normalNode = worldToView(normalize(vN.add(vec3(0, ridge.mul(zone).mul(0.14), 0)).add(crumple.mul(cloth.mul(0.024))).add(vec3(strands.mul(0.18), 0, strands.mul(0.12)))));
   }
   // ---- appearance
-  const region = sk.z, rp = positionGeometry, limbF = sk.x, chainS = sk.y;
+  const region = skV.z, rp = positionGeometry, limbF = skV.x, chainS = skV.y;
   const hiVis = step(0.5, vMisc.x);
-  const skinC = vSkinC, topRaw = vTopC, legRaw = vLegC, hairC = vHairC.xyz, accC = vAccC;
+  const skinC = vSkinC.xyz, topRaw = vTopC.xyz, legRaw = vLegC.xyz, hairC = vHairC.xyz, accC = vAccC.xyz;
   const shorts = vLegs.x, tights = vLegs.y, denim = vLegs.z;
   const shoeI = floor(vMisc.y.add(0.5)), umbI = floor(vMisc.z.add(0.5));
   // shoes: black leather, brown leather, white trainers, dark trainers on white soles
@@ -642,7 +645,7 @@ function crowdMaterial(tex = null) {
   // hair: baked strand map, tri-planar in head space (strands run down the sides and front to back on top)
   const hw = pow(abs(normalGeometry), vec3(4)), hwn = hw.div(hw.x.add(hw.y).add(hw.z).add(1e-4));
   // curly hair: the same map, finer and rotated, reads as tight coils instead of combed strands
-  const curly = eq(sk.w, TAG.hairCurly), buzz = eq(sk.w, TAG.hairBuzz);
+  const curly = eq(skV.w, TAG.hairCurly), buzz = eq(skV.w, TAG.hairBuzz);
   const huv = (a, b) => mix(vec2(a.mul(12.5), b.mul(10)), vec2(a.mul(34).add(b.mul(22)), b.mul(34).sub(a.mul(22))), curly);
   const ht = texture(hairTex, huv(rp.x, rp.y)).mul(hwn.z)
     .add(texture(hairTex, huv(rp.z, rp.y)).mul(hwn.x))
@@ -790,19 +793,20 @@ export function createCrowdBatch(max, detail, shadows = false) {
   if (!bodies.has(q)) bodies.set(q, bodyGeometry(q));
   return makeBatch(bodies.get(q), sharedClothing ??= crowdMaterial(), max, shadows);
 }
-// an instanced batch of one body (procedural or a citizen) with the crowd's per-person attributes
+// an instanced batch of one body (procedural or a citizen) with the crowd's per-person attributes. They're written
+// column by column (set.iPos.array etc., four floats a person) and interleaved into one GPU buffer when the batch is
+// committed: WebGPU allows a pipeline 8 vertex buffers, and ten of their own plus the body's made 13, so on WebGPU
+// none of them drew at all.
+const INST = ['iPos', 'iAnim', 'iCol', 'iSty', 'iExt', 'iR1', 'iR2', 'iR3', 'iW0', 'iW1'], STRIDE = INST.length * 4;
 function makeBatch(model, material, max, shadows) {
   const geo = new THREE.InstancedBufferGeometry();
   geo.setIndex(model.index);
   for (const [name,attr] of Object.entries(model.attributes)) geo.setAttribute(name,attr);
   const set = {max,geo};
-  for (const name of ['iPos','iAnim','iCol','iSty','iExt','iR1','iR2','iR3','iW0','iW1']) {
-    const attr = new THREE.InstancedBufferAttribute(new Float32Array(max*4),4);
-    attr.setUsage(THREE.DynamicDrawUsage);
-    geo.setAttribute(name,attr);
-    set[name] = attr;
-  }
-  set.attrs = [set.iPos, set.iAnim, set.iCol, set.iSty, set.iExt, set.iR1, set.iR2, set.iR3, set.iW0, set.iW1];
+  const ib = set.ib = new THREE.InstancedInterleavedBuffer(new Float32Array(max * STRIDE), STRIDE, 1);
+  ib.setUsage(THREE.DynamicDrawUsage);
+  INST.forEach((name, k) => { geo.setAttribute(name, new THREE.InterleavedBufferAttribute(ib, 4, k * 4)); set[name] = { array: new Float32Array(max * 4) }; });
+  set.attrs = INST.map(name => set[name]);
   set.mesh = new THREE.Mesh(geo, material);
   set.mesh.castShadow = shadows;
   set.mesh.receiveShadow = true;
@@ -926,9 +930,15 @@ export class People {
   }
 }
 
-function commitBatch(S, n) {
+export function commitBatch(S, n) {
   S.geo.instanceCount = n; S.mesh.visible = n > 0;
-  if (n) for (const at of S.attrs) { at.clearUpdateRanges(); at.addUpdateRange(0, n * 4); at.needsUpdate = true; }
+  if (!n) return;
+  const D = S.ib.array, A = S.attrs;   // the columns, interleaved for the GPU (makeBatch)
+  for (let k = 0; k < A.length; k++) {
+    const src = A[k].array;
+    for (let i = 0, d = k * 4, q = 0; i < n; i++, d += STRIDE, q += 4) { D[d] = src[q]; D[d + 1] = src[q + 1]; D[d + 2] = src[q + 2]; D[d + 3] = src[q + 3]; }
+  }
+  S.ib.clearUpdateRanges(); S.ib.addUpdateRange(0, n * STRIDE); S.ib.needsUpdate = true;
 }
 
 const _P = {}, NOLOOK = {};

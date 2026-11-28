@@ -1,5 +1,5 @@
 // A hollow shell and its furniture share a single vertex-colour geometry per model.
-import {createCrowdBatch, disposeCrowdBatch, writeCrowdMember} from './humans.js';
+import {createCrowdBatch, disposeCrowdBatch, writeCrowdMember, commitBatch} from './humans.js';
 import {TransitSign} from './transitSign.js';
 import * as T from 'three/webgpu';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
@@ -147,11 +147,7 @@ export class PassengerCabin extends T.Group {
       const height = look.h || 1;
       writeCrowdMember(this.riders,i,{look,x,y:y+.55-.87*height,z,heading:0,pose:'seated',t:i*1.7});
     }
-    this.riders.geo.instanceCount=n;
-    this.riders.mesh.visible=n>0;
-    for (const attr of [this.riders.iPos,this.riders.iAnim,this.riders.iCol,this.riders.iSty]) {
-      if (n) { attr.clearUpdateRanges(); attr.addUpdateRange(0,n*4); attr.needsUpdate=true; }
-    }
+    commitBatch(this.riders,n);
   }
   dispose(){this.insideSign.dispose();this.frontSign.dispose();this.paint.dispose();disposeCrowdBatch(this.riders);}
 }

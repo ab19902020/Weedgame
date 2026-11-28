@@ -7,8 +7,9 @@
 //   71–84  banks and bookmakers (smaller windows)
 //   128–143 independents
 //   144–159 pubs
+//   160–167 independent cafés, 168–175 independent takeaways and restaurants (named so: the window shows their room)
 
-export const BRAND_N = 160;
+export const BRAND_N = 176;
 const PAL = new Uint8Array(BRAND_N * 4);
 const CHAINS = [];
 
@@ -192,11 +193,26 @@ const PUB = [
   ['#F3E6C8', '#2A2118'], ['#E7D3A8', '#1A120B'], ['#241610', '#F0D090'], ['#0E1A16', '#E4D2A4'],
   ['#2B241C', '#F7F1E1'], ['#3D1C16', '#F3D7A5'], ['#1C140C', '#E8C56B'], ['#F7F1E4', '#1A120B'],
 ];
+const CAFE = [['#2F4F3E', '#F4EFE2'], ['#F3EBDD', '#3B2A20'], ['#5A3A2A', '#F6E9D2'], ['#1E3A4C', '#F4F0E6'], ['#E9D8C0', '#2B2B2B'], ['#7A2E3A', '#FBF1E6'], ['#22302A', '#E9D9A8'], ['#B85C38', '#FFF7EE']];
+const TAKEAWAY = [['#B71C1C', '#FFD54F'], ['#0D47A1', '#FFFFFF'], ['#1B5E20', '#FFEB3B'], ['#212121', '#FFC107'], ['#E65100', '#FFFFFF'], ['#880E4F', '#FFFFFF'], ['#F9A825', '#B71C1C'], ['#263238', '#80DEEA']];
 INDIE.forEach((c, i) => put(128 + i, c[0]));
 PUB.forEach((c, i) => put(144 + i, c[0]));
+CAFE.forEach((c, i) => put(160 + i, c[0]));
+TAKEAWAY.forEach((c, i) => put(168 + i, c[0]));
 put(0, '#16324F');
 
 export function paletteBytes() { return PAL; }
+
+// a brand's style from its id (the sign painter's, signs.js: the tile worker may have chosen it by more than the name)
+export function brandStyle(id, label) {
+  const c = CHAINS.find(b => b.id === id); if (c) return { ...c, label };
+  const base = { canopy: false, bank: false, pub: false, italic: false, upper: false, weight: 700, track: '0px', bar: null, barColor: '#ffffff', mark: null, label };
+  if (id >= 128 && id < 144) { const [bg, fg, serif] = INDIE[id - 128]; return { ...base, id, bg, fg, serif: !!serif }; }
+  if (id >= 144 && id < 160) { const [bg, fg] = PUB[id - 144]; return { ...base, id, bg, fg, pub: true, serif: true, weight: 600, track: '0.5px' }; }
+  if (id >= 160 && id < 168) { const [bg, fg] = CAFE[id - 160]; return { ...base, id, bg, fg, eat: 'cafe', serif: true }; }
+  if (id >= 168 && id < 176) { const [bg, fg] = TAKEAWAY[id - 168]; return { ...base, id, bg, fg, eat: 'takeaway', upper: true }; }
+  return null;
+}
 
 export function normName(s) {
   return String(s || '').toLowerCase().replace(/['’`]/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -208,17 +224,45 @@ function hash(s) {
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
 }
+// what pubs are called: "The ... Inn/Arms/Tavern", "The Royal Oak", "Fox and Hounds", "Cunning Fox"
+const PUB_WORDS = 'oak|lion|horse|horses|swan|fox|hounds|crown|plough|head|chequers|bell|anchor|wheatsheaf|ship|cricketers|duck|hare|lamb|angel|falcon|eagle|boot|sun|moon|star|tuns|hand|castle|bull|stag|hart|feathers|greyhound|harrow|mitre|pheasant|grapes|wagon|coach|ram|bear|dragon|unicorn|griffin|pelican|kite|swallow|magpie|cock|hen|goose|plume|barley|hop|hops|mill|wharf|lock|bridge|boatman|ferry|railway|victoria|albert|george|duke|prince|queen|king|rose|thistle|elephant|tap';
+const PUB_RE = new RegExp(`^the .*\\b(${PUB_WORDS})\\b|^[a-z]+ and [a-z]+$|^(old |red |white |black |royal |cunning |jolly |little |green |blue |grey |three |two |seven |rising |half |new |nags |kings |queens |saracens |bishops |rose and )?(${PUB_WORDS})$`);
 function isPub(key) {
-  return /\b(inn|arms|tavern)\b/.test(key) || /^the [a-z0-9]+$/.test(key);
+  if (/\b(inn|arms|tavern|pub|alehouse|ale house)\b/.test(key) || /^the [a-z0-9]+$/.test(key)) return true;
+  const m = PUB_RE.exec(key); if (!m) return false;
+  // "X and Y" only when one of them is a pub's word (Bull and Chequers, Fox and Hounds: not Smith and Sons)
+  if (/^[a-z]+ and [a-z]+$/.test(key) && !/^the /.test(key)) return key.split(' and ').some(w => new RegExp(`^(${PUB_WORDS})$`).test(w));
+  return true;
 }
+// an independent café, or a takeaway or restaurant, by its name: their windows show a café's or a takeaway's room
+const CAFE_RE = /\b(cafe|caff|coffee|tea ?rooms?|tea shop|bakery|bakers|patisserie|deli|sandwich(es)?|brunch|espresso)\b/;
+const TAKEAWAY_RE = /\b(takeaway|take away|chippy|chip shop|fish and chips|fish bar|fryer|kebabs?|pizza|pizzeria|chicken|grill|burgers?|curry|tandoori|indian|balti|spice|chinese|wok|noodles?|thai|sushi|oriental|dragon|lotus|bamboo|panda|canton|cantonese|peking|hong kong|szechuan|sichuan|mandarin|china|kowloon|bombay|delhi|bengal|raj|taj|nepal|gurkha|lahore|shawarma|falafel|doner|gyros|meze|turkish|diner|restaurant|bistro|brasserie|trattoria|ristorante|steakhouse|cantina|taverna)\b/;
 function independent(raw, key) {
   const h = hash(key);
   if (isPub(key)) {
     const i = h % PUB.length, [bg, fg] = PUB[i];
     return { id: 144 + i, bg, fg, canopy: false, bank: false, pub: true, italic: false, serif: true, upper: false, weight: 600, track: '0.5px', bar: null, barColor: '#ffffff', mark: null, label: raw };
   }
+  const eat = CAFE_RE.test(key) ? 'cafe' : TAKEAWAY_RE.test(key) ? 'takeaway' : null;
+  if (eat) {
+    const P = eat === 'cafe' ? CAFE : TAKEAWAY, i = h % P.length, [bg, fg] = P[i];
+    return { id: (eat === 'cafe' ? 160 : 168) + i, bg, fg, canopy: false, bank: false, pub: false, eat, italic: false, serif: eat === 'cafe', upper: eat !== 'cafe', weight: 700, track: '0px', bar: null, barColor: '#ffffff', mark: null, label: raw };
+  }
   const i = h % INDIE.length, [bg, fg, serif] = INDIE[i];
   return { id: 128 + i, bg, fg, canopy: false, bank: false, pub: false, italic: false, serif: !!serif, upper: false, weight: 700, track: '0px', bar: null, barColor: '#ffffff', mark: null, label: raw };
+}
+
+// an enterable site's brand (world/interiors.json): its kind decides, so a pub whose name doesn't sound like one, or a
+// takeaway that isn't one of the chains, still gets the right fascia and the right room through its windows (the tile
+// worker and interiorPlan.js both ask, and so agree)
+const asEatery = (raw, key, eat) => { const P = eat === 'cafe' ? CAFE : TAKEAWAY, i = hash(key) % P.length, [bg, fg] = P[i];
+  return { id: (eat === 'cafe' ? 160 : 168) + i, bg, fg, canopy: false, bank: false, pub: false, eat, italic: false, serif: eat === 'cafe', upper: eat !== 'cafe', weight: 700, track: '0px', bar: null, barColor: '#ffffff', mark: null, label: raw }; };
+export function siteBrand(name, kind, food) {
+  const b = fasciaBrand(name, true), raw = String(name || '').trim(), key = normName(raw);
+  if (kind === 'pub' && !b?.pub && key) { const i = hash(key) % PUB.length, [bg, fg] = PUB[i];
+    return { id: 144 + i, bg, fg, canopy: false, bank: false, pub: true, italic: false, serif: true, upper: false, weight: 600, track: '0.5px', bar: null, barColor: '#ffffff', mark: null, label: raw }; }
+  if (kind === 'food' && key && !(b && ((b.id >= 36 && b.id <= 49) || b.id >= 160))) return asEatery(raw, key, food === 'bakery' || food === 'coffee' ? 'cafe' : 'takeaway');
+  return b;
 }
 
 const SKIP = /\b(church|mosque|chapel|temple|synagogue|school|university|college|hospital|library|museum|community centre|youth centre|surgery)\b/;

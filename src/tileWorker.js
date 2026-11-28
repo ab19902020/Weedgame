@@ -2,7 +2,7 @@
 // Everything here is plain math so the main thread never stalls on geometry.
 import earcut from '../node_modules/three/src/extras/lib/earcut.js';
 import { inflate, decode } from './data.js';
-import { fasciaBrand, signBox, normName } from './brands.js';
+import { fasciaBrand, siteBrand, signBox, normName } from './brands.js';
 import { frontageScore, buildingStyle, nearestFrontage } from './buildingFidelity.js';
 
 const TILE = 256, NT = 65, STEP = 4;
@@ -19,7 +19,7 @@ async function loadSites(url) {
     for (const s of d.sites || []) {
       if (!/^(shop|food|pub)$/.test(s.kind) || !s.bkey || s.bi == null) continue;
       let t = M.get(s.bkey); if (!t) M.set(s.bkey, t = new Map());
-      t.set(s.bi, { name: s.name || '', kind: s.kind, door: s.door });
+      t.set(s.bi, { name: s.name || '', kind: s.kind, food: s.food, door: s.door });
     }
     return M;
   } catch { return new Map(); }
@@ -30,10 +30,12 @@ self.onmessage = async ev => {
   if (m.type === 'tile') {
     try {
       SITES ??= await loadSites(m.url.replace(/tiles\/[^/]*$/, 'interiors.json'));
-      TILE_SITES = SITES.get(m.key) || null;
       const r = await fetch(m.url);
       if (!r.ok) throw new Error('HTTP ' + r.status);
       const { header, arrays } = decode(await inflate(await r.arrayBuffer()));
+      // (set just before the build, which runs straight through: other tiles' messages are handled during the awaits
+      // above, and set it for theirs, so a tile could be built with its neighbour's shops and lose its own shopfronts)
+      TILE_SITES = SITES.get(m.key) || null;
       const out = build(header, arrays, m.lod);
       out.key = m.key; out.lod = m.lod;
       self.postMessage(out, collectTransfer(out));
@@ -1422,7 +1424,7 @@ function mergeSigns(header, A, fascias) {
   }
   for (const f of fascias) {
     data.push(f.x0, f.z0, f.x1, f.z1, f.base, f.dy, f.h);
-    text.push(f.name);
+    text.push(f.bid != null ? f.name + '\u0000' + f.bid : f.name);   // (its brand by id: the board's colours match the fascia's)
   }
   return { data: new Float32Array(data), text };
 }
@@ -1487,7 +1489,7 @@ function placeFascia(fascias, ring, edge, baseRel, floorH, brand, bi) {
   fascias.push({
     x0: ax + tx * c0 + nx * out, z0: az + tz * c0 + nz * out,
     x1: ax + tx * (c0 + w) + nx * out, z1: az + tz * (c0 + w) + nz * out,
-    base: baseRel, dy: box.dy, h: box.h, name: brand.label, bi,
+    base: baseRel, dy: box.dy, h: box.h, name: brand.label, bid: brand.id, bi,
   });
   return { fl, box, doorU: uF + e.L * doorT };
 }
@@ -1536,7 +1538,8 @@ function buildBuildings(header, A, lod, hAt, ox, oz, lcAt) {
     const site = !lod && TILE_SITES ? TILE_SITES.get(bi) || null : null;
     const bname = (header.bn && header.bn[bi]) || site?.name || '';
     const retail = m[12] > 0 || cls === 6 || cls === 7 || !!site;
-    let brand = (!lod && fasciaBrand(bname, retail)) || null;
+    // (an enterable one's kind decides: a pub or a takeaway whose name doesn't say so still looks it, inside as out)
+    let brand = (!lod && (site ? siteBrand(bname, site.kind, site.food) : fasciaBrand(bname, retail))) || null;
     // named commercial / retail units are shops even when only the name is tagged (e.g. amenity=pharmacy)
     const shop = m[12] || ((cls === 6 || cls === 7) && bname) || brand || poiOn.has(bi) || site ? 1 : 0;
     // a shop the map gives no name still has a board over the window: what kind of shop it is (or To Let)

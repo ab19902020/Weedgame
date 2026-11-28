@@ -25,6 +25,10 @@ export const U = {
   // world's terrain and the like are cut away within it, so a hillside or a garden wall can't show indoors
   inO: uniform(new THREE.Vector2(0, 0)), inX: uniform(new THREE.Vector2(1, 0)), inY: uniform(new THREE.Vector2(0, 1)),
   inWD: uniform(new THREE.Vector3(0, 0, 0)), inOn: uniform(0),
+  // up to two enterable buildings you're stood near outside (interiors.js showcase): their real rooms show through their
+  // ground-floor windows, whose panes are cut out of the outside wall there (shWD: width, depth, floor height, ceiling)
+  shO0: uniform(new THREE.Vector2(0, 0)), shX0: uniform(new THREE.Vector2(1, 0)), shY0: uniform(new THREE.Vector2(0, 1)), shWD0: uniform(new THREE.Vector4(0, 0, 0, 0)), shOn0: uniform(0),
+  shO1: uniform(new THREE.Vector2(0, 0)), shX1: uniform(new THREE.Vector2(1, 0)), shY1: uniform(new THREE.Vector2(0, 1)), shWD1: uniform(new THREE.Vector4(0, 0, 0, 0)), shOn1: uniform(0),
   moonDir: uniform(new THREE.Vector3(-0.3, 0.5, -0.2)),
   coverOrigin: uniform(new THREE.Vector2(0, 0)), // rain shelter raster origin (world xz of texel 0)
   lightOrigin: uniform(new THREE.Vector2(0, 0)),

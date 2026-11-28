@@ -46,19 +46,21 @@ export class Restaurants {
     return (b.people = out);
   }
   // ---------------------------------------------------------------- per frame inside a place
-  update(dt, b, me) {
+  // (outside: a place seen through its windows, its staff just getting on with it)
+  update(dt, b, me, outside = false) {
     const G = this.G, people = this.people(b), o = this.order;
     for (const a of people) {
       a.t += dt;
       if (!a.staff) continue;
       // the one at your till looks at you and talks while you order; the kitchen works away
-      const near = Math.hypot(me.x - a.x, me.z - a.z) < 3.2;
-      const serving = this.panel && this.panelTill === a.till && this.panelSite === b.site;
+      const near = !outside && Math.hypot(me.x - a.x, me.z - a.z) < 3.2;
+      const serving = !outside && this.panel && this.panelTill === a.till && this.panelSite === b.site;
       if (a.kitchen) { a.pose = 'idle'; a.heading = a.base + Math.sin(a.t * 0.6) * 0.5; }
       else if (serving || (near && a.till != null)) { a.heading = Math.atan2(me.z - a.z, me.x - a.x); a.pose = serving ? 'talk' : 'idle'; }
       else { a.heading += (a.base - a.heading) * Math.min(1, dt * 2); a.pose = 'idle'; }
     }
     // your order coming up
+    if (outside) return;
     if (o && o.site === b.site && !o.ready && G.time >= o.readyAt) {
       o.ready = true;
       if (!o.pub) G.hud?.toast?.(`Order ${o.number}, ready!`, 3);

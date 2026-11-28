@@ -362,7 +362,7 @@ export function structMaterial() {
 }
 
 // --- buildings --------------------------------------------------------------------------
-// the shop shelving seen through shop windows: four of the Blender-rendered bays side by side (tools/blender/shelves.py)
+// what's seen through shop windows: Blender renders (tools/blender/build_shop_textures.sh), an atlas of four rows
 let shopShelves0 = null;
 function shopShelvesTex() {
   if (shopShelves0) return shopShelves0;
@@ -389,7 +389,7 @@ export function buildingMaterial() {
   const fasciaCol = texture(brandTex, vec2(brand.add(0.5).div(BRAND_N), float(0.5))).rgb;
   const big = step(0.5, brand).mul(step(brand, 24.5));
   const bank = step(70.5, brand).mul(step(brand, 84.5));
-  const isPub = step(143.5, brand);
+  const isPub = step(143.5, brand).mul(step(brand, 159.5));
   const u = uv();
   const p = positionWorld;
   const r0 = h1(seed), r1 = h1(seed.add(17.3)), r2 = h1(seed.add(3.1)), r3 = h1(seed.add(41.7));
@@ -541,12 +541,16 @@ export function buildingMaterial() {
   // (the room's fine detail fades to its average once a pixel covers more than a few centimetres of wall)
   const detail = float(1).sub(smoothstep(0.03, 0.1, max(fU, fV)));
   const furniture = hitBack.mul(step(hy, mix(float(0.7), float(1.1), roomSeed))).mul(step(abs(hx.sub(roomSeed.sub(0.5).mul(sp))), sp.mul(0.25))).mul(mix(float(0.15), float(0.6), detail));
-  // a shop's shelves are the Blender-rendered bays (tools/blender/shelves.py: drinks, crisps, biscuits, tins, 4 m of them
-  // repeating, each shop starting at its own place); cafés, takeaways and pubs get no shelving: a warm room, people
-  const eatery = isPub.add(step(35.5, brand).mul(step(brand, 49.5))).min(1);
-  const shelfZone = shopFront.mul(float(1).sub(eatery)).mul(hitBack.add(hitSide).min(1)).mul(step(hy, 1.6)).mul(detail);
+  // what's in there, rendered in Blender (assets/shop/window.jpg, four rows from the bottom, each 4 m of wall repeating
+  // and each place starting at its own point): a shop's stocked shelving 1.6 m high round its walls (tools/blender/
+  // shelves.py), or the far wall 2.4 m high of a café, a takeaway or a pub, its counter or bar, staff, tables (eateries.py)
+  const isCafe = step(35.5, brand).mul(step(brand, 41.5)).add(step(159.5, brand).mul(step(brand, 167.5)));
+  const isFast = step(41.5, brand).mul(step(brand, 49.5)).add(step(167.5, brand));
+  const eatery = isPub.add(isCafe).add(isFast).min(1);
+  const row = isCafe.add(isFast.mul(2)).add(isPub.mul(3)), rowH = mix(float(1.6), float(2.4), eatery);
+  const shelfZone = shopFront.mul(mix(hitBack.add(hitSide).min(1), hitBack, eatery)).mul(step(hy, rowH)).mul(detail);
   const along = sel(hitBack.greaterThan(0.5), hx, hz);
-  const stock = texture(shopShelves, vec2(fract(along.div(4).add(roomSeed.mul(0.71))), hy.div(1.6).clamp(0.002, 0.998))).rgb;
+  const stock = texture(shopShelves, vec2(fract(along.div(4).add(roomSeed.mul(0.71))), row.add(hy.div(rowH).clamp(0.006, 0.994)).div(4))).rgb;
   let roomCol = room.mul(float(1).sub(furniture));
   // a shop's walls a mid grey (not the homes' wallpaper); a café's or a pub's warm
   roomCol = mix(roomCol, room.mul(mix(vec3(0.4, 0.4, 0.42), vec3(0.95, 0.78, 0.58), eatery)), shopFront);
@@ -562,7 +566,7 @@ export function buildingMaterial() {
   const pOn = step(h1(pid.add(roomSeed.mul(11))), 0.45);
   const body = step(abs(pu.sub(0.5)), float(0.07).sub(max(hy.sub(1.25), 0).mul(0.05))).mul(step(hy, 1.5)).mul(step(0.0, hy));
   const head = step(length(vec2(pu.sub(0.5).mul(2.9), hy.sub(1.62))), 0.11);
-  const person = shopFront.mul(hitBack).mul(pOn).mul(body.add(head).min(1)).mul(detail);
+  const person = shopFront.mul(float(1).sub(eatery)).mul(hitBack).mul(pOn).mul(body.add(head).min(1)).mul(detail);   // (an eatery's are in its picture)
   const coat = mix(vec3(0.08, 0.09, 0.12), vec3(0.35, 0.12, 0.1), h1(pid.mul(5.3)));
   roomCol = mix(roomCol, mix(coat, vec3(0.55, 0.4, 0.32), head.mul(0.9)), person);
   roomCol = roomCol.mul(exp(tHit.mul(-0.12)));
@@ -686,6 +690,22 @@ export function buildingMaterial() {
   const transm = float(1).sub(pow(float(1).sub(max(dot(nW, viewDir()), 0)), 2).mul(0.85));
   const interior = roomCol.mul(seeIn).mul(warm.mul(lamp).add(daylight).add(shopDay)).mul(transm);
   m.emissiveNode = interior.add(refl).add(lightPool(p).mul(albedo)).add(fascia.mul(fasciaCol).mul(U.night).mul(0.55));
+  // the real interior of an enterable building you're stood near shows through its ground-floor windows (interiors.js
+  // showcase): the panes there are cut away, so what you see from the street is what you walk into
+  // A pane is cut only where the view through it goes on into the room's box (its plan, floor to ceiling): at a glancing
+  // angle past the room's end you'd otherwise see out through the back of the building
+  const showRect = (o, X, Y, WD, on) => {
+    const d = p.xz.sub(o), lx = dot(d, X), ly = dot(d, Y);
+    const near = on.mul(step(-0.8, lx)).mul(step(lx, WD.x.add(0.8))).mul(step(-0.8, ly)).mul(step(ly, WD.y.add(0.8))).mul(step(WD.z.sub(0.3), p.y)).mul(step(p.y, WD.z.add(WD.w)));
+    const c = cameraPosition.xz.sub(o), cl = vec3(dot(c, X), cameraPosition.y, dot(c, Y));
+    const v = p.sub(cameraPosition), dl = vec3(dot(v.xz, X), v.y, dot(v.xz, Y));       // camera to pane, in the room's frame
+    const inv = vec3(1, 1, 1).div(dl.add(step(abs(dl), vec3(1e-5)).mul(1e-4)));
+    const t0 = vec3(0, WD.z, 0).sub(cl).mul(inv), t1 = vec3(WD.x, WD.z.add(WD.w), WD.y).sub(cl).mul(inv);
+    const tn = max(max(min(t0.x, t1.x), min(t0.y, t1.y)), min(t0.z, t1.z)), tf = min(min(max(t0.x, t1.x), max(t0.y, t1.y)), max(t0.z, t1.z));
+    return near.mul(step(tn, tf)).mul(step(1.02, tf));   // (the pane's at t = 1: the room's still ahead of it)
+  };
+  const showCut = max(showRect(U.shO0, U.shX0, U.shY0, U.shWD0, U.shOn0), showRect(U.shO1, U.shX1, U.shY1, U.shWD1, U.shOn1)).mul(step(0.5, glass));
+  m.maskNode = indoorCut(positionWorld).and(showCut.lessThan(0.5));
   return m;
 }
 

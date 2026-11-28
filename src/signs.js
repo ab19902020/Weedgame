@@ -3,7 +3,7 @@
 import * as THREE from 'three/webgpu';
 import { texture, uv } from 'three/tsl';
 import { U } from './env.js';
-import { fasciaBrand } from './brands.js';
+import { fasciaBrand, brandStyle } from './brands.js';
 
 // 336 x 42 slots (a third sharper than before), 6 x 97 = 582 of them (Reading's centre needs ~400);
 // painted at 256 x 32 and scaled
@@ -42,9 +42,10 @@ export class SignAtlas {
     const hit = this.byText.get(text);
     if (hit) { this.refs.set(hit.slot, this.refs.get(hit.slot) + 1); return hit; }
     const slot = this.free_.shift(); if (slot == null) { this.misses = (this.misses || 0) + 1; return null; }
-    const b = fasciaBrand(text, true) || FALLBACK;
+    const [label, bid] = text.split('\u0000');   // (a fascia's name comes with its brand's id)
+    const b = (bid ? brandStyle(+bid, label) : null) || fasciaBrand(label, true) || FALLBACK;
     const cx = (slot % COLS) * SW, cy = Math.floor(slot / COLS) * SH, p = this.ctx;
-    p.save(); p.translate(cx, cy); p.scale(K, K); paintFascia(p, 0, 0, 256, 32, b.label || text, b); p.restore();
+    p.save(); p.translate(cx, cy); p.scale(K, K); paintFascia(p, 0, 0, 256, 32, b.label || label, b); p.restore();
     this.dirty = true;
     const r = { slot, uv: [cx / W, 1 - (cy + SH) / H, (cx + SW) / W, 1 - cy / H] };
     this.byText.set(text, r); this.slotText.set(slot, text); this.refs.set(slot, 1);

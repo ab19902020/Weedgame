@@ -132,7 +132,7 @@ export class Robbery {
         a.pose = j.t < j.dur ? (j.armed || j.knife ? 'hands' : 'point') : 'shelter';
       } else if (this.robbed.has(b.site.id) && G.time - this.robbed.get(b.site.id) < 60) { a.pose = 'phone'; a.heading = a.base; }
       else {
-        const near = Math.hypot(me.x - a.x, me.z - a.z) < 4;
+        const near = me.inside === b.site.id && Math.hypot(me.x - a.x, me.z - a.z) < 4;
         if (near) a.heading = Math.atan2(me.z - a.z, me.x - a.x); else a.heading += (a.base - a.heading) * Math.min(1, dt * 2);
         a.pose = near && this.tillAt(b, me) ? 'talk' : 'idle';
         if (near && !this._greeted?.has(b.site.id)) { (this._greeted ??= new Set()).add(b.site.id); G.hud?.toast?.('“' + pick(LINES.hello) + '”', 2); }

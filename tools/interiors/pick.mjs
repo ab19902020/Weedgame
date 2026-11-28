@@ -103,7 +103,7 @@ function add(kind, b, f, extra = {}) {
   const doorX = extra.doorX ?? (house2 && f.W < 8.5 ? 1.375 : f.W / 2);
   const door = doorOutside(b, f, doorX);
   sites.push({ id: sites.length + 1, kind, name: extra.name || '', street: f.road.name, district: d.name, bkey: b.key, bi: b.bi,
-    base: b.base, wall: b.wall, lv, floorH: +floorH.toFixed(2), o: f.o.map(v => +v.toFixed(2)), ax: f.ax.map(v => +v.toFixed(5)), ay: f.ay.map(v => +v.toFixed(5)),
+    base: b.base, wall: b.wall, lv, lvT: b.lv, floorH: +floorH.toFixed(2), o: f.o.map(v => +v.toFixed(2)), ax: f.ax.map(v => +v.toFixed(5)), ay: f.ay.map(v => +v.toFixed(5)),
     W: +f.W.toFixed(2), D: +f.D.toFixed(2), doorX: +doorX.toFixed(2), door, seed: (b.bi * 7919 + parseInt(b.key.replace(/[^0-9]/g, '')) * 104729) % 2147483647 });
 }
 // 1. the trap house on Drovers Way, Woodley: a two-storey semi facing the street (ex-council)

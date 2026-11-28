@@ -4,7 +4,7 @@
 // The building's own shell stays as the world draws it; the interior sits inside it, faces turned inwards, so
 // it can't be seen from outside and you see the street through its windows.
 import * as THREE from 'three/webgpu';
-import { makePlan } from './interiorPlan.js';
+import { makePlan, frontDoor } from './interiorPlan.js';
 import { buildInterior, setDaylight } from './interiorMesh.js';
 import { HomeTV } from './homeTV.js';
 import { Restaurants } from './restaurants.js';
@@ -81,7 +81,7 @@ export class Interiors {
     b.camera = (c, dt, tx, ty, tz) => self.camera(b, c, dt, tx, ty, tz);
     this.built.set(s.id, b);
     // keep the two most recent
-    if (this.built.size > 2) { const old = [...this.built.values()].sort((p, q) => p.used - q.used)[0]; if (old !== b) this.drop(old); }
+    if (this.built.size > 4) { const old = [...this.built.values()].sort((p, q) => p.used - q.used)[0]; if (old !== b) this.drop(old); }
     return b;
   }
   drop(b) { this.group.remove(b.group); b.group.traverse(o => o.geometry?.dispose()); this.built.delete(b.site.id); }
@@ -100,7 +100,17 @@ export class Interiors {
     const G = this.G, B = G.brothers, me = B.me;
     this.fadeStep(dt);
     const IN = this.at(me);
-    for (const b of this.built.values()) b.group.visible = b === IN;
+    // outside: the nearest two shops, takeaways and pubs within 30 m show their real rooms through their windows
+    const show = this.showcase(IN, dt);
+    for (const b of this.built.values()) b.group.visible = b === IN || show.includes(b);
+    const U0 = G.U;
+    if (U0?.shOn0) for (let k = 0; k < 2; k++) {
+      const b = show[k], on = U0['shOn' + k];
+      if (!b) { on.value = 0; continue; }
+      const s = b.site; U0['shO' + k].value.set(s.o[0], s.o[1]); U0['shX' + k].value.set(s.ax[0], s.ax[1]); U0['shY' + k].value.set(s.ay[0], s.ay[1]);
+      U0['shWD' + k].value.set(s.W, s.D, b.floor0, b.plan.levels[0].ceil - 0.05); on.value = 1;
+    }
+    for (const b of show) if (b.site.kind === 'shop') this.rob.update(dt, b, me); else this.food.update(dt, b, me, true);
     if ((IN?.site.id ?? null) !== (this._vegFor ?? null)) {
       this._vegFor = IN?.site.id ?? null; if (IN) this.hideVeg(IN.site); else this.showVeg();
       // and cut the terrain, paths and walls out of its footprint (a hillside ran through some upstairs rooms)
@@ -146,7 +156,37 @@ export class Interiors {
     });
   }
   // the people inside the place you're in (staff, diners), drawn with the street's crowd
-  get people() { const b = this.at(this.G.brothers.me); return !b ? [] : b.site.kind === 'food' || b.site.kind === 'pub' ? this.food.people(b) : b.site.kind === 'shop' ? this.rob.people(b) : []; }
+  // the enterable shops, takeaways and pubs near the camera outside whose real rooms show through their windows
+  // (re-picked twice a second; built on the way, one a frame)
+  showcase(IN, dt) {
+    // (not from a car or a bus: going past at speed you'd only have time to see a hitch as each one was built)
+    const B = this.G.brothers;
+    if (IN || B.vehicleOf(B.me) || this.G.transit?.ride) return (this._show = []);
+    this._showT = (this._showT || 0) - dt;
+    if (this._showT > 0 && this._show) return this._show.filter(b => this.built.get(b.site.id) === b);
+    this._showT = 0.5;
+    const c = this.G.camera.position, near = [];
+    for (const s of this.sites) {
+      if (s.kind !== 'shop' && s.kind !== 'food' && s.kind !== 'pub') continue;
+      const d = Math.hypot(s.dx - c.x, s.dz - c.z);
+      if (d < 30) near.push([d, s]);
+    }
+    near.sort((a, b) => a[0] - b[0]);
+    const out = []; let builtOne = false;
+    for (const [, s] of near.slice(0, 2)) {
+      if (!this.built.has(s.id)) { if (builtOne) continue; builtOne = true; }
+      out.push(this.ensure(s));
+    }
+    return (this._show = out);
+  }
+  get people() {
+    const of = b => b.site.kind === 'food' || b.site.kind === 'pub' ? this.food.people(b) : b.site.kind === 'shop' ? this.rob.people(b) : [];
+    const b = this.at(this.G.brothers.me);
+    if (b) return of(b);
+    // outside: the people in the rooms showing through the windows
+    const show = this._show || [];
+    return show.length === 0 ? [] : show.length === 1 ? of(show[0]) : of(show[0]).concat(of(show[1]));
+  }
   refreshNear(me) {
     const R = 140;
     for (const s of this.sites) {
@@ -166,8 +206,7 @@ export class Interiors {
     group.add(ring, disc);
     // the door: a panel, its frame and a step, flat to the front wall, facing the street
     const w = s.plan.frontW ? s.plan.frontW * 2 : 0.94, h = s.plan.frontTop || 2.05;
-    const doorCol = { trap: 0xe9e6dc, nice: 0x2e3d55, mall: 0x3b3b3b, office: 0x3b3b3b, shop: 0x3b3b3b, warehouse: 0x5f7d95, church: 0x5b3a22, pub: 0x2f4a3a }[s.kind] ?? [0x2e3d55, 0x7d1f2a, 0x3a5a3a, 0x2c2c2c, 0xe9e6dc][s.id % 5];
-    const glassy = s.kind === 'mall' || s.kind === 'office' || s.kind === 'shop';
+    const dc = frontDoor(s), glassy = dc == null, doorCol = glassy ? 0x3b3b3b : dc;   // (the same door as inside)
     const m = new THREE.MeshStandardNodeMaterial({ color: doorCol, roughness: 0.5, metalness: glassy ? 0.4 : 0.05 });
     const fm = new THREE.MeshStandardNodeMaterial({ color: 0xf2f1ec, roughness: 0.6 });
     const door = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.06), m);
