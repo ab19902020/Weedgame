@@ -87,12 +87,12 @@ export function createPost(G) {
   pipe.outputColorTransform = false;
   // subtle lens vignette after tone mapping
   const vig = float(1).sub(smoothstep(0.55, 1.05, screenUV.sub(0.5).mul(vec3(1.25, 1, 0).xy).length().mul(1.45)).mul(0.16));
-  // gentle 'punchy' grade on top of AgX: +10% saturation, slight S-curve contrast
   const disp = renderOutput(vec4(c, 1)).rgb;
   const lum = disp.dot(vec3(0.2126, 0.7152, 0.0722));
-  // grade on top of AgX: richer saturation, S-curve contrast, cool shadows / warm highlights
-  let g = mix(vec3(lum), disp, 1.2);
-  g = g.add(g.sub(0.5).mul(0.11));
+  // grade on top of AgX: a little richer saturation, a gentle S-curve, cool shadows / warm highlights (eased
+  // off from +20% / 0.11, which with the sharpening made sunny streets glare and edges look cut out)
+  let g = mix(vec3(lum), disp, 1.12);
+  g = g.add(g.sub(0.5).mul(0.07));
   g = g.mul(mix(vec3(0.97, 1.0, 1.05), vec3(1.035, 1.0, 0.955), smoothstep(0.2, 0.8, lum))).clamp(0, 1);
   // the drone's thermal camera (thermal.js): the scene's light as temperature, white-hot or ironbow, when it's on
   const th = thermalView(c, depth.r, U.t);
@@ -103,7 +103,7 @@ export function createPost(G) {
     // sharpening) to the full drawing-buffer size
     lowA = rtt(graded, null, null, { resolutionScale: s });
     lowB = rtt(fxaa(lowA), null, null, { resolutionScale: s });
-    pipe.outputNode = fsr1(lowB, 0.3);
+    pipe.outputNode = fsr1(lowB, 0.7);   // RCAS: 0 is the most sharpening; 0.3 haloed every edge
   } else pipe.outputNode = fxaa(graded);
   return {
     pipe, aoPass, ssrPass, strength, fsr: useFSR, thermal: th,

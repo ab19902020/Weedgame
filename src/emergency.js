@@ -1,7 +1,8 @@
 // The ambulance service and the fire brigade, wherever you are on the map.
 //
 // Ambulances come to anyone left lying hurt (shot and down, knocked out, knocked down by a car, hurt in a crash) and
-// to anyone killed. Blue lights; it pulls up near them; the two paramedics (green, yellow-and-green hi-vis) get out
+// to anyone killed: one to a scene, its crew seeing to everyone down there in turn (a second only for three or more
+// waiting, never more than two at a scene). Blue lights; it pulls up near them; the two paramedics (green, yellow-and-green hi-vis) get out
 // and go round to the back, open the doors, take out the wheeled stretcher and raise it, wheel it over and park it
 // alongside, kneel and treat the patient, lift them on to it, wheel them back, load them in head first, shut the
 // doors, get back in and drive off (on blue lights if they're alive).
@@ -54,21 +55,35 @@ export class Emergency {
     this._up = new THREE.Vector3(0, 1, 0); this._d = new THREE.Vector3();
   }
   // ---------------------------------------------------------------- calls coming in
-  // the incidents with someone hurt: an ambulance each (four out at once at most), the fire brigade too for someone
-  // trapped (one crew at a time)
+  // the incidents with someone hurt. One ambulance to a scene, however many are down there: its crew deals with them
+  // one after another. A second only when three or more are still waiting for it, and never more than two at a
+  // scene (four out across the map at once). The fire brigade too for someone trapped (one crew at a time).
   dispatchInjuries(dt) {
     for (const inc of this.G.police.incidents) {
       if (!inc.injury || inc.status === 'new' || inc.medicalClosed) continue;
       inc.responseAge = (inc.responseAge || 0) + dt;
-      if (inc.responseAge >= 300 || inc.status === 'cleared' && !inc.medicalSent) {
-        if (!inc.medicalSent && inc.patient) inc.patient.awaitingMedic = false;
+      if (inc.responseAge >= 300 && !inc.medicalBusy || inc.status === 'cleared' && !inc.medicalSent) {
+        for (const p of this.patientsOf(inc)) if (!p.carried) p.awaitingMedic = false;
         inc.medicalClosed = true; continue;
       }
       if (inc.retryAfter > inc.responseAge) continue;
       inc.retryAfter = inc.responseAge + 8;
-      if (!inc.medicalSent && this.calls.filter(c => c.service === 'ambulance').length < 4) inc.medicalSent = this.sendCrew('ambulance', inc.x, inc.z, inc.label || 'reported injury', inc);
+      const here = inc.ambulances || 0, out = this.calls.filter(c => c.service === 'ambulance').length;
+      const waiting = this.waiting(inc).length;
+      if (out < 4 && waiting && (here === 0 || here === 1 && waiting >= 3 && inc.responseAge > 15)) { if (this.sendCrew('ambulance', inc.x, inc.z, inc.label || 'reported injury', inc)) { inc.medicalSent = true; inc.ambulances = here + 1; } }
       if (inc.trapped && !inc.rescueSent && !this.calls.some(c => c.service === 'fire')) inc.rescueSent = this.sendCrew('fire', inc.x, inc.z, 'trapped occupant', inc);
     }
+  }
+  // everyone hurt at an incident, and those still waiting for a crew (not taken, not being seen to)
+  patientsOf(inc) { const L = inc.patients ? [...inc.patients] : []; if (inc.patient && !L.includes(inc.patient)) L.push(inc.patient); return L; }
+  waiting(inc) { return this.patientsOf(inc).filter(p => !p.gone && !p.carried && !(p.claimedBy && this.calls.includes(p.claimedBy))); }
+  // the next one for this crew: the nearest still waiting
+  nextPatient(c) {
+    if (!c.incident) return null;
+    const v = c.unit; let best = null, bd = 1e9;
+    for (const p of this.waiting(c.incident)) { const d = Math.hypot(p.x - v.x, p.z - v.z); if (d < bd && d < 90) { bd = d; best = p; } }
+    if (best) best.claimedBy = c;
+    return best;
   }
   // someone who has gone down hurt and stays down (peds.js: shot, knocked out): a 999 call, an ambulance for them
   casualty(p, label = 'Casualty') {
@@ -158,7 +173,11 @@ export class Emergency {
       const c = this.calls[i]; c.time += dt; c.t += dt;
       const v = c.unit;
       // the vehicle's been taken (by you) or wrecked, the patient's gone, or it's all taken far too long: stand down
-      if (v.player || v.dead || c.time > 600 || (c.patient && c.patient.gone && c.stage !== 'board' && c.stage !== 'done')) { this.end(c, true); this.calls.splice(i, 1); continue; }
+      if (c.patient && c.patient.gone && !c.patient.carried && ['toRear', 'doors', 'wheel', 'treat'].includes(c.stage)) {
+        const N = this.nextPatient(c);
+        if (N) { c.patient = N; c.side = null; if (c.stage === 'treat') c.stage = 'wheel'; } else if (c.bed?.visible) { c.stage = 'stowEmpty'; c.t = 0; } else { c.stage = 'board'; c.t = 0; }
+      }
+      if (v.player || v.dead || c.time > 900) { this.end(c, true); this.calls.splice(i, 1); continue; }
       if (c.fire) { if (c.building) this.burnBuilding(c, dt); else this.burn(c, dt); }
       if (c.stage === 'drive') this.arrive(c, dt);
       else if (c.service === 'ambulance') this.ambulance(c, dt);
@@ -191,8 +210,8 @@ export class Emergency {
   // pulled up (close, held up in traffic close by, or past the nearest it gets): park, hazards and blue lights, and
   // the crew get out at the cab doors
   arrive(c, dt) {
-    const v = c.unit, P = c.service === 'ambulance' ? c.incident?.patient : null;
-    const tx = P?.x ?? c.car?.x ?? c.x, tz = P?.z ?? c.car?.z ?? c.z, d = Math.hypot(v.x - tx, v.z - tz);
+    const v = c.unit, P0 = c.service === 'ambulance' && c.incident ? this.waiting(c.incident)[0] : null;
+    const tx = P0?.x ?? c.car?.x ?? c.x, tz = P0?.z ?? c.car?.z ?? c.z, d = Math.hypot(v.x - tx, v.z - tz);
     const near = c.service === 'fire' ? 18 : 20;
     // on the scene's own road (the last of the route), as close as it gets: past it, or off the end of it
     if (v.h === c.lastH) { c.onLast = true; c.bestD = Math.min(c.bestD, d); }
@@ -206,6 +225,7 @@ export class Emergency {
         look: fire ? uniformLook(0x1d2333, 0x1d2333) : uniformLook(0x1f5e46, 0x1d3d30), hiVis: true, uniform: fire ? 1 : 2, hat: false,
         speed: 0, speedNow: 0, t: 0, phase: k * 1.7, visible: true, alpha: 1, pose: 'idle', side, front };
     });
+    const P = fire ? null : this.nextPatient(c);
     c.patient = P; c.stage = fire || P ? 'toRear' : 'check'; c.t = 0;
     this.G.audio?.play?.('Car_Door_Open', v.x, v.y + 1, v.z, 0.35);
     this.G.hud.feed(fire ? 'Fire crew on scene' : 'Paramedics on scene');
@@ -312,7 +332,7 @@ export class Emergency {
         // pumped up to working height
         const [rx, rz] = F.rear(0);
         if (c.t < 1.4) { this.face(A, rx, rz, 'hold', dt); this.face(B, rx, rz, 'hold', dt); }
-        if (c.t > 0.9 && !c.bed) { c.bed = this.stretcher(); G.scene.add(c.bed); c.bedHd = v.heading + Math.PI; c.bedH = 0.6; }
+        if (c.t > 0.9 && !c.bed?.visible) { if (!c.bed) { c.bed = this.stretcher(); G.scene.add(c.bed); } c.bed.visible = true; c.bedHd = v.heading + Math.PI; c.bedH = 0.6; c.side = null; }
         if (c.bed) {
           const out = smooth((c.t - 0.9) / 1.4), inX = v.x - F.fx * (v.def.L / 2 - 0.9), inZ = v.z - F.fz * (v.def.L / 2 - 0.9), [ox, oz] = F.rear(1.25);
           c.bedX = lerp(inX, ox, out); c.bedZ = lerp(inZ, oz, out);
@@ -371,7 +391,7 @@ export class Emergency {
         P.x = lerp(L0[0], fx, e); P.z = lerp(L0[1], fz, e); P.y = lerp(L0[2], fy, e) + Math.sin(Math.PI * e) * 0.2; P.heading = lerpA(L0[3], c.bedHd, e);
         const mx = P.x - Math.cos(P.heading) * 0.8, mz = P.z - Math.sin(P.heading) * 0.8;
         this.face(A, mx, mz, 'hold', dt); this.face(B, mx, mz, 'hold', dt);
-        if (c.t > 2.1) { c.stage = 'back'; c.t = 0; if (c.incident) c.incident.medicalDone = true; G.hud.feed(P.dead ? 'Paramedics: the casualty did not survive' : 'Paramedics: patient on board, heading for hospital'); }
+        if (c.t > 2.1) { c.stage = 'back'; c.t = 0; if (c.incident && !this.waiting(c.incident).length) c.incident.medicalDone = true; G.hud.feed(P.dead ? 'Paramedics: the casualty did not survive' : 'Paramedics: patient on board, heading for hospital'); }
         break;
       }
       case 'load': {
@@ -383,7 +403,13 @@ export class Emergency {
         if (c.t < 1.5) { this.place(B, c.bedX + ex * 1.35, c.bedZ + ez * 1.35, c.bedHd + Math.PI, k < 1, dt); this.place(A, c.bedX - ez * 0.62, c.bedZ + ex * 0.62, c.bedHd - Math.PI / 2, k < 1, dt); }
         else { this.face(A, ...F.rear(0), 'hold', dt); this.face(B, ...F.rear(0), 'hold', dt); }
         if (c.t > 1.9 && c.bed.visible) { P.gone = true; c.bed.visible = false; G.audio?.play?.('Car_Door_Close', v.x, v.y + 1, v.z, 0.45); }
-        if (c.t > 2.4) { c.stage = 'board'; c.t = 0; c.alive = !P.dead; }
+        if (c.t > 2.4) {
+          c.alive ||= !P.dead;
+          // more hurt here: the stretcher comes out again for the next one
+          const N = this.nextPatient(c);
+          if (N) { c.patient = N; c.stage = 'doors'; c.t = 0; G.hud.feed(`Paramedics: ${this.waiting(c.incident).length + 1} more to see to here`); }
+          else { c.stage = 'board'; c.t = 0; }
+        }
         break;
       }
       case 'stowEmpty': {
@@ -747,7 +773,7 @@ export class Emergency {
     if (c.hose) { G.scene.remove(c.hose.mesh, c.hose.branch); c.hose.mesh.geometry.dispose(); }
     if (c.water) { G.scene.remove(c.water.jet, c.water.steam); c.water.jet.dispose?.(); c.water.steam.dispose?.(); }
     if (c.fire) { G.scene.remove(c.fire); if (abandoned && c.car) this.burnOut(c); if (c.building && !c.building.burntAt) this.buildingOut(c); if (c.forecourt) c.forecourt.isl.burning = false; }
-    if (c.incident && c.service === 'ambulance') c.incident.medicalBusy = false;
+    if (c.incident && c.service === 'ambulance') { c.incident.ambulances = Math.max(0, (c.incident.ambulances || 1) - 1); c.incident.medicalBusy = this.calls.some(o => o !== c && o.service === 'ambulance' && o.incident === c.incident); for (const p of this.patientsOf(c.incident)) if (p.claimedBy === c) p.claimedBy = null; }
     const P = c.patient;
     if (P && abandoned && !P.gone) {
       // left where they were: back on the ground

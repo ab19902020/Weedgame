@@ -648,10 +648,83 @@ function build(header, A, lod) {
 
   // ---------------- surfaces
   const G = new Buf(1);
-  const surf = (pre, id, lift, kerb) => {
+  // the terrain mesh's own height (sunk under hard ground) and what to do when it rises through a draped surface:
+  // a pavement, path or plaza polygon is flat between its corners, often tens of metres apart, while the ground
+  // under it bends at every 4 m grid line, so a hump poked grass and tarmac blotches up through the flags. Such a
+  // polygon is cut along the terrain grid (cell edges and the diagonal the mesh splits on), every piece then lying
+  // exactly its lift above the ground; polygons the ground stays under keep their few big triangles.
+  const Hm = lod ? H : (() => { const a = new Float32Array(NT * NT); for (let i = 0; i < a.length; i++) a[i] = tp[i * 3 + 1]; return a; })();
+  const meshAt = (x, z) => {
+    const gx = Math.max(0, Math.min(NT - 1.0001, x / STEP)), gz = Math.max(0, Math.min(NT - 1.0001, z / STEP));
+    const i = Math.floor(gx), j = Math.floor(gz), fu = gx - i, fv = gz - j;
+    const h00 = Hm[j * NT + i], h10 = Hm[j * NT + i + 1], h01 = Hm[(j + 1) * NT + i], h11 = Hm[(j + 1) * NT + i + 1];
+    return fu >= fv ? h00 + fu * (h10 - h00) + fv * (h11 - h10) : h00 + fv * (h01 - h00) + fu * (h11 - h01);
+  };
+  // where a segment crosses the grid's lines and diagonals, as parameters 0..1 along it
+  const crossings = (x0, z0, x1, z1) => {
+    const ts = [], dx = x1 - x0, dz = z1 - z0;
+    const lines = (a, d) => { if (Math.abs(d) < 1e-9) return; const lo = Math.ceil(Math.min(a, a + d) / STEP), hi = Math.floor(Math.max(a, a + d) / STEP);
+      for (let k = lo; k <= hi && k - lo < 200; k++) { const t = (k * STEP - a) / d; if (t > 1e-4 && t < 1 - 1e-4) ts.push(t); } };
+    lines(x0, dx); lines(z0, dz); lines(x0 - z0, dx - dz);
+    return ts.sort((a, b) => a - b);
+  };
+  const clipHalf = (poly, a, b, c) => { // keep a*x + b*z + c >= 0
+    const out = [];
+    for (let k = 0; k < poly.length; k++) {
+      const P = poly[k], Q = poly[(k + 1) % poly.length];
+      const dp = a * P[0] + b * P[1] + c, dq = a * Q[0] + b * Q[1] + c;
+      if (dp >= 0) out.push(P);
+      if ((dp >= 0) !== (dq >= 0)) { const t = dp / (dp - dq); out.push([P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t]); }
+    }
+    return out;
+  };
+  const pokes = (T, lift) => { // does the terrain mesh come within 3 cm of the flat triangle T ([x, z] x3)?
+    const [[ax, az], [bx, bz], [cx, cz]] = T, ya = hAt(ax, az), yb = hAt(bx, bz), yc = hAt(cx, cz);
+    const det = (bz - cz) * (ax - cx) + (cx - bx) * (az - cz);
+    if (Math.abs(det) < 1e-9) return false;
+    const plane = (x, z) => { const l1 = ((bz - cz) * (x - cx) + (cx - bx) * (z - cz)) / det, l2 = ((cz - az) * (x - cx) + (ax - cx) * (z - cz)) / det;
+      return [l1 * ya + l2 * yb + (1 - l1 - l2) * yc, Math.min(l1, l2, 1 - l1 - l2)]; };
+    const i0 = Math.ceil(Math.min(ax, bx, cx) / STEP), i1 = Math.floor(Math.max(ax, bx, cx) / STEP);
+    const j0 = Math.ceil(Math.min(az, bz, cz) / STEP), j1 = Math.floor(Math.max(az, bz, cz) / STEP);
+    for (let j = Math.max(0, j0); j <= Math.min(NT - 1, j1); j++) for (let i = Math.max(0, i0); i <= Math.min(NT - 1, i1); i++) {
+      const [y, inside] = plane(i * STEP, j * STEP);
+      if (inside >= -1e-6 && Hm[j * NT + i] > y + lift - 0.03) return true;
+    }
+    for (const [[x0, z0, y0], [x1, z1, y1]] of [[[ax, az, ya], [bx, bz, yb]], [[bx, bz, yb], [cx, cz, yc]], [[cx, cz, yc], [ax, az, ya]]])
+      for (const t of crossings(x0, z0, x1, z1)) if (meshAt(x0 + (x1 - x0) * t, z0 + (z1 - z0) * t) > y0 + (y1 - y0) * t + lift - 0.03) return true;
+    return false;
+  };
+  const drape = (T, lift, id) => { // T cut into terrain-grid pieces, each lift above the ground
+    const xs = T.map(v => v[0]), zs = T.map(v => v[1]);
+    const i0 = Math.floor(Math.min(...xs) / STEP), i1 = Math.floor(Math.max(...xs) / STEP), j0 = Math.floor(Math.min(...zs) / STEP), j1 = Math.floor(Math.max(...zs) / STEP);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      let poly = clipHalf(T, 1, 0, -i * STEP);
+      if (poly.length > 2) poly = clipHalf(poly, -1, 0, (i + 1) * STEP);
+      if (poly.length > 2) poly = clipHalf(poly, 0, 1, -j * STEP);
+      if (poly.length > 2) poly = clipHalf(poly, 0, -1, (j + 1) * STEP);
+      if (poly.length < 3) continue;
+      for (const sg of [1, -1]) {
+        const pc = clipHalf(poly, sg, -sg, sg * (j - i) * STEP);
+        for (let k = 1; k + 1 < pc.length; k++) {
+          const a = pc[0], b = pc[k], c = pc[k + 1];
+          if (Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) < 1e-5) continue;
+          tri(G, [a[0], hAt(a[0], a[1]) + lift, a[1]], [b[0], hAt(b[0], b[1]) + lift, b[1]], [c[0], hAt(c[0], c[1]) + lift, c[1]], [0, 1, 0], null, [id]);
+        }
+      }
+    }
+  };
+  // car parks come through as paved squares (the pipeline's plaza polygons include amenity=parking); one with
+  // parked-car slots in it is laid as tarmac (surface 5, drawn as asphalt) with painted bays, not block paving
+  const pkC = [];
+  if (A.pk) for (let k = 0; k < A.pk.length; k += 4) if (A.pk[k + 3] === 1) pkC.push([A.pk[k], A.pk[k + 1], A.pk[k + 2]]);
+  const inRing = (r, x, z) => { let c = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [xi, zi] = r[i], [xj, zj] = r[j]; if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) c = !c; } return c; };
+  const inPoly = (rings, x, z) => inRing(rings[0], x, z) && !rings.slice(1).some(h => inRing(h, x, z));
+  const carParks = [];
+  const surf = (pre, id0, lift, kerb) => {
     const C = A[pre + 'C'], R = A[pre + 'R'], P = A[pre + 'P'];
     let ci = 0, ri = 0;
     for (let pi = 0; pi < P.length; pi++) {
+      let id = id0;
       const flat = [], holes = [], rings = [];
       for (let k = 0; k < P[pi]; k++) {
         const n = R[ri++];
@@ -661,7 +734,15 @@ function build(header, A, lod) {
         ci += n; rings.push(ring);
       }
       const t = earcut(flat, holes.length ? holes : null);
-      for (let q = 0; q < t.length; q += 3) {
+      const slot = id0 === 4 ? pkC.find(([x, z]) => inPoly(rings, x, z)) : null;
+      if (slot) { id = 5; carParks.push({ rings, lattice: slot }); }
+      // off-road surfaces the ground would poke through are cut to the terrain grid (with their kerb faces); a car
+      // park always is, so its painted bays can lie on it
+      let draped = !!slot;
+      if (id0 !== 0) for (let q = 0; q < t.length && !draped; q += 3)
+        draped = pokes([t[q], t[q + 1], t[q + 2]].map(i => [flat[i * 2], flat[i * 2 + 1]]), lift);
+      if (draped) for (let q = 0; q < t.length; q += 3) drape([t[q], t[q + 1], t[q + 2]].map(i => [flat[i * 2], flat[i * 2 + 1]]), lift, id);
+      else for (let q = 0; q < t.length; q += 3) {
         const P3 = [t[q], t[q + 1], t[q + 2]].map(i => {
           const x = flat[i * 2], z = flat[i * 2 + 1];
           const pr = id === 0 ? profileAt(x + ox, z + oz) : null;
@@ -679,9 +760,15 @@ function build(header, A, lod) {
       if (kerb) for (const ring of rings) for (let q = 0; q < ring.length; q++) {
         const [x0, z0] = ring[q], [x1, z1] = ring[(q + 1) % ring.length];
         if ((Math.abs(x0 - x1) < 1e-3 && Math.abs(x0 / 32 - Math.round(x0 / 32)) < 1e-4) || (Math.abs(z0 - z1) < 1e-3 && Math.abs(z0 / 32 - Math.round(z0 / 32)) < 1e-4)) continue;
-        const y0 = hAt(x0, z0), y1 = hAt(x1, z1);
-        const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1;
-        quad(G, [x0, y0 + 0.02, z0], [x1, y1 + 0.02, z1], [x1, y1 + lift, z1], [x0, y0 + lift, z0], [-dz / l, 0, dx / l], null, [2]);
+        const dx = x1 - x0, dz = z1 - z0, l = Math.hypot(dx, dz) || 1, nrm = [-dz / l, 0, dx / l];
+        // the face reaches down past the sunk ground beside it (no slot of sky under a kerb), and on a draped
+        // polygon breaks where the surface does, so its top edge stays on the flags
+        const ts = draped ? [0, ...crossings(x0, z0, x1, z1), 1] : [0, 1];
+        for (let k = 0; k + 1 < ts.length; k++) {
+          const xa = x0 + dx * ts[k], za = z0 + dz * ts[k], xb = x0 + dx * ts[k + 1], zb = z0 + dz * ts[k + 1];
+          const ya = hAt(xa, za), yb = hAt(xb, zb);
+          quad(G, [xa, ya - 0.28, za], [xb, yb - 0.28, zb], [xb, yb + lift, zb], [xa, ya + lift, za], nrm, null, [2]);
+        }
       }
     }
   };
@@ -1100,7 +1187,8 @@ function build(header, A, lod) {
   out.ground = G.pack();
   out.struct = S.pack();
   out.brk = new Float32Array(brk);
-  out.markings = buildMarkings(addedHere.length ? { ...header, edges: [...header.edges, ...addedHere] } : header, ox, oz, hAt, deckOf);
+  out.markings = buildMarkings(addedHere.length ? { ...header, edges: [...header.edges, ...addedHere] } : header, ox, oz, hAt, deckOf,
+    lod ? null : B => parkingBays(B, carParks, inPoly, (x, z) => hAt(x, z) + 0.09 + 0.012, inRoad));
 
   // ---------------- instances: trees, lamps, slots
   const tr = A.tr, trL = [];
@@ -1866,9 +1954,49 @@ function addFrontage(B, F, base, low, wallH, floorH, ex, seed, style) {
   for (const e of [-hw + 0.06, hw - 0.06]) { const p = at(dt + e, 0.02), q = at(dt + e, dep - 0.05); beam(B, [p[0], y - 0.35, p[1]], [q[0], y - 0.04, q[1]], 0.06, 0.1, part(7), [0, 1, 0]); }
 }
 
+// ------------------------------------------------------------------ car park bays
+// White bay lines over each car park, on the lattice its parked cars stand on (the pipeline lays those out
+// 2.6 m apart in rows 7.5 m apart, square to the car park's minimum rotated rectangle): car parks were bare
+// planes of block paving with cars standing at angles nothing on the ground explained. A bay is painted where its
+// whole 2.6 x 4.8 m footprint lies in the car park and clear of the roads through it, with side lines and a
+// line at its head.
+function parkingBays(B, parks, inPoly, yAt, inRoad) {
+  const W = 0.1, line = (ax, az, bx, bz) => {   // a painted line in ~1.2 m pieces, each just above the surface
+    const l = Math.hypot(bx - ax, bz - az), n = Math.max(1, Math.ceil(l / 1.2)), nx = -(bz - az) / l * W / 2, nz = (bx - ax) / l * W / 2;
+    for (let i = 0; i < n; i++) {
+      const x0 = ax + (bx - ax) * i / n, z0 = az + (bz - az) * i / n, x1 = ax + (bx - ax) * (i + 1) / n, z1 = az + (bz - az) * (i + 1) / n;
+      const y0 = yAt(x0, z0), y1 = yAt(x1, z1);
+      quad(B, [x0 - nx, y0, z0 - nz], [x1 - nx, y1, z1 - nz], [x1 + nx, y1, z1 + nz], [x0 + nx, y0, z0 + nz], [0, 1, 0], null, [0]);
+    }
+  };
+  for (const { rings, lattice: [sx, sz, heading] } of parks) {
+    const ang = heading - Math.PI / 2, ux = Math.cos(ang), uz = Math.sin(ang), vx = -uz, vz = ux;
+    const P = (u, v) => [u * ux + v * vx, u * uz + v * vz];
+    const u0 = sx * ux + sz * uz, v0 = sx * vx + sz * vz;
+    let i0 = 1e9, i1 = -1e9, j0 = 1e9, j1 = -1e9;
+    for (const [x, z] of rings[0]) {
+      const u = x * ux + z * uz - u0, v = x * vx + z * vz - v0;
+      i0 = Math.min(i0, Math.floor(u / 2.6)); i1 = Math.max(i1, Math.ceil(u / 2.6)); j0 = Math.min(j0, Math.floor(v / 7.5)); j1 = Math.max(j1, Math.ceil(v / 7.5));
+    }
+    if ((i1 - i0) * (j1 - j0) > 40000) continue;
+    const ok = (u, v) => { const [x, z] = P(u, v); return x >= 0 && z >= 0 && x <= TILE && z <= TILE && inPoly(rings, x, z) && !inRoad(x, z, 0.3); };
+    const memo = new Map(), bay = (i, j) => { const k = i * 100003 + j; if (!memo.has(k)) { const u = u0 + i * 2.6, v = v0 + j * 7.5;
+      memo.set(k, ok(u, v) && ok(u - 1.2, v - 2.3) && ok(u + 1.2, v - 2.3) && ok(u - 1.2, v + 2.3) && ok(u + 1.2, v + 2.3)); } return memo.get(k); };
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      if (!bay(i, j)) continue;
+      const u = u0 + i * 2.6, v = v0 + j * 7.5;
+      const seg = (ua, va, ub, vb) => { const [ax, az] = P(ua, va), [bx, bz] = P(ub, vb); line(ax, az, bx, bz); };
+      seg(u - 1.3, v - 2.4, u - 1.3, v + 2.4);                       // left side line
+      if (!bay(i + 1, j)) seg(u + 1.3, v - 2.4, u + 1.3, v + 2.4);    // the row's last right-hand line
+      seg(u - 1.3, v + 2.4, u + 1.3, v + 2.4);                       // head of the bay
+    }
+  }
+}
+
 // ------------------------------------------------------------------ road markings
-function buildMarkings(header, ox, oz, hAt0, deckOf = new Map()) {
+function buildMarkings(header, ox, oz, hAt0, deckOf = new Map(), more = null) {
   const B = new Buf(1);
+  if (more) more(B);
   if (!NET) return B.pack();
   const P = NET.pts, cum = NET.cum;
   for (const e of header.edges) {

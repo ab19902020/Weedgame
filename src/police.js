@@ -56,8 +56,23 @@ export class Police {
   }
   // ---------------------------------------------------------------- incidents
   createIncident(type, x, z, parties, opts = {}) {
+    // someone else hurt where there's already a scene (a shooting with several down, a pile-up): it's the same
+    // incident, one 999 call and one response, with everyone hurt on its list (emergency.js sends one ambulance for
+    // the lot, a second only for three or more waiting)
+    if (opts.patient) {
+      const near = this.incidents.find(i => i.status !== 'cleared' && i.patients && i.t < 420 && Math.hypot(i.x - x, i.z - z) < 60);
+      if (near) {
+        if (!near.patients.includes(opts.patient)) near.patients.push(opts.patient);
+        near.injury = true; near.byPlayer ||= !!opts.byPlayer; near.parties.push(...parties);
+        if (!opts.medical && near.medical) near.medical = false;   // a killing brings the police as well
+        const dead = near.patients.filter(p => p.dead).length, n = near.patients.length, base = (near.baseLabel ||= String(near.label).split(' · ')[0]);
+        near.label = `${base} · ${n} casualties${dead ? ` (${dead} dead)` : ''}`;
+        return near;
+      }
+    }
     const inc = { id: this.nextInc++, type, x, z, parties, t: 0, status: 'new', witnesses: [], reportedAt: null, unit: null, byPlayer: !!opts.byPlayer, label: opts.label || type };
     inc.injury = !!opts.injury; inc.trapped = !!opts.trapped; inc.patient = opts.patient; inc.medical = !!opts.medical;   // medical: an ambulance only (someone hurt, nobody killed)
+    inc.patients = opts.patient ? [opts.patient] : [];
     this.incidents.push(inc);
     // witnesses: nearby pedestrians react; one of them phones it in
     const w = this.G.peds.near(x, z, 55);
