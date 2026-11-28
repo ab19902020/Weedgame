@@ -7,10 +7,10 @@ APK is no longer kept in this folder; it is handed over directly with each relea
 To build it yourself from the previous signed APK (no Android SDK needed):
 
     npm run build
-    python3 tools/android/repack.py previous.apk . unsigned.apk 0.44.0 47
+    python3 tools/android/repack.py previous.apk . unsigned.apk 0.45.0 48
     java --add-exports java.base/sun.security.x509=ALL-UNNAMED --add-exports java.base/sun.security.pkcs=ALL-UNNAMED \
          --add-exports java.base/sun.security.util=ALL-UNNAMED -cp tools/android:apksig-2.3.0.jar \
-         Sign keystore password alias unsigned.apk Green-County-0.44.0-dev.apk
+         Sign keystore password alias unsigned.apk Green-County-0.45.0-dev.apk
 
 (`Sign.java` is in `tools/android`; compile it with apksig 2.3.0 on the classpath. The development key keeps
 updates installing over v0.22 and later.) `Green-County-Brothers.apk` is the older standalone build.

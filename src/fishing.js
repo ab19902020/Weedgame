@@ -138,7 +138,8 @@ export class Fishing {
     const R = this.rodSpec(m);
     k.drag[m] ??= +(R.line * 0.35).toFixed(1);
     // bait: the last used for this method, or the first in the bag that goes on it
-    const ok = Object.entries(BAITS).filter(([, b]) => b.methods.includes(m)).map(([id]) => id);
+    const PREFER = { float: ['maggots', 'corn', 'worms', 'bread'], ledger: ['boilies', 'corn', 'worms'], lure: ['shad', 'spinner'] };
+    const ok = PREFER[m].filter(id => BAITS[id]?.methods.includes(m));
     let b = k.sel[m]; if (!ok.includes(b) || !this.baitLeft(b)) b = ok.find(x => this.baitLeft(x)) || ok[0];
     k.sel[m] = b;
     const rod = k.rods[this.rodKind(m)];
@@ -267,17 +268,19 @@ export class Fishing {
       case 'release': return 0.5 + 1.75 * Math.min(1, this.charge) - (1.75 * Math.min(1, this.charge) + 0.05) * Math.min(1, this.relT / 0.16);
       case 'fight': return 0.75 + 0.55 * this.lift;
       case 'netting': return 1.05;
-      case 'fishing': case 'settle': case 'snagged': return this.method === 'ledger' ? 0.22 : this.method === 'lure' ? 0.15 + this.lift * 0.4 : 0.32;
+      case 'fishing': case 'settle': case 'snagged': return this.method === 'ledger' ? 0.1 : this.method === 'lure' ? 0.15 + this.lift * 0.4 : 0.32;
       default: return 0.45;
     }
   }
   onPod() { return this.method === 'ledger' && (this.state === 'fishing' || this.state === 'settle'); }
   butt() {
     const y = this.rodYaw(), P = this.stand;
-    if (this.onPod()) return new THREE.Vector3(P.x + Math.cos(this.h0) * 0.55 + Math.cos(this.h0 + Math.PI / 2) * 0.55, P.y + 0.52, P.z + Math.sin(this.h0) * 0.55 + Math.sin(this.h0 + Math.PI / 2) * 0.55);
+    if (this.onPod()) { const pp = this.podAt(); return new THREE.Vector3(pp.x, P.y + 0.53, pp.z); }
     const r = y + Math.PI / 2;
     return new THREE.Vector3(P.x + Math.cos(y) * 0.12 + Math.cos(r) * 0.2, P.y + 1.0, P.z + Math.sin(y) * 0.12 + Math.sin(r) * 0.2);
   }
+  // the pod's back rest: beside and a little ahead of where you stand (the alarm is 0.9 m further out)
+  podAt() { const P = this.stand, r = this.h0 + Math.PI / 2; return { x: P.x + Math.cos(this.h0) * 0.2 + Math.cos(r) * 0.65, z: P.z + Math.sin(this.h0) * 0.2 + Math.sin(r) * 0.65 }; }
   rodDir() { const y = this.rodYaw(), e = this.rodElev(); return new THREE.Vector3(Math.cos(e) * Math.cos(y), Math.sin(e), Math.cos(e) * Math.sin(y)); }
   // the tip, bent towards the pull (the same curve fishModels.js draws)
   tipOf(T = 0, toward = null) {
@@ -356,6 +359,24 @@ export class Fishing {
     void k;
   }
   distTip() { return this.tipOf().distanceTo(this.rig.p); }
+  // where a cast at this power would come down (no wind, no feathering): for the target ring and the HUD
+  predictCast(power, yaw = this.h0 + this.aim) {
+    const R = this.rodSpec(), v0 = R.cast.v * (0.25 + 0.75 * power), e = 0.6, h = 1 / 60;
+    const p = this.tipOf(), v = new THREE.Vector3(Math.cos(e) * Math.cos(yaw) * v0, Math.sin(e) * v0, Math.cos(e) * Math.sin(yaw) * v0);
+    const clip = this.kit().clip[this.method];
+    for (let i = 0; i < 600; i++) {
+      const sp = v.length(); v.addScaledVector(v, -R.cast.drag * sp * h); v.y -= G0 * h; p.addScaledVector(v, h);
+      if (clip && Math.hypot(p.x - this.stand.x, p.z - this.stand.z) >= clip) { v.x = v.z = 0; }
+      if (p.y <= this.lake.level) break;
+    }
+    p.y = this.lake.level; return p;
+  }
+  // how much water there is straight out along a line (to the far bank or an island)
+  openWater(yaw = this.h0 + this.aim) {
+    const L = this.lake; let d = 1, seen = false;
+    for (; d < 140; d += 1) { const w = L.wet(this.stand.x + Math.cos(yaw) * d, this.stand.z + Math.sin(yaw) * d); if (w) seen = true; else if (seen) break; }
+    return seen ? d : 0;
+  }
   settle(dt) {
     this.settleT += dt;
     if (this.settleT > (this.method === 'ledger' ? Math.min(2.5, 0.6 + this.rig.depth / 1.5) : 1.2)) {
@@ -544,7 +565,7 @@ export class Fishing {
     f.y = clamp(f.y + ((want - f.y) * 0.6 - lift) * h, 0.03, bottom);
     // tiring
     const effort = (Fs / Math.max(0.01, f.Fmax)) * Math.min(1.5, sp / f.vmax) * 0.5 + (T / Math.max(0.01, f.Fmax)) * 0.6;
-    const K = 25 * Math.pow(f.kg, 0.25) * f.stamina;
+    const K = 15 * Math.pow(f.kg, 0.25) * f.stamina;
     f.E = clamp(f.E - effort / K * h + (f.mode === 'rest' && T < 0.3 * f.Fmax ? 0.012 * h : 0), 0, 1);
     if (f.E < 0.12 && f.mode !== 'beaten') { f.mode = 'beaten'; f.modeT = 4; this.events.push({ kind: 'beaten' }); }
     // snags: into the lilies or round an island's margin
@@ -730,9 +751,9 @@ export class Fishing {
     else gear.setLure(null);
     // the carp rod's pod and alarm
     if (m === 'ledger' && this.state !== 'landed') {
-      const P = this.stand, x = P.x + Math.cos(this.h0) * 0.55 + Math.cos(this.h0 + Math.PI / 2) * 0.55, z = P.z + Math.sin(this.h0) * 0.55 + Math.sin(this.h0 + Math.PI / 2) * 0.55;
+      const P = this.stand, pp = this.podAt();
       this.alarmLed = Math.max(0, (this.alarmLed || 0) - dt * 6);
-      gear.setPod(new THREE.Vector3(x - Math.cos(this.h0) * 0.9, P.y, z - Math.sin(this.h0) * 0.9), this.h0, this.alarmLed, this.bite?.phase === 'take' ? 1 : this.alarmLed * 0.3);
+      gear.setPod(new THREE.Vector3(pp.x, P.y, pp.z), this.h0, this.alarmLed, this.bite?.phase === 'take' ? 1 : this.alarmLed * 0.3);
     } else gear.setPod(null);
     // the net: lying on the bank, or in the water
     const k = this.kit();
@@ -751,6 +772,12 @@ export class Fishing {
       if (this.photo) { const p = new THREE.Vector3(P.x, P.y + 1.05, P.z).addScaledVector(fwd, -0.38); const dir = new THREE.Vector3(Math.cos(this.h0 + Math.PI / 2), 0, Math.sin(this.h0 + Math.PI / 2)); this.fishHold = { p, dir }; gear.showFish(f.s, f.Lm, p, this.h0 + Math.PI / 2, 0, this.t * 3, 0.05); gear.setMat(null); }
       else { const p = new THREE.Vector3(P.x, P.y + 0.08 + f.Lm * 0.02, P.z).addScaledVector(fwd, 0.4).addScaledVector(new THREE.Vector3(Math.cos(this.h0 + Math.PI / 2), 0, Math.sin(this.h0 + Math.PI / 2)), 0.6); gear.showFish(f.s, f.Lm, p, this.h0 + Math.PI / 2, Math.PI / 2, this.t * 4, 0.12 + 0.1 * Math.max(0, Math.sin(this.landT * 1.3))); gear.setMat(k.mat ? new THREE.Vector3(p.x, P.y + 0.02, p.z) : null, this.h0); }
     } else { gear.showFish(null); gear.setMat(null); }
+    // the target: where this cast would land (at full power while aiming, at the power so far while swinging back)
+    if ((this.state === 'ready' || this.state === 'windup') && this.rigged()) {
+      const pw = this.state === 'windup' ? (this.charge <= 1 ? Math.max(0.12, this.charge) : Math.max(0.55, 1 - (this.charge - 1) * 0.9)) : 1;
+      const tp = this.predictCast(pw); this.aimDist = Math.hypot(tp.x - this.stand.x, tp.z - this.stand.z);
+      gear.setTarget(tp, lake.wet(tp.x, tp.z));
+    } else gear.setTarget(null);
     gear.update(dt);
   }
   // ---------------------------------------------------------------- sound
@@ -787,6 +814,11 @@ export class Fishing {
       const yaw = Math.atan2(tgt.z - P.z, tgt.x - P.x) + this.camYaw;
       const back = this.state === 'fight' ? 3.6 : 3.0, up = this.state === 'fight' ? 2.4 : 2.0;
       from = new THREE.Vector3(P.x - Math.cos(yaw) * back + Math.cos(yaw - Math.PI / 2) * 0.9, P.y + up + this.camPitch * 2, P.z - Math.sin(yaw) * back + Math.sin(yaw - Math.PI / 2) * 0.9);
+      // a fish close in: swing round to the side and up, looking down past you at it coming to the net
+      if (this.fish) {
+        const k = clamp((9 - dist) / 6, 0, 1);
+        if (k > 0) { const side = yaw - Math.PI / 2, near = new THREE.Vector3(P.x + Math.cos(side) * 3.2 - Math.cos(yaw) * 0.6, P.y + 2.7, P.z + Math.sin(side) * 3.2 - Math.sin(yaw) * 0.6); from.lerp(near, k); }
+      }
       look = tgt.clone(); look.y = lake.level + 0.1;
       // zoom in on a float out in the lake so you can watch it
       if (this.method === 'float' && this.rig?.inWater && !this.fish) fov = clamp(2 * Math.atan(7 / Math.max(8, dist)) * 57.3, 18, 50);
@@ -810,7 +842,7 @@ export class Fishing {
       lineOut: this.line || 0, distance: this.rig ? Math.hypot(this.rig.p.x - this.stand.x, this.rig.p.z - this.stand.z) : 0,
       bait: k.sel[this.method], baitLeft: this.baitLeft(k.sel[this.method]), clip: k.clip[this.method] || 0, charge: this.charge, power: this.power,
       bite: B ? { phase: B.phase, dip: B.dip || 0, t: B.tTake } : null, fishE: f?.E, fishNear: f ? Math.hypot(f.p.x - this.stand.x, f.p.z - this.stand.z) : 0, canNet: !!this.canNet,
-      snag: this.state === 'snagged' || !!f?.snag, rigged: this.rigged(), wear: k.rods[this.rodKind()]?.wear || 0, lake: this.lake?.name, peg: this.peg?.n, caught: this.caught, photo: this.photo,
+      snag: this.state === 'snagged' || !!f?.snag, rigged: this.rigged(), open: this.state === 'ready' || this.state === 'windup' ? this.openWater() : 0, aimDist: this.aimDist || 0, wear: k.rods[this.rodKind()]?.wear || 0, lake: this.lake?.name, peg: this.peg?.n, caught: this.caught, photo: this.photo,
     };
   }
 }

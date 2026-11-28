@@ -6,7 +6,7 @@
 //     Drag − / + sets the clutch. Tackle (rod, bait, tie on a new rig), Feed (loose feed round the float), Clip (clip
 //     the line at your last cast's distance) and Pack up along the top.
 //   Keyboard: hold Space to cast, Space again to feather and to strike; hold R (or W) to wind; A / D aim and side
-//     strain; Z / X clutch; N net; B feed; T tackle; C clip; P picture; G or Esc pack up.
+//     strain; Z / X clutch; E net; B feed; T tackle; C clip; Y picture; G or Esc pack up.
 //   DualShock / DualSense: hold R2 to swing back and let go to cast; R2 (or L2) again to feather; R2 winds (how far
 //     you squeeze it is how fast); Cross strikes and nets (or flick the right stick down and back to strike, like
 //     lifting into it); left stick aims and gives side strain; L2 lifts the rod to pump a big fish; right stick
@@ -80,8 +80,8 @@ export class FishingHud {
       this.keys.add(e.code); if (e.repeat) return;
       const k = e.code;
       if (k === 'Space') { this.edges.add('main'); this.mainHeld = true; }
-      else if (k === 'KeyN') this.edges.add('net'); else if (k === 'KeyB') this.act('feed'); else if (k === 'KeyT') this.act('tackle'); else if (k === 'KeyC') this.act('clip');
-      else if (k === 'KeyZ') this.act('drag-'); else if (k === 'KeyX') this.act('drag+'); else if (k === 'KeyP') this.act('photo'); else if (k === 'Enter') this.edges.add('ok');
+      else if (k === 'KeyE') this.edges.add('net'); else if (k === 'KeyB') this.act('feed'); else if (k === 'KeyT') this.act('tackle'); else if (k === 'KeyC') this.act('clip');
+      else if (k === 'KeyZ') this.act('drag-'); else if (k === 'KeyX') this.act('drag+'); else if (k === 'KeyY') this.act('photo'); else if (k === 'Enter') this.edges.add('ok');
       else if (k === 'KeyG' || k === 'Escape') this.act('exit');
     });
     addEventListener('keyup', e => { this.keys.delete(e.code); if (e.code === 'Space') this.mainHeld = false; });
@@ -164,7 +164,7 @@ export class FishingHud {
   openPanel(cls, html, onClick) {
     this.closePanel();
     const p = this.panel = document.createElement('div'); p.className = 'fPanel ' + cls; p.dataset.pad = 'menu'; p.innerHTML = html;
-    (document.getElementById('hud') || document.body).append(p);
+    document.body.append(p);
     p.addEventListener('click', e => { const b = e.target.closest('button[data-p]'); if (!b) return; e.stopPropagation(); onClick(b.dataset.p, b); });
     for (const t of ['pointerdown', 'pointermove', 'touchstart', 'touchmove']) p.addEventListener(t, e => e.stopPropagation(), { passive: true });
     return p;
@@ -227,9 +227,10 @@ export class FishingHud {
     if (s.state === 'landed' && !this.panel) this.card();
     if (s.state !== 'landed' && this.panel?.classList.contains('catch')) this.closePanel();
     // top: where, what's on, how much line
-    this.el.querySelector('.fLake').textContent = `${s.lake} · peg ${s.peg}`;
+    const h = G.world?.hours?.() ?? 12, hhmm = String(Math.floor(h)).padStart(2, '0') + ':' + String(Math.floor((h % 1) * 60)).padStart(2, '0');
+    this.el.querySelector('.fLake').textContent = `${s.lake} · peg ${s.peg} · ${hhmm}`;
     const what = s.method === 'lure' ? BAITNAME(F.kit().rods.lure?.rig || s.bait) : `${BAITNAME(s.bait)} ×${s.baitLeft}`;
-    this.el.querySelector('.fLine').textContent = `${s.rod} · ${s.line} lb · ${what}${s.clip ? ` · clipped ${s.clip} m` : ''}${s.state === 'fishing' || s.state === 'fight' ? ` · ${Math.round(s.state === 'fight' ? s.lineOut : s.distance)} m out` : ''}${!s.rigged ? ' · NO RIG' : s.wear >= 12 ? ' · blunt hook' : ''}`;
+    this.el.querySelector('.fLine').textContent = `${s.rod} · ${s.line} lb · ${what}${s.clip ? ` · clipped ${s.clip} m` : ''}${s.state === 'fishing' || s.state === 'fight' ? ` · ${Math.round(s.state === 'fight' ? s.lineOut : s.distance)} m out` : s.state === 'ready' && s.open ? ` · ${s.open} m of water ahead` : ''}${!s.rigged ? ' · NO RIG' : s.wear >= 12 ? ' · blunt hook' : ''}`;
     // the big button's job
     const label = { ready: s.rigged ? 'Cast' : 'Tackle', windup: 'Release', release: 'Feather', flight: 'Feather', settle: 'Strike', fishing: 'Strike', snagged: 'Strike', fight: s.canNet ? 'Net' : 'Net', netting: 'Net', landed: 'OK' }[s.state] || '';
     if (this.mainLabel.textContent !== label) this.mainLabel.textContent = label;
@@ -247,7 +248,7 @@ export class FishingHud {
     tg.classList.toggle('active', s.state === 'fight' || s.state === 'netting' || s.state === 'snagged');
     // the call: what's happening
     let say = '';
-    if (s.state === 'windup') say = s.charge > 1.05 ? 'Too far back!' : 'Let go to cast';
+    if (s.state === 'windup') say = s.charge > 1.05 ? 'Too far back!' : `Let go to cast · ${Math.round(s.aimDist)} m`;
     else if (s.state === 'flight' || s.state === 'release') say = 'Feather it down…';
     else if (s.state === 'fishing' && s.bite?.phase === 'take') say = s.method === 'ledger' ? 'RUN! STRIKE!' : s.method === 'lure' ? 'HIT! STRIKE!' : 'IT\'S GONE UNDER! STRIKE!';
     else if (s.state === 'fight') say = s.snag ? 'Snagged! Side strain' : s.fishE < 0.12 ? (s.canNet ? 'It\'s beaten: NET IT' : 'Beaten: draw it in') : s.tension > s.drag * 0.95 ? 'It\'s taking line' : '';

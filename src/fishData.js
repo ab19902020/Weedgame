@@ -68,11 +68,12 @@ export const WATERS = {
 // ---------------------------------------------------------------- tackle
 // The three rods (TechZone sells them rigged and ready). line: breaking strain (lb); stretch at the break (share of
 // the line out); tc: test curve (lb: the pull that bends the tip round to a right angle); cast: launch speed (m/s) at
-// full power and the rig's drag; reel: line wound in per second at full speed; drag: the clutch's range (lb).
+// full power and the rig's drag; reel: line wound in per second at full speed; drag: the clutch's range (lb): it
+// screws down past the line's strength, so a locked-up clutch on a big fish snaps you.
 export const RODS = {
-  float: { name: 'Float rod', length: 3.9, line: 4, stretch: 0.22, tc: 1.1, cast: { v: 21, drag: 0.055, splash: 'plop' }, reel: 1.05, drag: [0.3, 3.4], rig: ['hooks', 'floats'], methods: ['float'] },
-  carp: { name: 'Carp rod', length: 3.66, line: 12, stretch: 0.2, tc: 3, cast: { v: 34, drag: 0.0042, splash: 'lead' }, reel: 1.25, drag: [1, 10], rig: ['hairrigs', 'leads'], methods: ['ledger'] },
-  lure: { name: 'Lure rod', length: 2.2, line: 20, stretch: 0.04, tc: 2.2, cast: { v: 27, drag: 0.012, splash: 'plop' }, reel: 1.15, drag: [1, 12], rig: ['lure'], methods: ['lure'] },
+  float: { name: 'Float rod', length: 3.9, line: 4, stretch: 0.22, tc: 1.1, cast: { v: 21, drag: 0.055, splash: 'plop' }, reel: 1.05, drag: [0.3, 4.8], rig: ['hooks', 'floats'], methods: ['float'] },
+  carp: { name: 'Carp rod', length: 3.66, line: 12, stretch: 0.2, tc: 3, cast: { v: 34, drag: 0.0042, splash: 'lead' }, reel: 1.25, drag: [1, 14], rig: ['hairrigs', 'leads'], methods: ['ledger'] },
+  lure: { name: 'Lure rod', length: 2.2, line: 20, stretch: 0.04, tc: 2.2, cast: { v: 27, drag: 0.012, splash: 'plop' }, reel: 1.15, drag: [1, 24], rig: ['lure'], methods: ['lure'] },
 };
 // baits (hookbaits in a pack) and which method they go on
 export const BAITS = {

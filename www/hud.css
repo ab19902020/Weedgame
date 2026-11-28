@@ -435,7 +435,7 @@ body.fishing-on #btns, body.fishing-on #touch, body.fishing-on #clock, body.fish
 #fishHud .fSay.on { opacity: 1; }
 #fishHud .fAimStick { position: absolute; width: 120px; height: 44px; border-radius: 22px; background: #ffffff14; border: 1px solid #ffffff38; display: none; }
 #fishHud .fAimStick.on { display: block; } #fishHud .fAimStick i { position: absolute; left: 42px; top: 4px; width: 36px; height: 36px; border-radius: 50%; background: #ffffffb0; }
-.fPanel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 9; width: min(460px, 92vw); max-height: 88vh; overflow: auto; pointer-events: auto; color: #eef3ec; font: 14px system-ui, sans-serif;
+.fPanel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 30; width: min(460px, 92vw); max-height: 88vh; overflow: auto; pointer-events: auto; color: #eef3ec; font: 14px system-ui, sans-serif;
   background: #0e140ff4; border: 1px solid #2f3b2f; border-radius: 16px; box-shadow: 0 12px 34px #000b; padding: 14px 16px; }
 .fPanel h2 { margin: 0 0 2px; font: 800 19px system-ui; color: #cfe9b8; } .fPanel h3 { margin: 12px 0 6px; font: 700 11px system-ui; letter-spacing: .14em; text-transform: uppercase; color: #9fd28a; }
 .fPanel p { margin: 6px 0; line-height: 1.4; } .fPanel .sub { color: #aab8a6; font-size: 12px; } .fPanel ul { margin: 6px 0; padding-left: 18px; color: #d9e3d5; }

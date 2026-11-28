@@ -190,10 +190,13 @@ export class FishGear {
     for (let i = 0; i < 14; i++) { const m = new THREE.Mesh(rgm, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false })); m.visible = false; m.renderOrder = 3; this.root.add(m); this.rings2.push({ m, t: 9, life: 1, size: 1 }); }
     this.drops = []; const dg = new THREE.SphereGeometry(0.02, 5, 4), dm = new THREE.MeshBasicMaterial({ color: 0xeaf4ff, transparent: true, opacity: 0.8 });
     for (let i = 0; i < 40; i++) { const m = new THREE.Mesh(dg, dm); m.visible = false; this.root.add(m); this.drops.push({ m, v: new THREE.Vector3(), t: 9 }); }
+    // the cast's target on the water (green over water, red if it would land on a bank or an island)
+    const tg = new THREE.RingGeometry(0.55, 0.75, 28); tg.rotateX(-Math.PI / 2);
+    this.target = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ color: 0x8dff7a, transparent: true, opacity: 0.75, depthWrite: false })); this.target.renderOrder = 4; this.target.visible = false; this.root.add(this.target);
     this.pegsBuilt = new Set(); this.liliesBuilt = new Set();
     this.hide();
   }
-  hide() { for (const o of [this.rod, this.reel, this.line, this.float, this.spinner, this.shad, this.pod, this.net, this.matMesh]) o.visible = false; for (const r of this.rings) r.visible = false; if (this.fishObj) this.fishObj.visible = false; }
+  hide() { for (const o of [this.rod, this.reel, this.line, this.float, this.spinner, this.shad, this.pod, this.net, this.matMesh, this.target]) o.visible = false; for (const r of this.rings) r.visible = false; if (this.fishObj) this.fishObj.visible = false; }
   // ---------------------------------------------------------------- the rod
   // butt: the end of the handle; dir: along the rod unbent; bend (0..1.6): how far the tip comes round; bendDir: the
   // way it's pulled. Returns the tip.
@@ -253,6 +256,7 @@ export class FishGear {
     const n = this.net; n.visible = !!p; if (!p) return;
     n.position.copy(p); n.rotation.set(0, -Math.atan2(dir.z, dir.x), -0.15 - dip * 0.45);
   }
+  setTarget(p, wet = true) { const t = this.target; t.visible = !!p; if (!p) return; t.position.set(p.x, p.y + 0.03, p.z); t.material.color.setHex(wet ? 0x8dff7a : 0xff5a3a); t.scale.setScalar(1 + Math.hypot(p.x, p.z) * 0); }
   setMat(p, heading) { this.matMesh.visible = !!p; if (p) { this.matMesh.position.copy(p); this.matMesh.rotation.y = -heading; } }
   // ---------------------------------------------------------------- the fish
   showFish(s, lengthM, p, heading, roll = 0, t = 0, amp = 0.3, pitch = 0) {

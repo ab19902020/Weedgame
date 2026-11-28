@@ -108,11 +108,31 @@ test('a roach on the float rod comes in quickly and is swung in', () => {
 });
 
 test('a big carp on 4 lb float tackle with the clutch locked up snaps the line, and the rig has to be retied', () => {
-  const { F, k } = world(); F.chooseMethod('float', true); F.setDrag(3.4);
+  const { F, k } = world(); F.chooseMethod('float', true); F.setDrag(99);   // screwed right down
   hookFish(F, 'mirror', 28, 'float');
   let t = 0; while (t < 300 && F.state === 'fight') { F.update(1 / 60, { ...idle, reel: 1, lift: 1 }); t += 1 / 60; }
   assert.equal(F.state, 'ready');
   assert.equal(k.rods.float.rig, false, 'the float and hook went with it');
   const hooks = k.tackle.hooks, floats = k.tackle.floats;
   assert.ok(F.retie()); assert.equal(k.tackle.hooks, hooks - 1); assert.equal(k.tackle.floats, floats - 1); assert.equal(k.rods.float.rig, true);
+});
+
+test('the target ring is where the cast lands, and there is open water to cast at from every peg', () => {
+  const { F, lake } = world(); F.chooseMethod('float', true);
+  F.aim = 0; const pred = F.predictCast(1);
+  // a full-power cast held to the top of the meter, no wind, no feathering
+  F.update(1 / 60, { ...idle, castDown: true, castHeld: true }); run(F, 1.12, { castHeld: true }); run(F, 5);
+  const d = Math.hypot(F.rig.p.x - pred.x, F.rig.p.z - pred.z);
+  assert.ok(d < 6, 'landed ' + d.toFixed(1) + ' m from the target');
+  for (const p of lake.pegs) { F.start(lake, p); let best = 0; for (let a = -1; a <= 1; a += 0.25) { F.aim = a; best = Math.max(best, F.openWater()); } assert.ok(best >= 15, `peg ${p.n}: only ${best} m of water`); }
+});
+
+test('every lake: pegs face open water, and the bait finds fish in each lake\'s stock', () => {
+  for (const id of ['southlake', 'whiteswan', 'blackswan', 'canberra', 'orrell']) {
+    const { F, lake } = world(id);
+    for (const p of lake.pegs) { F.start(lake, p); let best = 0; for (let a = -1; a <= 1; a += 0.25) { F.aim = a; best = Math.max(best, F.openWater()); } assert.ok(best >= 12, `${id} peg ${p.n}: only ${best} m of water`); }
+    const spot = { x: lake.pegs[0].x + Math.cos(lake.pegs[0].heading) * 15, z: lake.pegs[0].z + Math.sin(lake.pegs[0].heading) * 15 };
+    const r = biteRates(id, lake, spot, { bait: 'corn', method: 'float', hour: 7 });
+    assert.ok(r.length >= 3 && r.every(x => STOCK[id].fish[x.s]), id + ' corn bites from its own fish');
+  }
 });
