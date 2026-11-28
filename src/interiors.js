@@ -173,7 +173,11 @@ export class Interiors {
     this._showT = (this._showT || 0) - dt;
     if (this._showT > 0 && this._show) return this._show.filter(b => this.built.get(b.site.id) === b);
     this._showT = 0.5;
-    const c = this.G.camera.position, near = [];
+    const c = this.G.camera.position, near = [], me = B.me;
+    // a new one's built (10-40 ms) only at walking pace and with it in front of the camera: never while running past
+    const pace = this._showP ? Math.hypot(me.x - this._showP[0], me.z - this._showP[1]) / 0.5 : 0;
+    this._showP = [me.x, me.z];
+    const fwd = this.G.camera.getWorldDirection(this._fwd ??= new THREE.Vector3());
     for (const s of this.sites) {
       if (!SHOWCASE.has(s.kind)) continue;
       const d = Math.hypot(s.dx - c.x, s.dz - c.z);
@@ -181,8 +185,12 @@ export class Interiors {
     }
     near.sort((a, b) => a[0] - b[0]);
     const out = []; let builtOne = false;
-    for (const [, s] of near.slice(0, 2)) {
-      if (!this.built.has(s.id)) { if (builtOne) continue; builtOne = true; }
+    for (const [d, s] of near.slice(0, 2)) {
+      if (!this.built.has(s.id)) {
+        const inView = d < 10 || ((s.dx - c.x) * fwd.x + (s.dz - c.z) * fwd.z) / d > 0.35;
+        if (builtOne || pace > 3.2 || !inView) continue;
+        builtOne = true;
+      }
       out.push(this.ensure(s));
     }
     return (this._show = out);

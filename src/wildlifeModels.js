@@ -509,8 +509,12 @@ export class AnimalRenderer {
     const def = MODELS[model]; if (!def) return null;
     if (!this.mat) this.mat = animalMaterial();
     const geo = BUILD[def.kind](def.o).geometry(), max = def.max;
-    const at = (name) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(max * 4), 4); a.setUsage(THREE.DynamicDrawUsage); geo.setAttribute(name, a); return a; };
-    S = { max, geo, n: 0, iPos: at('iPos'), iAnim: at('iAnim'), iCol: at('iCol'), iVar: at('iVar'), iMisc: at('iMisc') };
+    // the per-animal data: written column by column (S.iPos.array etc.), interleaved into one GPU buffer in end():
+    // WebGPU allows a pipeline 8 vertex buffers, and five of their own plus the body's four made 9, so on WebGPU no
+    // animal drew at all
+    const ib = new THREE.InstancedInterleavedBuffer(new Float32Array(max * 20), 20, 1); ib.setUsage(THREE.DynamicDrawUsage);
+    const at = (name, k) => { geo.setAttribute(name, new THREE.InterleavedBufferAttribute(ib, 4, k * 4)); return { array: new Float32Array(max * 4) }; };
+    S = { max, geo, n: 0, ib, iPos: at('iPos', 0), iAnim: at('iAnim', 1), iCol: at('iCol', 2), iVar: at('iVar', 3), iMisc: at('iMisc', 4) };
     S.mesh = new THREE.Mesh(geo, this.mat); S.mesh.frustumCulled = false; S.mesh.castShadow = !!(this.shadows && def.shadow); S.mesh.receiveShadow = true;
     S.mesh.name = 'animals-' + model;
     this.scene.add(S.mesh);
@@ -535,7 +539,10 @@ export class AnimalRenderer {
   end() {
     for (const S of this.sets.values()) {
       S.geo.instanceCount = S.n; S.mesh.visible = S.n > 0;
-      if (S.n) for (const at of [S.iPos, S.iAnim, S.iCol, S.iVar, S.iMisc]) at.needsUpdate = true;
+      if (!S.n) continue;
+      const D = S.ib.array, cols = [S.iPos.array, S.iAnim.array, S.iCol.array, S.iVar.array, S.iMisc.array];
+      for (let k = 0; k < 5; k++) { const src = cols[k]; for (let i = 0, d = k * 4, q = 0; i < S.n; i++, d += 20, q += 4) { D[d] = src[q]; D[d + 1] = src[q + 1]; D[d + 2] = src[q + 2]; D[d + 3] = src[q + 3]; } }
+      S.ib.clearUpdateRanges(); S.ib.addUpdateRange(0, S.n * 20); S.ib.needsUpdate = true;
     }
   }
 }
