@@ -95,7 +95,7 @@ export function createPost(G) {
   g = g.add(g.sub(0.5).mul(0.11));
   g = g.mul(mix(vec3(0.97, 1.0, 1.05), vec3(1.035, 1.0, 0.955), smoothstep(0.2, 0.8, lum))).clamp(0, 1);
   // the drone's thermal camera (thermal.js): the scene's light as temperature, white-hot or ironbow, when it's on
-  const th = thermalView(c, depth.r, G.U.t);
+  const th = thermalView(c, depth.r, U.t);
   const graded = vec4(mix(g.mul(vig), th.node, th.on), 1);
   let lowA = null, lowB = null;
   if (useFSR) {

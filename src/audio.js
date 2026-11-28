@@ -72,6 +72,7 @@ export class Audio {
       this.loadClip('garden-bird').then(buf => { this.bird = buf; }).catch(console.warn),
       this.loadClip('passing-engine').then(buf => { this.trafficIdle = buf; }).catch(console.warn),
       this.loadClip('room-tone').then(buf => this.slice(buf, [0, buf.duration], this.roomTone)).catch(console.warn),
+      this.loadClip('drone').then(buf => { this.droneBuf = buf; }).catch(console.warn),
       this.loadFleet().catch(error => console.warn('Fleet audio unavailable', error)),
       this.loadRecordings().catch(error => console.warn('Sound recordings unavailable', error)),
       this.loadWorld().catch(error => console.warn('World sound bank unavailable', error)),
@@ -226,6 +227,43 @@ export class Audio {
     source.onended = () => { source.disconnect(); volume.disconnect(); pan.disconnect(); };
     source.start(0, start, length);
   }
+  // ---------------------------------------------------------------- the drone (drone.js)
+  // A real Phantom 4 Pro hovering (tools/audio/build_drone.py), placed at the drone: two copies of the loop, the front
+  // and the rear pair of props, each re-pitched by its motors' speed so they beat against each other as it
+  // manoeuvres, louder as the props work harder. Heard close up in the chase view, distant from the pilot's spot,
+  // and in the FPV view as the camera's own mic hears it, quieter and duller.
+  updateDrone(G, t) {
+    const D = G.drone; if (!this.droneBuf || !D) return;
+    const live = D.active && (D.state === 'flying' || D.state === 'crashed' || D.turtleT > 0);
+    if (!this.droneV) {
+      if (!live) return;
+      const A = this.ctx, p = A.createPanner(); p.panningModel = 'equalpower'; p.distanceModel = 'inverse'; p.refDistance = 3; p.rolloffFactor = 1.1;
+      const f = A.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 12000; f.Q.value = 0.5;
+      const g = A.createGain(); g.gain.value = 0; g.connect(f); f.connect(p); p.connect(this.outdoors);
+      const pair = [0, 3.7].map(off => { const s = A.createBufferSource(); s.buffer = this.droneBuf; s.loop = true; const pg = A.createGain(); pg.gain.value = 0.55; s.connect(pg); pg.connect(g); s.start(0, off); return s; });
+      this.droneV = { p, f, g, pair };
+    }
+    const V = this.droneV, m = D.motor, hover = Math.sqrt(1 / (D.spec?.twr || 3.4));
+    const front = (m[0] + m[1]) / 2, rear = (m[2] + m[3]) / 2, avg = (front + rear) / 2;
+    // a smaller drone than the recording's: its props sing a little higher
+    V.pair[0].playbackRate.setTargetAtTime(Math.min(1.9, Math.max(0.3, 1.1 * front / hover)), t, 0.03);
+    V.pair[1].playbackRate.setTargetAtTime(Math.min(1.9, Math.max(0.3, 1.1 * rear / hover)), t, 0.03);
+    const fpv = D.view === 'fpv';
+    const level = live && avg > 0.02 ? Math.min(1.6, Math.pow(avg / hover, 1.6)) * (fpv ? 0.32 : 0.9) : 0;
+    V.g.gain.setTargetAtTime(level, t, live ? 0.05 : 0.25);
+    V.f.frequency.setTargetAtTime(fpv ? 4200 : 12000, t, 0.1);
+    this.setPos(V.p, D.p.x, D.p.y, D.p.z);
+  }
+  // the drone's knocks: plastic on whatever it hit, a splash into water
+  droneEvents(events) {
+    if (!this.on) return;
+    for (const e of events) {
+      const D = this.G.drone, x = e.x ?? D.p.x, y = e.y ?? D.p.y, z = e.z ?? D.p.z;
+      if (e.kind === 'crash') this.shot(e.impact > 7 ? 'thud' : 'bin', x, z, Math.min(1, 0.35 + e.impact * 0.08), y);
+      else if (e.kind === 'bump') this.shot('bin', x, z, Math.min(0.5, 0.12 + e.impact * 0.05), y);
+      else if (e.kind === 'splash') this.shot('thud', x, z, 0.5, y);
+    }
+  }
   setPos(node, x, y, z) { const p = node; if (p.positionX) { p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z; } else p.setPosition(x, y, z); }
   crash(x, z, k = 1) {
     const y = this.G.tiles.terrain(x,z) ?? this.G.brothers.me.y;
@@ -266,6 +304,7 @@ export class Audio {
     if (L.positionX) { L.positionX.value = cam.x; L.positionY.value = cam.y; L.positionZ.value = cam.z; L.forwardX.value = f.x; L.forwardY.value = f.y; L.forwardZ.value = f.z; L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0; }
     else { L.setPosition(cam.x, cam.y, cam.z); L.setOrientation(f.x, f.y, f.z, 0, 1, 0); }
     this.updateRail(G,cam,t);
+    this.updateDrone(G, t);
     const w = G.world.cur, rain = w.rain;
     const inCar = !!me.vehicle;
     if (this.bird && !me.inside && !inCar && G.treesNear > 0.35 && rain < 0.3 && t > (this.nextBird || 0)) {

@@ -276,3 +276,6 @@ https://freesound.org/people/SpliceSound/sounds/338115/
 Game edits: engine loop converted to mono Vorbis; room recording trimmed, filtered, levelled and faded for looping.
 garden-bird.ogg — blackbird-evening.wav, echobones, CC0. Llandudno garden recording, excerpted and faded.
 https://freesound.org/people/echobones/sounds/521558/
+drone.ogg — UAS Drone Hover 01.wav, DCPoke, CC0. A DJI Phantom 4 Pro hovering, recorded outdoors on a Tascam DR-40.
+https://freesound.org/people/DCPoke/sounds/387985/
+Game edits: 9.4 s of the steady hover, mono, high-passed at 110 Hz, levelled and crossfaded into a seamless loop.

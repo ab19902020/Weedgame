@@ -166,6 +166,7 @@ export class DroneHud {
     const snow = D.signal < 0.35 ? (0.35 - D.signal) / 0.35 : D.state === 'ditched' ? 0.7 : 0;
     this.staticEl.style.opacity = snow ? (snow * (0.5 + Math.random() * 0.5)).toFixed(2) : '0';
     this.draw();
+    G.audio?.droneEvents?.(D.events);
     D.events.length = 0;
   }
   // ---------------------------------------------------------------- the OSD
@@ -173,9 +174,10 @@ export class DroneHud {
     const c = this.cx, D = this.D, G = this.G, r = this.dpr, W = innerWidth, H = innerHeight;
     c.setTransform(r, 0, 0, r, 0, 0); c.clearRect(0, 0, W, H);
     const thermal = D.cam !== 'normal';
-    const ink = thermal ? '#ffffff' : '#f4fbff', dim = 'rgba(255,255,255,0.65)', warnC = '#ffcf3a', badC = '#ff5a4a';
+    const ink = thermal ? '#ffffff' : '#f4fbff', dim = 'rgba(226,236,244,0.92)', warnC = '#ffcf3a', badC = '#ff5a4a';
     c.font = '600 13px system-ui'; c.textBaseline = 'middle'; c.lineWidth = 1.5;
-    const text = (t, x, y, al = 'left', col = ink, f) => { if (f) c.font = f; c.textAlign = al; c.shadowColor = 'rgba(0,0,0,0.7)'; c.shadowBlur = 3; c.fillStyle = col; c.fillText(t, x, y); c.shadowBlur = 0; };
+    // a thin dark outline under every figure, so it reads over white cloud as well as dark ground
+    const text = (t, x, y, al = 'left', col = ink, f) => { if (f) c.font = f; c.textAlign = al; c.lineJoin = 'round'; c.lineWidth = 3; c.strokeStyle = 'rgba(0,0,0,0.55)'; c.strokeText(t, x, y); c.shadowColor = 'rgba(0,0,0,0.7)'; c.shadowBlur = 3; c.fillStyle = col; c.fillText(t, x, y); c.shadowBlur = 0; };
     const S = D.spec, agl = D.agl, hgt = D.p.y - D.home.y, vs = D.v.y, hs = D.speed;
     // ---- top row: mode, GPS, camera; signal, battery, time
     const L = Math.max(14, (window.visualViewport?.offsetLeft || 0) + 14);
@@ -256,11 +258,12 @@ export class DroneHud {
     this.radar(c, L, 44, 104, hdgDeg);
     // ---- thermal palette bar
     if (thermal) {
-      const py = 168, g = c.createLinearGradient(0, py, 0, py + 110);
+      // a horizontal bar under the buttons, cold on the left (clear of the speed readout and the tilt slider)
+      const py = 120, px = W - 220, bw = 150, g = c.createLinearGradient(px + bw, 0, px, 0);
       if (D.cam === 'ironbow') { g.addColorStop(0, '#fffbe0'); g.addColorStop(0.25, '#ffc21a'); g.addColorStop(0.5, '#e0451e'); g.addColorStop(0.75, '#7a1a8c'); g.addColorStop(1, '#05030f'); }
       else { g.addColorStop(0, '#ffffff'); g.addColorStop(1, '#000000'); }
-      const px = W - 72; c.fillStyle = g; c.fillRect(px, py, 8, 110); c.strokeStyle = dim; c.strokeRect(px, py, 8, 110);
-      text('45°', px - 4, py + 4, 'right', dim, '600 11px system-ui'); text('-10°', px - 4, py + 106, 'right', dim, '600 11px system-ui');
+      c.fillStyle = g; c.fillRect(px, py, bw, 7); c.strokeStyle = dim; c.strokeRect(px, py, bw, 7);
+      text('-10°', px - 5, py + 7, 'right', dim, '600 11px system-ui'); text('45°', px + bw + 5, py + 7, 'left', dim, '600 11px system-ui');
     }
   }
   // the temperature under the crosshair (thermal): what the centre ray meets, by what it is
