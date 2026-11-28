@@ -90,7 +90,7 @@ export class Peds {
       if (p.gone || p.dead || p.officer || p.hiVis || p.carried || p.awaitingMedic || p.medicFall || p.impact || p.react || p.reactT > 0 || p.wound) continue;
       if ((p.leader && !p.leader.gone) || (p.partner && !p.partner.gone) || !String(p.id).startsWith('p')) continue;
       if (!(p.mode === 'walk' || (p.mode === 'scene' && p.activity))) continue;
-      if (Math.hypot(p.x - focus.x, p.z - focus.z) > 30 && !info.visible(p.x, p.y + 1, p.z, 1)) { p.gone = true; n--; continue; }
+      if (Math.hypot(p.x - focus.x, p.z - focus.z) > 30 && !this.seen(p, focus)) { p.gone = true; n--; continue; }
       if (p.goal?.kind === 'door' || p.goal?.kind === 'away') continue;   // (already on their way)
       // in view: in at a door near them, or with none about, off away from you (and gone once out of sight)
       const D = this.doorsNear(p.x, p.z, 80);
@@ -99,6 +99,9 @@ export class Peds {
       else { const a = Math.atan2(p.z - focus.z, p.x - focus.x); p.goal = { kind: 'away', x: focus.x + Math.cos(a) * (KILL + 60), z: focus.z + Math.sin(a) * (KILL + 60) }; }
     }
   }
+  // could you see this person now: in view, and near enough to be drawn (people further off than the preset's
+  // draw distance for people aren't drawn at all, so taking them away can't be seen)
+  seen(p, focus) { return Math.hypot(p.x - focus.x, p.z - focus.z) < (this.G.budget?.peopleDist || 170) + 10 && this.info.visible(p.x, p.y + 1, p.z, 1); }
   side(e) { return this.net.walkCls.has(this.net.cls[e]) ? 0 : 1; }
   get _pedCls() { return this.__pc ?? (this.__pc = this.net.classes.indexOf('pedestrian')); }
   pos(p) {
@@ -125,7 +128,7 @@ export class Peds {
     if (!net.pav[e] && !net.walkCls.has(net.cls[e])) return;
     const [x, z] = this.pos(p);
     if (Math.hypot(x - focus.x, z - focus.z) > R) return;
-    if (!near && info.visible(x, 1, z, 1.5) && Math.hypot(x - focus.x, z - focus.z) < 120) return;
+    if (!near && info.visible(x, 1, z, 1.5) && Math.hypot(x - focus.x, z - focus.z) < (this.G.budget?.peopleDist || 170) + 10) return;   // (not where you'd see them appear)
     if (this.G.tiles.insideBuilding(x, z)) return;
     p.x = x; p.z = z;
     const gy = this.G.tiles.ground(x, z); if (gy == null) return;
@@ -149,7 +152,7 @@ export class Peds {
     p.goal = { kind: 'stop', i: best, x: stops[best][0], z: stops[best][1] };
   }
   update(dt, focus, info) {
-    const G = this.G, net = this.net; this.info = info;
+    const G = this.G, net = this.net; this.info = info; this.focus = focus;
     R = Math.min(190, (G.budget?.peopleDist || 170) + 30); KILL = R + 50;
     this.timer -= dt;
     if (!this._ef || Math.hypot(this._ef.x - focus.x, this._ef.z - focus.z) > 40) {
@@ -174,7 +177,7 @@ export class Peds {
       for (let i = this.list.length - 1; i >= 0; i--) {
         const p = this.list[i];
         const d = Math.hypot(p.x - focus.x, p.z - focus.z);
-        if ((!p.officer && !p.carried && !p.awaitingMedic && d > KILL && !info.visible(p.x, p.y + 1, p.z, 1)) || p.gone) { this.list.splice(i, 1); this.queueRemove(p);
+        if ((!p.officer && !p.carried && !p.awaitingMedic && d > KILL && !this.seen(p, focus)) || p.gone) { this.list.splice(i, 1); this.queueRemove(p);
           if(!p.gone && !p.dead && p.job && !p.officer){
             p.awaySince=G.time;p.leader=null;p.partner=null;p.stopIdx=null;
             this.residents.set(p.id,p);
@@ -413,7 +416,9 @@ export class Peds {
     if (p.mode === 'atDoor') {
       // go in once nobody is looking; give up and walk on after a while
       p.speedNow = 0; p.pose = 'idle'; p.doorT = (p.doorT || 0) + dt;
-      if (!this.info.visible(p.x, p.y + 1, p.z, 1)) { p.gone = true; this.entered = (this.entered || 0) + 1; }
+      // (further off than 35 m, going in at a door in plain view reads as just that)
+      const f = this.focus, far = f && Math.hypot(p.x - f.x, p.z - f.z) > 35;
+      if (!(f ? this.seen(p, f) : this.info.visible(p.x, p.y + 1, p.z, 1)) || (far && p.doorT > 1.5)) { p.gone = true; this.entered = (this.entered || 0) + 1; }
       else if (p.doorT > 25) { p.mode = 'walk'; p.goal = null; p.doorT = 0; }
       return;
     }
