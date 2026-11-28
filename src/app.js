@@ -41,6 +41,7 @@ import { Cones } from './cones.js';
 import { Haptics } from './haptics.js';
 import { Stations } from './stations.js';
 import { Wildlife } from './wildlife.js';
+import { NearTrees } from './nearTrees.js';
 
 class Events { constructor() { this.h = {}; } on(n, f) { (this.h[n] ||= []).push(f); } emit(n, e) { for (const f of this.h[n] || []) f(e); } }
 
@@ -139,6 +140,7 @@ G.districtName = (x, z) => { const d = G.districtAt(x, z); if (!d) return 'Berks
 G.roadName = (x, z) => { const n = G.net.nearest(x, z, 30, e => !!G.net.roadName(e)); return n ? G.net.roadName(n.e) : ''; };
 const frustum = new THREE.Frustum(), pm = new THREE.Matrix4(), sph = new THREE.Sphere();
 G.wildlife = new Wildlife(G, camInfo);   // wildlife, farm animals and pets: dogs out with their people, cats (wildlife.js)
+G.nearTrees = new NearTrees(G);   // the Blender-grown trees near you, the leaf-card crowns beyond (nearTrees.js)
 function kerbPlace(x, z, filter) {
   const n = G.net.nearest(x, z, 200, filter || (e => (G.net.flags[e] & 16) && !/primary|trunk|motorway/.test(G.net.classes[G.net.cls[e]])));
   if (!n) return { x, z, heading: 0 };
@@ -285,6 +287,7 @@ function step(dt, render) {
     const L = G._look ||= { x: 0, z: 0, vx: 0, vz: 0 }; L.x = fwd.x / fl; L.z = fwd.z / fl; L.vx = Math.cos(hd) * sp; L.vz = Math.sin(hd) * sp;
     G.tiles.update(me.x, me.z, L);
   }
+  G.nearTrees.update(dt);
   G.signals.update(dt);
   // player as an obstacle for NPC traffic
   const pv = B.vehicleOf(me);

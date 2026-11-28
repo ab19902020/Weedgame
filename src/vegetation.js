@@ -5,14 +5,17 @@ import * as THREE from 'three/webgpu';
 import {
   float, vec2, vec3, vec4, positionLocal, positionGeometry, positionWorld, normalWorld, cameraPosition, uv, texture, int, attribute,
   mix, sin, length, max, dot, normalize, pow, smoothstep, fract, instanceIndex, normalViewGeometry, instanceColor,
-  uniform, screenCoordinate, interleavedGradientNoise,
+  uniform, screenCoordinate, interleavedGradientNoise, step,
 } from 'three/tsl';
 import { U, cloudShadow } from './env.js';
 import { L, sAlbedo, sDetail, perturb } from './surfaces.js';
 
 const rnd = (() => { let s = 1234567; return () => (s = (s * 16807) % 2147483647) / 2147483647; })();
 
-// ---- leaf cluster texture (2x2 atlas): oak, lime, copper beech, yew/needle
+// ---- leaf cluster texture (2x2 atlas): oak, lime, copper beech, yew/needle (made once: the far crowns and the
+// Blender-grown trees near you share it)
+let leafTex0 = null;
+const sharedLeafTex = () => leafTex0 ||= leafTexture();
 function leafTexture() {
   const N = 512, c = document.createElement('canvas'); c.width = c.height = N;
   const g = c.getContext('2d');
@@ -169,8 +172,16 @@ export function trunkGeometry() {
 // switched off and a whole block of them no longer pops in or out on the skyline as you move.
 export const treeFar = uniform(1e5);
 const treeFade = (d) => float(1).sub(smoothstep(treeFar.sub(70), treeFar, d));
+// The Blender-grown trees (nearTrees.js) stand within treeNear of the camera and the leaf-card crowns beyond it,
+// handing over in a fine screen-space dither across the last 10 m: each pixel shows one or the other (the far
+// crowns keep it where the noise is under the hand-over, the near trees where it isn't). 0 until the near trees are
+// loaded, when the far crowns are everywhere.
+export const treeNear = uniform(0);
+const handOver = (d) => smoothstep(treeNear.sub(10), treeNear, d);
+const keepFar = (d) => step(interleavedGradientNoise(screenCoordinate.xy), handOver(d));
+const keepNear = (d) => float(1).sub(keepFar(d));
 export function treeMaterials() {
-  const leafTex = leafTexture();
+  const leafTex = sharedLeafTex();
   const crown = new THREE.MeshStandardNodeMaterial({ roughness: 0.82, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.35 });
   const p = positionWorld;
   const tid = fract(sin(float(instanceIndex).mul(12.9898)).mul(43758.5453));
@@ -184,7 +195,7 @@ export function treeMaterials() {
   crown.positionNode = positionLocal.add(vec3(sway.mul(lift).mul(windDir.x).add(flutter), flutter.mul(0.6), sway.mul(lift).mul(windDir.y)));
   const lt = texture(leafTex, uv());
   const dist = length(cameraPosition.sub(p));
-  const alpha = lt.a.mul(mix(float(1), float(2.4), smoothstep(25, 160, dist))).mul(treeFade(dist));
+  const alpha = lt.a.mul(mix(float(1), float(2.4), smoothstep(25, 160, dist))).mul(treeFade(dist)).mul(keepFar(dist));
   // the species tint (oak, lime, plane, copper, yew; shrub palettes) is the mesh's instance colour, which three.js
   // multiplies into colorNode itself. It must be read through the instanceColor varying: it is not a geometry
   // attribute, and attribute('instanceColor') silently read zero and turned every crown near-black.
@@ -210,7 +221,8 @@ export function treeMaterials() {
   crown.normalNode = normalViewGeometry;
   const trunk = new THREE.MeshStandardNodeMaterial({ roughness: 0.92, metalness: 0, alphaTest: 0.5 });
   // (the trunks dissolve with their crowns, in a fine dither)
-  trunk.opacityNode = treeFade(length(cameraPosition.sub(positionWorld))).add(interleavedGradientNoise(screenCoordinate.xy).mul(0.5).sub(0.25));
+  const tdist = length(cameraPosition.sub(positionWorld));
+  trunk.opacityNode = treeFade(tdist).add(interleavedGradientNoise(screenCoordinate.xy).mul(0.5).sub(0.25)).mul(keepFar(tdist));
   const tuv = vec2(uv().x.mul(1.6), positionWorld.y.mul(0.85));
   const bark = sAlbedo(int(L.bark), tuv);
   const lichen = smoothstep(0.62, 0.86, texture(leafTex, tuv.mul(0.15)).g).mul(0.22);
@@ -218,4 +230,47 @@ export function treeMaterials() {
   trunk.colorNode = bark.mul(mix(vec3(0.72, 0.62, 0.5), vec3(0.85), smoothstep(0.62, 0.78, tid))).mul(mix(float(1), float(0.62), U.wet)).mul(mix(vec3(1), vec3(0.75, 0.9, 0.62), lichen)).mul(cloudShadow(positionWorld));
   trunk.normalNode = perturb(normalWorld, sDetail(int(L.bark), tuv), float(1.35));
   return { crown, trunk };
+}
+
+// ---- the Blender-grown trees near you (tools/blender/trees.py; drawn by nearTrees.js) -----------------------------
+// Bark and leaf cards in one mesh and one material. The vertex colour carries what Blender baked: r the ambient
+// occlusion ray traced through the tree, g the sway weight (0 at the root .. 1 at the twig ends), b leaf (1) or bark
+// (0), a the bark tone (0 brown and rough, oak .. 1 smooth grey, beech). Leaf cards use the same leaf atlas, species
+// tint (instance colour) and translucency as the far crowns; the bark is the game's photographic bark, in metres.
+const LUMA = vec3(0.2126, 0.7152, 0.0722);
+export function nearTreeMaterial() {
+  const leafTex = sharedLeafTex();
+  const m = new THREE.MeshStandardNodeMaterial({ roughness: 0.84, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.35 });
+  const vc = attribute('color', 'vec4');
+  const ao = vc.x, wgt = vc.y, leaf = vc.z, tone = vc.w;
+  const p = positionWorld, g0 = positionGeometry;
+  const tid = fract(sin(float(instanceIndex).mul(12.9898)).mul(43758.5453));
+  const wind = length(U.wind), windDir = U.wind.div(wind.max(.01));
+  const gust = sin(U.t.mul(0.9).add(tid.mul(30))).mul(0.5).add(0.5);
+  // the crown leans with the gusts, more towards the top and out along the limbs; the leaves flutter on their own
+  const sway = sin(U.t.mul(1.25).add(tid.mul(17)).add(g0.y.mul(0.07))).mul(wind.mul(0.028).mul(gust.mul(0.7).add(0.3))).mul(wgt.mul(wgt));
+  const flutter = sin(U.t.mul(9).add(tid.mul(19)).add(g0.x.mul(3.1)).add(g0.z.mul(2.3))).mul(wind.mul(0.006)).mul(leaf);
+  m.positionNode = positionLocal.add(vec3(sway.mul(windDir.x).add(flutter), flutter.mul(0.6), sway.mul(windDir.y).add(flutter.mul(0.5))));
+  const dist = length(cameraPosition.sub(p));
+  const species = instanceColor;
+  // leaves: as the far crowns
+  const lt = texture(leafTex, uv());
+  let leafCol = lt.rgb.mul(2).mul(tid.mul(0.18).add(0.9)).mul(mix(float(1), float(0.72), U.wet));
+  leafCol = mix(vec3(dot(leafCol, LUMA)), leafCol, 0.78);
+  const copper = smoothstep(0.08, 0.2, species.r.sub(species.g));
+  leafCol = mix(leafCol, vec3(dot(leafCol, LUMA)).mul(vec3(1.9, 1.05, 1.05)), copper);
+  // bark: brown and rough on oaks, smooth and grey on beech, mottled plane; darker when wet. three.js multiplies the
+  // instance colour (the species' leaf tint) into the whole mesh, so the bark is divided by it first
+  const bark = sAlbedo(int(L.bark), uv()).mul(mix(vec3(0.74, 0.63, 0.5), vec3(0.92, 0.9, 0.86), tone)).mul(mix(float(1), float(0.62), U.wet));
+  const barkCol = bark.div(species.max(0.08));
+  const col = mix(barkCol, leafCol, leaf).mul(ao.mul(ao).mul(0.35).add(ao.mul(0.65)));
+  const alpha = mix(float(1), lt.a.mul(mix(float(1), float(2.4), smoothstep(25, 160, dist))), leaf).mul(keepNear(dist));
+  m.colorNode = vec4(col.mul(cloudShadow(p)), alpha);
+  const v = normalize(p.sub(cameraPosition));
+  const back = pow(max(dot(v, U.sunDir), 0), 5).mul(float(1).sub(U.night)).mul(float(1).sub(U.cover.mul(0.6)));
+  const wrap = max(dot(normalWorld, U.sunDir).mul(0.5).add(0.5), 0).mul(float(1).sub(U.night)).mul(float(1).sub(U.cover.mul(0.5)));
+  m.emissiveNode = leafCol.mul(species).mul(vec3(1.05, 1.15, 0.45)).mul(U.sunCol).mul(back.mul(0.95).add(wrap.mul(0.16)).add(0.03)).mul(leaf).mul(ao);
+  // leaf cards: the "volume" normals Blender gave them (no flipping on back faces); bark: round, with the bark's relief
+  m.normalNode = normalize(mix(perturb(normalWorld, sDetail(int(L.bark), uv()), float(1.35)), normalViewGeometry, leaf));
+  return m;
 }

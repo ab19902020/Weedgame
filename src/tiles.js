@@ -194,6 +194,9 @@ export class Tiles {
     // half-tints (shader multiplies by 2): oak, lime, plane, copper beech, yew
     const PAL = [[0.48, 0.52, 0.40], [0.56, 0.58, 0.36], [0.50, 0.55, 0.42], [0.64, 0.36, 0.32], [0.30, 0.42, 0.32]];
     t.trees = [];
+    // (per tree, tile-local, for the Blender-grown trees drawn near you, nearTrees.js: x, y, z, height, yaw, species,
+    // hash, crown radius)
+    const TD = t.treeData = new Float32Array(n * 8);
     for (let i = 0; i < n; i++) {
       const x = tr[i * 4], y = tr[i * 4 + 1], z = tr[i * 4 + 2], code = tr[i * 4 + 3];
       const kind = Math.floor(code % 10), hTag = Math.floor(code / 10);
@@ -211,13 +214,16 @@ export class Tiles {
       col.setRGB(PAL[si][0], PAL[si][1], PAL[si][2]);
       crowns.setColorAt(i, col);
       t.trees.push([x + t.data.ox, z + t.data.oz, H]);
+      TD[i * 8] = x; TD[i * 8 + 1] = y; TD[i * 8 + 2] = z; TD[i * 8 + 3] = H; TD[i * 8 + 4] = r * 6.28; TD[i * 8 + 5] = si; TD[i * 8 + 6] = r; TD[i * 8 + 7] = cw;
     }
     if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
     crowns.castShadow = trunks.castShadow = this.shadows && this.budget?.shadow?.trees !== false;
     crowns.receiveShadow = this.shadows;
     crowns.computeBoundingSphere(); trunks.computeBoundingSphere();
     t.group.add(crowns, trunks);
-    t.treeMesh = { crowns, trunks };   // breakables.js topples young trees by rewriting their instances
+    // breakables.js topples young trees by rewriting their instances, interiors.js hides those inside a building it
+    // opens: trunk0 keeps where each trunk stood, so the near trees can follow (nearTrees.js)
+    t.treeMesh = { crowns, trunks, trunk0: trunks.instanceMatrix.array.slice() };
   }
   // shrubs and leafy hedges: [x, y, z, sx, sy, sz, yaw, tint] from the worker; tints as for tree species
   addBushes(t, b) {
