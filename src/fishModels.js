@@ -191,7 +191,7 @@ export class FishGear {
     this.drops = []; const dg = new THREE.SphereGeometry(0.02, 5, 4), dm = new THREE.MeshBasicMaterial({ color: 0xeaf4ff, transparent: true, opacity: 0.8 });
     for (let i = 0; i < 40; i++) { const m = new THREE.Mesh(dg, dm); m.visible = false; this.root.add(m); this.drops.push({ m, v: new THREE.Vector3(), t: 9 }); }
     // the cast's target on the water (green over water, red if it would land on a bank or an island)
-    const tg = new THREE.RingGeometry(0.55, 0.75, 28); tg.rotateX(-Math.PI / 2);
+    const tg = new THREE.RingGeometry(0.5, 0.72, 28);   // faces the camera (a flat ring 30 m out is seen edge-on)
     this.target = new THREE.Mesh(tg, new THREE.MeshBasicMaterial({ color: 0x8dff7a, transparent: true, opacity: 0.75, depthWrite: false })); this.target.renderOrder = 4; this.target.visible = false; this.root.add(this.target);
     this.pegsBuilt = new Set(); this.liliesBuilt = new Set();
     this.hide();
@@ -256,7 +256,7 @@ export class FishGear {
     const n = this.net; n.visible = !!p; if (!p) return;
     n.position.copy(p); n.rotation.set(0, -Math.atan2(dir.z, dir.x), -0.15 - dip * 0.45);
   }
-  setTarget(p, wet = true) { const t = this.target; t.visible = !!p; if (!p) return; t.position.set(p.x, p.y + 0.03, p.z); t.material.color.setHex(wet ? 0x8dff7a : 0xff5a3a); t.scale.setScalar(1 + Math.hypot(p.x, p.z) * 0); }
+  setTarget(p, wet = true, scale = 1) { const t = this.target; t.visible = !!p; if (!p) return; t.position.set(p.x, p.y + 0.6 * scale, p.z); t.quaternion.copy(this.G.camera.quaternion); t.material.depthTest = false; t.material.color.setHex(wet ? 0x8dff7a : 0xff5a3a); t.scale.setScalar(scale); }
   setMat(p, heading) { this.matMesh.visible = !!p; if (p) { this.matMesh.position.copy(p); this.matMesh.rotation.y = -heading; } }
   // ---------------------------------------------------------------- the fish
   showFish(s, lengthM, p, heading, roll = 0, t = 0, amp = 0.3, pitch = 0) {

@@ -764,7 +764,8 @@ export class Fishing {
     } else gear.setNet(null);
     // the fish: under the surface while it fights (seen near the top), on the mat or held up when landed
     if (f && (this.state === 'fight' || this.state === 'netting')) {
-      if (f.y < 0.7) gear.showFish(f.s, f.Lm, new THREE.Vector3(f.p.x, lake.level - f.y - f.Lm * 0.05, f.p.z), f.head, f.mode === 'beaten' ? 1.2 + Math.sin(this.t * 2) * 0.3 : 0, this.t * (6 + f.E * 8), 0.25 + f.E * 0.2);
+      const showY = f.y < 0.3 || f.mode === 'beaten' ? lake.level - f.Lm * 0.03 : lake.level - f.y - f.Lm * 0.05;
+      if (f.y < 0.7) gear.showFish(f.s, f.Lm, new THREE.Vector3(f.p.x, showY, f.p.z), f.head, f.mode === 'beaten' ? 1.2 + Math.sin(this.t * 2) * 0.3 : 0, this.t * (6 + f.E * 8), 0.25 + f.E * 0.2);
       else gear.showFish(null);
     } else if (f && this.state === 'landed') {
       this.landT += dt;
@@ -776,7 +777,7 @@ export class Fishing {
     if ((this.state === 'ready' || this.state === 'windup') && this.rigged()) {
       const pw = this.state === 'windup' ? (this.charge <= 1 ? Math.max(0.12, this.charge) : Math.max(0.55, 1 - (this.charge - 1) * 0.9)) : 1;
       const tp = this.predictCast(pw); this.aimDist = Math.hypot(tp.x - this.stand.x, tp.z - this.stand.z);
-      gear.setTarget(tp, lake.wet(tp.x, tp.z));
+      gear.setTarget(tp, lake.wet(tp.x, tp.z), Math.max(1.2, this.aimDist / 9));
     } else gear.setTarget(null);
     gear.update(dt);
   }
@@ -803,7 +804,11 @@ export class Fishing {
     if (this.state === 'landed') {
       const f = this.fish, fwd = new THREE.Vector3(Math.cos(this.h0), 0, Math.sin(this.h0));
       if (this.photo) { look = new THREE.Vector3(P.x, P.y + 1.2, P.z); from = look.clone().addScaledVector(fwd, -2.6).add(new THREE.Vector3(0, 0.15, 0)); fov = 45; }
-      else { look = new THREE.Vector3(P.x, P.y + 0.15, P.z).addScaledVector(fwd, 0.4).addScaledVector(new THREE.Vector3(Math.cos(this.h0 + Math.PI / 2), 0, Math.sin(this.h0 + Math.PI / 2)), 0.6); from = look.clone().addScaledVector(fwd, 1.4).add(new THREE.Vector3(0, 1.3 + (f?.Lm || 0.5), 0)); fov = 50; }
+      else {
+        const right = new THREE.Vector3(Math.cos(this.h0 + Math.PI / 2), 0, Math.sin(this.h0 + Math.PI / 2)), fish = new THREE.Vector3(P.x, P.y + 0.1, P.z).addScaledVector(fwd, 0.4).addScaledVector(right, 0.6), L = f?.Lm || 0.5;
+        from = fish.clone().addScaledVector(right, 1.1 + L * 1.4).addScaledVector(fwd, -0.4).add(new THREE.Vector3(0, 0.9 + L * 0.9, 0));
+        look = fish.clone().add(new THREE.Vector3(0, -0.35 - L * 0.3, 0)); fov = 50;
+      }
     } else {
       // what we're watching: the fish, the float, the rig in flight, or out over the water where we'd cast
       let tgt;
